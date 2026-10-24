@@ -37,6 +37,8 @@ inline constexpr const char* moodChoices = "Minor|Major|Dorian|Phrygian|Lydian|M
 inline constexpr const char* qualityChoices = "Eco|Standard|High";
 inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Factory|City|Temple|Forest|Ruins|Cavern|Alien Hive";
 inline constexpr const char* characterChoices = "1|2|3";
+inline constexpr const char* playModeChoices = "Free|Transport";
+enum PlayMode { PlayFree, PlayTransport };
 
 // Each of the four Place slots has these parameters, in this order.
 enum PlaceParam {
@@ -54,7 +56,8 @@ enum P {
     PPower, PMaster, PWidth, PSeed, PQuality, PSpaceMix, PRoot, PMood,
     PLayerFirst,   // then level, mute, solo for each layer
     PPlaceFirst = PLayerFirst + 3 * LayerCount,   // then PlaceParamCount per slot
-    PCount = PPlaceFirst + placeSlotCount * PlaceParamCount
+    PPlayMode = PPlaceFirst + placeSlotCount * PlaceParamCount,
+    PCount
 };
 
 inline constexpr int layerLevel(int layer) { return PLayerFirst + 3 * layer; }
@@ -117,6 +120,9 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     WB_PLACE("p3", "Place 3", 0, -0.55f, 33), WB_PLACE("p4", "Place 4", 0, 0.55f, 44),
 #undef WB_PLACE
 #undef WB_ELEMENTS
+    // Free: the world plays all the time. Transport: only while the host plays, from
+    // silence and locked to the song position (so bounces always contain it).
+    { "playmode", "Play Mode", Kind::Choice, 0, 1, PlayTransport, playModeChoices },
 } };
 // clang-format on
 

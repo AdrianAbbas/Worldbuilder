@@ -108,7 +108,11 @@ void WorldLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b
 void WorldLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&, bool highlighted,
                                             bool down) {
     const auto area = button.getLocalBounds().toFloat().reduced(1.0f);
-    g.setColour(colours::panel.brighter(down ? 0.3f : (highlighted ? 0.15f : 0.0f)));
+    // A pressed-in (toggled) button is lit in its "on" colour; otherwise its own colour if set.
+    auto fill = colours::panel;
+    if (button.getToggleState()) fill = button.findColour(juce::TextButton::buttonOnColourId);
+    else if (button.isColourSpecified(juce::TextButton::buttonColourId)) fill = button.findColour(juce::TextButton::buttonColourId);
+    g.setColour(fill.brighter(down ? 0.3f : (highlighted ? 0.15f : 0.0f)));
     g.fillRoundedRectangle(area, 5.0f);
     g.setColour(colours::brass.withAlpha(0.6f));
     g.drawRoundedRectangle(area, 5.0f, 1.0f);

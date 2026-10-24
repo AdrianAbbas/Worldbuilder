@@ -25,6 +25,7 @@ struct EngineControls {
     int root = 2, mood = 0, quality = 1;
     uint32_t seed = 1;
     float hostBpm = 0;   // 0 when the host gives no tempo: the world uses defaultBpm
+    bool gate = true;    // Play Mode Transport: false while the host is stopped (the world fades out)
     std::array<PlaceSlotControls, placeSlots> places {};
 };
 
@@ -37,6 +38,10 @@ public:
     // (absolute samples) at beat `ppq` (negative: unknown, derived from the position).
     // Without a transport the world runs on its own clock.
     void resync(uint64_t position, double ppq = -1);
+    // Play Mode Transport: the host started (or located) at `position` / `ppq`. The world
+    // starts again from silence, from a fixed state, so the same song position always
+    // gives the same sound (bounces match playback).
+    void restart(uint64_t position, double ppq, const EngineControls& controls);
 
     static constexpr float defaultBpm = 96;
     void process(float* left, float* right, int n, const EngineControls& controls);
@@ -51,6 +56,15 @@ public:
     // For the tests: the strike log of the thunder layer (audio thread state).
     const ThunderLayer& thunderLayer() const { return thunder; }
     const PlaceSlot& placeSlot(int i) const { return slots[std::size_t(std::clamp(i, 0, placeSlots - 1))]; }
+
+    // Patterns, lock-free both ways: the editor publishes each slot's patterns into
+    // patternsIn (the audio thread picks up the newest at the next chunk); the slots
+    // report the patterns their Places generate into patternsOut.
+    std::array<pat::TripleBuffer<pat::SlotPatterns>, placeSlots> patternsIn;
+    std::array<pat::TripleBuffer<pat::Generated>, placeSlots> patternsOut;
+    // Each slot's beat (for the playhead) and whether the host transport is rolling.
+    std::array<std::atomic<double>, placeSlots> slotBeat {};
+    std::atomic<bool> transportRolling { false };
 
 private:
     void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls);
@@ -77,6 +91,7 @@ private:
     dsp::SafetyLimiter limiter;
     dsp::Smoother master, width, spaceMix;
     float powerRamp = 1, powerStep = 0;
+    float gateRamp = 1, gateUp = 0, gateDown = 0;
     float masterPeak = 0;
     uint32_t seed = 0;
     uint64_t clock = 0;   // absolute position of the next chunk to render

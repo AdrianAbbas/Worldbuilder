@@ -4,6 +4,7 @@
 // and the four Place strips on the right; key, quality, seed and output below.
 // The full Living Globe and resizable layout arrive in Milestone 6.
 #include "PluginProcessor.h"
+#include "UI/PatternEditor.h"
 #include "UI/WorldLookAndFeel.h"
 
 class WorldbuilderEditor final : public juce::AudioProcessorEditor, private juce::Timer {
@@ -24,6 +25,9 @@ public:
     // open a slot's detail panel.
     int addPlace(int type);
     void openDetail(int slot);
+    // Opens the Pattern Editor on a slot's Place (on `element`, or its first pattern).
+    void openPatterns(int slot, int element = -1);
+    wb::ui::PatternEditor& patternEditor() { return *patterns; }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -51,7 +55,7 @@ private:
         juce::Slider activity { "Activity" }, tension { "Tension" }, tone { "Tone" }, size { "Size" }, variation { "Variation" };
         juce::Slider density { "Density" }, swing { "Swing" }, seed;
         juce::ToggleButton sync { "SYNC TO HOST" };
-        juce::TextButton dice { "New seed" }, close { "CLOSE" };
+        juce::TextButton dice { "New seed" }, close { "CLOSE" }, patterns { "PATTERNS" };
         std::array<juce::Slider, 5> element;
         std::array<juce::ToggleButton, 5> elementOn;
         std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
@@ -94,6 +98,9 @@ private:
     juce::Slider seed;
     std::unique_ptr<SliderAttachment> seedAttachment;
     juce::TextButton dice { "New world" };
+    std::unique_ptr<wb::ui::PatternEditor> patterns;
+    juce::ComboBox playMode;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
 
     juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer;
     std::array<juce::Rectangle<int>, 4> groupAreas;

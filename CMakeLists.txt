@@ -49,7 +49,8 @@ target_sources(WORLDBUILDER PRIVATE
     Source/DSP/AirLayer.cpp Source/DSP/WaterLayer.cpp Source/DSP/FireLayer.cpp Source/DSP/EarthLayer.cpp
     Source/DSP/ThunderLayer.cpp Source/DSP/TonalBed.cpp Source/DSP/WorldSpace.cpp
     Source/Places/PlaceSlot.cpp Source/Places/Castle.cpp Source/Places/Village.cpp Source/Places/Spaceport.cpp
-    Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp)
+    Source/Patterns/PatternStore.cpp Source/Patterns/PatternMidi.cpp
+    Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PatternEditor.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
 target_compile_definitions(WORLDBUILDER PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0

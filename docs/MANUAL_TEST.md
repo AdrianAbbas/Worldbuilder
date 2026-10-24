@@ -90,3 +90,57 @@ anything that sounds synthetic, harsh, out of tune, too loud or too quiet.
   no clipping on the master meter.
 - [ ] **Remove** a Place with **X** and add another one: it fades out and in, no clicks.
 - [ ] Save the project, close and reopen it: the Places and their settings come back.
+
+## Milestone 4 check: Pattern Editor and Play Mode
+
+Install the new build the same way (steps 1-4 above). Start from a **fresh**
+WORLDBUILDER instance. A new instance starts in **Play Mode: Transport**, so it is
+silent until you press play. Projects saved with Milestone 3 load in Free mode and
+play as before.
+
+**Play Mode** (footer, next to Quality):
+- [ ] **Transport:** silent while stopped. Press play: the world starts at once (no
+  slow fade) and stops with a short fade when you stop.
+- [ ] Play from bar 9 twice: it sounds the same both times. Export or bounce the song
+  (Share → Export Song to Disk): WORLDBUILDER is in the file.
+- [ ] **Free:** it plays all the time, as before. (GarageBand exports only up to the
+  last region, so for exports in Free mode put a region over the whole section.)
+
+**Pattern Editor:** click **EDIT** on the Castle strip, then **PATTERNS** (top right of
+the detail panel). It covers the left and centre of the window.
+- [ ] Tabs for **Bells**, **Horns** and **Pulse**. Each shows the pattern the Castle is
+  playing now; with the host playing, a cyan playhead runs across it in time with
+  the song.
+- [ ] Turn the Place's **Activity** (close the editor with BACK, change it, reopen):
+  a generated pattern follows the knob.
+- [ ] **Draw:** click an empty cell to add a note, drag to lengthen it. Drag a note to
+  move it. **Alt-click** or **right-click** deletes it. **Double-click** locks it (a
+  small padlock). The status line changes to "Edited": from now on the pattern stays
+  as written whatever the knobs do.
+- [ ] **Select:** drag a box, then **COPY**, click a step, **PASTE**; **UP**/**DOWN**
+  transpose; **x2** and **/2** change the length; **UNDO**/**REDO**; **CLEAR**;
+  **GENERATE** gives a fresh pattern (and follows the knobs again).
+- [ ] **Velocity** lane: drag bars up and down. **Chance** lane: lower a note's chance;
+  it fades in the grid and plays only on some passes.
+- [ ] **12 TONE** shows all semitones; **CHORDS** off makes the rows the key's notes
+  instead of following the chords. **LENGTH**, **GRID** (try 1/8T) and **SWING**.
+- [ ] **RANDOMNESS** at 0 %: the pattern repeats exactly. Raise it and switch the
+  **T V P S +** buttons (timing, velocity, pitch, skip, extra notes) one at a time:
+  only that aspect changes. Locked notes never change.
+- [ ] **EVOLVE** up: the pattern slowly drifts over a minute or two; **RETURN** every 4
+  bars brings it back to the original at each return.
+- [ ] Try the Village (Plucks, Hand Drums, Wood) and Spaceport (Pulses, Risers,
+  Announce) tabs too. The Spaceport risers show a lower opacity: their chance.
+- [ ] Change **Root** and **Mood**: edited patterns follow the key.
+- [ ] Save the project, close and reopen: edited patterns, their randomness settings
+  and the Play Mode come back.
+
+**MIDI** (please report exactly what works in each host):
+- [ ] **DRAG MIDI** (right of the MIDI buttons): drag it onto a track in **Logic** and
+  in **GarageBand**. Does a MIDI region appear? If not, does the host refuse the drop,
+  or nothing happen?
+- [ ] **SAVE MIDI** saves a .mid file; import it into the host and check it plays the
+  pattern.
+- [ ] Drag a .mid file from Finder onto the editor (or onto a tab): the notes become
+  that element's pattern (snapped to the scale; turn **SNAP** off to keep exact
+  pitches). **IMPORT** does the same through a file dialog.

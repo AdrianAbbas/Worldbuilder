@@ -1,5 +1,7 @@
 #pragma once
-// The Places built so far: Castle, Village and Spaceport.
+// The Places built so far: Castle, Village and Spaceport. Their rhythmic and
+// melodic elements play from patterns (see Pattern.h); generate() writes the
+// starting pattern of each, from the Place's seed and settings.
 #include "Place.h"
 
 namespace wb {
@@ -18,11 +20,13 @@ public:
     void render(const PlaceContext& context, float* left, float* right, int n) override;
     float freeTempo() const override { return 66.0f; }
     float spaceSend() const override { return 0.4f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
 
     static constexpr int drones = 3, bells = 6, horns = 2, drums = 4;
+    enum Element { Drones, Bells, Horns, Pulse, Hall };
 
 private:
-    void onStep(const PlaceContext& c, int64_t step);
+    void trigger(const PlaceContext& c, const Scheduled& x);
     void playBell(const PlaceContext& c, int semitones, float velocity, float decay, float pan);
 
     float rate = 48000;
@@ -31,9 +35,6 @@ private:
     std::array<dsp::SynthVoice, horns> horn;
     std::array<double, horns> hornRelease {};
     std::array<dsp::Drum, drums> drum;
-    std::array<Phrase, horns> hornPhrase;
-    Phrase bellPhrase;
-    Pattern pattern;
     dsp::Stream noise, drift;
     dsp::SmallSpace hall;
     dsp::TapeEcho echo;
@@ -55,20 +56,20 @@ public:
     void render(const PlaceContext& context, float* left, float* right, int n) override;
     float freeTempo() const override { return 92.0f; }
     float spaceSend() const override { return 0.25f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
 
     static constexpr int plucks = 8, drones = 2, drums = 6, woods = 5;
+    enum Element { Plucks, Drone, HandDrums, Wood, Tape };
 
 private:
-    void onStep(const PlaceContext& c, int64_t step);
-    void playWood(const PlaceContext& c, int semitones, float velocity);
+    void trigger(const PlaceContext& c, const Scheduled& x);
+    void playWood(const PlaceContext& c, int semitones, float velocity, float pan);
 
     float rate = 48000;
     std::array<dsp::Pluck, plucks> pluck;
     std::array<dsp::SynthVoice, drones> drone;
     std::array<dsp::Drum, drums> drum;
     std::array<dsp::Bell, woods> wood;
-    Phrase woodPhrase;
-    Pattern pattern;
     dsp::Stream noise, drift;
     dsp::SmallSpace room;
     dsp::Warmth warmth;
@@ -90,11 +91,13 @@ public:
     void render(const PlaceContext& context, float* left, float* right, int n) override;
     float freeTempo() const override { return 112.0f; }
     float spaceSend() const override { return 0.3f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
 
     static constexpr int arps = 6, pads = 4, chimes = 4, engines = 2;
+    enum Element { Pulses, Pads, Risers, Announce, Engines };
 
 private:
-    void onStep(const PlaceContext& c, int64_t step);
+    void trigger(const PlaceContext& c, const Scheduled& x);
 
     struct Riser {
         bool active = false;
@@ -113,7 +116,6 @@ private:
     std::array<dsp::SynthVoice, engines> engine;
     dsp::Drum impact, beep;
     Riser riser;
-    Phrase chimePhrase;
     // Abstract PA murmur: a voiced buzz through two moving formants, never speech.
     dsp::Saw murmurOsc;
     std::array<dsp::Svf, 2> formant;
@@ -121,8 +123,7 @@ private:
     dsp::Smoother murmurGain, f1, f2;
     double murmurUntil = -1;
     std::array<dsp::Rumble, 2> rumble;
-    Pattern pattern;
-    dsp::Stream noise, drift;
+    dsp::Stream noise, drift, hits;
     dsp::SmallSpace hangar;
     dsp::PingPong delay;
     uint64_t noiseAt = 0;

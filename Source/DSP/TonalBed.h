@@ -47,6 +47,7 @@ private:
     dsp::Stream haze;
     dsp::Smoother brightness;
     int lastRoot = -1, lastMood = -1;
+    bool fresh = true;
 };
 
 } // namespace wb

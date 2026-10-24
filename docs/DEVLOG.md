@@ -623,3 +623,228 @@ New in this milestone:
   dense scene, but no longer quiet.
 - The globe, landmarks and cards are still the placeholder style. The full Living
   Globe and the resizable layout are Milestone 6.
+
+---
+
+## Milestone 4: Pattern Editor and Play Mode (2026-10-24)
+
+The brief is [PROJECT_BRIEF.md](PROJECT_BRIEF.md) (the developer's
+`WORLDBUILDER_PROMPT.md`). [DIRECTION_UPDATE.md](DIRECTION_UPDATE.md) and then
+[DIRECTION_UPDATE_2.md](DIRECTION_UPDATE_2.md) override it. Milestone 3 was tested:
+the Place selector is excellent, and its workflow is unchanged.
+
+### Scope agreed for this milestone
+
+- Section 1 of Direction Update 2 (Pattern Editor), except recording from MIDI input
+  (optional; not done).
+- From Section 1B, only the **Play Mode** switch (Free / Transport, Transport by
+  default). The MIDI mode, the keyboard zones (scene, key follow, play and event
+  keys), the CC mapping and the recording test move to Milestone 5, alongside the new
+  Places.
+
+### Revised milestone order
+
+4. **Pattern Editor + Play Mode** (this milestone).
+5. **More Places + MIDI control:** Spaceship Interior, Tavern, Battlefield, then
+   Factory, City, Temple, Forest, Ruins, Cavern and Alien Hive (split across two
+   sessions if needed). Built alongside them: Play Mode **MIDI** with the keyboard
+   zones (scene keys, key follow, play keys, event keys), mod wheel → Tension and
+   CC11 → Activity (mappable), recorded regions playing back identically, export
+   safety in MIDI mode. Every new Place uses patterns from day one.
+6. **Locations & Journeys** (including Places and their patterns).
+7. **Visual overhaul** (Direction Update 2, Section 3).
+8. **Presets & release.**
+
+### What was built
+
+- **Pattern model** (`Source/Patterns/Pattern.h`, plain data, no allocation):
+  - a note has a step, a length, a pitch (scale degree plus a chromatic alteration,
+    or a kit row for drums), velocity, probability and a lock;
+  - a pattern has 1-8 bars or a free number of steps, a resolution (1/4 to 1/32,
+    straight or triplet), swing, and **Follow Chords**: degrees count from the root of
+    the current chord of the shared progression, placed in a register. Off, they
+    count from the key's root (C3 octave);
+  - up to 256 notes, kept sorted by step.
+- **Controlled randomness**, per element:
+  - Randomness 0-100 %, with switches for timing, velocity, pitch (within the scale;
+    by two degrees on Follow Chords, so chord tones stay chord tones), skipping and
+    extra notes;
+  - timing only ever delays a note (up to 0.4 step), so the grid never runs early;
+  - per-note probability (shown as opacity), and per-note lock: a locked note is never
+    changed by randomness or Evolve;
+  - **Evolve**: each note mutates at random moments (exponential waits, faster with
+    Evolve, counted in bars), and the mutations stay. Return every N bars starts again
+    from the original, and the first bar after a return always plays as written;
+  - everything is a hash of (seed, pass, note), so it is the same at the same song
+    position, in real time or offline;
+  - the Place's **Variation** knob scales every element's Randomness (×1 at its
+    default, 0 % at 0).
+- **Generators**: Castle, Village and Spaceport now play everything rhythmic or
+  melodic from patterns. Their Milestone 3 step logic became `generate()`, a pure
+  function of the seed, Character, Activity, Density, Tension, Life, Mood and a
+  variant number:
+  - Castle: Bells (melodic), Horns (melodic), Pulse (kit: timpani, timpani fifth,
+    side drum);
+  - Village: Plucks, Wood (melodic), Hand Drums (kit: frame drum, hand drum, shaker);
+  - Spaceport: Pulses, Announce (melodic), Risers (kit: pass-by, launch, falling; the
+    note's length is the riser's);
+  - drones, pads, engines, halls and tape stay continuous (they follow the chords);
+  - an element nobody has edited plays the generated pattern, which is regenerated
+    whenever its inputs change (on a 1/256 grid), so the knobs work exactly as before;
+  - **Generate** bumps the variant: a fresh pattern from the same seed;
+  - the first edit keeps a copy, which then plays as written.
+- **Sample-accurate notes.** Pattern notes start on their exact sample: each Place
+  renders up to the next note, starts it, and carries on. (In Milestone 3 events
+  started on 32-sample chunk boundaries.)
+- **Threads.** The editor's patterns live in `PatternStore` (message thread, saved with
+  the state). Every change is copied whole into a lock-free triple buffer per slot;
+  the audio thread takes the newest at the next chunk. Generated patterns travel back
+  the same way for display. Nothing allocates on the audio thread.
+- **Pattern Editor** (`Source/UI/PatternEditor.*`), opened with **PATTERNS** in a
+  Place's detail panel. It covers the World Controls and the globe; the Place strips
+  stay visible. Inside:
+  - a tab per patterned element;
+  - the piano roll: rows are the scale's notes (named on the tonic chord), all twelve
+    semitones with 12 TONE, or the kit's drums;
+  - click to add a note, drag to move or lengthen, Alt-click or right-click to
+    delete, double-click to lock;
+  - tools: draw, select (box), copy and paste, clear, generate, transpose, ×2 and /2,
+    lock, undo and redo (100 steps); keys too (Delete, Cmd/Ctrl-Z/Y/C/V/A, arrows, L);
+  - velocity and chance lanes;
+  - length, grid, swing, chords and 12-tone switches; randomness, its five switches,
+    Evolve and Return;
+  - a playhead (bright while the host plays);
+  - MIDI: drop a .mid file on the editor or a tab, IMPORT (snapped to the scale unless
+    SNAP is off), SAVE MIDI, and DRAG MIDI (drags a temporary .mid file out to the
+    host).
+- **MIDI files** (`Source/Patterns/PatternMidi.*`): 960 ticks per beat, tempo and 4/4
+  meta events. Follow Chords patterns are written on the progression from bar 1. Kits
+  use GM drum notes 36, 38, 42 and 46 (other pitches take the rows in order on import).
+- **State**: patterns are saved as compact text in a `Patterns` child of the state:
+  only edited elements and changed controls, a few bytes per note. An untouched Place
+  saves nothing and regenerates from its seed. A slot that gets another Place starts
+  from that Place's defaults. Locations (Milestone 6) and presets will take this
+  state as it is.
+- **Play Mode** (automatable, the `playmode` parameter):
+  - **Transport** (default for new instances) plays only while the host plays. At
+    every start or locate the world restarts from a fixed state, from silence, so the
+    same song position always sounds the same and bounces match playback. It fades in
+    over 10 ms and out over 250 ms;
+  - **Free** is the Milestone 3 behaviour;
+  - projects saved before Play Mode load in Free mode, as they played;
+  - in a host with no transport at all (no tempo and no song position: the standalone
+    app, the CI harness) Transport mode plays freely.
+- Restart determinism needed some fixes: the reset now clears everything: the Tonal
+  Bed brightness, the Place effects' delay times and wow phases, the synth voices'
+  vibrato phase, the Places' noise counters, the Spaceport murmur oscillator.
+
+### Decisions
+
+- **Generated until edited.** Keeping the generators live (following the knobs) for
+  untouched elements kept Milestone 3's workflow and every Milestone 3 test. The
+  alternative, freezing a pattern when a Place is added, would have made Activity,
+  Tension and Character do nothing to rhythm.
+- **Activity and Density don't touch an edited pattern.** The pattern is the
+  composer's. Tension, Tone, Size, Life and the World Controls still shape the sound.
+- **Rare events use per-note probability.** An eight-bar pattern samples each chance
+  only once, so a seed either always or never had a riser. Risers are now written at
+  every place one may start, with their chance as the note's probability. The bells and
+  announcements, which are phrases, are a little denser instead.
+- **Timing randomness only delays**, so notes never anticipate the beat, and the
+  scheduler needs no look-ahead.
+- **Evolve is stateless**: mutations are a function of the bar count since the last
+  return, not accumulated state, so a locate lands on exactly the same evolution.
+- **Kits** for percussion: rows are drums rather than pitches, and pitch randomness is
+  off for them.
+- **Transport needs a transport.** Without one there would be nothing to start the world.
+
+### Problems and fixes
+
+- After the conversion, Castle's in-key margin and several Spaceport checks (Tone, Era,
+  Population, Announce) failed. A side-by-side build of Milestone 3 with a per-element
+  probe (`--probe-places` now prints note counts and the key fit) showed the cause: the
+  eight-bar patterns sampled the old open-ended dice only once (fewer bells and
+  announcements), and risers could now start the moment the last one ended (they were
+  more frequent, and tone-neutral). Fixed with the densities and per-note probability
+  above.
+- Rounding the generator inputs to the nearest grid step moved Besieged's default
+  Tension (0.30) over its 0.3 threshold (alarms instead of tolls). The grid now rounds
+  down.
+- Transport restarts were not identical until the resets above were completed.
+
+### Tests (Linux, through `processBlock`)
+
+New:
+- **Patterns:** at 0 % randomness every note plays on the exact sample of the host
+  position (within one sample, from a start that is on no beat or chunk), each pass is
+  identical, and the result is the same at another block size;
+- each randomness switch changes only its own aspect (velocity, pitch within the
+  scale, timing later only, skip as a subset, extra as a superset), and nothing switched
+  on is exact even at 100 %;
+- locked notes never change (all locked: identical to 0 %; two locked: they play exactly
+  while the others change);
+- Evolve mutates and returns to the original every 4 bars, and drifts further over
+  time without return; probability is honoured and repeatable;
+- the generated pattern follows Activity and reaches the editor; Generate makes a fresh
+  one; an edited pattern survives Activity and Character changes; a new Place in the
+  slot starts generated;
+- MIDI export and import round trip (melodic with exact pitches, snapped, and a kit);
+- state round trip of an edited pattern, its controls and a generated element's
+  variant; the restored pattern plays;
+- no heap allocation while patterns are edited during playback, with full randomness,
+  Evolve and Transport locates.
+- **Play Mode:** new instances default to Transport; silent while stopped; plays from
+  silence when playing; stops to silence; the same song position gives identical
+  output after other playing and a locate; plays freely in a host without a transport;
+  an older project loads in Free mode.
+- **Editor:** the Pattern Editor opens and paints every element of the three Places;
+  drawing a note makes it edited; save as MIDI and import into another element;
+  Generate returns to a generated pattern. `--snapshot x.png` also writes
+  `x-patterns.png` and `x-patterns-kit.png`.
+- `WorldbuilderTests --only patterns,playmode,editor` runs some groups (a development
+  aid).
+
+All Milestone 3 tests still pass (the existing tests run in Play Mode Free).
+
+### Milestone 4 handoff
+
+**Done:**
+- the pattern model, controlled randomness, probability, locks and Evolve;
+- Castle, Village and Spaceport converted to editable patterns, with their generators;
+- the Pattern Editor with every tool asked for, lanes and the playhead;
+- MIDI import (drop or dialog, snapped or not) and export (drag out, save);
+- patterns in the saved state; Play Mode Free / Transport;
+- Linux tests pass with GCC and Clang.
+
+**Next (needs the developer):**
+1. CI on the macOS runner: the AU, `auval` and the harness. The harness needs no
+   change: without host callbacks the plug-in reports no tempo, so Transport mode
+   plays freely there. One parameter was added (`playmode`, 142 in total).
+2. The Milestone 4 check in [MANUAL_TEST.md](MANUAL_TEST.md). Especially:
+   - **DRAG MIDI in Logic and GarageBand:** what happens. JUCE's external file drag is
+     used; whether either host accepts a file dropped from a plug-in window is untested.
+     SAVE MIDI is the fallback;
+   - Transport mode start/stop and an export containing WORLDBUILDER;
+   - whether the editor's keyboard shortcuts reach the plug-in (hosts often keep keys);
+     every action also has a button;
+   - file dialogs (IMPORT, SAVE MIDI) inside sandboxed GarageBand.
+
+**Then Milestone 5:** the new Places with patterns from day one (add a class, its
+`patternInfo` row, `generate()`, a case in `PlaceSlot::engineFor`, `placeInfo` and
+`placeImplemented`), and the MIDI mode with its keyboard zones.
+
+**Known issues / limits:**
+- Nothing here has been seen or heard on a Mac yet.
+- Recording from MIDI input into a pattern (optional) is not built; it fits with the
+  MIDI mode in Milestone 5.
+- Rows in Follow Chords mode are named on the tonic chord; what sounds moves with the
+  chords. Changing Mood keeps an edited pattern's scale degrees (so its notes follow the
+  new scale; between scales of different sizes, octaves shift).
+- DRAG MIDI writes the pattern's notes over one pass; Follow Chords notes are written on
+  the progression from bar 1.
+- Pattern edits are not in the host's undo history (the editor has its own undo).
+- The editor is a fixed layout inside the 1160 × 720 window; the resizable interface is
+  part of the visual overhaul.
+- Transport mode restarts the whole world at every locate, so reverb tails and long
+  bells from before the locate are cut (by design: the same position always sounds the
+  same).

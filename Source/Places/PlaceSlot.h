@@ -20,14 +20,25 @@ struct PlaceSlotControls {
 // World Controls into the Place's settings, keeps the Place's beat clock (the host's
 // or its own free tempo) and applies level, distance (quieter, darker, narrower,
 // more reverberant) and pan.
+//
+// Patterns: each patterned element plays the composer's edited pattern, or else the
+// one the Place's generator writes from its seed and settings (regenerated whenever
+// those change). Generated patterns are reported back to the editor.
 class PlaceSlot {
 public:
     void prepare(double sampleRate, int slotIndex);
     void reset();
     // Renders n <= dsp::chunk samples (writes). Returns false, writing nothing, when the
     // slot is silent.
-    bool render(const WorldFrame& world, const PlaceSlotControls& controls, bool audible, uint64_t clock, double hostBeat, float hostBpm,
-                float* left, float* right, int n);
+    bool render(const WorldFrame& world, const PlaceSlotControls& controls, const pat::SlotPatterns& patterns, bool audible, uint64_t clock,
+                double hostBeat, float hostBpm, float* left, float* right, int n);
+    // Where generated patterns are reported (the editor reads them).
+    void setFeedback(pat::TripleBuffer<pat::Generated>* buffer) { feedback = buffer; }
+    // The Place's beat at the last chunk (for the editor's playhead).
+    double beat() const { return lastBeat; }
+    // The pattern element e is playing now (nullptr when none), for the tests.
+    const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements ? playing[std::size_t(e)] : nullptr; }
+    const pat::Pattern& generatedPattern(int e) const { return generated[std::size_t(std::clamp(e, 0, placeElements - 1))]; }
     // World Space send for the last rendered chunk.
     float spaceSend() const { return send; }
     int playingType() const { return currentType; }
@@ -59,6 +70,16 @@ private:
     std::array<dsp::OnePole, 2> distanceLp, dcBlock;
     float send = 0;
     bool fresh = true;
+
+    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns);
+    std::array<pat::Pattern, placeElements> generated {};
+    std::array<GenInputs, placeElements> generatedFor {};
+    std::array<bool, placeElements> generatedValid {};
+    std::array<const pat::Pattern*, placeElements> playing {};
+    std::array<pat::Controls, placeElements> controlsNow {};
+    pat::TripleBuffer<pat::Generated>* feedback = nullptr;
+    uint32_t feedbackSerial = 0;
+    double lastBeat = 0;
 };
 
 } // namespace wb

@@ -18,7 +18,10 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     const float r = float(rate), controlRate = r / float(chunk);
     for (auto* layer : layers)
         if (layer != nullptr) layer->prepare(rate);
-    for (int i = 0; i < placeSlots; ++i) slots[std::size_t(i)].prepare(rate, i);
+    for (int i = 0; i < placeSlots; ++i) {
+        slots[std::size_t(i)].prepare(rate, i);
+        slots[std::size_t(i)].setFeedback(&patternsOut[std::size_t(i)]);
+    }
     space.prepare(rate);
     glue.prepare(r);
     limiter.prepare(r);
@@ -28,6 +31,8 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     width.setTime(0.1f, r);
     spaceMix.setTime(0.1f, r);
     powerStep = 1.0f / (2.0f * r);   // Power fades over 2 s
+    gateUp = 1.0f / (0.01f * r);     // Transport: in over 10 ms, out over 250 ms
+    gateDown = 1.0f / (0.25f * r);
     reset(initial);
 }
 
@@ -50,6 +55,7 @@ void WorldEngine::reset(const EngineControls& initial) {
     seed = initial.seed + 1;   // forces setSeed on the first chunk
     // A freshly loaded world fades in, like switching Power on.
     powerRamp = 0;
+    gateRamp = 1;
     masterPeak = 0;
     clock = 0;
     beat = 0;
@@ -57,6 +63,14 @@ void WorldEngine::reset(const EngineControls& initial) {
     fifoRead = chunk;
     layerPeak.fill(0);
     placePeak.fill(0);
+}
+
+void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& controls) {
+    reset(controls);
+    // No slow Power fade: the world is there from the first beat.
+    powerRamp = controls.power ? 1.0f : 0.0f;
+    gateRamp = 0;
+    resync(position, ppq);
 }
 
 void WorldEngine::resync(uint64_t position, double ppq) {
@@ -101,7 +115,7 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
 
 void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls) {
     // Fully powered down: silence, and no work.
-    if (!controls.power && powerRamp <= 0.0f) {
+    if ((!controls.power && powerRamp <= 0.0f) || (!controls.gate && gateRamp <= 0.0f)) {
         std::fill(left, left + n, 0.0f);
         std::fill(right, right + n, 0.0f);
         return;
@@ -164,7 +178,10 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     for (std::size_t si = 0; si < slots.size(); ++si) {
         const auto& pc = controls.places[si];
         const bool audible = !pc.mute && (!anySolo || pc.solo);
-        if (!slots[si].render(world, pc, audible, clock, beat, bpm, layerL.data(), layerR.data(), n)) continue;
+        patternsIn[si].update();
+        const bool sounding = slots[si].render(world, pc, patternsIn[si].read(), audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
+        slotBeat[si].store(slots[si].beat(), std::memory_order_relaxed);
+        if (!sounding) continue;
         const float send = slots[si].spaceSend() * distanceSend;
         float peak = placePeak[si];
         for (int i = 0; i < n; ++i) {
@@ -187,6 +204,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     const float widthTarget = std::clamp(controls.width, 0.0f, 2.0f);
     const float mixTarget = clamp01(controls.spaceMix);
     const float powerTarget = controls.power ? 1.0f : 0.0f;
+    const bool gateOpen = controls.gate;
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);
@@ -203,7 +221,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         glue.process(l, r);
 
         powerRamp = powerRamp < powerTarget ? std::min(powerTarget, powerRamp + powerStep) : std::max(powerTarget, powerRamp - powerStep);
-        const float fade = 0.5f - 0.5f * std::cos(pi * powerRamp);
+        gateRamp = gateOpen ? std::min(1.0f, gateRamp + gateUp) : std::max(0.0f, gateRamp - gateDown);
+        const float fade = (0.5f - 0.5f * std::cos(pi * powerRamp)) * gateRamp * gateRamp;
         const float g = master.next(masterTarget) * fade;
         l *= g;
         r *= g;

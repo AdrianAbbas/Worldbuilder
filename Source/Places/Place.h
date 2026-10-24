@@ -8,6 +8,7 @@
 #include "../DSP/Generator.h"
 #include "../DSP/Music.h"
 #include "../DSP/PlaceFx.h"
+#include "../Patterns/Pattern.h"
 
 namespace wb {
 
@@ -67,19 +68,14 @@ struct PlaceContext {
     float bpm = 96;
     int chord = 0;        // scale degree of the current chord (shared harmonic clock)
     PlaceSettings s;
+    // How each element plays its pattern (pattern == nullptr: the element has none).
+    std::array<pat::Playback, placeElements> play {};
 };
 
-// A random value per sequencer step for a pattern that repeats every `length`
-// steps. Variation is the chance that a step departs from the pattern on a given
-// pass, so 0 repeats exactly and 1 never repeats.
-struct Pattern {
+// A deterministic random value per (salt, position), for the pattern generators.
+struct Chance {
     dsp::Stream stream;
-    float at(int64_t step, int64_t length, float variation, uint32_t salt) const {
-        const int64_t pass = music::floorDiv(step, length), pos = step - pass * length;
-        const uint64_t s = uint64_t(salt) << 48;
-        const bool varied = stream.unit(s ^ (uint64_t(pass) << 20) ^ uint64_t(pos) ^ (1ull << 47)) < variation;
-        return varied ? stream.unit(s ^ (uint64_t(step) + (1ull << 46))) : stream.unit(s ^ uint64_t(pos));
-    }
+    float at(int64_t pos, uint32_t salt) const { return stream.unit((uint64_t(salt) << 48) ^ uint64_t(pos)); }
 };
 
 // Calls f(step) for each step of a grid with `perBeat` steps per beat that starts in
@@ -98,30 +94,71 @@ inline float glideFor(float seconds, float rate) { return std::exp(-float(dsp::c
 // Position of a sixteenth-note step within its 4/4 bar (0..15).
 inline int stepInBar(int64_t step) { return int(((step % 16) + 16) % 16); }
 
-// A short melodic phrase (horn call, carillon run, PA chime): notes at beat
-// offsets from its start, in semitones above the key root.
-struct Phrase {
-    struct Note {
-        float beat = 0, length = 1, velocity = 1;
-        int semitones = 0;
+// Which elements of a Place play from a pattern, and how: melodic (scale degrees) or
+// a kit (each row a different drum or sound).
+enum ElementKind { NoPattern, Melodic, Kit };
+struct ElementPatternInfo {
+    int kind = NoPattern;
+    int rows = 0;                              // kit rows
+    std::array<const char*, 4> kit {};         // kit row names
+    uint8_t vary = pat::VaryVelocity | pat::VarySkip;   // default randomness switches
+};
+
+inline const ElementPatternInfo& patternInfo(int type, int element) {
+    using namespace pat;
+    static const ElementPatternInfo none {};
+    using Row = std::array<ElementPatternInfo, placeElements>;
+    const auto melodic = [](uint8_t vary) { ElementPatternInfo i; i.kind = Melodic; i.vary = vary; return i; };
+    const auto kit = [](const char* a, const char* b, const char* c, uint8_t vary) {
+        ElementPatternInfo i;
+        i.kind = Kit;
+        i.rows = 3;
+        i.kit = { a, b, c, nullptr };
+        i.vary = vary;
+        return i;
     };
-    std::array<Note, 12> notes {};
-    int count = 0, next = 0;
-    double start = 0;
-    bool active() const { return next < count; }
-    void begin(double at) {
-        start = at;
-        next = 0;
+    static const std::array<Row, 4> table {
+        Row { none, none, none, none, none },
+        // Castle: Drones, Bells, Horns, Pulse, Hall
+        Row { none, melodic(VaryVelocity | VarySkip | VaryPitch), melodic(VaryVelocity | VarySkip),
+              kit("Timpani", "Timpani 5th", "Side Drum", VaryVelocity | VarySkip | VaryExtra), none },
+        // Village: Plucks, Drone, Hand Drums, Wood, Tape
+        Row { melodic(VaryVelocity | VarySkip | VaryPitch | VaryExtra), none, kit("Frame Drum", "Hand Drum", "Shaker", VaryVelocity | VarySkip | VaryExtra),
+              melodic(VaryVelocity | VarySkip | VaryPitch), none },
+        // Spaceport: Pulses, Pads, Risers, Announce, Engines
+        Row { melodic(VaryVelocity | VarySkip | VaryPitch), none, kit("Pass-by", "Launch", "Falling", VarySkip), melodic(VaryVelocity | VarySkip), none },
+    };
+    if (type < 0 || type >= int(table.size()) || element < 0 || element >= placeElements) return none;
+    return table[std::size_t(type)][std::size_t(element)];
+}
+inline bool hasPatterns(int type) {
+    for (int e = 0; e < placeElements; ++e)
+        if (patternInfo(type, e).kind != NoPattern) return true;
+    return false;
+}
+inline pat::Controls defaultControls(int type, int element) {
+    pat::Controls c;
+    c.vary = patternInfo(type, element).vary;
+    return c;
+}
+
+// What a pattern generator reads: the Place's settings that shape its patterns.
+struct GenInputs {
+    int character = 0, mood = 0;
+    float activity = 0.5f, density = 0.5f, tension = 0.3f, life = 0.3f;
+    uint32_t key = 0;
+    uint8_t variant = 0;
+    bool operator==(const GenInputs& o) const {
+        return character == o.character && mood == o.mood && activity == o.activity && density == o.density && tension == o.tension
+               && life == o.life && key == o.key && variant == o.variant;
     }
-    void clear() { count = next = 0; }
-    void add(float beat, int semitones, float length, float velocity = 1) {
-        if (count < int(notes.size())) notes[std::size_t(count++)] = { beat, length, velocity, semitones };
-    }
-    // Calls f(note) for each note that starts before beat + span.
-    template <typename F>
-    void play(double beat, double span, F&& f) {
-        while (next < count && start + double(notes[std::size_t(next)].beat) < beat + span) f(notes[std::size_t(next++)]);
-    }
+};
+
+// A note scheduled within the chunk being rendered, at a sample offset.
+struct Scheduled {
+    int offset = 0, element = 0;
+    pat::Event event;
+    int chord = 0;
 };
 
 class Place {
@@ -136,19 +173,66 @@ public:
     virtual float freeTempo() const = 0;
     // How much of the Place feeds the World Space (its own space is built in).
     virtual float spaceSend() const { return 0.35f; }
+    // Writes the starting pattern of a patterned element. A pure function of the
+    // inputs (no audio state), so the same inputs always give the same pattern.
+    virtual void generate(int element, const GenInputs& in, pat::Pattern& out) const = 0;
 
-    // Every note or hit the Place plays is logged (sample position), for the tests.
+    // Every note or hit the Place plays is logged, for the tests.
+    struct Logged {
+        uint64_t clock = 0;   // sample position
+        int element = -1;
+        float pitch = 0;      // semitones above the key root (kit: the row)
+        float velocity = 0;
+    };
     static constexpr int logSize = 512;
     uint32_t eventCount() const { return events; }
-    uint64_t eventClock(uint32_t i) const { return eventLog[std::size_t(i % logSize)]; }
+    uint64_t eventClock(uint32_t i) const { return eventLog[std::size_t(i % logSize)].clock; }
+    const Logged& logged(uint32_t i) const { return eventLog[std::size_t(i % logSize)]; }
     void clearLog() { events = 0; }
 
 protected:
-    void logEvent(uint64_t clock) { eventLog[std::size_t(events++ % logSize)] = clock; }
+    void logEvent(uint64_t clock, int element = -1, float pitch = 0, float velocity = 0) {
+        eventLog[std::size_t(events++ % logSize)] = { clock, element, pitch, velocity };
+    }
+
+    // Collects the pattern notes of every sounding element that start in this chunk,
+    // at their sample offsets, into `out` (sorted by offset). Returns the count.
+    static constexpr int maxScheduled = 48;
+    int schedule(const PlaceContext& c, int n, std::array<Scheduled, maxScheduled>& out, int count = 0) const {
+        const double span = c.beatsPerSample * double(n);
+        const float danger = (*c.world)[Danger];
+        for (int e = 0; e < placeElements; ++e) {
+            const auto& play = c.play[std::size_t(e)];
+            if (play.pattern == nullptr || c.s.element[std::size_t(e)] <= 0.001f) continue;
+            play.play(c.beat, span, [&](const pat::Event& ev) {
+                if (count >= maxScheduled) return;
+                Scheduled x;
+                x.offset = std::clamp(int(std::ceil((ev.beat - c.beat) / c.beatsPerSample - 1.0e-9)), 0, n - 1);
+                x.element = e;
+                x.event = ev;
+                // Synced Places take the chord at the note itself; free ones the current chord.
+                x.chord = c.s.sync ? music::chordDegree(ev.beat, danger) : c.chord;
+                out[std::size_t(count++)] = x;
+            });
+        }
+        sortScheduled(out, count);
+        return count;
+    }
+    static void sortScheduled(std::array<Scheduled, maxScheduled>& out, int count) {
+        for (int i = 1; i < count; ++i) {
+            const Scheduled x = out[std::size_t(i)];
+            int j = i;
+            while (j > 0 && out[std::size_t(j - 1)].offset > x.offset) {
+                out[std::size_t(j)] = out[std::size_t(j - 1)];
+                --j;
+            }
+            out[std::size_t(j)] = x;
+        }
+    }
 
 private:
     uint32_t events = 0;
-    std::array<uint64_t, logSize> eventLog {};
+    std::array<Logged, logSize> eventLog {};
 };
 
 } // namespace wb

@@ -3,10 +3,12 @@
 //   WorldbuilderTests --snapshot f.png also write an image of the editor
 //   WorldbuilderTests --probe          print per-layer measurements (tuning aid)
 //   WorldbuilderTests --probe-places   print each Place's level per character and element
+//   WorldbuilderTests --only a,b       run only some groups (patterns, playmode, editor...)
 //   WorldbuilderTests --render f.wav seconds [id=value ...]
 //                                      render a world to a WAV file (listening aid)
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "Patterns/PatternMidi.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -254,6 +256,9 @@ double dcDb(const Audio& a, double from) {
     return toDb(std::abs(mean));
 }
 
+struct Host;
+int placeType(const Host& h, int slot);
+
 // The parameter id of a Place slot field ("p1_type"...).
 std::string slotId(int slot, int field) { return specs[std::size_t(placeParam(slot, field))].id; }
 
@@ -283,6 +288,9 @@ struct Host {
         p->setPlayConfigDetails(0, channels, rate, block);
         playHead.rate = rate;
         p->setPlayHead(&playHead);
+        // The tests drive the world without a rolling transport: Play Mode Free (the
+        // Transport mode has its own tests).
+        set("playmode", float(PlayFree));
         p->prepareToPlay(rate, block);
         buffer.setSize(channels, block);
         midi.ensureSize(1024);
@@ -318,6 +326,8 @@ struct Host {
     }
 };
 
+int placeType(const Host& h, int slot) { return juce::roundToInt(h.get(slotId(slot, PlType).c_str())); }
+
 // Positions (seconds) of every note or hit slot 1's Place has played after `from`.
 std::vector<double> placeEvents(const Host& h, double from = 0) {
     std::vector<double> at;
@@ -338,7 +348,65 @@ double eventGridLock(const std::vector<double>& at, double bpm) {
     return at.empty() ? 0.0 : std::abs(sum) / double(at.size());
 }
 
+// Every note slot 1's Place played for one element (all elements: -1).
+std::vector<Place::Logged> placeLog(const Host& h, int element = -1) {
+    std::vector<Place::Logged> out;
+    if (const auto* place = h.p->engine.placeSlot(0).place()) {
+        const uint32_t count = place->eventCount();
+        for (uint32_t i = count > uint32_t(Place::logSize) ? count - uint32_t(Place::logSize) : 0; i < count; ++i)
+            if (element < 0 || place->logged(i).element == element) out.push_back(place->logged(i));
+    }
+    return out;
+}
+
+pat::Note makeNote(int step, int degree, int length = 1, int velocity = 100, bool locked = false, int probability = 100) {
+    pat::Note n;
+    n.step = int16_t(step);
+    n.degree = int8_t(degree);
+    n.length = int16_t(length);
+    n.velocity = uint8_t(velocity);
+    n.probability = uint8_t(probability);
+    n.setLocked(locked);
+    return n;
+}
+
+// An edited element: the given notes on a one-bar 1/16 grid, no swing, in the key.
+pat::Element editedElement(std::initializer_list<pat::Note> notes, float randomness = 0, uint8_t vary = pat::VaryAll, int bars = 1) {
+    pat::Element e;
+    e.controls.edited = true;
+    e.controls.randomness = randomness;
+    e.controls.vary = vary;
+    e.pattern.setGrid(pat::Sixteenth, bars);
+    e.pattern.followChords = false;
+    e.pattern.swing = 0;
+    for (const auto& n : notes) e.pattern.add(n);
+    return e;
+}
+
+// A Castle in slot 1 whose transport plays from `position`, with element `e` set.
+Host patternHost(int e, const pat::Element& element, int64_t position = 144123, int block = 512,
+                 const std::vector<std::pair<std::string, float>>& extra = {}) {
+    Host h(48000, block);
+    h.playHead.bpm = 120;
+    h.set("p1_type", float(Castle));
+    h.set("p1_solo", 1);
+    for (const auto& [id, value] : extra) h.set(id, value);
+    h.p->patterns.syncTypes(h.p->slotTypes());
+    h.p->patterns.setElement(0, Castle, e, element);
+    h.playHead.playing = true;
+    h.playHead.position = position;
+    return h;
+}
+
+bool sameEvents(const std::vector<Place::Logged>& a, const std::vector<Place::Logged>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (a[i].clock != b[i].clock || a[i].pitch != b[i].pitch || std::abs(a[i].velocity - b[i].velocity) > 1.0e-6f) return false;
+    return true;
+}
+
 const char* worldId(int w) { return specs[std::size_t(PTemperature + w)].id; }
+
 
 //==============================================================================
 void testParameters(Suite& s) {
@@ -743,6 +811,39 @@ void testRealtimeSafety(Suite& s) {
                 std::to_string(allocationProbe::calls) + " allocations");
     }
 
+    // Patterns edited while playing (published through the lock-free buffers), with
+    // full randomness and Evolve, and Transport mode starting again at every locate.
+    {
+        Host h(48000, 256);
+        h.set("playmode", float(PlayTransport));
+        for (int slot = 0; slot < placeSlots; ++slot) h.set(slotId(slot, PlType), float(Castle + slot % 3));
+        h.playHead.playing = true;
+        h.p->patterns.syncTypes(h.p->slotTypes());
+        auto e = editedElement({ makeNote(0, 0, 2), makeNote(3, 2, 1, 80), makeNote(8, 4, 4, 120, true), makeNote(12, 1, 1, 60, false, 50) }, 1.0f, pat::VaryAll);
+        e.controls.evolve = 1;
+        e.controls.returnBars = 2;
+        h.render(1.0);
+        allocationProbe::calls = 0;
+        for (int i = 0; i < 300; ++i) {
+            if (i % 25 == 0) {
+                e.pattern.notes[0].degree = int8_t(i % 7);
+                h.p->patterns.setElement(0, Castle, CastlePlace::Bells, e);
+                h.p->patterns.setElement(1, Village, VillagePlace::HandDrums, e);
+                auto el = h.p->patterns.element(2, Spaceport, SpaceportPlace::Pulses);
+                el.controls.variant = uint8_t(i);
+                h.p->patterns.setElement(2, Spaceport, SpaceportPlace::Pulses, el);
+            }
+            if (i % 60 == 30) h.playHead.position += 48000 * 3;   // a locate
+            if (i == 150) h.playHead.playing = false;
+            if (i == 200) h.playHead.playing = true;
+            allocationProbe::enabled = true;
+            h.processOne(i % 2 ? 256 : 77);
+            allocationProbe::enabled = false;
+        }
+        s.check(allocationProbe::calls == 0, "no heap allocations with patterns edited while playing, Evolve, and Transport locates",
+                std::to_string(allocationProbe::calls) + " allocations");
+    }
+
     // Seeded random settings, including every layer and global control.
     juce::Random random(12345);
     int bad = 0;
@@ -810,6 +911,46 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     const auto detailImage = editor->createComponentSnapshot(editor->getLocalBounds());
     s.check(detailImage.isValid(), "detail panel paints");
     save(detailImage, snapshotPath.isEmpty() ? juce::String() : snapshotPath.upToLastOccurrenceOf(".", false, false) + "-detail.png");
+    // The Pattern Editor, on each patterned element of the first three slots.
+    world->openPatterns(0);
+    auto& patterns = world->patternEditor();
+    s.check(patterns.isVisible() && patterns.slot() == 0 && patterns.element() == CastlePlace::Bells, "the Pattern Editor opens on the Place's first pattern");
+    h.render(0.5);
+    for (int slot = 0; slot < 3; ++slot)
+        for (int e = 0; e < placeElements; ++e) {
+            if (patternInfo(placeType(h, slot), e).kind == NoPattern) continue;
+            world->openPatterns(slot, e);
+            h.render(0.1);
+            const auto img = editor->createComponentSnapshot(editor->getLocalBounds());
+            s.check(img.isValid(), "Pattern Editor paints (slot " + std::to_string(slot + 1) + ", element " + std::to_string(e + 1) + ")");
+            if (slot == 0 && e == CastlePlace::Horns)
+                save(img, snapshotPath.isEmpty() ? juce::String() : snapshotPath.upToLastOccurrenceOf(".", false, false) + "-patterns.png");
+            if (slot == 1 && e == VillagePlace::HandDrums)
+                save(img, snapshotPath.isEmpty() ? juce::String() : snapshotPath.upToLastOccurrenceOf(".", false, false) + "-patterns-kit.png");
+        }
+    world->openPatterns(0, CastlePlace::Pulse);
+    s.check(world->patternEditor().shown().pattern.count > 0 && !world->patternEditor().shown().controls.edited,
+            "the editor shows the generated pattern");
+    // Editing: the first edit keeps the pattern; MIDI out and back in; Generate.
+    {
+        world->openPatterns(1, VillagePlace::Plucks);
+        auto& pe = world->patternEditor();
+        const int before = pe.shown().pattern.count;
+        pe.addNote(3, 4, 2, 90);
+        const auto stored = h.p->patterns.element(1, Village, VillagePlace::Plucks);
+        s.check(stored.controls.edited && stored.pattern.count == before + 1, "drawing a note keeps the pattern as edited",
+                std::to_string(before) + " -> " + std::to_string(stored.pattern.count));
+        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wb-test-plucks.mid");
+        const bool saved = pe.saveMidi(file, VillagePlace::Plucks);
+        const bool imported = pe.importMidi(file, VillagePlace::Wood, false);
+        const auto wood = h.p->patterns.element(1, Village, VillagePlace::Wood);
+        s.check(saved && imported && wood.controls.edited && wood.pattern.count == stored.pattern.count,
+                "a pattern saved as MIDI imports into another element", std::to_string(wood.pattern.count) + " notes");
+        file.deleteFile();
+        pe.generate();
+        h.render(0.3);
+        s.check(!h.p->patterns.element(1, Village, VillagePlace::Wood).controls.edited, "Generate returns the element to a generated pattern");
+    }
     editor.reset();
 }
 
@@ -827,6 +968,377 @@ Host placeHost(int type, int character, const std::vector<std::pair<std::string,
     for (const auto& [id, value] : extra) h.set(id, value);
     return h;
 }
+
+//==============================================================================
+// Patterns.
+
+void testPatterns(Suite& s) {
+    s.section("patterns: exact playback, sample-aligned to the host");
+    const int64_t start = 144123;   // not on a beat or a chunk
+    const double ppq0 = double(start) / 48000.0 * 2.0, samplesPerBeat = 24000.0;
+    const auto pulse = editedElement({ makeNote(0, 0, 1, 120), makeNote(4, 2, 1, 70), makeNote(6, 1, 1, 90), makeNote(10, 0, 1, 50), makeNote(12, 2, 1, 100) });
+    {
+        auto a = patternHost(CastlePlace::Pulse, pulse);
+        a.render(8.0);
+        const auto events = placeLog(a, CastlePlace::Pulse);
+        // Expected: every pass of the pattern from the start position on.
+        std::vector<double> expected;
+        for (int64_t pass = 0; pass < 8; ++pass)
+            for (int step : { 0, 4, 6, 10, 12 }) {
+                const double beat = double(pass * 16 + step) / 4.0;
+                const double at = double(start) + (beat - ppq0) * samplesPerBeat;
+                if (beat >= ppq0 && at < double(start) + 8.0 * 48000.0 - 32) expected.push_back(at);
+            }
+        double worst = 0;
+        bool matched = events.size() == expected.size();
+        for (std::size_t i = 0; matched && i < events.size(); ++i) worst = std::max(worst, std::abs(double(events[i].clock) - expected[i]));
+        s.check(matched && worst <= 1.0, "0 % randomness: every note plays, on the exact sample of the host position",
+                std::to_string(events.size()) + " of " + std::to_string(expected.size()) + " notes, worst " + fmt(worst) + " samples");
+        // Every pass the same notes, velocities and drums.
+        bool repeats = !events.empty();
+        for (std::size_t i = 5; i < events.size(); ++i)
+            repeats &= events[i].pitch == events[i - 5].pitch && events[i].velocity == events[i - 5].velocity;
+        s.check(repeats, "0 % randomness: each pass plays the pattern exactly");
+        // The same again, and with another block size.
+        auto b = patternHost(CastlePlace::Pulse, pulse), c = patternHost(CastlePlace::Pulse, pulse, start, 333);
+        const auto x = b.render(8.0);
+        c.render(8.0);
+        s.check(sameEvents(events, placeLog(b, CastlePlace::Pulse)) && sameEvents(events, placeLog(c, CastlePlace::Pulse)),
+                "0 % randomness: identical every time, at any block size");
+        (void) x;
+    }
+
+    s.section("patterns: randomness changes only what its switches allow");
+    // Bells: a melodic pattern in the key (not on the chords), two bars.
+    const auto bells = [](float randomness, uint8_t vary, bool locked = false) {
+        return editedElement({ makeNote(0, 7, 2, 100, locked), makeNote(4, 9, 2, 80, locked), makeNote(8, 11, 2, 90, locked), makeNote(12, 8, 2, 70, locked),
+                               makeNote(16, 13, 2, 110, locked), makeNote(22, 10, 2, 60, locked), makeNote(28, 12, 2, 95, locked) },
+                             randomness, vary, 2);
+    };
+    // Events in the first 28 s of a 30 s render (a late note near the end still lands).
+    const auto run = [&](const pat::Element& e) {
+        auto h = patternHost(CastlePlace::Bells, e);
+        h.render(30.0);
+        auto v = placeLog(h, CastlePlace::Bells);
+        v.erase(std::remove_if(v.begin(), v.end(), [&](const Place::Logged& x) { return double(x.clock) > double(start) + 28.0 * 48000.0; }), v.end());
+        return v;
+    };
+    const auto exact = run(bells(0, pat::VaryAll));
+    const double stepSamples = samplesPerBeat / 4.0;
+    // Timing (clock), pitch and velocity of each event against the exact run, matched by order.
+    struct Diff {
+        int timing = 0, pitch = 0, velocity = 0;
+        bool sameCount = false, laterOnly = true, inScale = true;
+    };
+    const auto compare = [&](const std::vector<Place::Logged>& v) {
+        Diff d;
+        d.sameCount = v.size() == exact.size();
+        for (std::size_t i = 0; i < std::min(v.size(), exact.size()); ++i) {
+            if (v[i].clock != exact[i].clock) ++d.timing;
+            if (v[i].clock < exact[i].clock || double(v[i].clock - exact[i].clock) > 0.8 * stepSamples) d.laterOnly = false;
+            if (v[i].pitch != exact[i].pitch) ++d.pitch;
+            if (std::abs(v[i].velocity - exact[i].velocity) > 1.0e-6f) ++d.velocity;
+            d.inScale &= music::inScale(0, int(v[i].pitch));
+        }
+        return d;
+    };
+    {
+        const auto d = compare(run(bells(1, pat::VaryVelocity)));
+        s.check(d.sameCount && d.timing == 0 && d.pitch == 0 && d.velocity > 3, "Velocity only: same notes and timing, velocities vary",
+                std::to_string(d.velocity) + " velocities changed");
+    }
+    {
+        const auto d = compare(run(bells(1, pat::VaryPitch)));
+        s.check(d.sameCount && d.timing == 0 && d.velocity == 0 && d.pitch > 3 && d.inScale, "Pitch only: same timing and velocity, pitches move within the scale",
+                std::to_string(d.pitch) + " pitches changed");
+    }
+    {
+        const auto d = compare(run(bells(1, pat::VaryTiming)));
+        s.check(d.sameCount && d.pitch == 0 && d.velocity == 0 && d.timing > 3 && d.laterOnly, "Timing only: same notes, some a little late (never early)",
+                std::to_string(d.timing) + " moved");
+    }
+    {
+        const auto v = run(bells(1, pat::VarySkip));
+        bool subset = v.size() < exact.size() && !v.empty();
+        std::size_t k = 0;
+        for (const auto& e : v) {
+            while (k < exact.size() && exact[k].clock < e.clock) ++k;
+            subset &= k < exact.size() && exact[k].clock == e.clock && exact[k].pitch == e.pitch && exact[k].velocity == e.velocity;
+        }
+        s.check(subset, "Skip only: some notes drop out, the rest unchanged", std::to_string(exact.size()) + " -> " + std::to_string(v.size()));
+    }
+    {
+        const auto v = run(bells(1, pat::VaryExtra));
+        std::size_t found = 0;
+        for (const auto& e : exact)
+            for (const auto& x : v)
+                if (x.clock == e.clock && x.pitch == e.pitch && x.velocity == e.velocity) {
+                    ++found;
+                    break;
+                }
+        s.check(found == exact.size() && v.size() > exact.size(), "Extra only: every note still plays, and extra ones join",
+                std::to_string(exact.size()) + " -> " + std::to_string(v.size()));
+    }
+    {
+        const auto d = compare(run(bells(1, 0)));
+        s.check(d.sameCount && d.timing == 0 && d.pitch == 0 && d.velocity == 0, "nothing switched on: exact even at 100 % randomness");
+    }
+
+    s.section("patterns: locked notes never change, Evolve, probability");
+    {
+        auto e = bells(1, pat::VaryAll, true);
+        e.controls.evolve = 1;
+        s.check(sameEvents(run(e), exact), "every note locked: 100 % randomness and Evolve change nothing");
+        // Two of seven locked: they always play exactly.
+        auto mixed = bells(1, pat::VaryAll);
+        mixed.controls.evolve = 1;
+        mixed.pattern.notes[0].setLocked(true);
+        mixed.pattern.notes[3].setLocked(true);
+        const auto v = run(mixed);
+        int lockedSeen = 0, lockedExpected = 0;
+        // The locked notes: degrees 7 and 8 (12 and 14 semitones), which no other note plays.
+        for (const auto& x : exact) {
+            const bool isLocked = x.pitch == 12.0f || x.pitch == 14.0f;
+            if (!isLocked) continue;
+            ++lockedExpected;
+            for (const auto& y : v)
+                if (y.clock == x.clock && y.pitch == x.pitch && y.velocity == x.velocity) {
+                    ++lockedSeen;
+                    break;
+                }
+        }
+        const auto d = compare(v);
+        s.check(lockedSeen == lockedExpected && lockedExpected > 4 && (d.pitch > 0 || !d.sameCount), "locked notes play exactly while the others change",
+                std::to_string(lockedSeen) + " of " + std::to_string(lockedExpected));
+    }
+    {
+        // Evolve with Randomness at 0: mutations build up; returning every 4 bars, the
+        // first bar of each return plays as written.
+        auto e = bells(0, pat::VaryPitch | pat::VaryVelocity);
+        e.controls.evolve = 1;
+        e.controls.returnBars = 4;
+        auto h = patternHost(CastlePlace::Bells, e, 0);
+        h.render(64.0);
+        const auto v = placeLog(h, CastlePlace::Bells);
+        auto o = patternHost(CastlePlace::Bells, bells(0, pat::VaryAll), 0);
+        o.render(64.0);
+        const auto original = placeLog(o, CastlePlace::Bells);
+        int changed = 0, returnBarsWrong = 0;
+        for (std::size_t i = 0; i < std::min(v.size(), original.size()); ++i) {
+            const bool differs = v[i].pitch != original[i].pitch || v[i].velocity != original[i].velocity;
+            const int64_t bar = int64_t((double(v[i].clock) + 2.0) / (4.0 * samplesPerBeat));   // notes may land a sample early
+            if (bar % 4 == 0 && differs) ++returnBarsWrong;
+            if (differs) ++changed;
+        }
+        s.check(v.size() == original.size() && changed > 5 && returnBarsWrong == 0, "Evolve mutates the pattern and returns to it every 4 bars",
+                std::to_string(changed) + " notes mutated, " + std::to_string(returnBarsWrong) + " in a return bar");
+        auto never = e;
+        never.controls.returnBars = 0;
+        auto n = patternHost(CastlePlace::Bells, never, 0);
+        n.render(64.0);
+        const auto drift = placeLog(n, CastlePlace::Bells);
+        int lateChanges = 0, earlyChanges = 0;
+        for (std::size_t i = 0; i < std::min(drift.size(), original.size()); ++i) {
+            const bool differs = drift[i].pitch != original[i].pitch || drift[i].velocity != original[i].velocity;
+            (double(drift[i].clock) < 16.0 * 48000.0 ? earlyChanges : lateChanges) += differs ? 1 : 0;
+        }
+        s.check(lateChanges > earlyChanges, "Evolve without return drifts further over time",
+                std::to_string(earlyChanges) + " changes in the first 16 s, " + std::to_string(lateChanges) + " after");
+    }
+    {
+        auto e = editedElement({ makeNote(0, 7, 2, 100, false, 50), makeNote(8, 9, 2, 100, false, 100) });
+        auto h = patternHost(CastlePlace::Bells, e);
+        h.render(32.0);
+        int half = 0, always = 0;
+        for (const auto& x : placeLog(h, CastlePlace::Bells)) (x.pitch == 12.0f ? half : always) += 1;
+        s.check(always >= 14 && half > 2 && half < always - 2, "a 50 % note plays on some passes, a 100 % note on every one",
+                std::to_string(half) + " vs " + std::to_string(always));
+        auto again = patternHost(CastlePlace::Bells, e);
+        again.render(32.0);
+        s.check(sameEvents(placeLog(h, CastlePlace::Bells), placeLog(again, CastlePlace::Bells)), "probability is repeatable (seeded)");
+    }
+
+    s.section("patterns: generators, Generate, edits are kept");
+    {
+        auto sparse = placeHost(Village, 0, { { "p1_activity", 0.05f } }), busy = placeHost(Village, 0, { { "p1_activity", 1.0f } });
+        sparse.render(1.0);
+        busy.render(1.0);
+        const int few = sparse.p->patterns.generated(0).pattern[VillagePlace::Plucks].count, many = busy.p->patterns.generated(0).pattern[VillagePlace::Plucks].count;
+        s.check(sparse.p->patterns.generated(0).type == Village && many > few, "the generated pattern follows Activity (and is reported to the editor)",
+                std::to_string(few) + " -> " + std::to_string(many) + " notes");
+        // Generate: a new variant gives a fresh pattern.
+        auto h = placeHost(Village, 0);
+        h.render(1.0);
+        const auto before = h.p->patterns.generated(0).pattern[VillagePlace::Plucks];
+        auto el = h.p->patterns.element(0, Village, VillagePlace::Plucks);
+        el.controls.variant = 1;
+        h.p->patterns.setElement(0, Village, VillagePlace::Plucks, el);
+        h.render(1.0);
+        const auto after = h.p->patterns.generated(0).pattern[VillagePlace::Plucks];
+        s.check(!before.sameNotes(after) && after.count > 0, "Generate makes a fresh pattern");
+        // An edited pattern is kept when the knobs move.
+        auto edited = editedElement({ makeNote(0, 0), makeNote(8, 2) });
+        h.p->patterns.setElement(0, Village, VillagePlace::Plucks, edited);
+        h.render(1.0);
+        h.p->engine.placeSlot(0).place();
+        h.set("p1_activity", 1.0f);
+        h.set("p1_character", 2.0f);
+        h.render(2.0);
+        const auto* playing = h.p->engine.placeSlot(0).playingPattern(VillagePlace::Plucks);
+        s.check(playing != nullptr && playing->sameNotes(edited.pattern), "an edited pattern is kept when Activity and Character change");
+        // Another Place in the slot starts from its own generated patterns.
+        h.set("p1_type", float(Spaceport));
+        h.render(1.0);
+        h.p->patterns.syncTypes(h.p->slotTypes());
+        s.check(!h.p->patterns.element(0, Spaceport, SpaceportPlace::Pulses).controls.edited, "a new Place in the slot starts with generated patterns");
+    }
+
+    s.section("patterns: MIDI export and import round trip");
+    {
+        pat::Pattern p;
+        p.setGrid(pat::Sixteenth, 2);
+        p.followChords = false;
+        for (const auto& n : { makeNote(0, 0, 4, 100), makeNote(4, 2, 2, 64), makeNote(6, 4, 1, 30), makeNote(12, -3, 3, 127), makeNote(20, 9, 8, 90) }) p.add(n);
+        auto sharp = makeNote(28, 3, 2, 77);
+        sharp.alter = 1;
+        p.add(sharp);
+        pat::MidiTarget target;
+        target.root = 2;
+        target.mood = 0;
+        const auto file = pat::toMidi(p, target);
+        juce::MemoryOutputStream out;
+        file.writeTo(out);
+        juce::MemoryInputStream in(out.getData(), out.getDataSize(), false);
+        juce::MidiFile read;
+        const bool parsed = read.readFrom(in);
+        pat::Pattern back;
+        const int count = pat::fromMidi(read, back, target, false, pat::Sixteenth);
+        s.check(parsed && count == p.count && back.sameNotes(p), "a melodic pattern survives MIDI export and import (exact pitches)",
+                std::to_string(count) + " notes");
+        pat::Pattern snapped;
+        pat::fromMidi(read, snapped, target, true, pat::Sixteenth);
+        bool inKey = snapped.count == p.count;
+        for (int i = 0; i < snapped.count; ++i) inKey &= snapped.notes[std::size_t(i)].alter == 0;
+        s.check(inKey, "import snaps to the scale when asked");
+        // A kit.
+        pat::Pattern kit;
+        kit.setGrid(pat::Eighth, 1);
+        kit.followChords = false;
+        for (const auto& n : { makeNote(0, 0), makeNote(2, 1), makeNote(3, 2, 1, 50), makeNote(4, 0), makeNote(6, 1) }) kit.add(n);
+        target.kit = true;
+        juce::MemoryOutputStream kitOut;
+        pat::toMidi(kit, target).writeTo(kitOut);
+        juce::MemoryInputStream kitIn(kitOut.getData(), kitOut.getDataSize(), false);
+        juce::MidiFile kitRead;
+        kitRead.readFrom(kitIn);
+        pat::Pattern kitBack;
+        pat::fromMidi(kitRead, kitBack, target, true, pat::Eighth);
+        s.check(kitBack.sameNotes(kit), "a drum pattern survives MIDI export and import (GM drum notes)");
+    }
+
+    s.section("patterns: state round trip");
+    {
+        Host a;
+        a.set("p2_type", float(Village));
+        a.p->patterns.syncTypes(a.p->slotTypes());
+        auto e = editedElement({ makeNote(0, 0, 2, 100, true, 80), makeNote(5, 3, 1, 40), makeNote(9, -2, 6, 127, false, 25) }, 0.6f,
+                               pat::VaryTiming | pat::VaryExtra, 2);
+        e.pattern.swing = 0.3f;
+        e.pattern.followChords = true;
+        e.pattern.base = 3;
+        e.controls.evolve = 0.4f;
+        e.controls.returnBars = 8;
+        a.p->patterns.setElement(1, Village, VillagePlace::Wood, e);
+        auto generatedOnly = a.p->patterns.element(0, Castle, CastlePlace::Horns);
+        generatedOnly.controls.randomness = 0.9f;
+        generatedOnly.controls.variant = 3;
+        a.p->patterns.setElement(0, Castle, CastlePlace::Horns, generatedOnly);
+        juce::MemoryBlock state;
+        a.p->getStateInformation(state);
+        Host b;
+        b.p->setStateInformation(state.getData(), int(state.getSize()));
+        const auto got = b.p->patterns.element(1, Village, VillagePlace::Wood);
+        s.check(got.controls == e.controls && got.pattern.sameNotes(e.pattern), "an edited pattern and its controls are restored");
+        const auto horns = b.p->patterns.element(0, Castle, CastlePlace::Horns);
+        s.check(horns.controls == generatedOnly.controls && !horns.controls.edited, "a generated element keeps its controls and variant");
+        const auto xml = juce::String::fromUTF8(static_cast<const char*>(state.getData()), int(state.getSize()));
+        s.metric("saved state with one edited pattern", double(state.getSize()), " bytes");
+        b.render(2.0);
+        const auto* playing = b.p->engine.placeSlot(1).playingPattern(VillagePlace::Wood);
+        s.check(playing != nullptr && playing->sameNotes(e.pattern), "the restored pattern plays");
+    }
+}
+
+void testPlayMode(Suite& s) {
+    s.section("Play Mode: Free and Transport");
+    {
+        WorldbuilderProcessor fresh;
+        s.check(juce::roundToInt(fresh.parameters.getRawParameterValue("playmode")->load()) == PlayTransport, "new instances start in Transport mode");
+    }
+    {
+        Host h;
+        h.set("playmode", float(PlayTransport));
+        const auto st = measure(h.render(3.0), 1.0);
+        s.check(st.rmsDb < -100.0, "Transport, host stopped: silent", fmt(st.rmsDb));
+        h.playHead.playing = true;
+        h.playHead.position = 48000 * 10;
+        const auto playing = h.render(4.0);
+        const auto p = measure(playing, 0.5);
+        s.check(p.rmsDb > -45.0 && p.finite, "Transport, host playing: it plays", fmt(p.rmsDb));
+        const auto first = measure(playing, 0.0, 0.003);
+        s.check(first.peak < 0.05, "Transport: starts from silence", fmt(toDb(first.peak)) + " dBFS in the first 3 ms");
+        h.playHead.playing = false;
+        h.render(0.3);
+        const auto stopped = measure(h.render(1.0), 0.0);
+        s.check(stopped.rmsDb < -100.0, "Transport: stopping fades to silence", fmt(stopped.rmsDb));
+    }
+    {
+        // A host with no transport at all (as the AU test harness, or the standalone app).
+        Host h;
+        h.set("playmode", float(PlayTransport));
+        h.p->setPlayHead(nullptr);
+        s.check(measure(h.render(3.0), 1.0).rmsDb > -45.0, "Transport, in a host without a transport: it plays freely");
+    }
+    {
+        // A bounce from bar 9 matches playback from bar 9, whatever happened before.
+        Host a, b;
+        for (auto* h : { &a, &b }) {
+            h->set("playmode", float(PlayTransport));
+            h->set("p2_type", float(Spaceport));
+            h->set("wetness", 0.7f);
+        }
+        a.playHead.playing = true;
+        a.playHead.position = 48000 * 16;
+        const auto x = a.render(6.0);
+        b.playHead.playing = true;
+        b.render(5.0);   // played from the start
+        b.playHead.playing = false;
+        b.render(1.0);
+        b.playHead.playing = true;
+        b.playHead.position = 48000 * 16;   // locate and play again
+        const auto y = b.render(6.0);
+        s.check(x.l == y.l && x.r == y.r, "Transport: the same song position always gives the same sound (bounces match playback)");
+    }
+    {
+        Host h;   // Free (the tests' default)
+        s.check(measure(h.render(4.0), 2.0).rmsDb > -45.0, "Free: plays with the host stopped");
+        // A project saved before Play Mode existed loads in Free mode.
+        juce::MemoryBlock state;
+        h.p->getStateInformation(state);
+        auto xml = juce::AudioProcessor::getXmlFromBinary(state.getData(), int(state.getSize()));
+        for (auto* child = xml->getFirstChildElement(); child != nullptr; child = child->getNextElement())
+            if (child->getStringAttribute("id") == "playmode") {
+                xml->removeChildElement(child, true);
+                break;
+            }
+        juce::MemoryBlock old;
+        juce::AudioProcessor::copyXmlToBinary(*xml, old);
+        WorldbuilderProcessor loaded;
+        loaded.setStateInformation(old.getData(), int(old.getSize()));
+        s.check(juce::roundToInt(loaded.parameters.getRawParameterValue("playmode")->load()) == PlayFree, "an older project loads in Free mode, as it played");
+    }
+}
+
 
 void testPlaces(Suite& s) {
     for (int type : { Castle, Village, Spaceport }) {
@@ -1170,13 +1682,17 @@ int probePlaces() {
                 for (int k = 0; k < placeElements; ++k)
                     if (e >= 0 && k != e) settings.push_back({ slotId(0, PlElementOn + k), 0.0f });
                 auto h = placeHost(type, c, settings);
-                const auto st = measure(h.render(32.0), 4.0);
-                std::printf("  %s %6.1f/%5.1f", e < 0 ? "all" : placeInfo(type).elements[std::size_t(e)], st.rmsDb, toDb(st.peak));
+                const auto a = h.render(32.0);
+                const auto st = measure(a, 4.0);
+                const auto fit = keyFit(chroma(a, 4.0, 100.0, 5000.0), 2, 0);
+                std::printf("  %s %6.1f/%5.1f n%zu k%.1f", e < 0 ? "all" : placeInfo(type).elements[std::size_t(e)], st.rmsDb, toDb(st.peak),
+                            placeEvents(h, 4.0).size(), fit.meanGap);
             }
             std::printf("\n");
         }
     return 0;
 }
+
 
 // Listening aid: renders a world with the given parameter values to a 24-bit WAV.
 int renderToFile(const juce::String& path, double seconds, const juce::StringArray& settings) {
@@ -1220,22 +1736,29 @@ int main(int argc, char** argv) {
             return renderToFile(argv[i + 1], juce::String(argv[i + 2]).getDoubleValue(), settings);
         }
 
+    // --only name[,name]: run only those groups (a development aid).
+    juce::StringArray only;
+    for (int i = 1; i + 1 < argc; ++i)
+        if (juce::String(argv[i]) == "--only") only = juce::StringArray::fromTokens(argv[i + 1], ",", "");
+    const auto run = [&](const char* name) { return only.isEmpty() || only.contains(name); };
     Suite s;
-    testParameters(s);
-    testRatesAndBlocks(s);
-    testWorldControls(s);
-    testLayers(s);
-    testClimateLayers(s);
-    testMusic(s);
-    testPlaces(s);
-    testPlaceWorld(s);
-    testPlaceSlots(s);
-    testDeterminism(s);
-    testPowerAndMaster(s);
-    testTonalChanges(s);
-    testState(s);
-    testRealtimeSafety(s);
-    testEditor(s, snapshot);
+    if (run("parameters")) testParameters(s);
+    if (run("rates")) testRatesAndBlocks(s);
+    if (run("world")) testWorldControls(s);
+    if (run("layers")) testLayers(s);
+    if (run("climate")) testClimateLayers(s);
+    if (run("music")) testMusic(s);
+    if (run("places")) testPlaces(s);
+    if (run("placeworld")) testPlaceWorld(s);
+    if (run("slots")) testPlaceSlots(s);
+    if (run("patterns")) testPatterns(s);
+    if (run("playmode")) testPlayMode(s);
+    if (run("determinism")) testDeterminism(s);
+    if (run("power")) testPowerAndMaster(s);
+    if (run("tonal")) testTonalChanges(s);
+    if (run("state")) testState(s);
+    if (run("realtime")) testRealtimeSafety(s);
+    if (run("editor")) testEditor(s, snapshot);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

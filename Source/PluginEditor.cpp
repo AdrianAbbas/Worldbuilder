@@ -167,6 +167,12 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     addChildComponent(detail.dice);
     detail.close.onClick = [this] { closeDetail(); };
     addChildComponent(detail.close);
+    detail.patterns.setTooltip("Open the Pattern Editor: edit the notes each element of this Place plays");
+    detail.patterns.setColour(juce::TextButton::buttonColourId, colours::brass.withAlpha(0.35f));
+    detail.patterns.onClick = [this] {
+        if (detail.slot >= 0) openPatterns(detail.slot);
+    };
+    addChildComponent(detail.patterns);
     for (int e = 0; e < placeElements; ++e) {
         auto& slider = detail.element[std::size_t(e)];
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -192,6 +198,9 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     setupCombo(root, PRoot, rootAttachment);
     setupCombo(mood, PMood, moodAttachment);
     setupCombo(quality, PQuality, qualityAttachment);
+    setupCombo(playMode, PPlayMode, playModeAttachment);
+    playMode.setTooltip("Transport: plays only while the host plays, from silence and locked to the song position, so bounces and exports "
+                        "always contain it. Free: plays all the time (GarageBand exports only up to the last region).");
     root.setTooltip("Key root: everything tonal (bed, drips, rain, wind, thunder, every Place) follows it");
     mood.setTooltip("Scale and mood: everything tonal follows it");
     quality.setTooltip("Eco / Standard / High: voice counts and detail");
@@ -204,6 +213,14 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     dice.setTooltip("Roll a new seed for the whole world");
     dice.onClick = [this] { setParam(PSeed, float(juce::Random::getSystemRandom().nextInt({ 1, 10000 }))); };
     addAndMakeVisible(dice);
+
+    patterns = std::make_unique<ui::PatternEditor>(processor);
+    patterns->onClose = [this] {
+        const int slot = patterns->slot();
+        patterns->setVisible(false);
+        openDetail(slot);
+    };
+    addChildComponent(*patterns);
 
     setSize(baseWidth, baseHeight);
     refreshPlaceStrips();
@@ -265,9 +282,19 @@ int WorldbuilderEditor::addPlace(int type) {
     return -1;
 }
 
+void WorldbuilderEditor::openPatterns(int slot, int element) {
+    if (slot < 0 || slot >= placeSlotCount || !hasPatterns(placeType(slot))) return;
+    closeDetail();
+    patterns->setVisible(true);
+    patterns->toFront(false);
+    patterns->open(slot, element);
+    repaint();
+}
+
 void WorldbuilderEditor::openDetail(int slot) {
     if (slot < 0 || slot >= placeSlotCount || placeType(slot) == NoPlace) return;
     closeDetail();
+    if (patterns->isVisible()) patterns->setVisible(false);
     detail.slot = slot;
     detail.shownType = -1;
     const auto id = [slot](int field) { return specs[std::size_t(placeParam(slot, field))].id; };
@@ -290,6 +317,7 @@ void WorldbuilderEditor::openDetail(int slot) {
     for (auto* c : std::initializer_list<juce::Component*> { &d.activity, &d.tension, &d.tone, &d.size, &d.variation, &d.density, &d.swing,
                                                              &d.seed, &d.sync, &d.dice, &d.close })
         c->setVisible(true);
+    d.patterns.setVisible(hasPatterns(placeType(slot)));
     for (auto& s : d.element) s.setVisible(true);
     for (auto& t : d.elementOn) t.setVisible(true);
     updateDetailLabels();
@@ -304,7 +332,7 @@ void WorldbuilderEditor::closeDetail() {
     d.slot = -1;
     for (auto& b : d.character) b.setVisible(false);
     for (auto* c : std::initializer_list<juce::Component*> { &d.activity, &d.tension, &d.tone, &d.size, &d.variation, &d.density, &d.swing,
-                                                             &d.seed, &d.sync, &d.dice, &d.close })
+                                                             &d.seed, &d.sync, &d.dice, &d.close, &d.patterns })
         c->setVisible(false);
     for (auto& s : d.element) s.setVisible(false);
     for (auto& t : d.elementOn) t.setVisible(false);
@@ -408,6 +436,7 @@ void WorldbuilderEditor::resized() {
         cards[std::size_t(i)] = juce::Rectangle<int>(grid.getX() + (i % 5) * cardW, grid.getY() + (i / 5) * cardH, cardW, cardH).reduced(4);
 
     layoutDetail();
+    patterns->setBounds(controlsPanel.getUnion(globePanel).getUnion(cardsPanel));
 
     // Footer: key and global settings, then the output knobs.
     auto f = footer.reduced(12, 8);
@@ -419,6 +448,8 @@ void WorldbuilderEditor::resized() {
     mood.setBounds(top.removeFromLeft(140).withSizeKeepingCentre(140, 22));
     top.removeFromLeft(10);
     quality.setBounds(top.removeFromLeft(120).withSizeKeepingCentre(120, 22));
+    top.removeFromLeft(10);
+    playMode.setBounds(top.removeFromLeft(100).withSizeKeepingCentre(100, 22));
     seed.setBounds(bottom.removeFromLeft(230).withSizeKeepingCentre(230, 20));
     bottom.removeFromLeft(10);
     dice.setBounds(bottom.removeFromLeft(110).withSizeKeepingCentre(110, 22));
@@ -433,6 +464,7 @@ void WorldbuilderEditor::layoutDetail() {
     auto r = d.area.reduced(16, 10);
     d.titleArea = r.removeFromTop(52);
     d.close.setBounds(d.titleArea.withTrimmedLeft(d.titleArea.getWidth() - 70).withSizeKeepingCentre(66, 24).translated(0, -8));
+    d.patterns.setBounds(d.close.getBounds().translated(-96, 0).withWidth(88));
     r.removeFromTop(4);
     d.characterArea = r.removeFromTop(34);
     {
@@ -482,7 +514,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     g.drawText("WORLDBUILDER", header.withTrimmedLeft(4), juce::Justification::centredLeft, false);
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
-    g.drawText("FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 3 PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
+    g.drawText("FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 4 PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
                juce::Justification::centredLeft, false);
     g.setColour(colours::brass.withAlpha(0.35f));
     g.drawHorizontalLine(header.getBottom() + 2, float(header.getX()), float(header.getRight()));
@@ -523,7 +555,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)).withExtraKerningFactor(0.12f));
     g.setColour(colours::brass.withAlpha(0.8f));
     for (auto [component, text] : { std::pair<juce::Component*, const char*> { &root, "ROOT" }, { &mood, "MOOD" },
-                                    { &quality, "QUALITY" }, { &seed, "WORLD SEED" } })
+                                    { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" } })
         g.drawText(text, component->getBounds().translated(0, -15).withHeight(14), juce::Justification::centredLeft, false);
     g.setColour(colours::dim);
     g.drawText(juce::String(processor.engine.frame().bpm, 1) + " BPM", dice.getBounds().translated(dice.getWidth() + 14, 0).withWidth(90),
@@ -832,7 +864,7 @@ int WorldbuilderEditor::cardAt(juce::Point<int> p) const {
 }
 
 void WorldbuilderEditor::mouseDown(const juce::MouseEvent& e) {
-    if (detail.slot >= 0) return;
+    if (detail.slot >= 0 || patterns->isVisible()) return;
     const int card = cardAt(e.getPosition());
     if (card >= 0) {
         addPlace(card + 1);
@@ -920,7 +952,7 @@ void WorldbuilderEditor::timerCallback() {
     refreshPlaceStrips();
 
     if (detail.slot >= 0) updateDetailLabels();
-    else repaint(globePanel);
+    else if (!patterns->isVisible()) repaint(globePanel);
     repaint(layersPanel);
     repaint(placesPanel);
     repaint(footer.withTrimmedLeft(footer.getWidth() - 50));

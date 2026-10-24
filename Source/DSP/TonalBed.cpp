@@ -42,6 +42,7 @@ void TonalBed::reset() {
     }
     for (auto& f : tone) f.reset();
     lastRoot = lastMood = -1;
+    fresh = true;
 }
 
 void TonalBed::setSeed(uint32_t seed) {
@@ -80,7 +81,11 @@ void TonalBed::render(const WorldFrame& world, uint64_t clock, float* left, floa
 
     // Brightness: cold, futuristic and peaceful worlds are brighter. Ancient worlds are
     // near-pure tones, futuristic ones bright and hollow (odd harmonics).
-    const float bright = brightness.next(clamp01(0.15f + 0.25f * (1.0f - temp) + 0.6f * era - 0.35f * danger + 0.15f * magic));
+    const float brightTarget = clamp01(0.15f + 0.25f * (1.0f - temp) + 0.6f * era - 0.35f * danger + 0.15f * magic);
+    // A reset world starts from its settings, so a restart always sounds the same.
+    if (fresh) brightness.snap(brightTarget);
+    fresh = false;
+    const float bright = brightness.next(brightTarget);
     const float tilt = lerp(3.4f, 0.9f, bright);
     const float evenScale = 1.0f - 0.85f * smoothstep(0.5f, 1.0f, era);
     static constexpr int harmonicsForQuality[3] { 4, 6, maxHarmonics };

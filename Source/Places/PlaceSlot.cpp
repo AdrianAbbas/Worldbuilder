@@ -34,6 +34,9 @@ void PlaceSlot::reset() {
     for (auto& f : distanceLp) f.reset();
     for (auto& f : dcBlock) f.reset();
     fresh = true;
+    generatedValid.fill(false);
+    playing.fill(nullptr);
+    lastBeat = 0;
 }
 
 Place* PlaceSlot::engineFor(int type) {
@@ -75,8 +78,54 @@ PlaceSettings PlaceSlot::settingsFor(const WorldFrame& world, const PlaceSlotCon
     return s;
 }
 
-bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, bool audible, uint64_t clock, double hostBeat, float hostBpm,
-                       float* left, float* right, int n) {
+void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns) {
+    const bool mine = patterns.type == currentType;
+    // Generator inputs on a grid of 1/256 (rounded down, so a value exactly on one of
+    // a generator's thresholds stays on the same side): a turning knob regenerates at
+    // most a few hundred times, a smoother settling never does.
+    const auto grid = [](float x) { return std::floor(clamp01(x) * 256.0f + 1.0e-3f) / 256.0f; };
+    GenInputs in;
+    in.character = target.character;
+    in.mood = mood;
+    in.activity = grid(target.activity);
+    in.density = grid(target.density);
+    in.tension = grid(target.tension);
+    in.life = grid(target.life);
+    in.key = seedKey;
+    bool changed = false;
+    for (int e = 0; e < placeElements; ++e) {
+        const auto k = std::size_t(e);
+        const auto& info = patternInfo(currentType, e);
+        if (info.kind == NoPattern) {
+            playing[k] = nullptr;
+            continue;
+        }
+        const auto& element = patterns.element[k];
+        controlsNow[k] = mine ? element.controls : defaultControls(currentType, e);
+        if (mine && element.controls.edited) {
+            playing[k] = &element.pattern;
+            continue;
+        }
+        in.variant = controlsNow[k].variant;
+        if (!generatedValid[k] || !(generatedFor[k] == in)) {
+            current->generate(e, in, generated[k]);
+            generatedFor[k] = in;
+            generatedValid[k] = true;
+            changed = true;
+        }
+        playing[k] = &generated[k];
+    }
+    if (changed && feedback != nullptr) {
+        auto& out = feedback->write();
+        out.type = currentType;
+        out.serial = ++feedbackSerial;
+        out.pattern = generated;
+        feedback->publish();
+    }
+}
+
+bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, const pat::SlotPatterns& patterns, bool audible, uint64_t clock,
+                       double hostBeat, float hostBpm, float* left, float* right, int n) {
     const int wanted = placeImplemented[std::size_t(std::clamp(c.type, 0, PlaceTypeCount - 1))] ? c.type : NoPlace;
     if (wanted != currentType && fade <= 0.0f) {
         // The old Place has faded out (or nothing played): switch engines.
@@ -86,6 +135,8 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, bool
         freeBeat = hostBeat;
         seeded = false;
         fresh = true;
+        generatedValid.fill(false);
+        playing.fill(nullptr);
     }
     const bool switching = wanted != currentType;
     if (current == nullptr || (!audible && gain.value < 1.0e-5f && !switching)) {
@@ -140,6 +191,21 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, bool
     // Harmony always follows the shared clock, so free and synced Places agree.
     context.chord = music::chordDegree(hostBeat, world[Danger]);
 
+    // Patterns: the composer's, or generated from the seed and the settings.
+    updatePatterns(target, world.mood, patterns);
+    for (int e = 0; e < placeElements; ++e) {
+        const auto k = std::size_t(e);
+        auto& play = context.play[k];
+        play.pattern = playing[k];
+        if (play.pattern == nullptr) continue;
+        play.controls = controlsNow[k];
+        // Variation scales every element's Randomness; at its default it is as set.
+        play.randomness = clamp01(controlsNow[k].randomness * settings.variation / 0.35f);
+        play.swing = controlsNow[k].edited && patterns.type == currentType ? play.pattern->swing : settings.swing;
+        play.kit = patternInfo(currentType, e).kind == Kit;
+        play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
+    }
+    lastBeat = context.beat;
     current->render(context, left, right, n);
 
     // Distance and pan.

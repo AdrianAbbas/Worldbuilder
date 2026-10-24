@@ -97,6 +97,8 @@ struct SynthVoice {
         env.stop();
         for (auto& f : filter) f.reset();
         releaseAt = 1.0e30f;
+        age = vibratoPhase = filterEnv = 0;
+        for (auto& o : osc) o.phase = 0;
     }
     // Starts a note. If the voice is sounding and `legato`, it glides to the new pitch.
     void start(float startHz, float attack, float decay, float sustain, float rate, bool legato = false) {

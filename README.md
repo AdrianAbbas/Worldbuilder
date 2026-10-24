@@ -7,7 +7,7 @@ a village or a spaceport, over a living environment of wind, water, fire, ice an
 thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 3 (musical retune and the first Places).** These work now:
+**Status: Milestone 4 (Pattern Editor and Play Mode).** These work now:
 - **Places**, the centrepiece. Up to four play at once: Castle, Village and Spaceport.
   - Each has three Characters that change its patterns, harmony and sound.
   - Each has five elements you can switch off or turn down, and its own effect
@@ -15,8 +15,24 @@ recordings.
   - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
     host tempo, or the Place's own free tempo) and a Seed.
   - Each slot also has level, distance and pan.
+- **Patterns.** Every rhythmic or melodic element (bells, horns, timpani, plucks, hand
+  drums, arps, risers...) plays from a pattern of notes. The Place generates it from
+  its seed and knobs until you edit it in the **Pattern Editor** (PATTERNS in a
+  Place's detail panel):
+  - a piano roll on the scale's notes (or all twelve semitones, or a drum kit), with
+    velocity and chance lanes and a playhead;
+  - draw, select, copy and paste, transpose, double and halve, lock, undo and redo,
+    and Generate for a fresh pattern;
+  - controlled randomness: how much, and what may vary (timing, velocity, pitch,
+    skipped and extra notes); locked notes never change; Evolve slowly mutates the
+    pattern and can return to it every N bars;
+  - MIDI files: drop one on the editor to import it, drag a pattern out to the host,
+    or save it as a .mid file.
+- **Play Mode.** Transport (the default) plays only while the host plays, from silence
+  and locked to the song position, so exports and bounces always contain it. Free
+  plays all the time.
 - **Key and tempo.** Everything tonal follows Root and Mood, and all Places share one
-  slow chord progression. Rhythmic parts follow the host tempo.
+  slow chord progression. Rhythmic parts follow the host tempo and song position.
 - **The environment**, retuned toward music. Air whistles on scale notes. Water drips
   ring as tuned drops, and rain carries pitched plucks and an in-key shimmer. Fire and
   ice sing in the key. Thunder lands as a tuned impact with a swell. The Tonal Bed
@@ -26,13 +42,20 @@ recordings.
   darker.
 - the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
 - **The interface**: Place cards to add Places, Place strips, a detail panel for each
-  Place, and landmarks on a placeholder globe that you can drag to move a Place.
+  Place, the Pattern Editor, and landmarks on a placeholder globe that you can drag
+  to move a Place.
 
-The other seven Places and MIDI events come in Milestone 4, Locations and Journeys in
-Milestone 5, and the full interface in Milestone 6. See
+Next: more Places and MIDI control from the host's piano roll (Milestone 5),
+Locations and Journeys (6), the visual overhaul (7), presets and release (8). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
-[docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
-[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md); the update overrides the brief.
+[docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
+[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) and
+[docs/DIRECTION_UPDATE_2.md](docs/DIRECTION_UPDATE_2.md); later files override earlier
+ones.
+
+**GarageBand and exports:** in Play Mode Free, GarageBand exports a song only up to
+its last region, so use Transport mode (the default) or put a region over the whole
+section.
 
 ## Install (macOS)
 
@@ -43,8 +66,9 @@ Milestone 5, and the full interface in Milestone 6. See
    list and runs Apple's validator. See `INSTALL.txt` inside the package for why
    this is needed.
 3. GarageBand: on a Software Instrument track, open Smart Controls (B) → Plug-ins →
-   Instrument slot → AU Instruments → Veil Audio → WORLDBUILDER. It plays
-   straight away; no MIDI is needed.
+   Instrument slot → AU Instruments → Veil Audio → WORLDBUILDER. Press play: in the
+   default Transport mode it plays while the song plays; no MIDI is needed. (Choose
+   Play Mode Free in the footer to hear it with the song stopped.)
 
 Uninstall with `bash uninstall-mac.sh`.
 
@@ -61,8 +85,8 @@ Linux dependencies (ALSA, FreeType, fontconfig, X11 headers); see
 `.github/workflows/build.yml`. Pass `-DJUCE_PATH=/path/to/JUCE` to use an existing
 JUCE checkout. On macOS it also builds the AU as a universal binary.
 
-`WorldbuilderTests --snapshot editor.png` writes an image of the interface (and of a
-Place's detail panel); `WorldbuilderTests --probe` prints per-layer measurements for
+`WorldbuilderTests --snapshot editor.png` writes images of the interface (and of a
+Place's detail panel and the Pattern Editor); `WorldbuilderTests --probe` prints per-layer measurements for
 each World Control; `WorldbuilderTests --probe-places` prints each Place's level per
 character and element;
 `WorldbuilderTests --render storm.wav 30 weather=1 wetness=0.8` renders any world

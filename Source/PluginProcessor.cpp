@@ -45,6 +45,15 @@ WorldbuilderProcessor::WorldbuilderProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "WORLDBUILDER", makeLayout()) {
     for (std::size_t i = 0; i < specs.size(); ++i) raw[i] = parameters.getRawParameterValue(specs[i].id);
+    patterns.syncTypes(slotTypes());
+    startTimerHz(5);
+}
+
+std::array<int, placeSlots> WorldbuilderProcessor::slotTypes() const {
+    std::array<int, placeSlots> types {};
+    for (int slot = 0; slot < placeSlots; ++slot)
+        types[std::size_t(slot)] = juce::jlimit(0, PlaceTypeCount - 1, juce::roundToInt(raw[std::size_t(placeParam(slot, PlType))]->load()));
+    return types;
 }
 
 EngineControls WorldbuilderProcessor::readControls() const noexcept {
@@ -93,6 +102,7 @@ EngineControls WorldbuilderProcessor::readControls() const noexcept {
         }
     }
     c.hostBpm = hostBpm;
+    c.gate = gateOpen;
     return c;
 }
 
@@ -124,21 +134,39 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     // Follow the host transport while it plays, so the same start point gives the
     // same world. While stopped the world keeps evolving on its own clock.
     // Rhythmic parts of the Places follow the host tempo whenever the host gives one.
+    // Play Mode Free: the world always plays, and follows the transport while it rolls.
+    // Play Mode Transport: it plays only while the host plays, starting from silence at
+    // every start or locate, so the same song position always sounds the same.
+    // A host with no transport at all (no tempo, no song position: a test host, the
+    // standalone app) cannot start or stop the world, so there it plays freely.
+    bool transportMode = juce::roundToInt(raw[PPlayMode]->load(std::memory_order_relaxed)) == PlayTransport;
+    bool hostHasTransport = false;
     bool playing = false;
     if (auto* playHead = getPlayHead())
         if (const auto position = playHead->getPosition()) {
+            hostHasTransport = position->getBpm().hasValue() || position->getPpqPosition().hasValue();
+            transportMode = transportMode && hostHasTransport;
             if (const auto bpm = position->getBpm(); bpm.hasValue() && std::isfinite(*bpm) && *bpm >= 20.0 && *bpm <= 999.0) hostBpm = float(*bpm);
             if (position->getIsPlaying())
                 if (const auto samples = position->getTimeInSamples()) {
                     playing = true;
                     if (!hostWasPlaying || *samples != expectedHostPosition) {
                         const auto ppq = position->getPpqPosition();
-                        engine.resync(uint64_t(std::max<int64_t>(0, *samples)),
-                                      ppq.hasValue() && std::isfinite(*ppq) && *ppq >= 0 ? *ppq : -1.0);
+                        const auto at = uint64_t(std::max<int64_t>(0, *samples));
+                        const double beat = ppq.hasValue() && std::isfinite(*ppq) && *ppq >= 0 ? *ppq : -1.0;
+                        if (transportMode) {
+                            auto controls = readControls();
+                            engine.restart(at, beat, controls);
+                        } else {
+                            engine.resync(at, beat);
+                        }
                     }
                     expectedHostPosition = *samples + n;
                 }
         }
+    if (!hostHasTransport) transportMode = false;
+    engine.transportRolling.store(playing, std::memory_order_relaxed);
+    gateOpen = !transportMode || playing;
     hostWasPlaying = playing;
 
     float* left = buffer.getWritePointer(0);
@@ -164,7 +192,10 @@ juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new W
 
 void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = parameters.copyState();
-    state.setProperty("version", 1, nullptr);
+    state.setProperty("version", 2, nullptr);
+    patterns.syncTypes(slotTypes());
+    state.removeChild(state.getChildWithName("Patterns"), nullptr);
+    state.appendChild(patterns.toValueTree(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
 }
 
@@ -179,12 +210,16 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         if (parameter == nullptr) continue;
         float value = s.def;
         const auto child = state.getChildWithProperty("id", juce::String(s.id));
+        // Projects from before Play Mode keep playing as they did (Free).
+        if (!child.isValid() && juce::String(s.id) == "playmode") value = float(PlayFree);
         if (child.isValid() && child.hasProperty("value")) {
             const float stored = float(child.getProperty("value"));
             if (std::isfinite(stored)) value = juce::jlimit(s.min, s.max, stored);
         }
         parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
     }
+    // Patterns (Milestone 4 and later); older projects have none and keep the generated ones.
+    patterns.fromValueTree(state.getChildWithName("Patterns"), slotTypes());
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

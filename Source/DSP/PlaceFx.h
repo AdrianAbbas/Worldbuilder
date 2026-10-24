@@ -29,6 +29,7 @@ struct SmallSpace {
         for (auto& d : delay) d.clear();
         for (auto& d : diffuser) d.clear();
         for (auto& f : damping) f.reset();
+        modPhase = 0;
     }
     // size 0..1, decay in seconds, damping cutoff in Hz. Once per chunk.
     void set(float size, float decaySeconds, float dampHz) {
@@ -72,10 +73,14 @@ struct TapeEcho {
         time.snap(0.4f * rate);
         clear();
     }
+    // Back to the state after prepare(): a cleared echo always continues the same way.
     void clear() {
         for (auto& l : line) l.clear();
         for (auto& f : tone) f.reset();
         for (auto& f : lowCut) f.reset();
+        time.snap(0.4f * rate);
+        targetSamples = 0.4f * rate;
+        wowPhase = flutterPhase = 0;
     }
     // Once per chunk.
     void set(float seconds, float feedbackAmount, float toneHz, float wowAmount) {
@@ -118,6 +123,7 @@ struct PingPong {
     void clear() {
         for (auto& l : line) l.clear();
         for (auto& f : tone) f.reset();
+        time.snap(0.3f * rate);
     }
     void set(float seconds, float feedbackAmount, float toneHz) {
         targetSamples = std::clamp(seconds * rate, 8.0f, maxSamples - 8.0f);
@@ -148,6 +154,7 @@ struct Warmth {
     void clear() {
         for (auto& l : line) l.clear();
         for (auto& f : tone) f.reset();
+        phase = flutter = 0;
     }
     void set(float amount) {
         depth = clamp01(amount);

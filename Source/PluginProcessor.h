@@ -1,12 +1,13 @@
 #pragma once
 #include "Parameters.h"
+#include "Patterns/PatternStore.h"
 #include "WorldEngine.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 
-class WorldbuilderProcessor final : public juce::AudioProcessor {
+class WorldbuilderProcessor final : public juce::AudioProcessor, private juce::Timer {
 public:
     WorldbuilderProcessor();
-    ~WorldbuilderProcessor() override = default;
+    ~WorldbuilderProcessor() override { stopTimer(); }
 
     void prepareToPlay(double sampleRate, int maximumExpectedSamplesPerBlock) override;
     void releaseResources() override {}
@@ -40,16 +41,24 @@ public:
 
     juce::AudioProcessorValueTreeState parameters;
     wb::WorldEngine engine;
+    // The composer's patterns (message thread), published to the engine.
+    wb::PatternStore patterns { engine };
     std::atomic<float> cpuLoad { 0 };
+
+    // The Place type in each slot, from the parameters.
+    std::array<int, wb::placeSlots> slotTypes() const;
 
 private:
     wb::EngineControls readControls() const noexcept;
+    // A slot that holds another Place gets that Place's default patterns.
+    void timerCallback() override { patterns.syncTypes(slotTypes()); }
 
     std::array<std::atomic<float>*, wb::PCount> raw {};
     double rate = 48000;
     int64_t expectedHostPosition = -1;
     bool hostWasPlaying = false;
     float hostBpm = 0;
+    bool gateOpen = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorldbuilderProcessor)
 };
