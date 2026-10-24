@@ -68,6 +68,31 @@ EngineControls WorldbuilderProcessor::readControls() const noexcept {
     c.quality = juce::roundToInt(value(PQuality));
     c.root = juce::roundToInt(value(PRoot));
     c.mood = juce::roundToInt(value(PMood));
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        auto& pc = c.places[std::size_t(slot)];
+        const auto field = [&](int f) { return value(placeParam(slot, f)); };
+        pc.type = juce::roundToInt(field(PlType));
+        pc.levelDb = field(PlLevel);
+        pc.distance = field(PlDistance);
+        pc.pan = field(PlPan);
+        pc.mute = field(PlMute) > 0.5f;
+        pc.solo = field(PlSolo) > 0.5f;
+        pc.character = juce::roundToInt(field(PlCharacter));
+        pc.activity = field(PlActivity);
+        pc.tension = field(PlTension);
+        pc.sync = field(PlSync) > 0.5f;
+        pc.density = field(PlDensity);
+        pc.swing = field(PlSwing);
+        pc.tone = field(PlTone);
+        pc.size = field(PlSize);
+        pc.variation = field(PlVariation);
+        pc.seed = uint32_t(juce::roundToInt(field(PlSeed)));
+        for (int e = 0; e < placeElements; ++e) {
+            pc.element[std::size_t(e)] = field(PlElement + e);
+            pc.elementOn[std::size_t(e)] = field(PlElementOn + e) > 0.5f;
+        }
+    }
+    c.hostBpm = hostBpm;
     return c;
 }
 
@@ -92,21 +117,28 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     juce::ScopedNoDenormals noDenormals;
     const auto begin = juce::Time::getHighResolutionTicks();
     const int n = buffer.getNumSamples();
-    // MIDI events (thunder strikes, creature calls...) arrive in Milestone 3.
+    // MIDI events (Place hits and phrases in key) arrive in Milestone 4.
     midi.clear();
     if (n <= 0 || buffer.getNumChannels() <= 0) return;
 
     // Follow the host transport while it plays, so the same start point gives the
     // same world. While stopped the world keeps evolving on its own clock.
+    // Rhythmic parts of the Places follow the host tempo whenever the host gives one.
     bool playing = false;
     if (auto* playHead = getPlayHead())
-        if (const auto position = playHead->getPosition())
+        if (const auto position = playHead->getPosition()) {
+            if (const auto bpm = position->getBpm(); bpm.hasValue() && std::isfinite(*bpm) && *bpm >= 20.0 && *bpm <= 999.0) hostBpm = float(*bpm);
             if (position->getIsPlaying())
                 if (const auto samples = position->getTimeInSamples()) {
                     playing = true;
-                    if (!hostWasPlaying || *samples != expectedHostPosition) engine.resync(uint64_t(std::max<int64_t>(0, *samples)));
+                    if (!hostWasPlaying || *samples != expectedHostPosition) {
+                        const auto ppq = position->getPpqPosition();
+                        engine.resync(uint64_t(std::max<int64_t>(0, *samples)),
+                                      ppq.hasValue() && std::isfinite(*ppq) && *ppq >= 0 ? *ppq : -1.0);
+                    }
                     expectedHostPosition = *samples + n;
                 }
+        }
     hostWasPlaying = playing;
 
     float* left = buffer.getWritePointer(0);

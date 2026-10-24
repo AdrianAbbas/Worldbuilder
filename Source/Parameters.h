@@ -24,32 +24,43 @@ enum WorldControl {
     WorldControlCount
 };
 
-// The ten sound layers, in mixer order.
-enum Layer { Air, Water, Fire, Earth, Thunder, Machine, Arcane, Creatures, Crowd, Bed, LayerCount };
+// The environment layers, in mixer order. Milestone 3 removed the Machinery, Magic,
+// Life and Population layers: their roles moved into the Places (and the Tonal Bed
+// for Magic), and the World Controls of the same names now shape the Places.
+enum Layer { Air, Water, Fire, Earth, Thunder, Bed, LayerCount };
 
-inline constexpr std::array<const char*, LayerCount> layerIds { "air", "water", "fire", "earth", "thunder",
-                                                                "machine", "magic", "life", "crowd", "bed" };
-inline constexpr std::array<const char*, LayerCount> layerNames { "Air", "Water", "Fire & Heat", "Ice & Earth", "Thunder",
-                                                                  "Machinery", "Magic", "Life", "Population", "Tonal Bed" };
-// Layers that produce sound in this build. The rest arrive in Milestone 3.
-inline constexpr std::array<bool, LayerCount> layerImplemented { true, true, true, true, true,
-                                                                 false, false, false, false, true };
+inline constexpr std::array<const char*, LayerCount> layerIds { "air", "water", "fire", "earth", "thunder", "bed" };
+inline constexpr std::array<const char*, LayerCount> layerNames { "Air", "Water", "Fire & Heat", "Ice & Earth", "Thunder", "Tonal Bed" };
 
 inline constexpr const char* rootChoices = "C|C#|D|D#|E|F|F#|G|G#|A|A#|B";
 inline constexpr const char* moodChoices = "Minor|Major|Dorian|Phrygian|Lydian|Mixolydian|Whole-tone|Pentatonic|Chromatic";
 inline constexpr const char* qualityChoices = "Eco|Standard|High";
+inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Factory|City|Temple|Forest|Ruins|Cavern|Alien Hive";
+inline constexpr const char* characterChoices = "1|2|3";
+
+// Each of the four Place slots has these parameters, in this order.
+enum PlaceParam {
+    PlType, PlLevel, PlDistance, PlPan, PlMute, PlSolo, PlCharacter, PlActivity, PlTension, PlSync, PlDensity, PlSwing,
+    PlTone, PlSize, PlVariation, PlSeed,
+    PlElement,                     // five element levels
+    PlElementOn = PlElement + 5,   // five element switches
+    PlaceParamCount = PlElementOn + 5
+};
+inline constexpr int placeSlotCount = 4;
 
 // Indices into `specs`.
 enum P {
     PTemperature, PWeather, PWetness, PMachinery, PMagic, PLife, PPopulation, PScale, PEra, PDanger, PActivity,
     PPower, PMaster, PWidth, PSeed, PQuality, PSpaceMix, PRoot, PMood,
     PLayerFirst,   // then level, mute, solo for each layer
-    PCount = PLayerFirst + 3 * LayerCount
+    PPlaceFirst = PLayerFirst + 3 * LayerCount,   // then PlaceParamCount per slot
+    PCount = PPlaceFirst + placeSlotCount * PlaceParamCount
 };
 
 inline constexpr int layerLevel(int layer) { return PLayerFirst + 3 * layer; }
 inline constexpr int layerMute(int layer) { return PLayerFirst + 3 * layer + 1; }
 inline constexpr int layerSolo(int layer) { return PLayerFirst + 3 * layer + 2; }
+inline constexpr int placeParam(int slot, int field) { return PPlaceFirst + slot * PlaceParamCount + field; }
 
 // clang-format off
 inline constexpr std::array<ParamSpec, PCount> specs { {
@@ -59,7 +70,7 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { "machinery",   "Machinery",   Kind::Float, 0, 1, 0.00f },
     { "magic",       "Magic",       Kind::Float, 0, 1, 0.25f },
     { "life",        "Life",        Kind::Float, 0, 1, 0.30f },
-    { "population",  "Population",  Kind::Float, 0, 1, 0.00f },
+    { "population",  "Population",  Kind::Float, 0, 1, 0.50f },
     { "scale",       "Scale",       Kind::Float, 0, 1, 0.50f },
     { "era",         "Era",         Kind::Float, 0, 1, 0.30f },
     { "danger",      "Danger",      Kind::Float, 0, 1, 0.20f },
@@ -77,12 +88,39 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { id "_mute",  name " Mute",  Kind::Bool, 0, 1, 0 }, \
     { id "_solo",  name " Solo",  Kind::Bool, 0, 1, 0 }
     WB_LAYER("air", "Air"), WB_LAYER("water", "Water"), WB_LAYER("fire", "Fire"), WB_LAYER("earth", "Earth"),
-    WB_LAYER("thunder", "Thunder"), WB_LAYER("machine", "Machinery"), WB_LAYER("magic", "Magic"),
-    WB_LAYER("life", "Life"), WB_LAYER("crowd", "Population"), WB_LAYER("bed", "Tonal Bed"),
+    WB_LAYER("thunder", "Thunder"), WB_LAYER("bed", "Tonal Bed"),
 #undef WB_LAYER
+#define WB_ELEMENTS(id, name, kind, def, suffix, label) \
+    { id "_e1" suffix, name " Element 1" label, kind, 0, 1, def }, { id "_e2" suffix, name " Element 2" label, kind, 0, 1, def }, \
+    { id "_e3" suffix, name " Element 3" label, kind, 0, 1, def }, { id "_e4" suffix, name " Element 4" label, kind, 0, 1, def }, \
+    { id "_e5" suffix, name " Element 5" label, kind, 0, 1, def }
+#define WB_PLACE(id, name, type, pan, seed) \
+    { id "_type", name " Place", Kind::Choice, 0, 10, type, placeChoices }, \
+    { id "_level", name " Level", Kind::Decibels, -60, 6, 0 }, \
+    { id "_distance", name " Distance", Kind::Float, 0, 1, 0.35f }, \
+    { id "_pan", name " Pan", Kind::Float, -1, 1, pan }, \
+    { id "_mute", name " Mute", Kind::Bool, 0, 1, 0 }, \
+    { id "_solo", name " Solo", Kind::Bool, 0, 1, 0 }, \
+    { id "_character", name " Character", Kind::Choice, 0, 2, 0, characterChoices }, \
+    { id "_activity", name " Activity", Kind::Float, 0, 1, 0.5f }, \
+    { id "_tension", name " Tension", Kind::Float, 0, 1, 0.3f }, \
+    { id "_sync", name " Sync", Kind::Bool, 0, 1, 1 }, \
+    { id "_density", name " Density", Kind::Float, 0, 1, 0.5f }, \
+    { id "_swing", name " Swing", Kind::Float, 0, 1, 0.15f }, \
+    { id "_tone", name " Tone", Kind::Float, 0, 1, 0.5f }, \
+    { id "_size", name " Size", Kind::Float, 0, 1, 0.5f }, \
+    { id "_variation", name " Variation", Kind::Float, 0, 1, 0.35f }, \
+    { id "_seed", name " Seed", Kind::Int, 1, 9999, seed }, \
+    WB_ELEMENTS(id, name, Kind::Float, 0.8f, "", ""), \
+    WB_ELEMENTS(id, name, Kind::Bool, 1, "_on", " On")
+    WB_PLACE("p1", "Place 1", 1, -0.25f, 11), WB_PLACE("p2", "Place 2", 0, 0.35f, 22),
+    WB_PLACE("p3", "Place 3", 0, -0.55f, 33), WB_PLACE("p4", "Place 4", 0, 0.55f, 44),
+#undef WB_PLACE
+#undef WB_ELEMENTS
 } };
 // clang-format on
 
+static_assert(specs.back().id != nullptr, "the table fills every parameter slot");
 static_assert(int(PTemperature) == int(Temperature) && int(PActivity) == int(Activity), "World Controls come first, in enum order");
 
 } // namespace wb

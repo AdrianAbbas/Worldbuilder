@@ -1,5 +1,6 @@
 #pragma once
 #include "Generator.h"
+#include "Music.h"
 
 namespace wb {
 
@@ -26,7 +27,8 @@ private:
     std::array<dsp::OnePole, 2> thin;
     std::array<dsp::Svf, maxWhistles> whistle;
     dsp::Svf howl;
-    dsp::Smoother gust, bodyGain, whistleGain, howlGain, pan;
+    dsp::Smoother gust, bodyGain, whistleGain, howlGain, pan, howlPitch;
+    std::array<dsp::Smoother, maxWhistles> whistleHz;
 };
 
 } // namespace wb

@@ -57,3 +57,36 @@ too loud or too quiet; the levels between layers are the first thing to tune.
   all at 100 %) it stays clean: no crackling distortion, no clipping on the
   master meter.
 - [ ] **Quality** set to Eco still sounds like the same world, a little thinner.
+
+## Milestone 3 check: Places, key and tempo
+
+Install the new build the same way (steps 1-4 above). Start from a **fresh**
+WORLDBUILDER instance (it opens with a Castle in slot 1). Mostly listening: report
+anything that sounds synthetic, harsh, out of tune, too loud or too quiet.
+
+- [ ] **Default world:** the environment as before, with a distant Castle under it: a
+  low brass drone, a slow timpani pulse, now and then a bell or a horn call. Nothing
+  should jump out over where dialogue would sit.
+- [ ] **Drips (the fix):** solo **Water** (S) with **Wetness** around 30-40 % and
+  **Weather** down. The drips should be soft, tuned, ringing drops in the key with
+  natural timing, spread left to right, with a little room. Turn **Scale** up: lower
+  and longer, like a cavern.
+- [ ] **Add Places:** click the **Village** and **Spaceport** cards (below the globe).
+  Each appears in the PLACES strips on the right and as a landmark on the globe. Drag a
+  landmark to move it: left and right is pan, up is further away.
+- [ ] **Detail panel:** click **EDIT** on a strip. Try the three **Character** buttons
+  (each should clearly change the music, not just the level). Try **Activity**,
+  **Tension** (darker and tighter), **Tone**, **Size** and **Variation**, and switch
+  the five **elements** on and off.
+- [ ] **Key:** change **Root** and **Mood** in the footer. Everything tonal follows:
+  the bed, the drips, the wind's whistles and every Place.
+- [ ] **Tempo:** set the song tempo (for example 80, then 140 BPM) and press play. The
+  Places' pulses, arps and plucks follow it (the footer shows the BPM). Turn a Place's
+  **SYNC TO HOST** off: it keeps its own tempo.
+- [ ] **World Controls:** **Population** up makes every Place busier with more echo;
+  **Danger** up makes them darker; **Machinery** up makes them straighter and more
+  metallic; **Scale** up pushes them further away.
+- [ ] **Four Places plus a storm** (Weather and Wetness high): clean, no distortion,
+  no clipping on the master meter.
+- [ ] **Remove** a Place with **X** and add another one: it fades out and in, no clicks.
+- [ ] Save the project, close and reopen it: the Places and their settings come back.

@@ -10,6 +10,7 @@
 #include "DSP/TonalBed.h"
 #include "DSP/WaterLayer.h"
 #include "DSP/WorldSpace.h"
+#include "Places/PlaceSlot.h"
 #include <atomic>
 #include <memory>
 
@@ -23,6 +24,8 @@ struct EngineControls {
     bool power = true;
     int root = 2, mood = 0, quality = 1;
     uint32_t seed = 1;
+    float hostBpm = 0;   // 0 when the host gives no tempo: the world uses defaultBpm
+    std::array<PlaceSlotControls, placeSlots> places {};
 };
 
 class WorldEngine {
@@ -31,18 +34,23 @@ public:
     void prepare(double sampleRate, const EngineControls& initial);
     void reset(const EngineControls& initial);
     // The host transport started or jumped: the world continues from `position`
-    // (absolute samples). Without a transport the world runs on its own clock.
-    void resync(uint64_t position);
+    // (absolute samples) at beat `ppq` (negative: unknown, derived from the position).
+    // Without a transport the world runs on its own clock.
+    void resync(uint64_t position, double ppq = -1);
+
+    static constexpr float defaultBpm = 96;
     void process(float* left, float* right, int n, const EngineControls& controls);
 
     // For the editor: per-layer and master peak meters, the smoothed world, power fade.
     std::array<std::atomic<float>, LayerCount> layerMeter {};
+    std::array<std::atomic<float>, placeSlots> placeMeter {};
     std::atomic<float> masterMeter { 0 }, powerLevel { 1 };
     // The latest lightning flash (0..1), for the globe.
     std::atomic<float> lightning { 0 };
     const WorldFrame& frame() const { return world; }
     // For the tests: the strike log of the thunder layer (audio thread state).
     const ThunderLayer& thunderLayer() const { return thunder; }
+    const PlaceSlot& placeSlot(int i) const { return slots[std::size_t(std::clamp(i, 0, placeSlots - 1))]; }
 
 private:
     void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls);
@@ -55,6 +63,10 @@ private:
     ThunderLayer thunder;
     TonalBed bed;
     std::array<Generator*, LayerCount> layers {};
+    std::array<PlaceSlot, placeSlots> slots;
+    std::array<float, placeSlots> placePeak {};
+    double beat = 0;
+    float bpm = defaultBpm;
     WorldFrame world;
     std::array<dsp::Smoother, WorldControlCount> worldSmooth;
     std::array<dsp::Smoother, LayerCount> layerGain;

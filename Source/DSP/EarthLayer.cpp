@@ -19,6 +19,7 @@ EarthLayer::Amounts EarthLayer::amounts(const WorldFrame& world) {
 void EarthLayer::prepare(double sampleRate) {
     rate = float(sampleRate);
     for (auto* s : { &rumbleGain, &groanGain, &fallGain }) s->setTime(0.1f, rate);
+    groanHz.setTime(2.0f, rate / float(chunk));
     for (auto& f : fallNoise) f.setCutoff(180.0f, rate);
     for (auto& f : sheetClickHigh) f.setCutoff(2000.0f, rate);
     reset();
@@ -45,6 +46,7 @@ void EarthLayer::reset() {
     for (auto& f : fallDistance) f.reset();
     groan.reset();
     for (auto* s : { &rumbleGain, &groanGain, &fallGain }) s->snap(0);
+    groanHz.snap(55.0f);
 }
 
 void EarthLayer::setSeed(uint32_t seed) {
@@ -107,10 +109,13 @@ void EarthLayer::render(const WorldFrame& world, uint64_t clock, float* left, fl
     const float sheetRate = a.ice * lerp(0.08f, 0.6f, activity);
     if (events.unit(e + 12) < trialChance(sheetRate, n, rate)) {
         auto& s = sheets[pickVoice(sheets, sheetVoices, [](const Sheet& v) { return v.tone[0].amp + v.click; })];
-        const float hz = lerpExp(1800.0f, 4600.0f, events.unit(e + 13)), seconds = lerp(0.12f, 0.3f, events.unit(e + 14));
+        // The sheet sings from a note of the key, with a second tone on the scale's fifth.
+        const float free = 12.0f * std::log2(lerpExp(1800.0f, 4600.0f, events.unit(e + 13)) / music::rootHz(world.root));
+        const float hz = music::noteHz(world.root, float(music::quantise(world.mood, free))), seconds = lerp(0.12f, 0.3f, events.unit(e + 14));
         const float amp = 0.5f + 0.5f * events.unit(e + 15), pan = 0.85f * events.white(e + 16);
+        const float fifth = std::exp2(float(music::degree(world.mood, music::scaleFor(world.mood).size >= 7 ? 4 : 3)) / 12.0f);
         s.tone[0].start(hz, seconds, 0.4f, amp, pan, rate);
-        s.tone[1].start(hz * 1.48f, seconds * 0.7f, 0.35f, amp * 0.5f, pan, rate);
+        s.tone[1].start(hz * fifth, seconds * 0.7f, 0.4f, amp * 0.5f, pan, rate);
         s.click = amp * 0.8f;
         s.clickDecay = std::exp(-1.0f / (0.003f * rate));
         s.pan = panGains(pan);
@@ -150,7 +155,13 @@ void EarthLayer::render(const WorldFrame& world, uint64_t clock, float* left, fl
     // fixed-rate curves blended, so turning Activity never jumps the phase).
     const float heave = lerp(float(drift.smooth(t, 0.08)), float(drift.smooth(t + 200.0, 0.45)), activity);
     const float rumbleTarget = 0.1f * a.rumble * std::max(0.0f, 1.0f + lerp(0.25f, 0.7f, activity) * heave);
-    groan.set(lerpExp(36.0f, 80.0f, clamp01(0.5f + 0.5f * drift.smooth(t + 30.0, 0.05))), 6.0f, rate);
+    // The groan drifts between the low root, fifth and octave of the key.
+    {
+        const float x = clamp01(0.5f + 0.5f * drift.smooth(t + 30.0, 0.05));
+        const float semis = x < 0.4f ? -24.0f : (x < 0.75f ? -24.0f + float(music::degree(world.mood, music::scaleFor(world.mood).size >= 7 ? 4 : 3)) : -12.0f);
+        groanHz.next(music::noteHz(world.root, semis));
+        groan.set(groanHz.value, 6.0f, rate);
+    }
     const float groanTarget = 2.2f * a.groan * (0.45f + 0.55f * std::max(0.0f, drift.smooth(t + 60.0, 0.12)));
 
     for (int i = 0; i < n; ++i) {

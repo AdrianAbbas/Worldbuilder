@@ -14,6 +14,8 @@ void ThunderLayer::prepare(double sampleRate) {
     for (auto& s : strike) {
         s.gain.setTime(0.005f, rate);
         s.boomGain.setTime(0.003f, rate);
+        s.impactGain.setTime(0.004f, rate);
+        s.swellGain.setTime(0.02f, rate);
         s.boom.setCutoff(60.0f, rate);
         for (auto& f : s.crackHigh) f.setCutoff(700.0f, rate);
     }
@@ -31,6 +33,9 @@ void ThunderLayer::reset() {
         s.boom.reset();
         s.gain.snap(0);
         s.boomGain.snap(0);
+        s.impactGain.snap(0);
+        s.swellGain.snap(0);
+        s.tuned = false;
     }
     flashLevel = 0;
     strikes = 0;
@@ -62,6 +67,9 @@ void ThunderLayer::render(const WorldFrame& world, uint64_t clock, float* left, 
         auto& s = strike[std::size_t(free)];
         s.gain.snap(0);
         s.boomGain.snap(0);
+        s.impactGain.snap(0);
+        s.swellGain.snap(0);
+        s.tuned = false;
         // Storms bring strikes closer; colossal worlds hear them from further off.
         const float d = lerp(std::pow(events.unit(e + 1), lerp(0.7f, 1.6f, storm)), 1.0f, 0.45f * scale);
         s.active = true;
@@ -92,7 +100,7 @@ void ThunderLayer::render(const WorldFrame& world, uint64_t clock, float* left, 
     }
 
     // Per chunk: each strike's envelope and tone.
-    struct Frame { float gain, boom; };
+    struct Frame { float gain, boom, impact, swell; };
     std::array<Frame, maxStrikes> frame {};
     for (int i = 0; i < voices; ++i) {
         auto& s = strike[std::size_t(i)];
@@ -105,7 +113,26 @@ void ThunderLayer::render(const WorldFrame& world, uint64_t clock, float* left, 
         const float rolling = 0.1f + 0.9f * fast * fast * (0.35f + 0.65f * slow);
         const float tail = 1.0f - smoothstep(0.75f, 1.0f, x);
         const float loud = s.size * lerp(1.0f, 0.25f, s.distance);
-        frame[std::size_t(i)].gain = 0.55f * loud * env * rolling * tail;
+        frame[std::size_t(i)].gain = 0.45f * loud * env * rolling * tail;
+        if (!s.tuned) {
+            // The sound arrives: tune the impact and the swell to the current key.
+            s.tuned = true;
+            s.loudness = loud;
+            s.impactHz = music::noteHz(world.root, -24.0f);
+            s.impact.setPhase(0);
+            s.swell[0].setPhase(0);
+            s.swell[1].setPhase(0);
+            const int fifth = music::degree(world.mood, music::scaleFor(world.mood).size >= 7 ? 4 : 3);
+            s.swell[0].setFrequency(music::noteHz(world.root, -12.0f), rate);
+            s.swell[1].setFrequency(music::noteHz(world.root, float(fifth - 12)), rate);
+        }
+        // The impact drops slightly in pitch as it lands; the swell blooms over a second.
+        s.impact.setFrequency(s.impactHz * (1.0f + 0.2f * std::exp(-a / 0.07f)), rate);
+        s.impact.normalise();
+        s.swell[0].normalise();
+        s.swell[1].normalise();
+        frame[std::size_t(i)].impact = 0.5f * s.loudness * lerp(1.0f, 0.5f, s.distance) * std::exp(-a / 1.3f);
+        frame[std::size_t(i)].swell = 0.12f * s.loudness * smoothstep(0.0f, 1.3f, a) * std::exp(-std::max(0.0f, a - 1.3f) / (s.length / 3.0f)) * tail;
         frame[std::size_t(i)].boom = 0.6f * loud * s.boomLevel * std::exp(-a / 0.45f);
         const float bright = lerp(1.0f, 0.5f, x);
         for (auto& f : s.body) f.setCutoff(lerpExp(500.0f, 110.0f, s.distance) * bright, rate);
@@ -126,6 +153,14 @@ void ThunderLayer::render(const WorldFrame& world, uint64_t clock, float* left, 
             const float g = s.gain.next(frame[std::size_t(i)].gain);
             float sl = s.tone[0].tick(s.body[0].tick(wl)).lp * g;
             float sr = s.tone[1].tick(s.body[1].tick(wr)).lp * g;
+
+            const float ig = s.impactGain.next(frame[std::size_t(i)].impact), sg = s.swellGain.next(frame[std::size_t(i)].swell);
+            s.impact.step();
+            s.swell[0].step();
+            s.swell[1].step();
+            const float tonal = ig * s.impact.im + sg * (s.swell[0].im + 0.6f * s.swell[1].im);
+            sl += tonal;
+            sr += tonal;
 
             const float bg = s.boomGain.next(frame[std::size_t(i)].boom);
             if (bg > 1.0e-5f) {

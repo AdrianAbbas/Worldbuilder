@@ -89,8 +89,11 @@ void FireLayer::render(const WorldFrame& world, uint64_t clock, float* left, flo
     if (events.unit(e + 6) < trialChance(blipRate, n, rate)) {
         auto& b = blips[pickVoice(blips, blipVoices, [](const Ping& p) { return p.amp; })];
         const float size = events.unit(e + 7);
-        // Low resonant bloops that rise as the bubble swells and bursts.
-        b.start(lerpExp(210.0f, 65.0f, size), lerp(0.09f, 0.24f, size), lerp(1.5f, 2.3f, events.unit(e + 8)),
+        // Low resonant bloops that rise as the bubble swells and bursts, starting on a
+        // note of the key.
+        const float free = 12.0f * std::log2(lerpExp(210.0f, 65.0f, size) / music::rootHz(world.root));
+        const float tuned = music::noteHz(world.root, float(music::quantise(world.mood, free)));
+        b.start(tuned, lerp(0.09f, 0.24f, size), events.unit(e + 8) < 0.5f ? 1.5f : 2.0f,
                 (events.unit(e + 10) < 0.5f ? -1.0f : 1.0f) * (0.55f + 0.45f * size),
                 0.6f * events.white(e + 9), rate, 0.012f);
     }

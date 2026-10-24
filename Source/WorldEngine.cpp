@@ -18,6 +18,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     const float r = float(rate), controlRate = r / float(chunk);
     for (auto* layer : layers)
         if (layer != nullptr) layer->prepare(rate);
+    for (int i = 0; i < placeSlots; ++i) slots[std::size_t(i)].prepare(rate, i);
     space.prepare(rate);
     glue.prepare(r);
     limiter.prepare(r);
@@ -33,6 +34,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
 void WorldEngine::reset(const EngineControls& initial) {
     for (auto* layer : layers)
         if (layer != nullptr) layer->reset();
+    for (auto& slot : slots) slot.reset();
     space.reset();
     for (auto& f : distance) f.reset();
     glue.reset();
@@ -50,14 +52,18 @@ void WorldEngine::reset(const EngineControls& initial) {
     powerRamp = 0;
     masterPeak = 0;
     clock = 0;
+    beat = 0;
+    bpm = initial.hostBpm > 0 ? initial.hostBpm : defaultBpm;
     fifoRead = chunk;
     layerPeak.fill(0);
+    placePeak.fill(0);
 }
 
-void WorldEngine::resync(uint64_t position) {
+void WorldEngine::resync(uint64_t position, double ppq) {
     // Continue from the new position at once; the few samples already rendered ahead
     // belong to the old one.
     clock = position;
+    beat = ppq >= 0 ? ppq : double(position) / rate * double(bpm) / 60.0;
     fifoRead = chunk;
     for (auto* layer : layers)
         if (layer != nullptr) layer->resync(clock);
@@ -65,7 +71,9 @@ void WorldEngine::resync(uint64_t position) {
 
 void WorldEngine::process(float* left, float* right, int n, const EngineControls& controls) {
     layerPeak.fill(0);
+    placePeak.fill(0);
     masterPeak = 0;
+    if (controls.hostBpm >= 20.0f && controls.hostBpm <= 999.0f) bpm = controls.hostBpm;
     // The world is rendered in whole chunks into a small FIFO: control updates then
     // happen at the same positions whatever block size the host uses. An instrument
     // has no input, so rendering a chunk ahead adds no latency.
@@ -83,6 +91,8 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
     }
     for (std::size_t i = 0; i < layerMeter.size(); ++i)
         layerMeter[i].store(std::max(layerPeak[i], layerMeter[i].load(std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
+    for (std::size_t i = 0; i < placeMeter.size(); ++i)
+        placeMeter[i].store(std::max(placePeak[i], placeMeter[i].load(std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
     masterMeter.store(std::max(masterPeak, masterMeter.load(std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
     powerLevel.store(powerRamp, std::memory_order_relaxed);
     // A muted thunder layer is not rendered, so its flash would stand still: show none.
@@ -107,6 +117,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     world.mood = controls.mood;
     world.quality = controls.quality;
     world.seed = seed;
+    world.beat = beat;
+    world.bpm = bpm;
+    world.chord = music::chordDegree(beat, world[Danger]);
 
     // Scale: colossal worlds sound further away, darker and more reverberant.
     const float scale = world[Scale];
@@ -115,6 +128,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
 
     bool anySolo = false;
     for (bool s : controls.solo) anySolo |= s;
+    for (const auto& p : controls.places) anySolo |= p.solo && p.type != NoPlace;
 
     std::fill(dryL.begin(), dryL.begin() + n, 0.0f);
     std::fill(dryR.begin(), dryR.begin() + n, 0.0f);
@@ -145,6 +159,25 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         }
         layerPeak[li] = peak;
     }
+
+    // Places: each slot renders its Place with level, distance and pan applied.
+    for (std::size_t si = 0; si < slots.size(); ++si) {
+        const auto& pc = controls.places[si];
+        const bool audible = !pc.mute && (!anySolo || pc.solo);
+        if (!slots[si].render(world, pc, audible, clock, beat, bpm, layerL.data(), layerR.data(), n)) continue;
+        const float send = slots[si].spaceSend() * distanceSend;
+        float peak = placePeak[si];
+        for (int i = 0; i < n; ++i) {
+            const float l = layerL[std::size_t(i)], r = layerR[std::size_t(i)];
+            peak = std::max(peak, std::max(std::abs(l), std::abs(r)));
+            dryL[std::size_t(i)] += l;
+            dryR[std::size_t(i)] += r;
+            sendL[std::size_t(i)] += l * send;
+            sendR[std::size_t(i)] += r * send;
+        }
+        placePeak[si] = peak;
+    }
+    beat += double(bpm) / 60.0 * double(n) / rate;
 
     space.update(world);
     std::array<float, chunk> wetL {}, wetR {};

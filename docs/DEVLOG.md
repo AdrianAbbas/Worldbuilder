@@ -379,3 +379,247 @@ normaliser).
   but not ideal.
 - The globe's rain, snow, lava and lightning are drawn on the placeholder globe;
   the real Living Globe is Milestone 6.
+
+---
+
+## Milestone 3: musical retune, Place engine, Castle, Village, Spaceport (2026-10-24)
+
+Direction changed after Milestone 2 ([DIRECTION_UPDATE.md](DIRECTION_UPDATE.md),
+which overrides the brief): WORLDBUILDER is now a film-scoring instrument. It is
+musical rather than literal, in the song's key and tempo, and **Places** are the
+centrepiece. The revised milestone list is in that file.
+
+### Working conditions
+
+Same as before: Linux cloud container, no Mac. Verified here: Linux build (VST3,
+Standalone, tests) with GCC and Clang, **647 checks pass, 0 fail** on both. Sound was
+checked by measurement, spectrograms, chroma and event logs, **not by ear**. The
+editor was rendered and inspected (`--snapshot`). Nothing macOS-specific changed.
+
+Note: the Milestone 2 commit was on the `milestone-2` branch and `main` was still at
+Milestone 1. This milestone builds on Milestone 2 and fast-forwards `main` through it.
+
+### What was built
+
+- **Music core** (`Source/DSP/Music.h`):
+  - scales for the nine Moods (Chromatic uses the half-whole octatonic for melodies);
+  - scale degrees, chord tones and quantising to the scale;
+  - one shared chord progression, a chord every four bars: i–VI–iv–v when calm, and
+    i–ii–i–VI once Danger passes 55 %. Every Place and the drips use it, so nothing
+    clashes;
+  - a world beat clock in the engine. It follows the host tempo and its PPQ position
+    at transport jumps; without a host tempo it runs at 96 BPM.
+- **Place framework** (`Source/Places/`):
+  - `Place` is the engine interface. It comes with a step sequencer with swing, a
+    pattern hash in which Variation is the chance that a step departs from a repeating
+    4-bar pattern (16 bars for sparse events), a phrase player, and an event log for
+    the tests;
+  - `PlaceSlot` hosts one Place:
+    - a 0.3 s fade-out and fade-in when the type changes;
+    - it folds the World Controls into the Place's settings;
+    - distance makes a Place quieter, darker, narrower and wetter; pan; a DC blocker;
+    - synced or free beat. A free Place uses its own tempo scaled by Activity, but its
+      harmony still follows the shared chords.
+  - Shared voices (`Source/DSP/Voices.h`):
+    - PolyBLEP saw;
+    - an envelope;
+    - a 3-saw synth voice with filter envelope, glide and delayed vibrato;
+    - a Karplus-Strong pluck;
+    - a modal bell or bar with a raised-cosine strike;
+    - a tuned two-partial drum.
+  - Place effects (`Source/DSP/PlaceFx.h`): a 4-line FDN room or hall, a tape echo
+    (wow, flutter and saturating feedback), a ping-pong delay, and tape warmth.
+- **Castle**:
+  - elements: Drones, Bells, Horns, Pulse, Hall;
+  - brass-like drones on a tonic pedal plus the chord;
+  - bells whose partials are tuned to the scale's own third and fifth;
+  - horn calls;
+  - timpani tuned to the root and the fifth below, plus a side drum;
+  - a stone hall, and a dotted-quarter tape echo whose depth follows
+    Activity × Population;
+  - Characters: Fortress (open fifths, tolls, half-note processional), Royal Court
+    (triads, carillon runs, fanfares in thirds, a march), Besieged (a trembling drone,
+    alarm bells, a driving 3-3-2 ostinato).
+- **Village**:
+  - elements: Plucks, Drone, Hand Drums, Wood, Tape;
+  - Karplus-Strong ostinatos on chord tones with passing notes;
+  - a nasal root-and-fifth drone;
+  - frame drum, hand drum and shaker;
+  - marimba-like wood;
+  - a small room and tape warmth;
+  - Characters: Market Day (eighths), Hearth (slow arpeggios, heartbeat drum,
+    wind-chime wood), Festival (swung sixteenths, xylophone runs).
+- **Spaceport**:
+  - elements: Pulses, Pads, Risers, Announce, Engines;
+  - resonant 16th arpeggios;
+  - four wide gliding pads;
+  - noise risers: pass-bys, a launch build, falling sweeps;
+  - PA chimes plus an abstract two-formant murmur (never speech);
+  - a sub-engine throb at half notes;
+  - a hangar and a dotted-eighth ping-pong delay;
+  - Characters: Busy Hub, Abandoned Dock (sparse, detuned, flat broken chimes), Launch
+    (an 8-bar build cycle, countdown beeps and a tuned impact).
+- **Every Place**: Tension darkens the harmony as it rises. The fifth or third fades
+  out near 60 % and returns as a semitone cluster above the root (no jump). Rhythm
+  tightens and decays shorten.
+- **World Controls on the Places**:
+  - Population scales Activity (×0.5–1.5) and the effect depth;
+  - Machinery adds density, removes swing and adds anvil rings or a mill clack;
+  - Life adds grace notes, looser velocity, vibrato, more calls and chimes;
+  - Danger adds Tension and switches to the dark progression;
+  - Era and Temperature set Tone; Scale sets Size and pushes Places further away;
+  - Magic lengthens the halls.
+- **Musical retune of the environment**:
+  - **Drips (the fix asked for):** tuned, softly ringing drops (modal; partials 1, 2 and
+    4.07) on the current chord's tones, mostly two octaves up, lower and longer in
+    caverns. A tiny rising "plink" leads into each. Timing comes in loose Poisson
+    clusters; velocity follows a power law; decay (T60 0.4–2.4 s) and pan are random.
+    Sometimes a smaller second drop follows. A little room of early reflections.
+  - Rain: drops land on scale notes, and occasional raindrops ring as drip-like
+    plucks. Four narrow resonances on the current chord, rung by the patter, make a
+    shimmer.
+  - Wind: whistles glide between scale notes; the howl rises through root, fifth and
+    octave.
+  - Thunder: each strike lands as a tuned low impact on the root plus a swell on the
+    root and fifth; the rumble is slightly lower.
+  - Lava bloops and singing ice start on scale notes (the ice's second tone on the
+    scale's fifth). The tectonic groan drifts between the low root, fifth and octave.
+- **Removed:** the Machinery, Magic, Life and Population *layers* and their 12
+  parameters. They were never implemented: their roles are now the Places and the
+  Tonal Bed (Magic). The World Controls of those names stay, with the same IDs.
+- **Parameters**:
+  - 4 slots × 26: type (Empty plus all ten Places, with the last seven silent until
+    Milestone 4, so the range never changes), level, distance, pan, mute, solo,
+    character, activity, tension, sync, density, swing, tone, size, variation, seed,
+    five element levels and five switches;
+  - 141 parameters in total;
+  - slot 1 defaults to a Castle, so a fresh instance plays the new concept at once;
+  - Population's default moved from 0 to 50 % (it now means "as set" for every Place).
+- **Editor** (1160 × 720, same style):
+  - Place cards with original vector art for all ten Places (the Milestone 4 ones are
+    dimmed); clicking a card fills the next empty slot with a fresh Place and a new seed;
+  - four Place strips: level, distance, pan, M/S, EDIT, remove, an activity meter;
+  - a detail panel over the globe: Characters, the five knobs, Sync, Density, Swing,
+    Seed, and element switches and levels;
+  - landmarks on the globe at each Place's pan and distance, glowing with its level;
+    drag one to move the Place, double-click to edit it;
+  - the host BPM in the footer.
+- **Tools:** `--probe-places`. The `--snapshot` option also writes `-detail.png`.
+
+### Decisions
+
+- **One harmonic clock for everything.** Places that are free in rhythm still follow
+  the shared chords, so four Places never clash. The Tonal Bed holds the root, which
+  works as a pedal under every chord of both progressions.
+- **Determinism kept.** Every random choice is hashed from (seed, step) or (seed,
+  position). The world beat accumulates per 32-sample chunk, so the output is identical
+  at any block size (tested with four Places, one of them free-running). Each Place's
+  key mixes the world seed, the Place's seed and the slot.
+- **Events start at chunk boundaries** (0.67 ms at 48 kHz), not per sample. This is
+  inaudible and keeps the voices simple.
+- **Decays are T60s.** Bells, drums and drips take "time to fall 60 dB". At first they
+  were treated as time constants, so bells rang about seven times too long and too loud.
+- **Soft strikes.** Modal voices are struck by a raised-cosine pulse of up to half a
+  period of the note, so drips and bells swell in over a few milliseconds instead of
+  clicking on.
+- **Level target:** each Place solo sits at −27 to −35 dBFS RMS with peaks about
+  −12 dBFS, as a bed under a score. The default world (environment plus Castle)
+  measures −20.3 dBFS RMS on the test window, the same as Milestone 2's −20.9.
+
+### Problems and fixes
+
+- Bells, wood and chimes were silent: a voice retired itself in the chunk it started,
+  before it was struck. Fixed.
+- Sparse events (bells, horns) used the 4-bar pattern, so a seed could simply never
+  ring them. They now use a 16-bar pattern.
+- DC offset: the Karplus-Strong loop passes DC, and runs of timpani that all started
+  upward added up. Fixed with alternate drum polarity and a 12 Hz DC blocker per slot
+  (20 Hz on the Village plucks).
+- Onset counting from audio could not tell how busy a Place was: drones and halls
+  mask the onsets. The tests use each Place's event log for busyness and tempo.
+- Rain came out 2 dB louder with peaks 3 dB hotter, and then too thin. It was
+  rebalanced to Milestone 2's level and midrange.
+
+### Tests (Linux, through `processBlock`), 647 checks
+
+New in this milestone:
+- **Each Place × Character**, 32 s, D minor at 120 BPM:
+  - finite; −42…−18 dBFS RMS; peaks below −4.4 dBFS; stereo; no DC;
+  - **in key**: the in-scale pitch classes are 6–11 dB above the rest on average.
+    The threshold is 5 dB, because saw drones carry natural off-scale harmonics;
+  - the three Characters differ from each other by more than 1 dB in some band.
+- **Each Place**:
+  - follows G major;
+  - Activity gives more than 1.3× the notes;
+  - Tension changes it by more than 1.5 dB; Tone brightens it by more than 3 dB;
+  - every element changes it, and all elements off is silent;
+  - its seed sets its patterns;
+  - **tempo**: synced, every note sits on the host's sixteenth grid at 84 and 132 BPM
+    (vector strength above 0.9; below 0.5 off-tempo); free, it keeps its own tempo.
+- **World Controls on each Place**: Population (more notes, and an audible change),
+  Machinery, Life, Danger, Era (brighter) and Scale (further away).
+- **Slots**:
+  - distance (quieter and darker); pan both ways;
+  - a Place solo is exactly the Place alone, and a layer solo silences the Places;
+  - a Milestone 4 Place is silent;
+  - switching Places five times makes no clicks (the HF burst check);
+  - four Places in a storm stay finite and below the ceiling (−13.6 dBFS RMS).
+- **Environment in key**:
+  - drips in D minor, G major and A Phrygian, 8–11 dB in-scale gap;
+  - drip intervals vary (CV above 0.5), and the drips are spread across the stereo;
+  - rain and wind lean to the key;
+  - thunder's strongest low pitch class is the root or the fifth.
+- **Existing tests**:
+  - the World Controls test now measures the environment with the Castle muted.
+    Machinery, Life and Population are informational there and are tested on the
+    Places;
+  - the busy-world block-size check now includes four Places;
+  - the allocation check covers four Places of every Character;
+  - the state round trip includes Place parameters;
+  - the editor test covers the card behaviour (fill next slot, refuse Milestone 4
+    Places, at most four) and paints the detail panel.
+- **CPU**, High quality, every control at maximum, four busy Places, 48 kHz/256:
+  **7–9 % of one core** of this container (was 2.6 % without Places; a rough guide).
+
+### Milestone 3 handoff
+
+**Done:**
+- the drip fix and a musical retune of every environment layer to key;
+- key and tempo sync for everything tonal and rhythmic;
+- the Place framework (slots, strips, detail panel, element switches, Character,
+  Activity, Tension, Rhythm, Seed);
+- Castle, Village and Spaceport, each with three Characters;
+- the Place selector cards and the globe landmarks;
+- the old Machinery, Magic, Life and Population layers are removed, and their World
+  Controls now shape the Places;
+- Linux tests all pass, with GCC and Clang.
+
+**Next (needs the developer):**
+1. CI on the macOS runner: the AU, `auval` and the harness. The parameter count
+   changed (49 → 141); the harness only looks parameters up by name.
+2. The Milestone 3 check in GarageBand: see [MANUAL_TEST.md](MANUAL_TEST.md). This is
+   mostly listening. Do the drips sound beautiful now? Do the three Places score their
+   settings? Do they follow the song's key and tempo?
+
+**Then Milestone 4:**
+- Factory, City, Temple, Forest, Ruins, Cavern and Alien Hive (the slots already
+  accept them; add a class, a case in `PlaceSlot::engineFor`, its `placeInfo` entry
+  and `placeImplemented`);
+- MIDI events per Place, in key.
+
+**Known issues / limits:**
+- None of it has been heard by a person yet. Expect a tuning pass: the relative levels
+  of elements, the murmur's character, and whether the horn calls are frequent enough.
+- Old projects: the removed layer parameters are ignored on load. Population now
+  defaults to 50 %, so a Milestone 1/2 project saved with Population at 0 loads with
+  0, which makes its Places sparser. Slot 1 defaults to a Castle only for a fresh
+  instance or a missing value: an old project, which has no Place parameters, also
+  loads with a Castle. Remove it with X if it is not wanted.
+- Tempo changes during playback are followed block by block. A host tempo map that
+  changes inside a block lands at the next block.
+- Events are quantised to 32-sample chunks. Free-running Places keep their own phase
+  after a host transport jump; synced ones resync to the host PPQ.
+- Four Places at once plus a storm reach about −13.6 dBFS RMS. That is fine for a
+  dense scene, but no longer quiet.
+- The globe, landmarks and cards are still the placeholder style. The full Living
+  Globe and the resizable layout are Milestone 6.

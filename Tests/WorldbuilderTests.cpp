@@ -2,6 +2,7 @@
 //   WorldbuilderTests                 run everything
 //   WorldbuilderTests --snapshot f.png also write an image of the editor
 //   WorldbuilderTests --probe          print per-layer measurements (tuning aid)
+//   WorldbuilderTests --probe-places   print each Place's level per character and element
 //   WorldbuilderTests --render f.wav seconds [id=value ...]
 //                                      render a world to a WAV file (listening aid)
 #include "PluginEditor.h"
@@ -9,6 +10,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
+#include <complex>
 #include <cstdlib>
 #include <iostream>
 #include <new>
@@ -133,14 +135,138 @@ std::vector<double> envelopeDb(const Audio& a, double windowSeconds, double from
     return env;
 }
 
+// In-place radix-2 FFT.
+void fft(std::vector<std::complex<double>>& a) {
+    const std::size_t n = a.size();
+    for (std::size_t i = 1, j = 0; i < n; ++i) {
+        std::size_t bit = n >> 1;
+        for (; (j & bit) != 0; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) std::swap(a[i], a[j]);
+    }
+    for (std::size_t len = 2; len <= n; len <<= 1) {
+        const std::complex<double> w = std::polar(1.0, -2.0 * M_PI / double(len));
+        for (std::size_t i = 0; i < n; i += len) {
+            std::complex<double> v = 1;
+            for (std::size_t k = 0; k < len / 2; ++k) {
+                const auto x = a[i + k], y = a[i + k + len / 2] * v;
+                a[i + k] = x + y;
+                a[i + k + len / 2] = x - y;
+                v *= w;
+            }
+        }
+    }
+}
+
+// Energy per pitch class (C = 0) between lo and hi Hz from `from` seconds on: each
+// spectrum bin within 0.3 semitones of a note counts for that note's class.
+std::array<double, 12> chroma(const Audio& a, double from, double lo, double hi, std::size_t size = 32768) {
+    std::array<double, 12> pc {};
+    std::vector<std::complex<double>> buf(size);
+    for (std::size_t start = std::size_t(from * a.rate); start + size <= a.l.size(); start += size / 2) {
+        for (std::size_t i = 0; i < size; ++i) {
+            const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(size));
+            buf[i] = 0.5 * (a.l[start + i] + a.r[start + i]) * w;
+        }
+        fft(buf);
+        for (std::size_t k = 1; k < size / 2; ++k) {
+            const double hz = double(k) * a.rate / double(size);
+            if (hz < lo || hz > hi) continue;
+            const double midi = 69.0 + 12.0 * std::log2(hz / 440.0), nearest = std::round(midi);
+            if (std::abs(midi - nearest) < 0.3) pc[std::size_t((int(nearest) % 12 + 12) % 12)] += std::norm(buf[k]);
+        }
+    }
+    return pc;
+}
+
+// How well a chroma fits a key: mean and strongest energy of the in-scale classes
+// against the out-of-scale ones (dB).
+struct KeyFit {
+    double meanGap = 0, maxGap = 0;
+    std::string text;
+};
+KeyFit keyFit(const std::array<double, 12>& pc, int root, int mood) {
+    double inSum = 0, outSum = 0, inMax = 1.0e-30, outMax = 1.0e-30;
+    int ins = 0, outs = 0;
+    for (int c = 0; c < 12; ++c) {
+        const bool in = music::inScale(mood, c - root);
+        (in ? inSum : outSum) += pc[std::size_t(c)];
+        (in ? ins : outs) += 1;
+        if (in) inMax = std::max(inMax, pc[std::size_t(c)]);
+        else outMax = std::max(outMax, pc[std::size_t(c)]);
+    }
+    KeyFit fit;
+    fit.meanGap = 10.0 * std::log10((inSum / ins + 1.0e-30) / (outSum / std::max(outs, 1) + 1.0e-30));
+    fit.maxGap = 10.0 * std::log10(inMax / outMax);
+    fit.text = "in-scale classes " + fmt(fit.meanGap) + " dB above the rest on average, strongest " + fmt(fit.maxGap) + " dB";
+    return fit;
+}
+
+// Onset strength in 5 ms windows: how much the (pre-emphasised) energy rises.
+std::vector<double> onsetFlux(const Audio& a, double from) {
+    const auto w = std::size_t(0.005 * a.rate);
+    std::vector<double> energy;
+    double prev = 0;
+    for (std::size_t start = std::size_t(from * a.rate); start + w <= a.l.size(); start += w) {
+        double e = 0;
+        for (std::size_t i = start; i < start + w; ++i) {
+            const double m = 0.5 * (a.l[i] + a.r[i]);
+            const double x = m - 0.9 * prev;
+            prev = m;
+            e += x * x;
+        }
+        energy.push_back(10.0 * std::log10(e / double(w) + 1.0e-14));
+    }
+    std::vector<double> flux(energy.size(), 0.0);
+    for (std::size_t i = 4; i < energy.size(); ++i) flux[i] = std::max(0.0, energy[i] - std::max({ energy[i - 1], energy[i - 2], energy[i - 3], energy[i - 4] }));
+    return flux;
+}
+
+// Number of onsets: windows where the energy rises by more than `rise` dB, at least
+// 60 ms apart.
+int countOnsets(const std::vector<double>& flux, double rise = 6.0) {
+    int count = 0, last = -1000;
+    for (int i = 0; i < int(flux.size()); ++i)
+        if (flux[std::size_t(i)] > rise && i - last > 12) {
+            ++count;
+            last = i;
+        }
+    return count;
+}
+
+// How tightly onsets lock to a sixteenth-note grid at `bpm` (vector strength, 0..1).
+double gridLock(const std::vector<double>& flux, double bpm) {
+    std::complex<double> sum = 0;
+    double total = 0;
+    for (std::size_t i = 0; i < flux.size(); ++i) {
+        const double phase = double(i) * 0.005 * bpm / 60.0 * 4.0;
+        sum += flux[i] * std::polar(1.0, 2.0 * M_PI * phase);
+        total += flux[i];
+    }
+    return total > 0 ? std::abs(sum) / total : 0.0;
+}
+
+double dcDb(const Audio& a, double from) {
+    double mean = 0;
+    const auto begin = std::size_t(from * a.rate);
+    for (std::size_t i = begin; i < a.l.size(); ++i) mean += a.l[i] + a.r[i];
+    mean /= 2.0 * double(a.l.size() - begin);
+    return toDb(std::abs(mean));
+}
+
+// The parameter id of a Place slot field ("p1_type"...).
+std::string slotId(int slot, int field) { return specs[std::size_t(placeParam(slot, field))].id; }
+
 struct TestPlayHead final : juce::AudioPlayHead {
     bool playing = false;
     int64_t position = 0;
+    double bpm = 120.0, rate = 48000;
     juce::Optional<PositionInfo> getPosition() const override {
         PositionInfo info;
         info.setIsPlaying(playing);
         info.setTimeInSamples(position);
-        info.setBpm(120.0);
+        info.setBpm(bpm);
+        info.setPpqPosition(double(position) / rate * bpm / 60.0);
         return info;
     }
 };
@@ -155,6 +281,7 @@ struct Host {
 
     explicit Host(double sampleRate = 48000, int blockSize = 512, int channels = 2) : rate(sampleRate), block(blockSize) {
         p->setPlayConfigDetails(0, channels, rate, block);
+        playHead.rate = rate;
         p->setPlayHead(&playHead);
         p->prepareToPlay(rate, block);
         buffer.setSize(channels, block);
@@ -164,6 +291,7 @@ struct Host {
         auto* parameter = p->parameters.getParameter(id);
         parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
     }
+    void set(const std::string& id, float value) { set(id.c_str(), value); }
     float get(const char* id) const { return p->parameters.getRawParameterValue(id)->load(); }
     void processOne(int n) {
         buffer.setSize(buffer.getNumChannels(), n, false, false, true);
@@ -189,6 +317,26 @@ struct Host {
         return a;
     }
 };
+
+// Positions (seconds) of every note or hit slot 1's Place has played after `from`.
+std::vector<double> placeEvents(const Host& h, double from = 0) {
+    std::vector<double> at;
+    if (const auto* place = h.p->engine.placeSlot(0).place()) {
+        const uint32_t count = place->eventCount();
+        for (uint32_t i = count > uint32_t(Place::logSize) ? count - uint32_t(Place::logSize) : 0; i < count; ++i) {
+            const double t = double(place->eventClock(i)) / h.rate;
+            if (t >= from) at.push_back(t);
+        }
+    }
+    return at;
+}
+
+// How tightly events lock to a sixteenth-note grid at `bpm` (vector strength, 0..1).
+double eventGridLock(const std::vector<double>& at, double bpm) {
+    std::complex<double> sum = 0;
+    for (double t : at) sum += std::polar(1.0, 2.0 * M_PI * t * bpm / 60.0 * 4.0);
+    return at.empty() ? 0.0 : std::abs(sum) / double(at.size());
+}
 
 const char* worldId(int w) { return specs[std::size_t(PTemperature + w)].id; }
 
@@ -232,16 +380,19 @@ void testRatesAndBlocks(Suite& s) {
 }
 
 void testWorldControls(Suite& s) {
-    s.section("every World Control at minimum and maximum");
+    s.section("every World Control at minimum and maximum (environment; the Places are tested below)");
+    // The default Castle is muted here so the environment layers are measured as in
+    // Milestone 2. Machinery, Life and Population only shape the Places now.
     Host reference;
+    reference.set("p1_mute", 1);
     const auto base = measure(reference.render(7.0), 4.0);
-    // Controls whose layers arrive later. They must be safe now and audible later.
     const std::set<int> later { Machinery, Life, Population };
     for (int w = 0; w < WorldControlCount; ++w) {
         double largest = 0;
         std::array<double, 2> motion {};
         for (float value : { 0.0f, 1.0f }) {
             Host h;
+            h.set("p1_mute", 1);
             h.set(worldId(w), value);
             const auto st = measure(h.render(7.0), 4.0);
             const auto name = std::string(specs[std::size_t(PTemperature + w)].name) + (value == 0 ? " min" : " max");
@@ -251,7 +402,7 @@ void testWorldControls(Suite& s) {
             const double diff = difference(st, base);
             motion[value == 0 ? 0 : 1] = st.motionDb;
             if (later.count(w) != 0) {
-                std::cout << "  [info] " << name << ": layer arrives in a later milestone (change " << fmt(diff) << " dB)\n";
+                std::cout << "  [info] " << name << ": shapes the Places only (environment change " << fmt(diff) << " dB)\n";
             } else {
                 // Defaults sit near one end for some controls (Danger 20 %), so each extreme
                 // must be measurable and at least one must be clearly audible.
@@ -290,13 +441,6 @@ void testLayers(Suite& s) {
     const auto mix = measure(all.render(5.0), 3.0);
     for (int l = 0; l < LayerCount; ++l) {
         const std::string name = layerNames[std::size_t(l)];
-        if (!layerImplemented[std::size_t(l)]) {
-            Host h;
-            h.set(specs[std::size_t(layerSolo(l))].id, 1);
-            const auto st = measure(h.render(5.0), 3.0);
-            s.check(st.finite && st.rmsDb < -100.0, name + " solo: silent until implemented", fmt(st.rmsDb));
-            continue;
-        }
         // Thunder is event based: listen long enough for a few strikes.
         const double seconds = l == Thunder ? 30.0 : 8.0;
         Host featured, solo;
@@ -319,9 +463,11 @@ void testLayers(Suite& s) {
     }
     Host muted;
     for (int l = 0; l < LayerCount; ++l) muted.set(specs[std::size_t(layerMute(l))].id, 1);
-    s.check(measure(muted.render(3.0), 2.0).rmsDb < -100.0, "all layers muted is silent");
+    for (int slot = 0; slot < placeSlots; ++slot) muted.set(slotId(slot, PlMute), 1);
+    s.check(measure(muted.render(3.0), 2.0).rmsDb < -100.0, "all layers and Places muted is silent");
     Host quiet;
     for (int l = 0; l < LayerCount; ++l) quiet.set(specs[std::size_t(layerLevel(l))].id, -60);
+    for (int slot = 0; slot < placeSlots; ++slot) quiet.set(slotId(slot, PlLevel), -60);
     s.check(measure(quiet.render(5.0), 3.0).rmsDb < mix.rmsDb - 40.0, "layer levels at -60 dB are near silent");
 }
 
@@ -437,7 +583,8 @@ void testDeterminism(Suite& s) {
     Host busyA(48000, 64), busyB(48000, 999);
     for (auto* h : { &busyA, &busyB }) {
         for (auto [id, value] : { std::pair<const char*, float> { "weather", 1.0f }, { "wetness", 0.8f }, { "temperature", 0.85f },
-                                  { "danger", 0.9f }, { "activity", 1.0f } })
+                                  { "danger", 0.9f }, { "activity", 1.0f }, { "p2_type", float(Village) }, { "p3_type", float(Spaceport) },
+                                  { "p3_character", 2 }, { "p4_type", float(Village) }, { "p4_sync", 0 }, { "population", 1.0f } })
             h->set(id, value);
         h->playHead.playing = true;
         h->playHead.position = 48000 * 75;
@@ -445,7 +592,8 @@ void testDeterminism(Suite& s) {
     const auto ba = busyA.render(12.0), bb = busyB.render(12.0);
     maxDiff = 0;
     for (std::size_t i = 0; i < ba.l.size(); ++i) maxDiff = std::max(maxDiff, double(std::abs(ba.l[i] - bb.l[i]) + std::abs(ba.r[i] - bb.r[i])));
-    s.check(maxDiff < 1.0e-4, "busy world with every event layer: same output at any block size", fmt(toDb(maxDiff)) + " dB max difference");
+    s.check(maxDiff < 1.0e-4, "busy world with every event layer and four Places (one free-running): same output at any block size",
+            fmt(toDb(maxDiff)) + " dB max difference");
     s.check(busyA.p->engine.thunderLayer().strikeCount() > 0, "busy world: thunder struck during the comparison",
             std::to_string(busyA.p->engine.thunderLayer().strikeCount()));
 }
@@ -544,6 +692,13 @@ void testState(Suite& s) {
     a.set("air_level", -7.5f);
     a.set("bed_mute", 1);
     a.set("power", 0);
+    a.set("p2_type", float(Spaceport));
+    a.set("p2_character", 2);
+    a.set("p3_type", float(Village));
+    a.set("p3_sync", 0);
+    a.set("p1_e3_on", 0);
+    a.set("p1_tension", 0.9f);
+    a.set("p4_seed", 777);
     juce::MemoryBlock state;
     a.p->getStateInformation(state);
     Host b;
@@ -571,14 +726,20 @@ void testRealtimeSafety(Suite& s) {
         h.set("quality", float(quality % 3));
         for (int w = 0; w < WorldControlCount; ++w) h.set(worldId(w), 1.0f);
         if (quality >= 3) h.set("temperature", 0.0f);
-        h.render(1.0);
+        // Four Places, every character in turn.
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            h.set(slotId(slot, PlType), float(Castle + (slot + quality) % 3));
+            h.set(slotId(slot, PlCharacter), float((slot + quality) % 3));
+            h.set(slotId(slot, PlActivity), 1.0f);
+        }
+        h.render(quality >= 3 ? 8.0 : 1.0);
         h.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 10);
         allocationProbe::calls = 0;
         allocationProbe::enabled = true;
         for (int i = 0; i < 200; ++i) h.processOne(i % 3 == 0 ? 512 : 100 + i);
         allocationProbe::enabled = false;
-        s.check(allocationProbe::calls == 0, "processBlock performs no heap allocations (quality " + std::to_string(quality % 3)
-                + (quality >= 3 ? ", frozen" : ", scorching") + ")",
+            s.check(allocationProbe::calls == 0, "processBlock performs no heap allocations (quality " + std::to_string(quality % 3)
+                + (quality >= 3 ? ", frozen" : ", scorching") + ", four Places)",
                 std::to_string(allocationProbe::calls) + " allocations");
     }
 
@@ -599,14 +760,19 @@ void testRealtimeSafety(Suite& s) {
     }
     s.check(bad == 0, "24 random worlds: finite and below the ceiling", std::to_string(bad) + " bad");
 
-    // CPU: every World Control at maximum, High quality, 48 kHz / 256.
+    // CPU: every World Control at maximum, four busy Places, High quality, 48 kHz / 256.
     Host h(48000, 256);
     h.set("quality", 2);
     for (int w = 0; w < WorldControlCount; ++w) h.set(worldId(w), 1.0f);
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        h.set(slotId(slot, PlType), float(Castle + slot % 3));
+        h.set(slotId(slot, PlActivity), 1.0f);
+        h.set(slotId(slot, PlDensity), 1.0f);
+    }
     const auto start = juce::Time::getHighResolutionTicks();
     h.render(10.0);
     const double seconds = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - start);
-    s.metric("CPU, High quality, everything at maximum (one core of this machine)", 100.0 * seconds / 10.0, " %");
+    s.metric("CPU, High quality, everything at maximum, four Places (one core of this machine)", 100.0 * seconds / 10.0, " %");
 }
 
 void testEditor(Suite& s, const juce::String& snapshotPath) {
@@ -618,16 +784,359 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     if (editor == nullptr) return;
     s.check(editor->getWidth() >= 800 && editor->getHeight() >= 500, "editor has its full size",
             std::to_string(editor->getWidth()) + " x " + std::to_string(editor->getHeight()));
-    const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
-    s.check(image.isValid(), "editor paints");
-    if (snapshotPath.isNotEmpty()) {
-        juce::File file(snapshotPath);
+    const auto save = [&](const juce::Image& image, const juce::String& path) {
+        if (path.isEmpty()) return;
+        juce::File file(path);
         file.deleteFile();
         juce::FileOutputStream out(file);
         juce::PNGImageFormat().writeImageToStream(image, out);
-        std::cout << "  editor snapshot written to " << snapshotPath << "\n";
-    }
+        std::cout << "  editor snapshot written to " << path << "\n";
+    };
+    auto* world = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    s.check(world != nullptr, "editor is the WORLDBUILDER editor");
+    if (world == nullptr) return;
+    // Cards add Places to the first empty slots; a fifth is refused.
+    const int village = world->addPlace(Village), spaceport = world->addPlace(Spaceport);
+    s.check(village == 1 && spaceport == 2 && juce::roundToInt(h.get("p2_type")) == Village && juce::roundToInt(h.get("p3_type")) == Spaceport,
+            "Place cards fill the next empty slots", std::to_string(village) + ", " + std::to_string(spaceport));
+    s.check(world->addPlace(Factory) == -1, "a Place from a later milestone cannot be added yet");
+    const int fourth = world->addPlace(Castle);
+    s.check(fourth == 3 && world->addPlace(Village) == -1, "at most four Places");
+    h.render(0.5);
+    const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
+    s.check(image.isValid(), "editor paints");
+    save(image, snapshotPath);
+    world->openDetail(1);
+    const auto detailImage = editor->createComponentSnapshot(editor->getLocalBounds());
+    s.check(detailImage.isValid(), "detail panel paints");
+    save(detailImage, snapshotPath.isEmpty() ? juce::String() : snapshotPath.upToLastOccurrenceOf(".", false, false) + "-detail.png");
     editor.reset();
+}
+
+
+//==============================================================================
+// Places.
+
+// A host playing one Place alone in slot 1, at `bpm`, with extra settings.
+Host placeHost(int type, int character, const std::vector<std::pair<std::string, float>>& extra = {}, double bpm = 120.0) {
+    Host h;
+    h.playHead.bpm = bpm;
+    h.set("p1_type", float(type));
+    h.set("p1_character", float(character));
+    h.set("p1_solo", 1);
+    for (const auto& [id, value] : extra) h.set(id, value);
+    return h;
+}
+
+void testPlaces(Suite& s) {
+    for (int type : { Castle, Village, Spaceport }) {
+        const std::string place = placeNames[std::size_t(type)];
+        s.section((place + ": characters, key, activity, tension, elements, seed").c_str());
+        std::array<Stats, placeCharacters> character;
+        for (int c = 0; c < placeCharacters; ++c) {
+            const std::string name = place + " / " + placeInfo(type).characters[std::size_t(c)];
+            auto h = placeHost(type, c);
+            const auto a = h.render(32.0);
+            const auto st = measure(a, 4.0);
+            character[std::size_t(c)] = st;
+            s.check(st.finite, name + ": finite");
+            s.check(st.rmsDb > -42.0 && st.rmsDb < -18.0, name + ": a bed under a score (-42..-18 dBFS RMS)", fmt(st.rmsDb) + " dBFS");
+            s.check(st.peak < 0.6, name + ": peaks stay below -4.4 dBFS", fmt(toDb(st.peak)) + " dBFS");
+            s.check(st.sideDb > st.rmsDb - 20.0, name + ": stereo", "side " + fmt(st.sideDb));
+            s.check(dcDb(a, 4.0) < st.rmsDb - 30.0, name + ": no DC offset", fmt(dcDb(a, 4.0)) + " dB");
+            // Every note is in the key, but brass-like saw drones carry their natural
+            // harmonics (the fifth harmonic of G is B), so the out-of-scale classes are not
+            // empty: 5 dB on average is a clear margin for notes.
+            const auto fit = keyFit(chroma(a, 4.0, 100.0, 5000.0), 2, 0);
+            s.check(fit.meanGap > 5.0 && fit.maxGap > 3.0, name + ": in D minor", fit.text);
+            s.metric(name + " RMS", st.rmsDb, " dBFS");
+            s.metric(name + " key fit (mean gap)", fit.meanGap, " dB");
+        }
+        for (int a = 0; a < placeCharacters; ++a)
+            for (int b = a + 1; b < placeCharacters; ++b) {
+                const double diff = difference(character[std::size_t(a)], character[std::size_t(b)]);
+                s.check(diff > 1.0, place + ": characters " + std::to_string(a + 1) + " and " + std::to_string(b + 1) + " sound different",
+                        fmt(diff) + " dB");
+            }
+
+        // Key follows Root and Mood: G major.
+        {
+            auto h = placeHost(type, 0, { { "root", 7.0f }, { "mood", 1.0f } });
+            const auto fit = keyFit(chroma(h.render(32.0), 4.0, 100.0, 5000.0), 7, 1);
+            s.check(fit.meanGap > 5.0 && fit.maxGap > 3.0, place + ": follows Root and Mood (G major)", fit.text);
+        }
+
+        // Activity: sparse to busy.
+        {
+            auto sparse = placeHost(type, 0, { { "p1_activity", 0.05f } }), busy = placeHost(type, 0, { { "p1_activity", 1.0f } });
+            const auto sa = sparse.render(32.0), ba = busy.render(32.0);
+            const auto few = placeEvents(sparse).size(), many = placeEvents(busy).size();
+            const double diff = difference(measure(sa, 4.0), measure(ba, 4.0));
+            s.check(double(many) > 1.3 * double(few) && diff > 1.0, place + ": Activity makes it busier",
+                    std::to_string(few) + " -> " + std::to_string(many) + " notes and hits, " + fmt(diff) + " dB");
+        }
+        // Tension: calm to menacing.
+        {
+            auto calm = placeHost(type, 2, { { "p1_tension", 0.0f } }), tense = placeHost(type, 2, { { "p1_tension", 1.0f } });
+            const double diff = difference(measure(calm.render(32.0), 4.0), measure(tense.render(32.0), 4.0));
+            s.check(diff > 1.5, place + ": Tension changes it clearly", fmt(diff) + " dB");
+        }
+        // Tone: dark to bright.
+        {
+            auto dark = placeHost(type, 0, { { "p1_tone", 0.0f } }), bright = placeHost(type, 0, { { "p1_tone", 1.0f } });
+            const auto d = measure(dark.render(24.0), 4.0), b = measure(bright.render(24.0), 4.0);
+            s.check(b.highDb - b.rmsDb > d.highDb - d.rmsDb + 3.0, place + ": Tone brightens it",
+                    fmt(d.highDb - d.rmsDb) + " -> " + fmt(b.highDb - b.rmsDb) + " dB highs re RMS");
+        }
+        // Elements: each one changes the sound; all off is silent.
+        {
+            auto full = placeHost(type, 0, { { "p1_activity", 0.8f } });
+            const auto all = measure(full.render(32.0), 4.0);
+            for (int e = 0; e < placeElements; ++e) {
+                auto without = placeHost(type, 0, { { "p1_activity", 0.8f }, { slotId(0, PlElementOn + e), 0.0f } });
+                const double diff = difference(all, measure(without.render(32.0), 4.0));
+                s.check(diff > 0.3, place + ": switching off " + placeInfo(type).elements[std::size_t(e)] + " changes it", fmt(diff) + " dB");
+            }
+            std::vector<std::pair<std::string, float>> off;
+            for (int e = 0; e < placeElements; ++e) off.push_back({ slotId(0, PlElementOn + e), 0.0f });
+            auto none = placeHost(type, 0, off);
+            const auto st = measure(none.render(8.0), 4.0);
+            s.check(st.rmsDb < -90.0, place + ": every element off is silent", fmt(st.rmsDb) + " dBFS");
+        }
+        // Seed: same seed, same Place; another seed, other patterns.
+        {
+            auto a = placeHost(type, 0), b = placeHost(type, 0), c = placeHost(type, 0, { { "p1_seed", 12.0f } });
+            const auto x = a.render(10.0), y = b.render(10.0), z = c.render(10.0);
+            double diff = 0;
+            for (std::size_t i = 0; i < x.l.size(); ++i) diff += std::abs(x.l[i] - z.l[i]);
+            s.check(x.l == y.l && x.r == y.r && diff / double(x.l.size()) > 1.0e-4, place + ": its Seed sets its patterns (same seed identical)",
+                    fmt(diff / double(x.l.size())));
+        }
+        // Tempo: synced, onsets lock to the host's grid at two tempos; free, to its own.
+        {
+            // Every note lands on a sixteenth of the host's tempo (to within one 32-sample
+            // control chunk); an off-tempo grid does not fit.
+            for (double bpm : { 84.0, 132.0 }) {
+                auto h = placeHost(type, 0, { { "p1_swing", 0.0f }, { "p1_activity", 0.8f } }, bpm);
+                h.render(40.0);
+                const auto at = placeEvents(h, 2.0);
+                const double right = eventGridLock(at, bpm), wrong = eventGridLock(at, bpm * 1.17);
+                s.check(at.size() > 20 && right > 0.9 && wrong < 0.5, place + ": synced, it plays on the host grid at " + fmt(bpm) + " BPM",
+                        std::to_string(at.size()) + " notes, grid lock " + fmt(right) + " vs " + fmt(wrong) + " off-tempo");
+            }
+            auto h = placeHost(type, 0, { { "p1_swing", 0.0f }, { "p1_activity", 0.8f }, { "p1_sync", 0.0f } }, 132.0);
+            h.render(40.0);
+            const auto at = placeEvents(h, 2.0);
+            // Free tempo: the Place's own, scaled by Activity (Population at its default leaves Activity as set).
+            const double own = (type == Castle ? 66.0 : (type == Village ? 92.0 : 112.0)) * (0.85 + 0.3 * 0.8);
+            const double ownLock = eventGridLock(at, own), hostLock = eventGridLock(at, 132.0);
+            s.check(ownLock > 0.9 && hostLock < 0.5, place + ": free, it keeps its own tempo",
+                    "grid lock " + fmt(ownLock) + " at " + fmt(own) + " BPM vs " + fmt(hostLock) + " at the host's 132");
+        }
+    }
+}
+
+// The World Controls fold into every Place.
+void testPlaceWorld(Suite& s) {
+    s.section("World Controls shape the Places");
+    const auto compare = [&](int type, const char* id, float lo, float hi) {
+        auto a = placeHost(type, 0, { { id, lo } }), b = placeHost(type, 0, { { id, hi } });
+        const auto x = a.render(32.0), y = b.render(32.0);
+        return std::pair<Stats, Stats> { measure(x, 4.0), measure(y, 4.0) };
+    };
+    for (int type : { Castle, Village, Spaceport }) {
+        const std::string place = placeNames[std::size_t(type)];
+        {
+            auto a = placeHost(type, 0, { { "population", 0.0f } }), b = placeHost(type, 0, { { "population", 1.0f } });
+            const auto x = a.render(32.0), y = b.render(32.0);
+            const auto few = placeEvents(a).size(), many = placeEvents(b).size();
+            const double diff = difference(measure(x, 4.0), measure(y, 4.0));
+            s.check(double(many) > 1.2 * double(few) && diff > 1.0, place + ": Population makes it busier and deepens its effect",
+                    std::to_string(few) + " -> " + std::to_string(many) + " notes and hits, " + fmt(diff) + " dB");
+        }
+        for (auto [id, threshold] : { std::pair<const char*, double> { "machinery", 1.0 }, { "life", 0.2 }, { "danger", 1.0 } }) {
+            const auto [x, y] = compare(type, id, 0.0f, 1.0f);
+            const double diff = difference(x, y);
+            s.check(diff > threshold, place + ": " + id + " changes it", fmt(diff) + " dB");
+            s.metric(place + " " + id + " change", diff, " dB");
+        }
+        {
+            const auto [x, y] = compare(type, "era", 0.0f, 1.0f);
+            s.check(y.highDb - y.rmsDb > x.highDb - x.rmsDb + 1.0, place + ": a futuristic Era is brighter",
+                    fmt(x.highDb - x.rmsDb) + " -> " + fmt(y.highDb - y.rmsDb));
+        }
+        {
+            const auto [x, y] = compare(type, "scale", 0.0f, 1.0f);
+            s.check(y.rmsDb < x.rmsDb - 1.5, place + ": colossal Scale puts it further away (quieter, more of it in the reverb)",
+                    fmt(x.rmsDb) + " -> " + fmt(y.rmsDb) + " dBFS");
+        }
+    }
+}
+
+void testPlaceSlots(Suite& s) {
+    s.section("Place slots: distance, pan, mute, solo, switching, four at once");
+    // Distance: quieter and darker.
+    {
+        auto nearHost = placeHost(Village, 0, { { "p1_distance", 0.0f } }), farHost = placeHost(Village, 0, { { "p1_distance", 1.0f } });
+        const auto n = measure(nearHost.render(20.0), 4.0), f = measure(farHost.render(20.0), 4.0);
+        s.check(f.rmsDb < n.rmsDb - 4.0 && f.highDb - f.rmsDb < n.highDb - n.rmsDb - 2.0, "far is quieter and darker",
+                fmt(n.rmsDb) + " -> " + fmt(f.rmsDb) + " dBFS, highs " + fmt(n.highDb - n.rmsDb) + " -> " + fmt(f.highDb - f.rmsDb));
+    }
+    // Pan.
+    for (float pan : { -1.0f, 1.0f }) {
+        auto h = placeHost(Village, 0, { { "p1_pan", pan } });
+        const auto a = h.render(16.0);
+        double l = 0, r = 0;
+        for (std::size_t i = std::size_t(4.0 * a.rate); i < a.l.size(); ++i) {
+            l += a.l[i] * a.l[i];
+            r += a.r[i] * a.r[i];
+        }
+        const double balance = 10.0 * std::log10((r + 1.0e-20) / (l + 1.0e-20));
+        s.check(pan < 0 ? balance < -6.0 : balance > 6.0, std::string("pan ") + (pan < 0 ? "left" : "right") + " moves it", fmt(balance) + " dB right re left");
+    }
+    // A Place solo is the Place alone; a layer solo silences the Places.
+    {
+        Host solo, alone;
+        solo.set("p1_solo", 1);
+        for (int l = 0; l < LayerCount; ++l) alone.set(specs[std::size_t(layerMute(l))].id, 1);
+        const auto x = solo.render(6.0), y = alone.render(6.0);
+        s.check(x.l == y.l && x.r == y.r, "a Place solo plays the Place alone");
+        Host air, airOnly;
+        air.set("air_solo", 1);
+        airOnly.set("air_solo", 1);
+        airOnly.set("p1_type", 0);
+        const auto p = air.render(6.0), q = airOnly.render(6.0);
+        s.check(p.l == q.l && p.r == q.r, "a layer solo silences the Places");
+        Host muted;
+        muted.set("p1_mute", 1);
+        muted.set("p1_solo", 1);
+        s.check(measure(muted.render(5.0), 3.0).rmsDb < -100.0, "a muted Place is silent even when soloed");
+    }
+    // A Place from a later milestone is silent; so is an empty slot.
+    {
+        auto h = placeHost(Factory, 0);
+        const auto st = measure(h.render(6.0), 2.0);
+        s.check(st.finite && st.rmsDb < -100.0, "a Place from a later milestone is silent for now", fmt(st.rmsDb));
+    }
+    // Switching a slot's Place fades out and in: no clicks.
+    {
+        Host h;
+        h.set("p1_solo", 1);
+        Audio all;
+        all.rate = h.rate;
+        std::vector<double> switches;
+        const auto append = [&](const Audio& a) {
+            all.l.insert(all.l.end(), a.l.begin(), a.l.end());
+            all.r.insert(all.r.end(), a.r.begin(), a.r.end());
+        };
+        append(h.render(6.0));
+        for (int type : { int(Village), int(Spaceport), 0, int(Castle), int(Spaceport) }) {
+            switches.push_back(double(all.l.size()) / all.rate);
+            h.set("p1_type", float(type));
+            append(h.render(5.0));
+        }
+        // A click is a burst of energy above 6 kHz: compare the worst 5 ms burst around
+        // each switch with the worst during steady playing.
+        double hp = 0, prev = 0, sum = 0;
+        const auto w = std::size_t(0.005 * all.rate);
+        std::vector<double> hf;
+        for (std::size_t i = 0; i < all.l.size(); ++i) {
+            const double x = 0.5 * (all.l[i] + all.r[i]);
+            hp = 0.7 * (hp + x - prev);
+            prev = x;
+            sum += hp * hp;
+            if ((i + 1) % w == 0) {
+                hf.push_back(10.0 * std::log10(sum / double(w) + 1.0e-24));
+                sum = 0;
+            }
+        }
+        double steady = -240, around = -240;
+        for (std::size_t k = 0; k < hf.size(); ++k) {
+            const double t = double(k) * 0.005;
+            if (t < 2.0) continue;
+            bool near = false;
+            for (double at : switches) near |= t > at - 0.05 && t < at + 0.7;
+            (near ? around : steady) = std::max(near ? around : steady, hf[k]);
+        }
+        s.check(around < steady + 3.0, "switching Places has no clicks", "worst 5 ms burst " + fmt(around) + " dB vs " + fmt(steady) + " dB while playing");
+        const auto last = measure(all, all.l.size() / all.rate - 3.0);
+        s.check(last.rmsDb > -45.0, "the new Place plays after a switch", fmt(last.rmsDb));
+    }
+    // Four Places at once, in a busy world: finite, bounded, still a bed.
+    {
+        Host h;
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            h.set(slotId(slot, PlType), float(Castle + slot % 3));
+            h.set(slotId(slot, PlCharacter), float(slot % 3));
+        }
+        h.set("weather", 0.7f);
+        h.set("wetness", 0.6f);
+        const auto st = measure(h.render(24.0), 4.0);
+        s.check(st.finite && st.peak < 0.9, "four Places in a stormy world: finite and below the ceiling", fmt(toDb(st.peak)) + " dBFS");
+        s.check(st.rmsDb > -35.0 && st.rmsDb < -12.0, "four Places in a stormy world: a sensible level", fmt(st.rmsDb) + " dBFS");
+        s.metric("four Places + storm RMS", st.rmsDb, " dBFS");
+    }
+}
+
+// The environment retuned toward music: drips, rain, wind and thunder in the key.
+void testMusic(Suite& s) {
+    s.section("environment in the key: drips, rain, wind, thunder");
+    for (auto [root, mood, name] : { std::tuple<int, int, const char*> { 2, 0, "D minor" }, { 7, 1, "G major" }, { 9, 3, "A Phrygian" } }) {
+        Host h;
+        h.set("water_solo", 1);
+        h.set("wetness", 0.35f);
+        h.set("weather", 0.0f);
+        h.set("root", float(root));
+        h.set("mood", float(mood));
+        const auto a = h.render(40.0);
+        const auto fit = keyFit(chroma(a, 4.0, 300.0, 5000.0), root, mood);
+        s.check(fit.meanGap > 8.0 && fit.maxGap > 4.0, std::string("drips ring in ") + name, fit.text);
+        if (root == 2) {
+            // Natural timing: onset intervals vary widely.
+            const auto flux = onsetFlux(a, 4.0);
+            std::vector<double> at;
+            int last = -1000;
+            for (int i = 0; i < int(flux.size()); ++i)
+                if (flux[std::size_t(i)] > 6.0 && i - last > 12) {
+                    at.push_back(double(i) * 0.005);
+                    last = i;
+                }
+            std::vector<double> gaps;
+            for (std::size_t i = 1; i < at.size(); ++i) gaps.push_back(at[i] - at[i - 1]);
+            double mean = 0, var = 0;
+            for (double g : gaps) mean += g / double(std::max<std::size_t>(gaps.size(), 1));
+            for (double g : gaps) var += (g - mean) * (g - mean) / double(std::max<std::size_t>(gaps.size(), 1));
+            const double cv = mean > 0 ? std::sqrt(var) / mean : 0;
+            s.check(gaps.size() >= 8 && cv > 0.5, "drips fall with natural, irregular timing",
+                    std::to_string(at.size()) + " drips, interval variation " + fmt(cv));
+            const auto st = measure(a, 4.0);
+            s.check(st.sideDb > st.rmsDb - 12.0, "drips are spread across the stereo field", "side " + fmt(st.sideDb) + " vs " + fmt(st.rmsDb));
+        }
+    }
+    {
+        Host h;
+        h.set("water_solo", 1);
+        h.set("wetness", 0.8f);
+        h.set("weather", 0.5f);
+        const auto fit = keyFit(chroma(h.render(24.0), 4.0, 500.0, 5000.0), 2, 0);
+        s.check(fit.meanGap > 3.0, "rain plucks and shimmer lean to the key", fit.text);
+    }
+    {
+        Host h;
+        h.set("air_solo", 1);
+        h.set("weather", 0.7f);
+        h.set("temperature", 0.2f);
+        const auto fit = keyFit(chroma(h.render(24.0), 4.0, 400.0, 5000.0), 2, 0);
+        s.check(fit.meanGap > 1.5, "wind whistles sing on scale notes", fit.text);
+    }
+    {
+        Host h;
+        h.set("thunder_solo", 1);
+        h.set("weather", 1.0f);
+        const auto pc = chroma(h.render(90.0), 4.0, 30.0, 160.0, 65536);
+        const auto strongest = std::size_t(std::max_element(pc.begin(), pc.end()) - pc.begin());
+        s.check(strongest == 2 || strongest == 9, "thunder lands on the root (or fifth) of the key", "strongest low pitch class " + std::to_string(strongest));
+    }
 }
 
 // Tuning aid: per-layer measurements for each World Control at 0, default and 1.
@@ -635,7 +1144,6 @@ int probe() {
     for (int w = 0; w < WorldControlCount; ++w) {
         std::cout << specs[std::size_t(PTemperature + w)].name << "\n";
         for (int layer = -1; layer < LayerCount; ++layer) {
-            if (layer >= 0 && !layerImplemented[std::size_t(layer)]) continue;
             const char* solo = layer < 0 ? "" : specs[std::size_t(layerSolo(layer))].id;
             for (float value : { 0.0f, specs[std::size_t(PTemperature + w)].def, 1.0f }) {
                 Host h;
@@ -648,6 +1156,25 @@ int probe() {
             }
         }
     }
+    return 0;
+}
+
+
+// Tuning aid: each Place's level per character, and each element alone.
+int probePlaces() {
+    for (int type : { Castle, Village, Spaceport })
+        for (int c = 0; c < placeCharacters; ++c) {
+            std::printf("%-10s %-15s", placeNames[std::size_t(type)], placeInfo(type).characters[std::size_t(c)]);
+            for (int e = -1; e < placeElements; ++e) {
+                std::vector<std::pair<std::string, float>> settings;
+                for (int k = 0; k < placeElements; ++k)
+                    if (e >= 0 && k != e) settings.push_back({ slotId(0, PlElementOn + k), 0.0f });
+                auto h = placeHost(type, c, settings);
+                const auto st = measure(h.render(32.0), 4.0);
+                std::printf("  %s %6.1f/%5.1f", e < 0 ? "all" : placeInfo(type).elements[std::size_t(e)], st.rmsDb, toDb(st.peak));
+            }
+            std::printf("\n");
+        }
     return 0;
 }
 
@@ -686,6 +1213,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i)
         if (juce::String(argv[i]) == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (juce::String(argv[i]) == "--probe") return probe();
+        else if (juce::String(argv[i]) == "--probe-places") return probePlaces();
         else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {
             juce::StringArray settings;
             for (int k = i + 3; k < argc; ++k) settings.add(argv[k]);
@@ -698,6 +1226,10 @@ int main(int argc, char** argv) {
     testWorldControls(s);
     testLayers(s);
     testClimateLayers(s);
+    testMusic(s);
+    testPlaces(s);
+    testPlaceWorld(s);
+    testPlaceSlots(s);
     testDeterminism(s);
     testPowerAndMaster(s);
     testTonalChanges(s);

@@ -9,6 +9,8 @@ void AirLayer::prepare(double sampleRate) {
     const float controlRate = rate / float(chunk);
     gust.setTime(0.15f, controlRate);
     pan.setTime(0.3f, controlRate);
+    for (auto& w : whistleHz) w.setTime(0.35f, controlRate);
+    howlPitch.setTime(0.5f, controlRate);
     for (auto* s : { &bodyGain, &whistleGain, &howlGain }) s->setTime(0.05f, rate);
     reset();
 }
@@ -22,6 +24,8 @@ void AirLayer::reset() {
     pinkR.reset();
     gust.snap(0.3f);
     pan.snap(0);
+    for (auto& w : whistleHz) w.snap(1500.0f);
+    howlPitch.snap(250.0f);
     for (auto* s : { &bodyGain, &whistleGain, &howlGain }) s->snap(0);
 }
 
@@ -73,9 +77,15 @@ void AirLayer::render(const WorldFrame& world, uint64_t clock, float* left, floa
     // Ancient air breathes; futuristic air sings through metal, with tighter resonances.
     const float era = world[Era];
     const float wq = (16.0f + 10.0f * (1.0f - temp)) * lerpExp(0.5f, 2.2f, era);
+    // The whistles sing on notes of the scale: each drifts through its band and settles
+    // on the nearest scale note, gliding between notes like wind across a bottle.
+    const float rootHz = music::rootHz(world.root);
     for (int i = 0; i < whistles; ++i) {
         const float drift = 0.5f + 0.5f * whistleDrift[std::size_t(i)].smooth(t, 0.05 + 0.02 * i);
-        whistle[std::size_t(i)].set(lerpExp(wLo, wHi, clamp01(drift)) * (1.0f + 0.15f * g), wq, rate);
+        const float free = lerpExp(wLo, wHi, clamp01(drift)) * (1.0f + 0.15f * g);
+        const int note = music::quantise(world.mood, 12.0f * std::log2(free / rootHz));
+        const float hz = whistleHz[std::size_t(i)].next(music::noteHz(world.root, float(note)));
+        whistle[std::size_t(i)].set(hz, wq, rate);
     }
     const float whistleTarget = (0.1f + 0.6f * weather) * (1.0f + 0.6f * (1.0f - temp)) * lerp(0.5f, 1.8f, era) * std::pow(g, 1.5f)
                                 * 10.0f * std::sqrt(wq * 500.0f / wHi) / std::sqrt(float(whistles));
@@ -83,7 +93,9 @@ void AirLayer::render(const WorldFrame& world, uint64_t clock, float* left, floa
 
     // Storm howl.
     const float howlAmount = smoothstep(0.5f, 0.95f, weather + 0.3f * world[Danger]);
-    const float howlHz = lerpExp(170.0f, 420.0f, clamp01(g / 1.3f)) * (1.0f + 0.05f * howlDrift.smooth(t, 0.2));
+    // The howl rises with the gusts from the root to the fifth and octave of the key.
+    const float howlFree = lerpExp(170.0f, 420.0f, clamp01(g / 1.3f)) * (1.0f + 0.05f * howlDrift.smooth(t, 0.2));
+    const float howlHz = howlPitch.next(music::noteHz(world.root, float(music::quantise(world.mood, 12.0f * std::log2(howlFree / rootHz)))));
     howl.set(howlHz, 9.0f, rate);
     const float howlTarget = howlAmount * std::pow(g, 1.5f) * 2.5f * std::sqrt(9.0f * 500.0f / howlHz);
 

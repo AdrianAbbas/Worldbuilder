@@ -49,6 +49,7 @@ private:
     double rate = 48000;
     int64_t expectedHostPosition = -1;
     bool hostWasPlaying = false;
+    float hostBpm = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorldbuilderProcessor)
 };

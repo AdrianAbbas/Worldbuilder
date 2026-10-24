@@ -7,6 +7,7 @@
 // Bernoulli trial per chunk (or per sample, for dense textures) approximates a
 // Poisson process: irregular, never metronomic.
 #include "Core.h"
+#include "Music.h"
 
 namespace wb::dsp {
 

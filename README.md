@@ -1,22 +1,38 @@
 # WORLDBUILDER
 
-A procedural soundscape instrument for Logic Pro and GarageBand on macOS (Apple
-Silicon and Intel, macOS 10.15+). Describe a world with a handful of high-level
-controls (temperature, weather, machinery, magic, scale and more) and WORLDBUILDER
-synthesises it in real time. It uses no samples and no recordings.
+A film-scoring soundscape instrument for Logic Pro and GarageBand on macOS (Apple
+Silicon and Intel, macOS 10.15+). It scores a place rather than recording it:
+musical, tonal and rhythmic sound in your song's key and tempo that evokes a castle,
+a village or a spaceport, over a living environment of wind, water, fire, ice and
+thunder. Everything is synthesised in real time. It uses no samples and no
+recordings.
 
-**Status: Milestone 2 (climate layers).** These work now:
-- six of the ten layers: Air (wind), Water (rain, drips, streams, waves), Fire &
-  Heat (crackle, roar, lava), Ice & Earth (creaks, singing ice, rumble,
-  rockfalls), Thunder and the Tonal Bed;
-- Temperature, Weather, Wetness, Scale, Era, Magic, Danger and Activity shape them;
-- the shared World Space reverb;
-- Power/Play, Master Level, Width, Seed, Quality, Root and Mood;
-- a placeholder interface whose globe shows the climate (rain, snow, lava, lightning).
+**Status: Milestone 3 (musical retune and the first Places).** These work now:
+- **Places**, the centrepiece. Up to four play at once: Castle, Village and Spaceport.
+  - Each has three Characters that change its patterns, harmony and sound.
+  - Each has five elements you can switch off or turn down, and its own effect
+    character (stone hall and tape echo; tape warmth; ping-pong delay and hangar).
+  - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
+    host tempo, or the Place's own free tempo) and a Seed.
+  - Each slot also has level, distance and pan.
+- **Key and tempo.** Everything tonal follows Root and Mood, and all Places share one
+  slow chord progression. Rhythmic parts follow the host tempo.
+- **The environment**, retuned toward music. Air whistles on scale notes. Water drips
+  ring as tuned drops, and rain carries pitched plucks and an in-key shimmer. Fire and
+  ice sing in the key. Thunder lands as a tuned impact with a swell. The Tonal Bed
+  holds it together.
+- **World Controls** shape everything. Population sets how busy the Places are,
+  Machinery makes them straighter and more metallic, Life more human, and Danger
+  darker.
+- the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
+- **The interface**: Place cards to add Places, Place strips, a detail panel for each
+  Place, and landmarks on a placeholder globe that you can drag to move a Place.
 
-The remaining layers, Structures, Locations and the full interface arrive in later
-milestones. See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits, and
-[docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) for the plan.
+The other seven Places and MIDI events come in Milestone 4, Locations and Journeys in
+Milestone 5, and the full interface in Milestone 6. See
+[docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
+[docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
+[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md); the update overrides the brief.
 
 ## Install (macOS)
 
@@ -45,10 +61,13 @@ Linux dependencies (ALSA, FreeType, fontconfig, X11 headers); see
 `.github/workflows/build.yml`. Pass `-DJUCE_PATH=/path/to/JUCE` to use an existing
 JUCE checkout. On macOS it also builds the AU as a universal binary.
 
-`WorldbuilderTests --snapshot editor.png` writes an image of the interface;
-`WorldbuilderTests --probe` prints per-layer measurements for each World Control;
+`WorldbuilderTests --snapshot editor.png` writes an image of the interface (and of a
+Place's detail panel); `WorldbuilderTests --probe` prints per-layer measurements for
+each World Control; `WorldbuilderTests --probe-places` prints each Place's level per
+character and element;
 `WorldbuilderTests --render storm.wav 30 weather=1 wetness=0.8` renders any world
-(parameter IDs from `Source/Parameters.h`) to a WAV file.
+(parameter IDs from `Source/Parameters.h`, e.g. `p1_type=2 p1_character=2` for a
+Village festival in slot 1) to a WAV file.
 
 CI (`.github/workflows/build.yml`) runs on every push:
 - universal macOS build and the tests on both architectures;

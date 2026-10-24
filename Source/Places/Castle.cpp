@@ -1,0 +1,335 @@
+#include "Places.h"
+
+namespace wb {
+
+using namespace dsp;
+
+void CastlePlace::prepare(double sampleRate) {
+    rate = float(sampleRate);
+    hall.prepare(rate);
+    echo.prepare(rate, 2.5f);
+    reset();
+}
+
+void CastlePlace::reset() {
+    for (auto& v : drone) v.reset();
+    for (auto& v : horn) v.reset();
+    for (auto& b : bell) b.reset();
+    for (auto& d : drum) d.reset();
+    for (auto& p : hornPhrase) p.clear();
+    bellPhrase.clear();
+    hornRelease.fill(0);
+    hall.clear();
+    echo.clear();
+    for (auto& f : bellTone) f.reset();
+}
+
+void CastlePlace::setSeed(uint32_t key) {
+    pattern.stream.setKey(key, 1101);
+    noise.setKey(key, 1102);
+    drift.setKey(key, 1103);
+}
+
+void CastlePlace::playBell(const PlaceContext& c, int semitones, float velocity, float decay, float pan) {
+    const int mood = c.world->mood;
+    // Bell partials tuned to the key: hum an octave down, prime, the scale's own third
+    // and fifth (the "tierce" and "quint"), nominal and the upper fifth.
+    const float third = std::exp2(float(music::degree(mood, 2)) / 12.0f), fifth = std::exp2(float(music::degree(mood, 4)) / 12.0f);
+    const float ratios[6] { 0.5f, 1.0f, third, fifth, 2.0f, 2.0f * fifth };
+    static constexpr float decays[6] { 1.4f, 1.0f, 0.7f, 0.55f, 0.45f, 0.3f };
+    const float bright = c.s.tone;
+    const float gains[6] { 0.35f, 1.0f, 0.5f, 0.35f, 0.55f * (0.5f + bright), 0.25f * bright };
+    auto& b = bell[pickVoice(bell, bellVoices, [](const Bell& v) { return v.level(); })];
+    logEvent(c.clock);
+    b.start(music::noteHz(c.world->root, float(semitones)), decay * lerp(0.7f, 1.3f, c.s.size), 0.35f + 0.5f * bright, velocity, pan, rate,
+            ratios, decays, gains, 6);
+}
+
+void CastlePlace::onStep(const PlaceContext& c, int64_t step) {
+    const auto& s = c.s;
+    const int mood = c.world->mood, root = c.world->root, chord = c.chord;
+    const int pos = stepInBar(step);
+    const int64_t bar = music::floorDiv(step, int64_t(16));
+    const float act = s.activity, density = s.density, tension = s.tension;
+    const float busy = lerp(0.35f, 1.15f, act);
+    // Rhythm repeats every four bars; the sparser bells and horns every sixteen.
+    const auto chance = [&](uint32_t salt, int64_t length = 64) { return pattern.at(step, length, s.variation, salt); };
+    const double stepBeat = double(step) / 4.0;
+
+    // --- Pulse: timpani on the root and the fifth below, a side drum for the march.
+    if (s.element[3] > 0.001f) {
+        float p = 0, vel = 0.8f;
+        int kind = 0;   // 0 timpani root, 1 timpani fifth, 2 side drum
+        switch (s.character) {
+            case 0:   // Fortress: a slow processional, half notes, rolls when busy
+                if (pos == 0) { p = 0.97f; vel = 1.0f; }
+                else if (pos == 8) { p = 0.25f + 0.6f * density; kind = 1; }
+                else if (pos == 4 || pos == 12) { p = tension * density * 0.9f; vel = 0.55f; kind = 1; }
+                else if (pos >= 13) { p = act * density * 0.35f; vel = 0.35f; }
+                else if ((pos & 1) == 0) { p = std::max(0.0f, tension - 0.45f) * 1.4f * density; vel = 0.4f; }   // tension: an eighth-note pulse
+                break;
+            case 1:   // Royal Court: a march
+                if (pos == 0) { p = 0.97f; vel = 1.0f; }
+                else if (pos == 8) { p = 0.85f; vel = 0.8f; kind = 1; }
+                else if (pos == 4 || pos == 12) { p = 0.85f; vel = 0.7f; kind = 2; }
+                else if (pos == 14 || pos == 6) { p = density * 0.45f * busy; vel = 0.35f; kind = 2; }
+                else if (pos == 15) { p = density * 0.35f * busy; vel = 0.3f; kind = 2; }
+                break;
+            default:   // Besieged: a driving 3-3-2 ostinato
+                if (pos == 0 || pos == 6 || pos == 12) { p = 0.95f; vel = 1.0f; kind = pos == 6 ? 1 : 0; }
+                else if ((pos & 1) == 0) { p = (0.3f + 0.6f * density) * busy; vel = 0.5f; }
+                else { p = tension * density * 0.6f * busy; vel = 0.3f; }
+                if ((pos == 4 || pos == 12) && tension > 0.35f) { kind = 2; p = std::max(p, tension); vel = 0.6f; }
+                break;
+        }
+        if (p > 0 && chance(1) < p) {
+            auto& d = drum[pickVoice(drum, drums, [](const Drum& v) { return v.level(); })];
+            logEvent(c.clock);
+            const float v = vel * (0.85f + 0.3f * (chance(2) - 0.5f) * (0.4f + s.life));
+            if (kind == 2) {
+                d.ratio = 2.3f;
+                d.partial = 0.3f;
+                d.start(190.0f, 1.1f, 0.25f, 0.12f * v, 0.55f * v, 2600.0f, 0.8f, lerp(0.35f, 0.2f, tension), 0.15f, rate, noiseAt);
+            } else {
+                // Timpani: tuned to the key, their second mode a fifth up; tighter with tension.
+                d.ratio = 1.5f;
+                d.partial = 0.35f;
+                const float semis = kind == 0 ? -12.0f : -5.0f;
+                d.start(music::noteHz(root, semis), 1.05f, lerp(4.0f, 1.5f, tension), 0.55f * v, 0.06f * v, 800.0f, 0.7f, 0.15f,
+                        kind == 0 ? -0.1f : 0.12f, rate, noiseAt);
+            }
+            noiseAt += 1ull << 24;
+            // Machinery: an anvil-like tuned ring on the firm hits.
+            if (s.machinery > 0.05f && vel > 0.5f) {
+                static constexpr float ratios[4] { 1.0f, 2.76f, 5.4f, 8.93f };
+                static constexpr float decays[4] { 1.0f, 0.6f, 0.4f, 0.25f };
+                static constexpr float gains[4] { 1.0f, 0.6f, 0.4f, 0.25f };
+                auto& b = bell[pickVoice(bell, bellVoices, [](const Bell& x) { return x.level(); })];
+                b.start(music::noteHz(root, float(music::inRange(music::chordTone(mood, chord, 2), 24))), 2.5f, 0.9f,
+                        0.7f * s.machinery * vel, 0.3f * (chance(4) - 0.5f), rate, ratios, decays, gains, 4);
+            }
+        }
+    }
+
+    // --- Bells.
+    if (s.element[1] > 0.001f) {
+        const int low = music::inRange(music::chordTone(mood, chord, 0), 12);
+        switch (s.character) {
+            case 0:   // Fortress: a slow toll, and now and then a higher bell
+                if (pos == 0 && (bar & 1) == 0 && chance(5, 256) < 0.25f + 0.6f * act) playBell(c, low, 0.8f, 9.0f, -0.35f + 0.7f * chance(6));
+                else if (pos == 8 && chance(7, 256) < act * 0.3f)
+                    playBell(c, music::inRange(music::chordTone(mood, chord, 2), 19), 0.4f, 6.0f, -0.5f + chance(8));
+                break;
+            case 1:   // Royal Court: carillon runs down the scale, every other bar
+                if (pos == 0 && (bar & 1) == 0 && !bellPhrase.active() && chance(9, 256) < 0.2f + 0.6f * act) {
+                    bellPhrase.clear();
+                    const int top = 7 + int(chance(10) * 3.0f);
+                    const int length = 5 + int(chance(11) * 4.0f);
+                    const bool upward = chance(12) < 0.3f;
+                    for (int k = 0; k < length; ++k) {
+                        const int d = upward ? top - length + 1 + k : top - k;
+                        bellPhrase.add(0.5f * float(k), 12 + music::degree(mood, d), 1.0f, k == length - 1 ? 0.8f : 0.55f);
+                    }
+                    bellPhrase.begin(stepBeat);
+                }
+                break;
+            default:   // Besieged: an alarm bell, faster with tension
+                if (tension > 0.3f) {
+                    const int every = tension > 0.7f ? 2 : 4;
+                    if (pos % every == 0 && chance(13, 256) < (tension - 0.2f) * (0.4f + 0.6f * act))
+                        playBell(c, music::inRange(music::chordTone(mood, chord, 0), 17), 0.45f, 3.0f, 0.45f);
+                } else if (pos == 0 && (bar & 1) == 0 && chance(14, 256) < 0.3f + 0.5f * act) {
+                    playBell(c, low, 0.7f, 8.0f, -0.3f);
+                }
+                break;
+        }
+    }
+
+    // --- Horn calls, every other bar when the castle is busy enough.
+    if (s.element[2] > 0.001f && pos == 0 && (bar & 1) == 0 && !hornPhrase[0].active()) {
+        const float p = (0.15f + 0.45f * act) * (s.character == 1 ? 1.3f : 1.0f) * lerp(0.6f, 1.5f, s.life);
+        if (chance(15, 256) < p) {
+            const int r = music::inRange(music::chordTone(mood, chord, 0), -3);
+            const int third = r + (music::chordTone(mood, chord, 1) - music::chordTone(mood, chord, 0));
+            const int fifth = r + (music::chordTone(mood, chord, 2) - music::chordTone(mood, chord, 0));
+            for (auto& phrase : hornPhrase) phrase.clear();
+            const float variant = chance(16, 256);
+            switch (s.character) {
+                case 0:
+                    if (variant < 0.5f) {
+                        hornPhrase[0].add(0, r, 1.6f);
+                        hornPhrase[0].add(2, fifth, 3.0f);
+                    } else {
+                        hornPhrase[0].add(0, fifth, 1.0f);
+                        hornPhrase[0].add(1, r, 0.5f, 0.8f);
+                        hornPhrase[0].add(1.5f, r, 3.0f);
+                    }
+                    break;
+                case 1:   // a fanfare in thirds
+                    for (int h = 0; h < horns; ++h) {
+                        const int shift = h == 0 ? 0 : -(third - r);
+                        hornPhrase[std::size_t(h)].add(0, r + shift, 0.5f, 0.9f);
+                        hornPhrase[std::size_t(h)].add(0.75f, r + shift, 0.25f, 0.7f);
+                        hornPhrase[std::size_t(h)].add(1, third + (h == 0 ? 0 : -(third - r)), 1.0f);
+                        hornPhrase[std::size_t(h)].add(2, fifth + (h == 0 ? 0 : -(fifth - third)), 2.5f);
+                    }
+                    break;
+                default: {   // a low, uneasy call: a semitone above the root when tense
+                    const int step2 = tension > 0.5f ? r - 11 : r - 12 + (music::degree(mood, 1) - music::degree(mood, 0));
+                    hornPhrase[0].add(0, r - 12, 1.5f);
+                    hornPhrase[0].add(1.5f, step2, 0.5f, 0.85f);
+                    hornPhrase[0].add(2, r - 12, 2.5f);
+                    break;
+                }
+            }
+            // Life: a lively grace note from a scale step above into the call.
+            if (s.life > 0.35f && chance(17, 256) < s.life) {
+                auto& first = hornPhrase[0].notes[0];
+                const int grace = music::quantise(mood, float(first.semitones + 2));
+                Phrase withGrace;
+                withGrace.add(0, grace, 0.2f, 0.6f);
+                for (int k = 0; k < hornPhrase[0].count; ++k) {
+                    auto note = hornPhrase[0].notes[std::size_t(k)];
+                    withGrace.add(note.beat + 0.25f, note.semitones, note.length, note.velocity);
+                }
+                hornPhrase[0] = withGrace;
+            }
+            for (auto& phrase : hornPhrase) phrase.begin(stepBeat);
+        }
+    }
+}
+
+void CastlePlace::render(const PlaceContext& c, float* left, float* right, int n) {
+    const auto& w = *c.world;
+    const auto& s = c.s;
+    const int mood = w.mood, root = w.root, chord = c.chord;
+    const double span = c.beatsPerSample * double(n);
+    const double t = double(c.clock) / rate;
+    const int q = std::clamp(w.quality, 0, 2);
+    bellVoices = q == 0 ? 3 : (q == 1 ? 4 : bells);
+    const float tension = s.tension, tone = s.tone;
+
+    forEachStep(c.beat, span, 4, s.swing, [&](int64_t step) { onStep(c, step); });
+
+    // Phrases: horn calls and carillon runs.
+    for (int h = 0; h < horns; ++h) {
+        hornPhrase[std::size_t(h)].play(c.beat, span, [&](const Phrase::Note& note) {
+            auto& v = horn[std::size_t(h)];
+            v.start(music::noteHz(root, float(note.semitones)), 0.09f, 0.5f, 0.72f, rate, true);
+            logEvent(c.clock);
+            v.gain = 0.5f * note.velocity;
+            hornRelease[std::size_t(h)] = hornPhrase[std::size_t(h)].start + double(note.beat + note.length);
+        });
+        auto& v = horn[std::size_t(h)];
+        if (v.active() && c.beat >= hornRelease[std::size_t(h)] && v.env.stage != Env::Release) v.release(0.6f, rate);
+    }
+    bellPhrase.play(c.beat, span, [&](const Phrase::Note& note) { playBell(c, note.semitones, note.velocity * 0.6f, 4.5f, 0.6f * std::sin(float(note.beat))); });
+
+    // Drones: a tonic pedal plus two voices on the shared chord.
+    {
+        int notes[drones];
+        notes[0] = -12;
+        switch (s.character) {
+            case 0:
+                notes[1] = music::inRange(music::chordTone(mood, chord, 0), -5);
+                notes[2] = tension > 0.6f ? 1 : music::inRange(music::chordTone(mood, chord, 2), 2);
+                break;
+            case 1:
+                notes[1] = music::inRange(music::chordTone(mood, chord, 1), -2);
+                notes[2] = tension > 0.6f ? 1 : music::inRange(music::chordTone(mood, chord, 2), 4);
+                break;
+            default:
+                notes[1] = music::inRange(music::chordTone(mood, chord, 0), -10);
+                notes[2] = tension > 0.6f ? 1 : music::inRange(music::chordTone(mood, chord, 2), -5);
+                break;
+        }
+        const float tremolo = s.character == 2 ? 0.7f + 0.3f * std::cos(float(c.beat * 2.0 * double(twoPi))) * tension : 1.0f;
+        static constexpr float level[drones] { 0.9f, 0.6f, 0.5f };
+        for (int i = 0; i < drones; ++i) {
+            auto& v = drone[std::size_t(i)];
+            const float hz = music::noteHz(root, float(notes[i]));
+            const float breath = drift.smooth(t + 17.0 * i, 0.05 + 0.02 * i);
+            if (!v.active()) v.start(hz, 2.5f, 1.0f, 1.0f, rate);
+            v.targetHz = hz;
+            v.glide = glideFor(1.4f, rate);
+            v.detuneCents = 5.0f + 4.0f * s.era + 3.0f * s.life;
+            v.subLevel = i == 0 ? 0.6f : 0.25f;
+            v.cutoff = lerpExp(160.0f, 900.0f, tone) * std::exp2(0.6f * breath + 0.8f * s.era) * (s.character == 1 ? 1.3f : 1.0f);
+            v.envOctaves = 0.6f;
+            v.q = 0.8f;
+            v.width = 0.7f;
+            v.vibratoDepth = 0;
+            // The third voice fades out as Tension nears 60 % and returns as a semitone
+            // cluster above the root, so the switch is never heard as a jump.
+            const float uneasy = i == 2 ? (tension > 0.6f ? clamp01((tension - 0.6f) * 3.0f) : clamp01((0.6f - tension) * 3.0f)) : 1.0f;
+            v.gain = s.element[0] * level[i] * (0.8f + 0.2f * breath) * tremolo * uneasy;
+            v.update(rate);
+        }
+    }
+    for (auto& v : horn) {
+        v.glide = glideFor(0.05f, rate);
+        v.detuneCents = 4;
+        v.subLevel = 0.2f;
+        v.cutoff = lerpExp(300.0f, 1200.0f, tone);
+        v.envOctaves = 1.6f;
+        v.q = 0.9f;
+        v.width = 0.4f;
+        v.vibratoHz = 5.0f;
+        v.vibratoDepth = 0.08f + 0.2f * s.life;
+        v.vibratoDelay = 0.35f;
+        if (v.active()) v.update(rate);
+    }
+    for (auto& d : drum)
+        if (d.active()) d.update(rate);
+    for (int i = 0; i < bellVoices; ++i)
+        if (bell[std::size_t(i)].active) bell[std::size_t(i)].update();
+
+    // Effects: the stone hall (Size, Tone, Magic) and a slow dotted-quarter tape echo
+    // whose depth follows Activity and Population.
+    hall.set(s.size, lerp(1.6f, 6.5f, s.size) * (1.0f + 0.4f * s.magic), lerpExp(1500.0f, 5500.0f, tone));
+    const float beatSeconds = 60.0f / std::max(c.bpm, 20.0f);
+    echo.set(std::min(1.5f * beatSeconds, 2.2f), 0.2f + 0.45f * s.fxDepth, lerpExp(1800.0f, 4500.0f, tone), lerp(1.0f, 0.4f, s.era));
+    for (auto& f : bellTone) f.setCutoff(lerpExp(1800.0f, 7000.0f, tone), rate);
+    const float echoSend = 0.55f * s.fxDepth, hallWet = s.element[4] * 0.8f, hallSend = 0.35f + 0.4f * s.element[4];
+    const float droneLevel = 0.11f, bellLevel = 0.16f * s.element[1], hornLevel = 0.22f * s.element[2], drumLevel = 0.4f * s.element[3];
+
+    for (int i = 0; i < n; ++i) {
+        float dl = 0, dr = 0;
+        for (auto& v : drone) v.tick(dl, dr);
+        dl *= droneLevel;
+        dr *= droneLevel;
+        float hl = 0, hr = 0;
+        for (auto& v : horn)
+            if (v.active()) v.tick(hl, hr);
+        hl *= hornLevel;
+        hr *= hornLevel;
+        float bl = 0, br = 0;
+        for (int k = 0; k < bellVoices; ++k) {
+            auto& b = bell[std::size_t(k)];
+            if (!b.active) continue;
+            const float y = b.tick();
+            bl += y * b.pan.l;
+            br += y * b.pan.r;
+        }
+        bl = bellTone[0].lp(bl) * bellLevel;
+        br = bellTone[1].lp(br) * bellLevel;
+        float pl = 0, pr = 0;
+        for (auto& d : drum) {
+            if (!d.active()) continue;
+            const float y = d.tick(noise);
+            pl += y * d.pan.l;
+            pr += y * d.pan.r;
+        }
+        pl *= drumLevel;
+        pr *= drumLevel;
+
+        float el = 0, er = 0, wl = 0, wr = 0;
+        echo.process((bl + hl) * echoSend, (br + hr) * echoSend, el, er);
+        const float l = dl + hl + bl + pl, r = dr + hr + br + pr;
+        hall.process((l + 0.5f * el) * hallSend, (r + 0.5f * er) * hallSend, wl, wr);
+        left[i] = l * lerp(1.0f, 0.75f, s.element[4]) + 0.6f * el + wl * hallWet;
+        right[i] = r * lerp(1.0f, 0.75f, s.element[4]) + 0.6f * er + wr * hallWet;
+    }
+}
+
+} // namespace wb

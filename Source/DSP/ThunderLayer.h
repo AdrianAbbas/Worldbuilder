@@ -5,10 +5,11 @@
 namespace wb {
 
 // Thunder: Poisson-timed strikes, each at its own distance. The flash comes first
-// and the sound follows after a delay that grows with distance. Close strikes tear
-// with a bright crack and a sub thump; distant ones are a soft, darker roll. Every
-// strike then rumbles on: low-passed noise with an irregular rolling envelope that
-// darkens as it fades. Weather (and Danger) set how often and how close, Scale how
+// and the sound follows after a delay that grows with distance. Each strike lands as
+// a tuned low impact on the key's root with a swell on the root and fifth, like a
+// timpani hit and a brass swell in a score. Close strikes also tear with a crack;
+// distant ones are softer and darker. The rumble rolls on underneath: low-passed
+// noise with an irregular rolling envelope that darkens as it fades. Weather (and Danger) set how often and how close, Scale how
 // far away the storm sits.
 class ThunderLayer final : public Generator {
 public:
@@ -46,6 +47,12 @@ private:
         std::array<dsp::OnePole, 2> crackHigh;
         dsp::Rumble boom;
         dsp::Smoother gain, boomGain;
+        // The musical part: a tuned low impact on the root and a swell on root and fifth.
+        dsp::Phasor impact;
+        std::array<dsp::Phasor, 2> swell;
+        dsp::Smoother impactGain, swellGain;
+        float impactHz = 40, loudness = 0;
+        bool tuned = false;
     };
 
     float rate = 48000;

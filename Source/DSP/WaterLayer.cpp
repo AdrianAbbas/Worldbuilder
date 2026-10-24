@@ -32,6 +32,9 @@ void WaterLayer::prepare(double sampleRate) {
     rate = float(sampleRate);
     for (auto* s : { &hissGain, &snowGain, &patterGain, &rushGain, &fallGain }) s->setTime(0.08f, rate);
     for (auto& s : gurgleGain) s.setTime(0.02f, rate);
+    for (auto& d : dripRoom) d.prepare(std::size_t(0.06f * rate));
+    for (auto& s : shimmerHz) s.setTime(0.6f, rate / float(chunk));
+    shimmerGain.setTime(0.1f, rate);
     for (auto& w : waves) {
         w.gain.setTime(0.01f, rate);
         w.fizzGain.setTime(0.01f, rate);
@@ -42,7 +45,13 @@ void WaterLayer::prepare(double sampleRate) {
 
 void WaterLayer::reset() {
     for (auto& d : drops) d.stop();
-    for (auto& d : drips) d.stop();
+    for (auto& d : drips) d.reset();
+    for (auto& d : dripChirps) d.stop();
+    for (auto& d : dripRoom) d.clear();
+    for (auto& f : shimmer) f.reset();
+    for (auto& s : shimmerHz) s.snap(1000.0f);
+    shimmerGain.snap(0);
+    echoWait = -1;
     for (auto& f : patterTone) f.reset();
     for (auto* bank : { &hissHigh, &hissLow, &snowLow, &rushLow, &rushHigh, &fallLow, &fallHigh })
         for (auto& f : *bank) f.reset();
@@ -66,6 +75,7 @@ void WaterLayer::setSeed(uint32_t seed) {
     events.setKey(seed, 405);
     gurgleDrift.setKey(seed, 406);
     waveShape.setKey(seed, 407);
+    dripShape.setKey(seed, 408);
 }
 
 float WaterLayer::spaceSend(const WorldFrame& world) const {
@@ -74,13 +84,46 @@ float WaterLayer::spaceSend(const WorldFrame& world) const {
     return 0.4f + 0.35f * a.drips - 0.1f * a.rain;
 }
 
+// A drip: a soft, resonant drop on a note of the key (mostly the current chord's
+// tones, two octaves up; lower and longer in caverns), with the tiny rising "plink" of
+// a real drop leading into it. Random velocity, decay and stereo position.
+void WaterLayer::startDrip(const WorldFrame& world, uint64_t e, float velocity, int voices) {
+    const float scale = world[Scale];
+    int semis = 0;
+    if (echoEvent == e) {
+        semis = echoSemis;
+    } else {
+        const int low = int(lerp(24.0f, 14.0f, scale));
+        semis = events.unit(e + 1) < 0.65f ? music::chordTone(world.mood, world.chord, int(events.unit(e + 2) * 3.0f))
+                                           : music::degree(world.mood, int(events.unit(e + 2) * 7.0f));
+        semis = music::inRange(semis, low) + (events.unit(e + 3) < 0.3f ? 12 : 0);
+    }
+    const float hz = music::noteHz(world.root, float(semis));
+    const float decay = lerp(0.45f, 1.5f, events.unit(e + 4)) * lerp(0.8f, 1.6f, scale);
+    const float pan = 0.85f * events.white(e + 5);
+    static constexpr float ratios[3] { 1.0f, 2.0f, 4.07f };
+    static constexpr float decays[3] { 1.0f, 0.3f, 0.1f };
+    static constexpr float gains[3] { 1.0f, 0.12f, 0.035f };
+    const auto quietest = [](const Bell& b) { return b.level(); };
+    const auto v = pickVoice(drips, voices, quietest);
+    drips[v].start(hz, decay, 0.12f, velocity, pan, rate, ratios, decays, gains, 3);
+    dripChirps[v].start(hz * 0.84f, 0.012f, 1.25f, 0.25f * velocity, pan, rate, 0.002f);
+    // Now and then a second, smaller drop follows: the same note or an octave up.
+    if (echoEvent != e && events.unit(e + 6) < 0.22f) {
+        echoWait = lerp(0.06f, 0.18f, events.unit(e + 7)) * rate;
+        echoAmp = velocity * 0.45f;
+        echoSemis = semis + (events.unit(e + 8) < 0.35f ? 12 : 0);
+        echoEvent = e + 1000;
+    }
+}
+
 void WaterLayer::render(const WorldFrame& world, uint64_t clock, float* left, float* right, int n) {
     const double t = double(clock) / rate;
     const auto a = amounts(world);
     const float weather = world[Weather], scale = world[Scale], activity = world[Activity];
     const int quality = std::clamp(world.quality, 0, 2);
     const int dropVoices = quality == 0 ? 6 : (quality == 1 ? 10 : maxDrops);
-    const int dripVoices = quality == 0 ? 2 : maxDrips;
+    const int dripVoices = quality == 0 ? 3 : (quality == 1 ? 5 : maxDrips);
     // Distance: big worlds hear the water from further off.
     const float near = lerp(1.0f, 0.55f, scale);
 
@@ -92,29 +135,51 @@ void WaterLayer::render(const WorldFrame& world, uint64_t clock, float* left, fl
         auto& d = drops[pickVoice(drops, dropVoices, quietest)];
         const float size = events.unit(e + 1);
         const float polarity = events.unit(e + 10) < 0.5f ? -1.0f : 1.0f;
-        d.start(lerpExp(5200.0f, 1700.0f, size) * near, lerp(0.003f, 0.009f, size), 1.35f, polarity * (0.25f + 0.75f * size * size),
-                0.85f * events.white(e + 2), rate);
+        // Drops land on notes of the key, as tiny pitched plucks.
+        const float free = 12.0f * std::log2(lerpExp(4200.0f, 1500.0f, size) * near / music::rootHz(world.root));
+        d.start(music::noteHz(world.root, float(music::quantise(world.mood, free))), lerp(0.008f, 0.022f, size), 1.04f,
+                polarity * (0.2f + 0.6f * size * size), 0.85f * events.white(e + 2), rate);
     }
     const float bubbleRate = a.stream * lerp(25.0f, 110.0f, a.stream) * lerp(0.7f, 1.3f, activity);
     if (events.unit(e + 3) < trialChance(bubbleRate, n, rate)) {
         auto& d = drops[pickVoice(drops, dropVoices, quietest)];
         const float size = events.unit(e + 4);
         const float polarity = events.unit(e + 11) < 0.5f ? -1.0f : 1.0f;
-        d.start(lerpExp(1500.0f, 380.0f, size) * near, lerp(0.008f, 0.025f, size), 1.6f, polarity * (0.3f + 0.5f * size),
-                0.6f * events.white(e + 5), rate);
+        const float free = 12.0f * std::log2(lerpExp(1500.0f, 380.0f, size) * near / music::rootHz(world.root));
+        d.start(music::noteHz(world.root, float(music::quantise(world.mood, free))), lerp(0.01f, 0.03f, size), 1.3f,
+                polarity * (0.3f + 0.5f * size), 0.6f * events.white(e + 5), rate);
     }
-    const float dripRate = a.drips * lerpExp(0.3f, 6.0f, activity) * lerp(0.8f, 1.4f, scale);
-    if (events.unit(e + 6) < trialChance(dripRate, n, rate)) {
-        auto& d = drips[pickVoice(drips, dripVoices, quietest)];
-        const float size = events.unit(e + 7);
-        // Caverns drip lower and ring longer.
-        d.start(lerpExp(2600.0f, 750.0f, size) * lerp(1.15f, 0.7f, scale), lerp(0.025f, 0.07f, size) * lerp(0.8f, 1.4f, scale),
-                1.7f, (events.unit(e + 12) < 0.5f ? -1.0f : 1.0f) * (0.5f + 0.5f * events.unit(e + 8)), 0.8f * events.white(e + 9), rate);
+    // Drips arrive in loose clusters: a slow random curve swells and thins their rate.
+    const float cluster = 0.35f + 1.3f * smoothstep(-0.4f, 0.8f, dripShape.smooth(t, 0.12));
+    const float dripRate = a.drips * lerpExp(0.3f, 6.0f, activity) * lerp(0.8f, 1.4f, scale) * cluster;
+    // Rain plucks: now and then a raindrop rings out as a note of the key.
+    const float pluckRate = a.rain * lerp(1.0f, 7.0f, a.rain);
+    const uint64_t dripEvent = e + (1ull << 40);
+    if (events.unit(e + 6) < trialChance(dripRate + pluckRate, n, rate))
+        startDrip(world, dripEvent, (0.25f + 0.75f * std::pow(events.unit(e + 7), 1.5f)) * (events.unit(e + 8) * (dripRate + pluckRate) < pluckRate ? 0.6f : 1.0f),
+                  dripVoices);
+    if (echoWait >= 0) {
+        echoWait -= float(n);
+        if (echoWait < 0) {
+            echoEvent = dripEvent;
+            startDrip(world, dripEvent, echoAmp, dripVoices);
+            echoEvent = 0;
+        }
     }
     for (int i = 0; i < dropVoices; ++i)
         if (drops[std::size_t(i)].active()) drops[std::size_t(i)].update(rate);
-    for (int i = 0; i < dripVoices; ++i)
-        if (drips[std::size_t(i)].active()) drips[std::size_t(i)].update(rate);
+    for (int i = 0; i < dripVoices; ++i) {
+        if (drips[std::size_t(i)].active) drips[std::size_t(i)].update();
+        if (dripChirps[std::size_t(i)].active()) dripChirps[std::size_t(i)].update(rate);
+    }
+
+    // Shimmer: four narrow resonances on the current chord, rung by the rain.
+    for (int k = 0; k < shimmers; ++k) {
+        static constexpr int low[shimmers] { 24, 24, 31, 36 };
+        const int semis = music::inRange(music::chordTone(world.mood, world.chord, k % 3), low[k]);
+        shimmer[std::size_t(k)].set(shimmerHz[std::size_t(k)].next(music::noteHz(world.root, float(semis))), 45.0f, rate);
+    }
+    const float shimmerTarget = 3.0f * (a.rain + 0.4f * a.stream);
 
     // --- Continuous parts.
     const float patterChance = trialChance(a.rain * lerpExp(150.0f, 3500.0f, a.rain), 1, rate);
@@ -225,21 +290,39 @@ void WaterLayer::render(const WorldFrame& world, uint64_t clock, float* left, fl
             }
         }
 
-        // Drops, bubbles and drips.
+        // Shimmer, rung by the patter and a breath of the hiss.
+        const float shg = shimmerGain.next(shimmerTarget);
+        if (shg > 1.0e-5f) {
+            const float x = (tickL + tickR) * 4.0f + 0.05f * wl;
+            for (int k = 0; k < shimmers; ++k) {
+                const float y = shimmer[std::size_t(k)].bandpass(x) * shg;
+                l += y * (k & 1 ? 0.5f : 1.0f);
+                r += y * (k & 1 ? 1.0f : 0.5f);
+            }
+        }
+
+        // Drops and bubbles.
         for (int v = 0; v < dropVoices; ++v) {
             auto& d = drops[std::size_t(v)];
             if (!d.active()) continue;
-            const float s = d.tick() * 0.3f;
+            const float s = d.tick() * 0.21f;
             l += s * d.pan.l;
             r += s * d.pan.r;
         }
+        // Drips, through a little room of early reflections.
+        float dl = 0, dr = 0;
         for (int v = 0; v < dripVoices; ++v) {
             auto& d = drips[std::size_t(v)];
-            if (!d.active()) continue;
-            const float s = d.tick() * 0.2f;
-            l += s * d.pan.l;
-            r += s * d.pan.r;
+            auto& c = dripChirps[std::size_t(v)];
+            if (!d.active && !c.active()) continue;
+            const float s = (d.active ? d.tick() : 0.0f) * 0.14f + (c.active() ? c.tick() * 0.14f : 0.0f);
+            dl += s * d.pan.l;
+            dr += s * d.pan.r;
         }
+        dripRoom[0].push(dl);
+        dripRoom[1].push(dr);
+        l += dl + 0.32f * dripRoom[0].read(0.017f * rate) + 0.18f * dripRoom[1].read(0.041f * rate);
+        r += dr + 0.32f * dripRoom[1].read(0.023f * rate) + 0.18f * dripRoom[0].read(0.053f * rate);
         left[i] = l;
         right[i] = r;
     }

@@ -60,7 +60,7 @@ private:
     std::array<dsp::Rumble, 2> rumble, fallNoise;
     dsp::Svf groan;
     std::array<dsp::OnePole, 2> sheetClickHigh, fallDistance;
-    dsp::Smoother rumbleGain, groanGain, fallGain;
+    dsp::Smoother rumbleGain, groanGain, fallGain, groanHz;
 };
 
 } // namespace wb
