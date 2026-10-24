@@ -1,0 +1,37 @@
+WORLDBUILDER - Procedural Soundscape Instrument (macOS, Apple Silicon and Intel, macOS 10.15+)
+
+INSTALL
+  1. Quit GarageBand and Logic.
+  2. Open Terminal (Applications > Utilities > Terminal).
+  3. Type "bash " (with a space), drag install-mac.sh from this folder into the
+     Terminal window, and press Return.
+  4. Wait for "WORLDBUILDER is installed and validated."
+
+  Why a script? This build is not signed with an Apple Developer ID. When a browser
+  downloads it, macOS marks every file as quarantined and then refuses to load the
+  plug-in: GarageBand shows a silent slot with plain sliders. The script removes that
+  flag, re-signs the plug-in for this Mac, refreshes the Audio Unit list and runs
+  Apple's validator.
+
+GARAGEBAND
+  Settings > Audio/MIDI: tick "Audio Units". Restart GarageBand.
+  Track > New Track > Software Instrument. Smart Controls (B) > Plug-ins >
+  Instrument slot (top) > AU Instruments > Veil Audio > WORLDBUILDER.
+  The world plays straight away while the track is selected; no MIDI is needed.
+  If you see sliders instead of the WORLDBUILDER interface, switch the plug-in
+  window's view menu from "Controls" to "Editor".
+
+LOGIC PRO
+  Settings > Plug-in Manager > Veil Audio > WORLDBUILDER. If it is marked failed,
+  select it and click "Reset & Rescan Selection". Insert it in the Instrument slot
+  of a Software Instrument track: AU Instruments > Veil Audio > WORLDBUILDER.
+
+UNINSTALL
+  bash uninstall-mac.sh            (add --purge to also delete saved presets)
+
+MANUAL INSTALL (if you prefer not to run the script)
+  cp -R WORLDBUILDER.component ~/Library/Audio/Plug-Ins/Components/
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/WORLDBUILDER.component
+  codesign --force --deep --sign - ~/Library/Audio/Plug-Ins/Components/WORLDBUILDER.component
+  killall -9 AudioComponentRegistrar
+  auval -v aumu Wbld Veil

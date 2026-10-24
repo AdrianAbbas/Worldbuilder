@@ -1,0 +1,158 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+using namespace wb;
+
+juce::AudioProcessorValueTreeState::ParameterLayout WorldbuilderProcessor::makeLayout() {
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    for (const auto& s : specs) {
+        const juce::ParameterID id { s.id, 1 };
+        switch (s.kind) {
+            case Kind::Float: {
+                const bool percent = s.max == 1.0f || juce::String(s.id) == "width";
+                auto attributes = juce::AudioParameterFloatAttributes()
+                    .withLabel(percent ? "%" : "")
+                    .withStringFromValueFunction([](float v, int) { return juce::String(juce::roundToInt(v * 100.0f)); })
+                    .withValueFromStringFunction([](const juce::String& t) { return t.getFloatValue() / 100.0f; });
+                layout.add(std::make_unique<juce::AudioParameterFloat>(id, s.name, juce::NormalisableRange<float>(s.min, s.max), s.def, attributes));
+                break;
+            }
+            case Kind::Decibels: {
+                juce::NormalisableRange<float> range(s.min, s.max);
+                range.setSkewForCentre(-12.0f);
+                auto attributes = juce::AudioParameterFloatAttributes()
+                    .withLabel("dB")
+                    .withStringFromValueFunction([](float v, int) { return v <= -59.95f ? juce::String("-inf") : juce::String(v, 1); })
+                    .withValueFromStringFunction([](const juce::String& t) { return t.trim().startsWith("-inf") ? -60.0f : t.getFloatValue(); });
+                layout.add(std::make_unique<juce::AudioParameterFloat>(id, s.name, range, s.def, attributes));
+                break;
+            }
+            case Kind::Bool:
+                layout.add(std::make_unique<juce::AudioParameterBool>(id, s.name, s.def > 0.5f));
+                break;
+            case Kind::Choice:
+                layout.add(std::make_unique<juce::AudioParameterChoice>(id, s.name, juce::StringArray::fromTokens(s.choices, "|", ""), int(s.def)));
+                break;
+            case Kind::Int:
+                layout.add(std::make_unique<juce::AudioParameterInt>(id, s.name, int(s.min), int(s.max), int(s.def)));
+                break;
+        }
+    }
+    return layout;
+}
+
+WorldbuilderProcessor::WorldbuilderProcessor()
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+      parameters(*this, nullptr, "WORLDBUILDER", makeLayout()) {
+    for (std::size_t i = 0; i < specs.size(); ++i) raw[i] = parameters.getRawParameterValue(specs[i].id);
+}
+
+EngineControls WorldbuilderProcessor::readControls() const noexcept {
+    const auto value = [this](int p) {
+        const float v = raw[std::size_t(p)]->load(std::memory_order_relaxed);
+        const auto& s = specs[std::size_t(p)];
+        return std::isfinite(v) ? juce::jlimit(s.min, s.max, v) : s.def;
+    };
+    EngineControls c;
+    for (int w = 0; w < WorldControlCount; ++w) c.world[std::size_t(w)] = value(PTemperature + w);
+    for (int l = 0; l < LayerCount; ++l) {
+        c.layerDb[std::size_t(l)] = value(layerLevel(l));
+        c.mute[std::size_t(l)] = value(layerMute(l)) > 0.5f;
+        c.solo[std::size_t(l)] = value(layerSolo(l)) > 0.5f;
+    }
+    c.power = value(PPower) > 0.5f;
+    c.masterDb = value(PMaster);
+    c.width = value(PWidth);
+    c.spaceMix = value(PSpaceMix);
+    c.seed = uint32_t(juce::roundToInt(value(PSeed)));
+    c.quality = juce::roundToInt(value(PQuality));
+    c.root = juce::roundToInt(value(PRoot));
+    c.mood = juce::roundToInt(value(PMood));
+    return c;
+}
+
+void WorldbuilderProcessor::prepareToPlay(double sampleRate, int) {
+    rate = std::isfinite(sampleRate) ? juce::jlimit(8000.0, 384000.0, sampleRate) : 48000.0;
+    engine.prepare(rate, readControls());
+    expectedHostPosition = -1;
+    hostWasPlaying = false;
+}
+
+// Hosts call reset() on transport stops and locates. The world is continuous, so it
+// keeps playing; only prepareToPlay starts it afresh.
+void WorldbuilderProcessor::reset() {}
+
+bool WorldbuilderProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::disabled()) return false;
+    const auto out = layouts.getMainOutputChannelSet();
+    return out == juce::AudioChannelSet::stereo() || out == juce::AudioChannelSet::mono();
+}
+
+void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
+    juce::ScopedNoDenormals noDenormals;
+    const auto begin = juce::Time::getHighResolutionTicks();
+    const int n = buffer.getNumSamples();
+    // MIDI events (thunder strikes, creature calls...) arrive in Milestone 3.
+    midi.clear();
+    if (n <= 0 || buffer.getNumChannels() <= 0) return;
+
+    // Follow the host transport while it plays, so the same start point gives the
+    // same world. While stopped the world keeps evolving on its own clock.
+    bool playing = false;
+    if (auto* playHead = getPlayHead())
+        if (const auto position = playHead->getPosition())
+            if (position->getIsPlaying())
+                if (const auto samples = position->getTimeInSamples()) {
+                    playing = true;
+                    if (!hostWasPlaying || *samples != expectedHostPosition) engine.resync(uint64_t(std::max<int64_t>(0, *samples)));
+                    expectedHostPosition = *samples + n;
+                }
+    hostWasPlaying = playing;
+
+    float* left = buffer.getWritePointer(0);
+    float* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
+    if (right != nullptr) {
+        engine.process(left, right, n, readControls());
+    } else {
+        // Mono output: render stereo in chunks through a small stack buffer.
+        std::array<float, 256> scratch {};
+        for (int start = 0; start < n; start += int(scratch.size())) {
+            const int count = std::min(int(scratch.size()), n - start);
+            engine.process(left + start, scratch.data(), count, readControls());
+            for (int i = 0; i < count; ++i) left[start + i] = 0.5f * (left[start + i] + scratch[std::size_t(i)]);
+        }
+    }
+    for (int ch = 2; ch < buffer.getNumChannels(); ++ch) buffer.clear(ch, 0, n);
+
+    const auto seconds = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin);
+    cpuLoad.store(0.9f * cpuLoad.load() + 0.1f * float(seconds * rate / n), std::memory_order_relaxed);
+}
+
+juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new WorldbuilderEditor(*this); }
+
+void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
+    auto state = parameters.copyState();
+    state.setProperty("version", 1, nullptr);
+    if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
+}
+
+void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    if (data == nullptr || sizeInBytes <= 0 || sizeInBytes > 4 * 1024 * 1024) return;
+    const auto xml = getXmlFromBinary(data, sizeInBytes);
+    if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return;
+    const auto state = juce::ValueTree::fromXml(*xml);
+    // Apply known parameters one by one, clamped; anything missing keeps its default.
+    for (const auto& s : specs) {
+        auto* parameter = parameters.getParameter(s.id);
+        if (parameter == nullptr) continue;
+        float value = s.def;
+        const auto child = state.getChildWithProperty("id", juce::String(s.id));
+        if (child.isValid() && child.hasProperty("value")) {
+            const float stored = float(child.getProperty("value"));
+            if (std::isfinite(stored)) value = juce::jlimit(s.min, s.max, stored);
+        }
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+    }
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }
