@@ -17,17 +17,17 @@ constexpr std::array<Group, 4> groups { {
 
 const char* tooltipFor(int p) {
     switch (p) {
-        case PTemperature: return "Frozen to scorching: ice and thin high wind, or heat haze and a low dry rush.";
-        case PWeather: return "Still to storm: wind strength, gusts and howling.";
-        case PWetness: return "Arid to drenched. In this build it shapes the World Space; rain and water arrive in Milestone 2.";
+        case PTemperature: return "Frozen to scorching: creaking, singing ice and thin high wind; or crackling fire, lava and a low dry rush.";
+        case PWeather: return "Still to storm: wind and howling, drizzle to downpour, thunder more often and closer.";
+        case PWetness: return "Arid to drenched: drips, then rain, streams, a waterfall and lapping waves. Douses fire.";
         case PMachinery: return "None to industrial. Machinery layer arrives in Milestone 3.";
         case PPopulation: return "Empty to crowded. Population layer arrives in Milestone 3.";
         case PEra: return "Ancient to futuristic: organic or synthetic colour across the world.";
         case PMagic: return "Mundane to arcane: in this build it widens and brightens the Tonal Bed.";
         case PLife: return "Barren to teeming. Life layer arrives in Milestone 3.";
-        case PDanger: return "Peaceful to hostile: darker tuning, a dissonant voice, sub-bass pressure.";
-        case PScale: return "Intimate to colossal: size, decay and pre-delay of the World Space.";
-        case PActivity: return "Calm to chaotic: how fast the world moves.";
+        case PDanger: return "Peaceful to hostile: darker tuning, a dissonant voice, rumbling ground, rockfalls, closer storms.";
+        case PScale: return "Intimate to colossal: World Space size and decay; water, rockfalls and thunder further away.";
+        case PActivity: return "Calm to chaotic: how fast the world moves; more drips, crackles, creaks and rockfalls.";
         case PSpaceMix: return "Amount of the shared World Space reverb.";
         case PWidth: return "Stereo width of the whole world.";
         case PMaster: return "Output level.";
@@ -205,7 +205,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     g.drawText("WORLDBUILDER", header.withTrimmedLeft(4), juce::Justification::centredLeft, false);
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
-    g.drawText("PROCEDURAL SOUNDSCAPE ENGINE  -  MILESTONE 1 PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
+    g.drawText("PROCEDURAL SOUNDSCAPE ENGINE  -  MILESTONE 2 PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
                juce::Justification::centredLeft, false);
     g.setColour(colours::brass.withAlpha(0.35f));
     g.drawHorizontalLine(header.getBottom() + 2, float(header.getX()), float(header.getRight()));
@@ -237,7 +237,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
         if (!implemented) {
             g.setFont(juce::Font(juce::FontOptions(9.5f)));
             g.setColour(colours::dim);
-            g.drawText(l <= Thunder ? "MILESTONE 2" : "MILESTONE 3", nameArea.withTrimmedTop(nameArea.getHeight() - 14),
+            g.drawText("MILESTONE 3", nameArea.withTrimmedTop(nameArea.getHeight() - 14),
                        juce::Justification::centredLeft, false);
         }
         const auto meterArea = s.level.getBounds().toFloat().withY(float(s.level.getBottom()) + 2.0f).withHeight(3.0f);
@@ -316,6 +316,48 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
         g.fillEllipse(centre.x + x - w * 0.5f, centre.y + lat - h * 0.5f, w, h);
     }
 
+    // Lava fields glow on scorching worlds, turning with the planet.
+    const float lava = juce::jlimit(0.0f, 1.0f, (temperature - 0.72f) / 0.28f);
+    if (lava > 0.0f) {
+        juce::Random spots(23);
+        for (int i = 0; i < 9; ++i) {
+            const float lon = spots.nextFloat() * juce::MathConstants<float>::twoPi + spin, lat = (spots.nextFloat() - 0.5f) * 2.2f;
+            const float facing = std::cos(lon) * std::cos(lat);
+            const float size = r * (0.05f + 0.06f * spots.nextFloat());
+            if (facing <= 0.0f) continue;
+            const juce::Point<float> p { centre.x + r * std::sin(lon) * std::cos(lat), centre.y + r * std::sin(lat) * 0.9f };
+            const auto hot = juce::Colour(0xffffc061).withAlpha(lava * facing * 0.95f * alpha);
+            g.setGradientFill(juce::ColourGradient(hot, p.x, p.y, hot.withAlpha(0.0f), p.x + size, p.y, true));
+            g.fillEllipse(juce::Rectangle<float>(size * 2.0f, size * 1.4f).withCentre(p));
+        }
+    }
+
+    // Rain or snow across the face, slanted by the wind.
+    const auto water = WaterLayer::amounts(world);
+    const float slant = 0.15f + 0.6f * weather;
+    if (water.rain > 0.02f) {
+        juce::Random drops(41);
+        g.setColour(colours::cyan.interpolatedWith(colours::parchment, 0.4f).withAlpha((0.15f + 0.3f * water.rain) * alpha));
+        const int count = 10 + int(70.0f * water.rain);
+        for (int i = 0; i < count; ++i) {
+            const float x = (drops.nextFloat() * 2.4f - 1.2f) * r, speed = 0.8f + 0.5f * drops.nextFloat();
+            const float y = std::fmod(drops.nextFloat() * 2.0f * r + precipitation * speed * r, 2.0f * r) - r;
+            const float len = r * (0.06f + 0.05f * water.rain);
+            g.drawLine(centre.x + x - slant * y, centre.y + y, centre.x + x - slant * (y + len), centre.y + y + len, 1.0f);
+        }
+    }
+    if (water.snow > 0.02f) {
+        juce::Random flakes(43);
+        g.setColour(juce::Colours::white.withAlpha((0.25f + 0.4f * water.snow) * alpha));
+        const int count = 10 + int(50.0f * water.snow);
+        for (int i = 0; i < count; ++i) {
+            const float x = (flakes.nextFloat() * 2.2f - 1.1f) * r;
+            const float y = std::fmod(flakes.nextFloat() * 2.0f * r + precipitation * 0.25f * r, 2.0f * r) - r;
+            const float sway = 0.03f * r * std::sin(precipitation * 2.0f + float(i));
+            g.fillEllipse(centre.x + x + sway - slant * y * 0.3f, centre.y + y, 2.2f, 2.2f);
+        }
+    }
+
     // Terminator shading on the far side.
     g.setGradientFill(juce::ColourGradient(juce::Colours::transparentBlack, centre.x - r * 0.1f, centre.y,
                                            juce::Colours::black.withAlpha(0.55f), centre.x + r, centre.y + r * 0.3f, false));
@@ -323,12 +365,36 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
     g.setColour(colours::brass.withAlpha(0.5f));
     g.drawEllipse(area, 1.2f);
 
+    // Lightning: the globe flashes and a bolt forks across the cloud tops. The thunder
+    // itself arrives later, by the strike's distance.
+    if (flash > 0.02f) {
+        g.setColour(juce::Colour(0xffdff6ff).withAlpha(0.3f * flash));
+        g.fillEllipse(area);
+        juce::Random bolt(boltSeed);
+        juce::Path path;
+        juce::Point<float> p { centre.x + (bolt.nextFloat() - 0.5f) * r, centre.y - r * (0.55f + 0.3f * bolt.nextFloat()) };
+        path.startNewSubPath(p);
+        for (int i = 0; i < 7; ++i) {
+            p += { (bolt.nextFloat() - 0.5f) * r * 0.22f, r * (0.08f + 0.06f * bolt.nextFloat()) };
+            path.lineTo(p);
+        }
+        g.setColour(juce::Colour(0xffe8f8ff).withAlpha(0.9f * flash));
+        g.strokePath(path, juce::PathStrokeType(1.6f));
+        g.setColour(colours::cyan.withAlpha(0.35f * flash));
+        g.strokePath(path, juce::PathStrokeType(5.0f));
+    }
+
 }
 
 void WorldbuilderEditor::timerCallback() {
     if (!isShowing()) return;
     spin += 0.004f + 0.02f * processor.engine.frame()[Activity];
     if (spin > juce::MathConstants<float>::twoPi * 100.0f) spin = 0;
+    precipitation += 0.05f + 0.06f * processor.engine.frame()[Weather];
+    if (precipitation > 1000.0f) precipitation = 0;
+    const float strike = processor.engine.lightning.load(std::memory_order_relaxed);
+    if (strike > flash + 0.2f) ++boltSeed;   // a new strike: a new bolt
+    flash = strike;
     for (std::size_t i = 0; i < meters.size(); ++i) meters[i] = processor.engine.layerMeter[i].load(std::memory_order_relaxed);
     masterMeter = processor.engine.masterMeter.load(std::memory_order_relaxed);
     repaint(globePanel);

@@ -5,11 +5,14 @@ Silicon and Intel, macOS 10.15+). Describe a world with a handful of high-level
 controls (temperature, weather, machinery, magic, scale and more) and WORLDBUILDER
 synthesises it in real time. It uses no samples and no recordings.
 
-**Status: Milestone 1 (skeleton).** These work now:
-- the Air (wind) and Tonal Bed layers;
+**Status: Milestone 2 (climate layers).** These work now:
+- six of the ten layers: Air (wind), Water (rain, drips, streams, waves), Fire &
+  Heat (crackle, roar, lava), Ice & Earth (creaks, singing ice, rumble,
+  rockfalls), Thunder and the Tonal Bed;
+- Temperature, Weather, Wetness, Scale, Era, Magic, Danger and Activity shape them;
 - the shared World Space reverb;
 - Power/Play, Master Level, Width, Seed, Quality, Root and Mood;
-- a placeholder interface.
+- a placeholder interface whose globe shows the climate (rain, snow, lava, lightning).
 
 The remaining layers, Structures, Locations and the full interface arrive in later
 milestones. See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits, and
@@ -43,7 +46,9 @@ Linux dependencies (ALSA, FreeType, fontconfig, X11 headers); see
 JUCE checkout. On macOS it also builds the AU as a universal binary.
 
 `WorldbuilderTests --snapshot editor.png` writes an image of the interface;
-`WorldbuilderTests --probe` prints per-layer measurements for each World Control.
+`WorldbuilderTests --probe` prints per-layer measurements for each World Control;
+`WorldbuilderTests --render storm.wav 30 weather=1 wetness=0.8` renders any world
+(parameter IDs from `Source/Parameters.h`) to a WAV file.
 
 CI (`.github/workflows/build.yml`) runs on every push:
 - universal macOS build and the tests on both architectures;

@@ -2,8 +2,11 @@
 //   WorldbuilderTests                 run everything
 //   WorldbuilderTests --snapshot f.png also write an image of the editor
 //   WorldbuilderTests --probe          print per-layer measurements (tuning aid)
+//   WorldbuilderTests --render f.wav seconds [id=value ...]
+//                                      render a world to a WAV file (listening aid)
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 #include <cstdlib>
@@ -12,6 +15,7 @@
 #include <set>
 #include <algorithm>
 #include <string>
+#include <vector>
 
 // Count C++ allocations on the calling thread while enabled.
 namespace allocationProbe {
@@ -235,6 +239,7 @@ void testWorldControls(Suite& s) {
     const std::set<int> later { Machinery, Life, Population };
     for (int w = 0; w < WorldControlCount; ++w) {
         double largest = 0;
+        std::array<double, 2> motion {};
         for (float value : { 0.0f, 1.0f }) {
             Host h;
             h.set(worldId(w), value);
@@ -244,6 +249,7 @@ void testWorldControls(Suite& s) {
             s.check(st.peak < 0.9, name + ": peak bounded", fmt(st.peak));
             s.check(st.rmsDb > -45.0, name + ": still audible", fmt(st.rmsDb));
             const double diff = difference(st, base);
+            motion[value == 0 ? 0 : 1] = st.motionDb;
             if (later.count(w) != 0) {
                 std::cout << "  [info] " << name << ": layer arrives in a later milestone (change " << fmt(diff) << " dB)\n";
             } else {
@@ -254,8 +260,27 @@ void testWorldControls(Suite& s) {
                 largest = std::max(largest, diff);
             }
         }
-        if (later.count(w) == 0)
+        if (w == Activity) {
+            // Activity sets how much and how fast the world moves rather than its tone: the
+            // 50 ms level movement must be far larger at chaotic than at calm.
+            s.check(motion[1] > 2.0 * motion[0], "Activity: the world moves far more when chaotic than when calm",
+                    fmt(motion[0]) + " -> " + fmt(motion[1]) + " dB of movement");
+        } else if (later.count(w) == 0) {
             s.check(largest > 1.5, std::string(specs[std::size_t(PTemperature + w)].name) + ": clearly audible at one extreme", fmt(largest) + " dB");
+        }
+    }
+}
+
+// A world that features each layer, so its solo is clearly heard. Thunder needs a
+// storm; the others are present in the default world but louder here.
+struct Setting { const char* id; float value; };
+std::vector<Setting> featuredWorld(int layer) {
+    switch (layer) {
+        case Water: return { { "wetness", 0.8f }, { "weather", 0.6f } };
+        case Fire: return { { "temperature", 0.85f } };
+        case Earth: return { { "temperature", 0.05f }, { "danger", 0.6f } };
+        case Thunder: return { { "weather", 1.0f } };
+        default: return {};
     }
 }
 
@@ -264,26 +289,125 @@ void testLayers(Suite& s) {
     Host all;
     const auto mix = measure(all.render(5.0), 3.0);
     for (int l = 0; l < LayerCount; ++l) {
-        Host h;
-        h.set(specs[std::size_t(layerSolo(l))].id, 1);
-        const auto st = measure(h.render(5.0), 3.0);
         const std::string name = layerNames[std::size_t(l)];
-        s.check(st.finite, name + " solo: finite");
-        if (layerImplemented[std::size_t(l)]) {
-            s.check(st.rmsDb > -50.0, name + " solo: audible", fmt(st.rmsDb));
-            s.check(st.rmsDb < mix.rmsDb + 0.5, name + " solo: part of the mix, not more", fmt(st.rmsDb) + " vs " + fmt(mix.rmsDb));
-            s.metric(name + " solo", st.rmsDb, " dBFS");
-        } else {
-            s.check(st.rmsDb < -100.0, name + " solo: silent until implemented", fmt(st.rmsDb));
+        if (!layerImplemented[std::size_t(l)]) {
+            Host h;
+            h.set(specs[std::size_t(layerSolo(l))].id, 1);
+            const auto st = measure(h.render(5.0), 3.0);
+            s.check(st.finite && st.rmsDb < -100.0, name + " solo: silent until implemented", fmt(st.rmsDb));
+            continue;
         }
+        // Thunder is event based: listen long enough for a few strikes.
+        const double seconds = l == Thunder ? 30.0 : 8.0;
+        Host featured, solo;
+        for (const auto& setting : featuredWorld(l)) {
+            featured.set(setting.id, setting.value);
+            solo.set(setting.id, setting.value);
+        }
+        solo.set(specs[std::size_t(layerSolo(l))].id, 1);
+        const auto soloAudio = solo.render(seconds);
+        const auto st = measure(soloAudio, 3.0), whole = measure(featured.render(seconds), 3.0);
+        s.check(st.finite, name + " solo: finite");
+        s.check(st.rmsDb > -50.0, name + " solo: audible in a world that features it", fmt(st.rmsDb));
+        s.check(st.rmsDb < whole.rmsDb + 0.5, name + " solo: part of the mix, not more", fmt(st.rmsDb) + " vs " + fmt(whole.rmsDb));
+        s.check(st.sideDb > st.rmsDb - 25.0, name + " solo: stereo", "side " + fmt(st.sideDb) + " vs " + fmt(st.rmsDb));
+        double mean = 0;
+        for (std::size_t i = std::size_t(3.0 * soloAudio.rate); i < soloAudio.l.size(); ++i) mean += soloAudio.l[i] + soloAudio.r[i];
+        mean /= 2.0 * double(soloAudio.l.size() - std::size_t(3.0 * soloAudio.rate));
+        s.check(toDb(std::abs(mean)) < st.rmsDb - 30.0, name + " solo: no DC offset", fmt(toDb(std::abs(mean))) + " dB");
+        s.metric(name + " solo (featured world)", st.rmsDb, " dBFS");
     }
     Host muted;
     for (int l = 0; l < LayerCount; ++l) muted.set(specs[std::size_t(layerMute(l))].id, 1);
     s.check(measure(muted.render(3.0), 2.0).rmsDb < -100.0, "all layers muted is silent");
     Host quiet;
-    quiet.set("air_level", -60);
-    quiet.set("bed_level", -60);
+    for (int l = 0; l < LayerCount; ++l) quiet.set(specs[std::size_t(layerLevel(l))].id, -60);
     s.check(measure(quiet.render(5.0), 3.0).rmsDb < mix.rmsDb - 40.0, "layer levels at -60 dB are near silent");
+}
+
+// Renders one layer alone in a world given by `settings`.
+Stats soloStats(int layer, std::vector<Setting> settings, double seconds = 10.0, uint32_t seed = 1) {
+    Host h;
+    h.set(specs[std::size_t(layerSolo(layer))].id, 1);
+    h.set("seed", float(seed));
+    for (const auto& setting : settings) h.set(setting.id, setting.value);
+    return measure(h.render(seconds), 3.0);
+}
+
+void testClimateLayers(Suite& s) {
+    s.section("climate layers follow the World Controls");
+    // Water: Wetness brings it in, Weather turns drizzle into a downpour, frost stills it.
+    const auto dryWater = soloStats(Water, { { "wetness", 0.0f } });
+    const auto someWater = soloStats(Water, { { "wetness", 0.3f } });
+    const auto drenched = soloStats(Water, { { "wetness", 1.0f } });
+    s.check(dryWater.rmsDb < -90.0, "Water: an arid world has no water", fmt(dryWater.rmsDb));
+    s.check(drenched.rmsDb > someWater.rmsDb + 10.0, "Water: drenched is much louder than damp", fmt(someWater.rmsDb) + " -> " + fmt(drenched.rmsDb));
+    const auto drizzle = soloStats(Water, { { "wetness", 0.7f }, { "weather", 0.0f } });
+    const auto downpour = soloStats(Water, { { "wetness", 0.7f }, { "weather", 1.0f } });
+    s.check(downpour.highDb > drizzle.highDb + 3.0, "Water: Weather turns drizzle into a downpour (more rain highs)",
+            fmt(drizzle.highDb) + " -> " + fmt(downpour.highDb));
+    const auto snow = soloStats(Water, { { "wetness", 0.8f }, { "temperature", 0.0f } });
+    const auto rain = soloStats(Water, { { "wetness", 0.8f }, { "temperature", 0.5f } });
+    s.check(snow.rmsDb < rain.rmsDb - 6.0 && snow.rmsDb > -70.0, "Water: frozen worlds get a soft snow hush instead of rain",
+            fmt(rain.rmsDb) + " -> " + fmt(snow.rmsDb));
+    const auto nearWater = soloStats(Water, { { "wetness", 0.8f }, { "scale", 0.0f } });
+    const auto farWater = soloStats(Water, { { "wetness", 0.8f }, { "scale", 1.0f } });
+    s.check(farWater.highDb - farWater.rmsDb < nearWater.highDb - nearWater.rmsDb - 1.5, "Water: colossal Scale sounds further away (darker)",
+            fmt(nearWater.highDb - nearWater.rmsDb) + " -> " + fmt(farWater.highDb - farWater.rmsDb) + " dB highs re RMS");
+
+    // Fire: Temperature brings it in, scorching adds lava, Wetness douses it.
+    const auto frozenFire = soloStats(Fire, { { "temperature", 0.0f } });
+    const auto temperateFire = soloStats(Fire, { { "temperature", 0.5f } });
+    const auto warmFire = soloStats(Fire, { { "temperature", 0.65f } });
+    const auto scorching = soloStats(Fire, { { "temperature", 1.0f } });
+    s.check(frozenFire.rmsDb < -100.0, "Fire: nothing burns in a frozen world", fmt(frozenFire.rmsDb));
+    s.check(temperateFire.rmsDb > -65.0, "Fire: a temperate world has a faint campfire", fmt(temperateFire.rmsDb));
+    s.check(scorching.rmsDb > temperateFire.rmsDb + 12.0, "Fire: scorching is far louder", fmt(temperateFire.rmsDb) + " -> " + fmt(scorching.rmsDb));
+    s.check(scorching.lowDb > warmFire.lowDb + 10.0, "Fire: scorching adds lava and roar in the low end", fmt(warmFire.lowDb) + " -> " + fmt(scorching.lowDb));
+    const auto dryFire = soloStats(Fire, { { "temperature", 0.85f }, { "wetness", 0.0f } });
+    const auto wetFire = soloStats(Fire, { { "temperature", 0.85f }, { "wetness", 1.0f } });
+    s.check(wetFire.rmsDb < dryFire.rmsDb - 3.0, "Fire: Wetness douses it", fmt(dryFire.rmsDb) + " -> " + fmt(wetFire.rmsDb));
+
+    // Ice & Earth: frozen worlds creak and crack (bright), hostile ones rumble (low).
+    const auto ice = soloStats(Earth, { { "temperature", 0.0f } });
+    const auto hot = soloStats(Earth, { { "temperature", 1.0f } });
+    s.check(ice.highDb - ice.rmsDb > hot.highDb - hot.rmsDb + 6.0, "Ice & Earth: frozen worlds creak and crack (bright)",
+            fmt(hot.highDb - hot.rmsDb) + " -> " + fmt(ice.highDb - ice.rmsDb) + " dB highs re RMS");
+    s.check(ice.motionDb > hot.motionDb + 1.0, "Ice & Earth: ice events make the frozen ground move", fmt(hot.motionDb) + " -> " + fmt(ice.motionDb));
+    const auto calmGround = soloStats(Earth, { { "danger", 0.0f } });
+    const auto hostileGround = soloStats(Earth, { { "danger", 1.0f } });
+    s.check(hostileGround.lowDb > calmGround.lowDb + 4.0, "Ice & Earth: Danger adds rumble and groan", fmt(calmGround.lowDb) + " -> " + fmt(hostileGround.lowDb));
+
+    // Thunder: Weather sets how often, Scale how far.
+    Host still;
+    still.set("thunder_solo", 1);
+    still.set("weather", 0.0f);
+    const auto stillStats = measure(still.render(40.0), 1.0);
+    s.check(stillStats.rmsDb < -100.0 && still.p->engine.thunderLayer().strikeCount() == 0, "Thunder: no strikes in still weather",
+            std::to_string(still.p->engine.thunderLayer().strikeCount()) + " strikes");
+    Host storm;
+    storm.set("thunder_solo", 1);
+    storm.set("weather", 1.0f);
+    const auto stormAudio = storm.render(150.0);
+    const auto& thunder = storm.p->engine.thunderLayer();
+    const auto strikes = thunder.strikeCount();
+    s.check(strikes >= 10 && strikes <= 60, "Thunder: a storm strikes every few seconds", std::to_string(strikes) + " strikes in 150 s");
+    s.metric("Thunder strikes in 150 s of storm", strikes);
+    std::vector<double> gaps;
+    for (uint32_t i = 1; i < strikes && i < uint32_t(ThunderLayer::logSize); ++i)
+        gaps.push_back(double(thunder.strikeClock(i) - thunder.strikeClock(i - 1)) / storm.rate);
+    double mean = 0, var = 0;
+    for (double g : gaps) mean += g / double(gaps.size());
+    for (double g : gaps) var += (g - mean) * (g - mean) / double(gaps.size());
+    const double cv = gaps.empty() ? 0.0 : std::sqrt(var) / mean;
+    s.check(cv > 0.4, "Thunder: irregular timing, never metronomic", "interval variation " + fmt(cv));
+    const auto stormStats = measure(stormAudio, 3.0);
+    s.check(stormStats.finite && stormStats.peak < 0.9, "Thunder: finite and below the ceiling", fmt(stormStats.peak));
+    s.check(stormStats.motionDb > 6.0, "Thunder: strikes stand out from the quiet between them", fmt(stormStats.motionDb) + " dB");
+    const auto nearStorm = soloStats(Thunder, { { "weather", 1.0f }, { "scale", 0.0f } }, 90.0);
+    const auto farStorm = soloStats(Thunder, { { "weather", 1.0f }, { "scale", 1.0f } }, 90.0);
+    s.check(farStorm.highDb - farStorm.rmsDb < nearStorm.highDb - nearStorm.rmsDb - 3.0, "Thunder: colossal Scale puts the storm further away",
+            fmt(nearStorm.highDb - nearStorm.rmsDb) + " -> " + fmt(farStorm.highDb - farStorm.rmsDb) + " dB highs re RMS");
 }
 
 void testDeterminism(Suite& s) {
@@ -307,6 +431,23 @@ void testDeterminism(Suite& s) {
     double maxDiff = 0;
     for (std::size_t i = 0; i < pa.l.size(); ++i) maxDiff = std::max(maxDiff, double(std::abs(pa.l[i] - qa.l[i])));
     s.check(maxDiff < 1.0e-4, "same start position gives the same output at any block size", fmt(toDb(maxDiff)) + " dB max difference");
+
+    // The same in a busy world where every event layer fires (rain, crackle, lava,
+    // rockfalls, thunder), at two odd block sizes.
+    Host busyA(48000, 64), busyB(48000, 999);
+    for (auto* h : { &busyA, &busyB }) {
+        for (auto [id, value] : { std::pair<const char*, float> { "weather", 1.0f }, { "wetness", 0.8f }, { "temperature", 0.85f },
+                                  { "danger", 0.9f }, { "activity", 1.0f } })
+            h->set(id, value);
+        h->playHead.playing = true;
+        h->playHead.position = 48000 * 75;
+    }
+    const auto ba = busyA.render(12.0), bb = busyB.render(12.0);
+    maxDiff = 0;
+    for (std::size_t i = 0; i < ba.l.size(); ++i) maxDiff = std::max(maxDiff, double(std::abs(ba.l[i] - bb.l[i]) + std::abs(ba.r[i] - bb.r[i])));
+    s.check(maxDiff < 1.0e-4, "busy world with every event layer: same output at any block size", fmt(toDb(maxDiff)) + " dB max difference");
+    s.check(busyA.p->engine.thunderLayer().strikeCount() > 0, "busy world: thunder struck during the comparison",
+            std::to_string(busyA.p->engine.thunderLayer().strikeCount()));
 }
 
 void testPowerAndMaster(Suite& s) {
@@ -423,17 +564,21 @@ void testState(Suite& s) {
 
 void testRealtimeSafety(Suite& s) {
     s.section("real-time safety, extremes and CPU");
-    for (int quality = 0; quality < 3; ++quality) {
+    // Everything at maximum (scorching: fire, lava, storm, waves) and the same frozen
+    // (ice creaks and cracks, snow), so every voice type runs.
+    for (int quality = 0; quality < 6; ++quality) {
         Host h(48000, 512);
-        h.set("quality", float(quality));
+        h.set("quality", float(quality % 3));
         for (int w = 0; w < WorldControlCount; ++w) h.set(worldId(w), 1.0f);
+        if (quality >= 3) h.set("temperature", 0.0f);
         h.render(1.0);
         h.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 10);
         allocationProbe::calls = 0;
         allocationProbe::enabled = true;
         for (int i = 0; i < 200; ++i) h.processOne(i % 3 == 0 ? 512 : 100 + i);
         allocationProbe::enabled = false;
-        s.check(allocationProbe::calls == 0, "processBlock performs no heap allocations (quality " + std::to_string(quality) + ")",
+        s.check(allocationProbe::calls == 0, "processBlock performs no heap allocations (quality " + std::to_string(quality % 3)
+                + (quality >= 3 ? ", frozen" : ", scorching") + ")",
                 std::to_string(allocationProbe::calls) + " allocations");
     }
 
@@ -489,16 +634,47 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
 int probe() {
     for (int w = 0; w < WorldControlCount; ++w) {
         std::cout << specs[std::size_t(PTemperature + w)].name << "\n";
-        for (const char* solo : { "", "air_solo", "bed_solo" })
+        for (int layer = -1; layer < LayerCount; ++layer) {
+            if (layer >= 0 && !layerImplemented[std::size_t(layer)]) continue;
+            const char* solo = layer < 0 ? "" : specs[std::size_t(layerSolo(layer))].id;
             for (float value : { 0.0f, specs[std::size_t(PTemperature + w)].def, 1.0f }) {
                 Host h;
                 if (*solo != 0) h.set(solo, 1);
                 h.set(worldId(w), value);
-                const auto st = measure(h.render(7.0), 4.0);
-                std::printf("  %-9s %.2f  rms %6.1f  low %6.1f  mid %6.1f  high %6.1f  side %6.1f  motion %5.2f\n", *solo ? solo : "mix",
-                            double(value), st.rmsDb, st.lowDb, st.midDb, st.highDb, st.sideDb, st.motionDb);
+                const auto st = measure(h.render(12.0), 4.0);
+                std::printf("  %-13s %.2f  rms %6.1f  low %6.1f  mid %6.1f  high %6.1f  side %6.1f  motion %5.2f  peak %6.1f\n",
+                            *solo ? solo : "mix", double(value), st.rmsDb, st.lowDb, st.midDb, st.highDb, st.sideDb, st.motionDb,
+                            toDb(st.peak));
             }
+        }
     }
+    return 0;
+}
+
+// Listening aid: renders a world with the given parameter values to a 24-bit WAV.
+int renderToFile(const juce::String& path, double seconds, const juce::StringArray& settings) {
+    Host h(48000, 512);
+    for (const auto& setting : settings) {
+        const auto id = setting.upToFirstOccurrenceOf("=", false, false), value = setting.fromFirstOccurrenceOf("=", false, false);
+        if (h.p->parameters.getParameter(id) == nullptr) {
+            std::cout << "unknown parameter " << id << "\n";
+            return 1;
+        }
+        h.set(id.toRawUTF8(), value.getFloatValue());
+    }
+    const auto a = h.render(seconds);
+    juce::AudioBuffer<float> buffer(2, int(a.l.size()));
+    buffer.copyFrom(0, 0, a.l.data(), int(a.l.size()));
+    buffer.copyFrom(1, 0, a.r.data(), int(a.r.size()));
+    juce::File file(path);
+    file.deleteFile();
+    std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream>(file);
+    const auto options = juce::AudioFormatWriterOptions().withSampleRate(48000).withNumChannels(2).withBitsPerSample(24);
+    const auto writer = juce::WavAudioFormat().createWriterFor(stream, options);
+    if (writer == nullptr) return 1;
+    writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
+    const auto st = measure(a, 2.0);
+    std::cout << path << ": rms " << fmt(st.rmsDb) << " dBFS, peak " << fmt(toDb(st.peak)) << " dBFS\n";
     return 0;
 }
 
@@ -510,12 +686,18 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i)
         if (juce::String(argv[i]) == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (juce::String(argv[i]) == "--probe") return probe();
+        else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {
+            juce::StringArray settings;
+            for (int k = i + 3; k < argc; ++k) settings.add(argv[k]);
+            return renderToFile(argv[i + 1], juce::String(argv[i + 2]).getDoubleValue(), settings);
+        }
 
     Suite s;
     testParameters(s);
     testRatesAndBlocks(s);
     testWorldControls(s);
     testLayers(s);
+    testClimateLayers(s);
     testDeterminism(s);
     testPowerAndMaster(s);
     testTonalChanges(s);

@@ -198,6 +198,10 @@ limiter, placeholder custom editor, and Linux tests (all passing).
    `auval` and the harness on arm64 and x86_64.
 2. The Milestone 1 gate in GarageBand: see [MANUAL_TEST.md](MANUAL_TEST.md).
 
+**Result (reported by the developer):** confirmed in GarageBand. It loads as an
+instrument, Air and Tonal Bed play, and Weather, Temperature, the Root/Mood glide and
+Power all work. The interface looks and feels right; keep its style.
+
 **Then Milestone 2:** Water, Fire & Heat, Ice & Earth and Thunder, plus the Climate
 and Scale mappings for them.
 
@@ -210,3 +214,168 @@ and Scale mappings for them.
 - The bed's oscillator phases are not position-locked after a live transport jump
   (see Decisions).
 - The sound has been checked only by measurement, not by ear.
+
+---
+
+## Milestone 2: climate layers (2026-10-24)
+
+### Working conditions
+
+Same as Milestone 1: Linux cloud container, no Mac. Verified here: Linux build with
+GCC and Clang, **320 checks pass, 0 fail**. Sound checked by measurement and by
+looking at spectrograms of rendered scenes (`--render`), **not by ear**. Nothing
+macOS-specific changed (no new parameters, no harness or script changes).
+
+### What was built
+
+Four new layers, each its own class in `Source/DSP/`, plus shared event building
+blocks in `Source/DSP/Events.h` (Poisson-style triggers, a two-pole modal resonator,
+a gliding decaying sine "Ping", a cheap rumble-noise source, voice picking).
+
+- **Water** (`WaterLayer`):
+  - rain as three parts: a dense patter of tiny ticks with power-law sizes (up to
+    about 3500 per second), bubbling drop voices (decaying sines whose pitch rises,
+    as real drops do), and a quiet hiss bed;
+  - drips: sparse pitched plinks, lower and longer in colossal worlds (caverns);
+  - a babbling stream (bubbles, gurgling bands, a low rush) that grows into a
+    waterfall roar when drenched;
+  - lapping waves: two fixed-period wave clocks (calm swell, storm surf) blended
+    by Weather; each wave swells, breaks and washes back with a little fizz.
+
+  Wetness brings it in. Weather turns drizzle into a downpour. Frozen worlds get a
+  soft snow hush instead of rain and the water stills; scorching worlds dry it up.
+  Scale lowers and darkens it.
+- **Fire & Heat** (`FireLayer`):
+  - crackles and pops: noise bursts through resonant bands, arriving in clusters
+    as a flicker curve flares and settles;
+  - a low flickering roar, and the fizz of embers;
+  - lava when scorching: low resonant bloops that rise in pitch, over a thick churn.
+
+  Temperature brings it in (a faint campfire at temperate, a furnace at
+  scorching). Wetness douses it, Weather fans it, and Era makes the crackle hotter
+  and tighter (plasma rather than wood).
+- **Ice & Earth** (`EarthLayer`):
+  - ice creaks: stick-slip pulse trains through 3-mode resonators;
+  - ice sheets cracking and singing: a sharp tick, then a falling dispersive
+    "pew" (two gliding tones);
+  - a low rumble that heaves (slowly when calm, restlessly when chaotic);
+  - a tectonic groan (narrow noise band at 36-80 Hz drifting in pitch);
+  - distant rockfalls: clusters of stone impacts (2-mode resonators) that build
+    and thin out, heard through a distance low-pass.
+
+  Cold brings the ice. Danger, heat and Scale bring the rumble, groan and rockfalls.
+- **Thunder** (`ThunderLayer`):
+  - Poisson-timed strikes, each at its own distance. The flash comes at once (the
+    globe shows it) and the sound follows 0-2.2 s later, by distance;
+  - close strikes tear with a crack (3-7 noise bursts over 0.1-0.35 s) and a sub
+    thump; distant ones are a soft, dark roll;
+  - every strike rumbles for 4-9 s: low-passed noise with an uneven rolling
+    envelope that darkens as it fades.
+
+  Weather (and Danger) set how often and how close: none below about Weather 40 %,
+  about one every 7 s in a full storm. Scale puts the storm further away. At most
+  3 strikes sound at once (2 in Eco); while all are busy the next strike waits,
+  because cutting off a rumble would click.
+- **Climate and Scale mappings**: every mapping is a function of the World
+  Controls. `WaterLayer::amounts`, `FireLayer::amounts`, `EarthLayer::amounts` and
+  `ThunderLayer::strikeRate` are public, so the tests and the globe use the same
+  numbers the sound does.
+- **Activity** now also sets event density: drips (0.3-6 per second), fire crackle
+  density and the ground's heave. Its main targets (creatures, machines, MIDI
+  events) arrive in Milestone 3.
+- **Quality** scales voice counts: drops 6/10/16, drips 2/4/4, crackles 6/10/16,
+  lava bloops 3/4/6, creaks 2/3/4, ice sheets 2/3/4, stones 6/9/12, thunder 2/3/3.
+- **Editor** (same style):
+  - the four layers are live in the mixer (only Milestone 3 layers are tagged);
+  - tooltips describe the new mappings, and the header says Milestone 2;
+  - the globe shows rain streaks slanted by the wind, snow, glowing lava fields
+    turning with the planet, and a lightning flash with a forked bolt.
+- **Tests and tools**: `--render file.wav seconds id=value ...` writes a WAV of
+  any world (a listening aid), and `--probe` covers every implemented layer.
+
+### Decisions
+
+- **Events are hashed from the position, like the noise.** Each chunk (32 samples)
+  or each sample (patter, embers) is a Bernoulli trial hashed from (seed, stream,
+  position). The resulting timing is Poisson-like and never metronomic, and it is
+  identical at any block size. The voices themselves (resonators, oscillators)
+  carry state, so after a live transport jump they ring on while new events follow
+  the new position. Exact repeatability from a fresh instance still holds; a test
+  checks a busy world (rain, crackle, lava, rockfalls, thunder) at block sizes
+  64 and 999 started at the same song position.
+- **Random polarity for drops and bloops.** A decaying sine that always starts
+  upward adds a small DC bias over thousands of drops. Each drop now starts in a
+  random polarity.
+- **Voice stealing takes the quietest voice** (or the nearest-to-silent for
+  resonators). Thunder never steals: it holds the next strike instead.
+- **No new parameters.** Milestone 2 only uses existing World Controls and layer
+  strips, so automation and saved projects from Milestone 1 load unchanged.
+- **Gain staging.** The default world moved from −21.6 to −20.9 dBFS RMS (the new
+  layers are quiet at default: light drips, a faint campfire, a low rumble). A
+  featured world for each layer puts its solo at −20 (Water, wetness 80 %) to
+  −34 dBFS (Thunder, averaged over gaps between strikes). The slow loudness
+  normaliser in the brief is still Milestone 3; the glue and the limiter keep
+  peaks below −1 dBFS.
+
+### Problems and fixes
+
+- **Activity's ">1.5 dB at one extreme" check failed (1.42 dB).** In Milestone 1 it
+  passed at exactly 1.5 dB. With more steady layers in the default world, the air's
+  gusts are a smaller share of the mix. Activity changes how much and how fast the
+  world moves, not its tone, so the band-level comparison was the wrong measure.
+  The test now requires the 50 ms level movement at Activity max to be more than
+  twice that at Activity min. Measured: 0.42 → 1.40 dB. The other World Controls
+  keep the 1.5 dB check.
+- **First tuning pass** (from spectrograms): fire crackles peaked at −7 dBFS in a
+  temperate world (now about −13 dBFS); the rain hiss covered the patter; the ice
+  creaks rang like tones (shorter resonator decays and more jitter made them
+  rougher); and the thunder rumble faded too smoothly (now two layers of rolling
+  swells).
+
+### Tests (Linux, through `processBlock`), 320 checks
+
+New or changed in this milestone:
+- Layer solo: every implemented layer in a world that features it is audible,
+  finite, stereo, no louder than that world's mix, and free of DC. Milestone 3
+  layers are silent.
+- Water: none when arid; drenched more than 10 dB above damp; Weather adds rain
+  highs (more than 3 dB); frozen gives a quiet snow hush instead of rain; colossal
+  Scale is darker.
+- Fire: nothing when frozen; a faint campfire at temperate; scorching more than
+  12 dB louder and more than 10 dB more low end (lava, roar); Wetness douses it.
+- Ice & Earth: frozen is at least 6 dB brighter and moves more (creaks, cracks);
+  Danger adds more than 4 dB of low end.
+- Thunder: no strikes in still weather over 40 s; 10-60 strikes in 150 s of storm
+  (measured 22); interval variation above 0.4 (irregular); strikes stand out
+  from the gaps; colossal Scale is more than 3 dB darker.
+- Busy-world block-size independence (above).
+- No heap allocation at Eco, Standard and High, both scorching (fire, lava, storm,
+  waves) and frozen (ice, snow), with odd block sizes and a MIDI event.
+- CPU, High quality, every control at maximum, 48 kHz/256: **2.6 % of one core**
+  of this container (was 1.5 % with two layers; a rough guide only).
+
+### Milestone 2 handoff
+
+**Done:** Water, Fire & Heat, Ice & Earth and Thunder layers. Climate (Temperature,
+Weather, Wetness) and Scale drive them, and Danger and Activity drive them in part.
+The globe shows rain, snow, lava and lightning. Linux tests all pass, with GCC and
+Clang.
+
+**Next (needs the developer):**
+1. CI on the macOS runner (the AU, `auval` and the harness).
+2. The Milestone 2 check in GarageBand: see [MANUAL_TEST.md](MANUAL_TEST.md).
+   Mostly listening: do the new layers sound like rain, fire, ice and thunder?
+
+**Then Milestone 3:** Machinery, Magic, Life and Population layers, the remaining
+World Control mappings, MIDI events and level management (the slow loudness
+normaliser).
+
+**Known issues / limits:**
+- None of the new sound has been heard by a person yet. Expect a tuning pass from
+  the developer's listening notes (levels between layers especially).
+- Machinery, Life and Population still do nothing. Notes are accepted and ignored.
+- Lowering Quality while many events sound freezes the voices above the new count
+  until Quality is raised again (they then finish their decay). This is harmless
+  but not ideal.
+- The globe's rain, snow, lava and lightning are drawn on the placeholder globe;
+  the real Living Globe is Milestone 6.

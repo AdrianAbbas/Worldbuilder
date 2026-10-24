@@ -31,8 +31,8 @@ inline constexpr std::array<const char*, LayerCount> layerIds { "air", "water", 
                                                                 "machine", "magic", "life", "crowd", "bed" };
 inline constexpr std::array<const char*, LayerCount> layerNames { "Air", "Water", "Fire & Heat", "Ice & Earth", "Thunder",
                                                                   "Machinery", "Magic", "Life", "Population", "Tonal Bed" };
-// Layers that produce sound in this build. The rest arrive in Milestones 2 and 3.
-inline constexpr std::array<bool, LayerCount> layerImplemented { true, false, false, false, false,
+// Layers that produce sound in this build. The rest arrive in Milestone 3.
+inline constexpr std::array<bool, LayerCount> layerImplemented { true, true, true, true, true,
                                                                  false, false, false, false, true };
 
 inline constexpr const char* rootChoices = "C|C#|D|D#|E|F|F#|G|G#|A|A#|B";

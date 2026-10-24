@@ -46,7 +46,8 @@ juce_add_plugin(WORLDBUILDER
     COPY_PLUGIN_AFTER_BUILD FALSE)
 target_sources(WORLDBUILDER PRIVATE
     Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/WorldEngine.cpp
-    Source/DSP/AirLayer.cpp Source/DSP/TonalBed.cpp Source/DSP/WorldSpace.cpp
+    Source/DSP/AirLayer.cpp Source/DSP/WaterLayer.cpp Source/DSP/FireLayer.cpp Source/DSP/EarthLayer.cpp
+    Source/DSP/ThunderLayer.cpp Source/DSP/TonalBed.cpp Source/DSP/WorldSpace.cpp
     Source/UI/WorldLookAndFeel.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
 target_compile_definitions(WORLDBUILDER PUBLIC

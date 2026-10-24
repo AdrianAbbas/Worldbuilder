@@ -3,8 +3,12 @@
 // World Space and the master section. The processor feeds it parameter values and
 // the clock; tests can drive it through the processor's processBlock.
 #include "DSP/AirLayer.h"
+#include "DSP/EarthLayer.h"
+#include "DSP/FireLayer.h"
 #include "DSP/Master.h"
+#include "DSP/ThunderLayer.h"
 #include "DSP/TonalBed.h"
+#include "DSP/WaterLayer.h"
 #include "DSP/WorldSpace.h"
 #include <atomic>
 #include <memory>
@@ -34,13 +38,21 @@ public:
     // For the editor: per-layer and master peak meters, the smoothed world, power fade.
     std::array<std::atomic<float>, LayerCount> layerMeter {};
     std::atomic<float> masterMeter { 0 }, powerLevel { 1 };
+    // The latest lightning flash (0..1), for the globe.
+    std::atomic<float> lightning { 0 };
     const WorldFrame& frame() const { return world; }
+    // For the tests: the strike log of the thunder layer (audio thread state).
+    const ThunderLayer& thunderLayer() const { return thunder; }
 
 private:
     void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls);
 
     double rate = 48000;
     AirLayer air;
+    WaterLayer water;
+    FireLayer fire;
+    EarthLayer earth;
+    ThunderLayer thunder;
     TonalBed bed;
     std::array<Generator*, LayerCount> layers {};
     WorldFrame world;

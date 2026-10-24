@@ -6,6 +6,10 @@ using namespace dsp;
 
 WorldEngine::WorldEngine() {
     layers[Air] = &air;
+    layers[Water] = &water;
+    layers[Fire] = &fire;
+    layers[Earth] = &earth;
+    layers[Thunder] = &thunder;
     layers[Bed] = &bed;
 }
 
@@ -81,6 +85,8 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
         layerMeter[i].store(std::max(layerPeak[i], layerMeter[i].load(std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
     masterMeter.store(std::max(masterPeak, masterMeter.load(std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
     powerLevel.store(powerRamp, std::memory_order_relaxed);
+    // A muted thunder layer is not rendered, so its flash would stand still: show none.
+    lightning.store(layerGain[Thunder].value > 1.0e-5f ? thunder.flash() * powerRamp : 0.0f, std::memory_order_relaxed);
 }
 
 void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls) {

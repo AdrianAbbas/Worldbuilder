@@ -46,7 +46,8 @@ private:
     juce::Rectangle<int> header, controlsPanel, globePanel, mixerPanel, footer;
     std::array<juce::Rectangle<int>, 4> groupAreas;
     juce::Rectangle<float> globeArea;
-    float spin = 0;
+    float spin = 0, precipitation = 0, flash = 0;
+    int boltSeed = 1;
     std::array<float, wb::LayerCount> meters {};
     float masterMeter = 0;
 };
