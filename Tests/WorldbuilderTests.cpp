@@ -783,6 +783,39 @@ void testState(Suite& s) {
     c.p->setStateInformation(junk, int(sizeof(junk)));
     s.check(c.get("temperature") == specs[PTemperature].def, "garbage state is ignored");
     s.check(measure(b.render(1.0), 0).finite, "restored instance renders");
+
+    // Four active Places with edited patterns, mute and solo: everything comes back, and
+    // the restored world plays the same.
+    {
+        Host x;
+        const std::array<int, 4> types { Castle, Village, Spaceport, Village };
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            x.set(slotId(slot, PlType), float(types[std::size_t(slot)]));
+            x.set(slotId(slot, PlCharacter), float(slot % 3));
+        }
+        x.p->patterns.syncTypes(x.p->slotTypes());
+        for (int slot = 0; slot < placeSlots; ++slot)
+            for (int e = 0; e < placeElements; e += 2) {
+                auto el = editedElement({ makeNote(0, e, 4), makeNote(4 + slot, 2, 2, 90, slot == 1), makeNote(10, 4, 1, 70, false, 60) }, 0.2f, pat::VaryVelocity, 2);
+                el.controls.evolve = 0.25f * float(slot);
+                el.controls.mute = slot == 2 && e == 2;
+                el.controls.solo = slot == 3 && e == 4;
+                x.p->patterns.setElement(slot, types[std::size_t(slot)], e, el);
+            }
+        juce::MemoryBlock saved;
+        x.p->getStateInformation(saved);
+        Host y;
+        y.p->setStateInformation(saved.getData(), int(saved.getSize()));
+        int different = 0;
+        for (int slot = 0; slot < placeSlots; ++slot)
+            for (int e = 0; e < placeElements; ++e) {
+                const auto a = x.p->patterns.element(slot, types[std::size_t(slot)], e), b = y.p->patterns.element(slot, types[std::size_t(slot)], e);
+                if (!(a.controls == b.controls) || (a.controls.edited && !a.pattern.sameNotes(b.pattern))) ++different;
+            }
+        s.check(different == 0, "four Places with edited patterns, mute and solo survive a state round trip", std::to_string(different) + " elements differ");
+        const auto ax = x.render(6.0), by = y.render(6.0);
+        s.check(ax.l == by.l && ax.r == by.r && measure(ax, 1.0).rmsDb > -60.0, "the restored four-Place world plays exactly the same");
+    }
 }
 
 void testRealtimeSafety(Suite& s) {
@@ -874,6 +907,24 @@ void testRealtimeSafety(Suite& s) {
     h.render(10.0);
     const double seconds = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - start);
     s.metric("CPU, High quality, everything at maximum, four Places (one core of this machine)", 100.0 * seconds / 10.0, " %");
+    // The budget: four Places of six instruments, busy, in Standard quality, well under
+    // 15 % of one core (this machine; the brief's target is an Intel i5 laptop).
+    {
+        Host st(48000, 256);
+        st.set("quality", 1);
+        for (int w = 0; w < WorldControlCount; ++w) st.set(worldId(w), 0.7f);
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            st.set(slotId(slot, PlType), float(Castle + slot % 3));
+            st.set(slotId(slot, PlCharacter), float(slot % 3));
+            st.set(slotId(slot, PlActivity), 1.0f);
+        }
+        st.render(1.0);
+        const auto begin = juce::Time::getHighResolutionTicks();
+        st.render(10.0);
+        const double used = 100.0 * juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) / 10.0;
+        s.metric("CPU, Standard quality, four busy Places of six instruments (one core of this machine)", used, " %");
+        s.check(used < 15.0, "CPU: four busy Places (24 instruments), Standard quality, 48 kHz / 256, under 15 % of one core", fmt(used) + " %");
+    }
 }
 
 void testEditor(Suite& s, const juce::String& snapshotPath) {
@@ -914,7 +965,7 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     // The Pattern Editor, on each patterned element of the first three slots.
     world->openPatterns(0);
     auto& patterns = world->patternEditor();
-    s.check(patterns.isVisible() && patterns.slot() == 0 && patterns.element() == CastlePlace::Bells, "the Pattern Editor opens on the Place's first pattern");
+    s.check(patterns.isVisible() && patterns.slot() == 0 && patterns.element() == CastlePlace::Drone, "the Pattern Editor opens on the Place's first pattern");
     h.render(0.5);
     for (int slot = 0; slot < 3; ++slot)
         for (int e = 0; e < placeElements; ++e) {
@@ -933,23 +984,23 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
             "the editor shows the generated pattern");
     // Editing: the first edit keeps the pattern; MIDI out and back in; Generate.
     {
-        world->openPatterns(1, VillagePlace::Plucks);
+        world->openPatterns(1, VillagePlace::Lute);
         auto& pe = world->patternEditor();
         const int before = pe.shown().pattern.count;
         pe.addNote(3, 4, 2, 90);
-        const auto stored = h.p->patterns.element(1, Village, VillagePlace::Plucks);
+        const auto stored = h.p->patterns.element(1, Village, VillagePlace::Lute);
         s.check(stored.controls.edited && stored.pattern.count == before + 1, "drawing a note keeps the pattern as edited",
                 std::to_string(before) + " -> " + std::to_string(stored.pattern.count));
         const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wb-test-plucks.mid");
-        const bool saved = pe.saveMidi(file, VillagePlace::Plucks);
-        const bool imported = pe.importMidi(file, VillagePlace::Wood, false);
-        const auto wood = h.p->patterns.element(1, Village, VillagePlace::Wood);
+        const bool saved = pe.saveMidi(file, VillagePlace::Lute);
+        const bool imported = pe.importMidi(file, VillagePlace::Marimba, false);
+        const auto wood = h.p->patterns.element(1, Village, VillagePlace::Marimba);
         s.check(saved && imported && wood.controls.edited && wood.pattern.count == stored.pattern.count,
                 "a pattern saved as MIDI imports into another element", std::to_string(wood.pattern.count) + " notes");
         file.deleteFile();
         pe.generate();
         h.render(0.3);
-        s.check(!h.p->patterns.element(1, Village, VillagePlace::Wood).controls.edited, "Generate returns the element to a generated pattern");
+        s.check(!h.p->patterns.element(1, Village, VillagePlace::Marimba).controls.edited, "Generate returns the element to a generated pattern");
     }
     editor.reset();
 }
@@ -1163,28 +1214,28 @@ void testPatterns(Suite& s) {
         auto sparse = placeHost(Village, 0, { { "p1_activity", 0.05f } }), busy = placeHost(Village, 0, { { "p1_activity", 1.0f } });
         sparse.render(1.0);
         busy.render(1.0);
-        const int few = sparse.p->patterns.generated(0).pattern[VillagePlace::Plucks].count, many = busy.p->patterns.generated(0).pattern[VillagePlace::Plucks].count;
+        const int few = sparse.p->patterns.generated(0).pattern[VillagePlace::Lute].count, many = busy.p->patterns.generated(0).pattern[VillagePlace::Lute].count;
         s.check(sparse.p->patterns.generated(0).type == Village && many > few, "the generated pattern follows Activity (and is reported to the editor)",
                 std::to_string(few) + " -> " + std::to_string(many) + " notes");
         // Generate: a new variant gives a fresh pattern.
         auto h = placeHost(Village, 0);
         h.render(1.0);
-        const auto before = h.p->patterns.generated(0).pattern[VillagePlace::Plucks];
-        auto el = h.p->patterns.element(0, Village, VillagePlace::Plucks);
+        const auto before = h.p->patterns.generated(0).pattern[VillagePlace::Lute];
+        auto el = h.p->patterns.element(0, Village, VillagePlace::Lute);
         el.controls.variant = 1;
-        h.p->patterns.setElement(0, Village, VillagePlace::Plucks, el);
+        h.p->patterns.setElement(0, Village, VillagePlace::Lute, el);
         h.render(1.0);
-        const auto after = h.p->patterns.generated(0).pattern[VillagePlace::Plucks];
+        const auto after = h.p->patterns.generated(0).pattern[VillagePlace::Lute];
         s.check(!before.sameNotes(after) && after.count > 0, "Generate makes a fresh pattern");
         // An edited pattern is kept when the knobs move.
         auto edited = editedElement({ makeNote(0, 0), makeNote(8, 2) });
-        h.p->patterns.setElement(0, Village, VillagePlace::Plucks, edited);
+        h.p->patterns.setElement(0, Village, VillagePlace::Lute, edited);
         h.render(1.0);
         h.p->engine.placeSlot(0).place();
         h.set("p1_activity", 1.0f);
         h.set("p1_character", 2.0f);
         h.render(2.0);
-        const auto* playing = h.p->engine.placeSlot(0).playingPattern(VillagePlace::Plucks);
+        const auto* playing = h.p->engine.placeSlot(0).playingPattern(VillagePlace::Lute);
         s.check(playing != nullptr && playing->sameNotes(edited.pattern), "an edited pattern is kept when Activity and Character change");
         // Another Place in the slot starts from its own generated patterns.
         h.set("p1_type", float(Spaceport));
@@ -1248,7 +1299,7 @@ void testPatterns(Suite& s) {
         e.pattern.base = 3;
         e.controls.evolve = 0.4f;
         e.controls.returnBars = 8;
-        a.p->patterns.setElement(1, Village, VillagePlace::Wood, e);
+        a.p->patterns.setElement(1, Village, VillagePlace::Marimba, e);
         auto generatedOnly = a.p->patterns.element(0, Castle, CastlePlace::Horns);
         generatedOnly.controls.randomness = 0.9f;
         generatedOnly.controls.variant = 3;
@@ -1257,14 +1308,14 @@ void testPatterns(Suite& s) {
         a.p->getStateInformation(state);
         Host b;
         b.p->setStateInformation(state.getData(), int(state.getSize()));
-        const auto got = b.p->patterns.element(1, Village, VillagePlace::Wood);
+        const auto got = b.p->patterns.element(1, Village, VillagePlace::Marimba);
         s.check(got.controls == e.controls && got.pattern.sameNotes(e.pattern), "an edited pattern and its controls are restored");
         const auto horns = b.p->patterns.element(0, Castle, CastlePlace::Horns);
         s.check(horns.controls == generatedOnly.controls && !horns.controls.edited, "a generated element keeps its controls and variant");
         const auto xml = juce::String::fromUTF8(static_cast<const char*>(state.getData()), int(state.getSize()));
         s.metric("saved state with one edited pattern", double(state.getSize()), " bytes");
         b.render(2.0);
-        const auto* playing = b.p->engine.placeSlot(1).playingPattern(VillagePlace::Wood);
+        const auto* playing = b.p->engine.placeSlot(1).playingPattern(VillagePlace::Marimba);
         s.check(playing != nullptr && playing->sameNotes(e.pattern), "the restored pattern plays");
     }
 }
@@ -1402,12 +1453,18 @@ void testPlaces(Suite& s) {
         }
         // Elements: each one changes the sound; all off is silent.
         {
+            // Each switch takes its instrument out: none of its notes play, and the sound changes.
             auto full = placeHost(type, 0, { { "p1_activity", 0.8f } });
-            const auto all = measure(full.render(32.0), 4.0);
+            const auto all = full.render(24.0);
             for (int e = 0; e < placeElements; ++e) {
                 auto without = placeHost(type, 0, { { "p1_activity", 0.8f }, { slotId(0, PlElementOn + e), 0.0f } });
-                const double diff = difference(all, measure(without.render(32.0), 4.0));
-                s.check(diff > 0.3, place + ": switching off " + placeInfo(type).elements[std::size_t(e)] + " changes it", fmt(diff) + " dB");
+                const auto other = without.render(24.0);
+                double diff = 0;
+                for (std::size_t i = 0; i < all.l.size(); ++i) diff += std::abs(all.l[i] - other.l[i]);
+                diff /= double(all.l.size());
+                const auto left = placeLog(without, e).size();
+                s.check(diff > 1.0e-5 && left == 0, place + ": switching off " + placeInfo(type).element[std::size_t(e)].name + " takes it out",
+                        "mean difference " + fmt(diff * 1.0e4) + "e-4, " + std::to_string(left) + " of its notes left");
             }
             std::vector<std::pair<std::string, float>> off;
             for (int e = 0; e < placeElements; ++e) off.push_back({ slotId(0, PlElementOn + e), 0.0f });
@@ -1444,6 +1501,106 @@ void testPlaces(Suite& s) {
             const double ownLock = eventGridLock(at, own), hostLock = eventGridLock(at, 132.0);
             s.check(ownLock > 0.9 && hostLock < 0.5, place + ": free, it keeps its own tempo",
                     "grid lock " + fmt(ownLock) + " at " + fmt(own) + " BPM vs " + fmt(hostLock) + " at the host's 132");
+        }
+    }
+}
+
+// Every instrument of every Place, alone (its solo in the Pattern Editor): audible,
+// finite, in the key (each note's pitch class), on the host's tempo grid.
+Host instrumentHost(int type, int character, int element, const std::vector<std::pair<std::string, float>>& extra = {}, double bpm = 120.0) {
+    auto h = placeHost(type, character, extra, bpm);
+    h.p->patterns.syncTypes(h.p->slotTypes());
+    auto el = h.p->patterns.element(0, type, element);
+    el.controls.solo = true;
+    h.p->patterns.setElement(0, type, element, el);
+    return h;
+}
+
+void testInstruments(Suite& s) {
+    for (int type = Castle; type < PlaceTypeCount; ++type) {
+        if (!placeImplemented[std::size_t(type)]) continue;
+        const std::string place = placeNames[std::size_t(type)];
+        s.section((place + ": every instrument alone (solo), in key and on tempo").c_str());
+        const auto& info = placeInfo(type);
+        int instruments = 0;
+        for (const auto& e : info.element) instruments += e.kind != NoPattern ? 1 : 0;
+        s.check(instruments >= 5, place + " has at least five instruments", std::to_string(instruments));
+        for (int e = 0; e < placeElements; ++e) {
+            const auto& spec = info.element[std::size_t(e)];
+            if (spec.kind == NoPattern) continue;
+            const std::string name = place + " " + spec.name;
+            // Audible and finite alone, in every Character (rare sounds get a busy setting).
+            std::string levels;
+            bool audible = true, finite = true;
+            for (int c = 0; c < placeCharacters; ++c) {
+                auto h = instrumentHost(type, c, e, { { "p1_activity", 0.9f } });
+                const auto st = measure(h.render(36.0), 2.0);
+                audible = audible && st.rmsDb > -72.0;
+                finite = finite && st.finite && st.peak < 0.9;
+                levels += (c > 0 ? ", " : "") + fmt(st.rmsDb);
+            }
+            s.check(audible && finite, name + ": audible and finite alone in every Character", levels + " dBFS RMS");
+            // In the key: G major and A Phrygian, every note's pitch class.
+            if (spec.kind == Melodic) {
+                for (auto [root, mood] : { std::pair<int, int> { 7, 1 }, { 9, 3 } }) {
+                    int notes = 0, outside = 0;
+                    for (int c = 0; c < placeCharacters; ++c) {
+                        auto h = instrumentHost(type, c, e, { { "p1_activity", 0.9f }, { "root", float(root) }, { "mood", float(mood) } });
+                        h.render(24.0);
+                        for (const auto& n : placeLog(h, e)) {
+                            ++notes;
+                            outside += music::inScale(mood, int(std::lround(n.pitch))) ? 0 : 1;
+                        }
+                    }
+                    s.check(notes > 0 && outside == 0, name + ": every note in " + (mood == 1 ? "G major" : "A Phrygian"),
+                            std::to_string(notes) + " notes, " + std::to_string(outside) + " outside");
+                }
+            }
+            // On the host's grid at two tempos (no swing, no variation).
+            for (double bpm : { 84.0, 132.0 }) {
+                std::vector<double> at;
+                for (int c = 0; c < placeCharacters; ++c) {
+                    auto h = instrumentHost(type, c, e, { { "p1_activity", 0.9f }, { "p1_swing", 0.0f }, { "p1_variation", 0.0f } }, bpm);
+                    h.render(30.0);
+                    for (const auto& n : placeLog(h, e))
+                        if (double(n.clock) / h.rate >= 1.0) at.push_back(double(n.clock) / h.rate);
+                }
+                const double lock = eventGridLock(at, bpm);
+                s.check(!at.empty() && lock > 0.97, name + ": on the host's sixteenth grid at " + fmt(bpm) + " BPM",
+                        std::to_string(at.size()) + " notes, grid lock " + fmt(lock));
+            }
+        }
+    }
+    s.section("instruments: mute, and held notes picked up mid-pattern");
+    {
+        // A muted instrument plays nothing; the rest go on.
+        auto h = placeHost(Village, 0, { { "p1_activity", 0.9f } });
+        h.p->patterns.syncTypes(h.p->slotTypes());
+        auto el = h.p->patterns.element(0, Village, VillagePlace::Lute);
+        el.controls.mute = true;
+        h.p->patterns.setElement(0, Village, VillagePlace::Lute, el);
+        h.render(16.0);
+        s.check(placeLog(h, VillagePlace::Lute).empty() && !placeLog(h, VillagePlace::HandDrums).empty(), "a muted instrument is silent, the others play",
+                std::to_string(placeLog(h, VillagePlace::Lute).size()) + " lute notes");
+    }
+    {
+        // Transport mode located into the middle of a four-bar drone: it sounds at once.
+        for (int type : { Castle, Village, Spaceport }) {
+            const int e = type == Castle ? int(CastlePlace::Drone) : (type == Village ? int(VillagePlace::HurdyGurdy) : int(SpaceportPlace::Pads));
+            Host h;
+            h.set("playmode", float(PlayTransport));
+            h.playHead.bpm = 120;
+            h.set("p1_type", float(type));
+            h.set("p1_solo", 1);
+            h.p->patterns.syncTypes(h.p->slotTypes());
+            auto el = h.p->patterns.element(0, type, e);
+            el.controls.solo = true;
+            h.p->patterns.setElement(0, type, e, el);
+            h.playHead.playing = true;
+            h.playHead.position = int64_t(48000.0 * 5.3);   // 2.65 bars into the pattern
+            const auto st = measure(h.render(3.0), 1.0);
+            s.check(st.rmsDb > -50.0, std::string(placeNames[std::size_t(type)]) + ": a held instrument sounds at once after a locate mid-pattern",
+                    fmt(st.rmsDb) + " dBFS");
         }
     }
 }
@@ -1676,7 +1833,7 @@ int probe() {
 int probePlaces() {
     for (int type : { Castle, Village, Spaceport })
         for (int c = 0; c < placeCharacters; ++c) {
-            std::printf("%-10s %-15s", placeNames[std::size_t(type)], placeInfo(type).characters[std::size_t(c)]);
+            std::printf("\n%-10s %-15s", placeNames[std::size_t(type)], placeInfo(type).characters[std::size_t(c)]);
             for (int e = -1; e < placeElements; ++e) {
                 std::vector<std::pair<std::string, float>> settings;
                 for (int k = 0; k < placeElements; ++k)
@@ -1685,8 +1842,9 @@ int probePlaces() {
                 const auto a = h.render(32.0);
                 const auto st = measure(a, 4.0);
                 const auto fit = keyFit(chroma(a, 4.0, 100.0, 5000.0), 2, 0);
-                std::printf("  %s %6.1f/%5.1f n%zu k%.1f", e < 0 ? "all" : placeInfo(type).elements[std::size_t(e)], st.rmsDb, toDb(st.peak),
-                            placeEvents(h, 4.0).size(), fit.meanGap);
+                const int notes = e < 0 ? -1 : h.p->engine.placeSlot(0).generatedPattern(e).count;
+                std::printf("\n    %-12s %6.1f/%5.1f dBFS  %3zu notes played  %3d in the pattern  key %.1f", e < 0 ? "all" : placeInfo(type).element[std::size_t(e)].name,
+                            st.rmsDb, toDb(st.peak), placeEvents(h, 4.0).size(), notes, fit.meanGap);
             }
             std::printf("\n");
         }
@@ -1749,6 +1907,7 @@ int main(int argc, char** argv) {
     if (run("climate")) testClimateLayers(s);
     if (run("music")) testMusic(s);
     if (run("places")) testPlaces(s);
+    if (run("instruments")) testInstruments(s);
     if (run("placeworld")) testPlaceWorld(s);
     if (run("slots")) testPlaceSlots(s);
     if (run("patterns")) testPatterns(s);

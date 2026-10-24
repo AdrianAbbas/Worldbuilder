@@ -11,13 +11,7 @@ constexpr int keyWidth = 78;
 bool isSelected(const pat::Note& n) { return (n.flags & selectedFlag) != 0; }
 void setSelected(pat::Note& n, bool on) { n.flags = uint8_t(on ? (n.flags | selectedFlag) : (n.flags & ~selectedFlag)); }
 
-juce::Colour accentFor(int type) {
-    static const std::array<juce::Colour, PlaceTypeCount> table { juce::Colour(0xff6c7a8f), juce::Colour(0xffc9a45c), juce::Colour(0xffd08a4e),
-                                                                  juce::Colour(0xff5fd4e6), juce::Colour(0xffb36a4a), juce::Colour(0xff8fa6c9),
-                                                                  juce::Colour(0xffd8c27a), juce::Colour(0xff6fb37a), juce::Colour(0xff9a8f86),
-                                                                  juce::Colour(0xff7a8fb3), juce::Colour(0xffb78cff) };
-    return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
-}
+juce::Colour accentFor(int type) { return placeAccent(type); }
 
 juce::Font font(float size, bool bold = false) { return juce::Font(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain)); }
 
@@ -397,6 +391,42 @@ private:
 };
 
 //==============================================================================
+// A tab per instrument: its glyph and name, and whether it is muted or soloed.
+class PatternEditor::ElementTab final : public juce::Button {
+public:
+    ElementTab(PatternEditor& o, int e) : juce::Button("tab"), owner(o), element(e) {}
+    void paintButton(juce::Graphics& g, bool highlighted, bool) override {
+        const auto r = getLocalBounds().toFloat().reduced(0.5f);
+        const auto accent = accentFor(owner.type());
+        const bool on = getToggleState();
+        const auto controls = owner.processor.patterns.element(owner.slotIndex, owner.type(), element).controls;
+        g.setColour(on ? accent.withAlpha(0.85f) : colours::panel.brighter(highlighted ? 0.25f : 0.1f));
+        g.fillRoundedRectangle(r, 5.0f);
+        g.setColour(accent.withAlpha(on ? 1.0f : 0.5f));
+        g.drawRoundedRectangle(r, 5.0f, 1.0f);
+        const auto ink = on ? colours::background : (controls.mute ? colours::dim : colours::parchment);
+        auto inner = r.reduced(5.0f, 3.0f);
+        drawInstrumentIcon(g, placeInfo(owner.type()).element[std::size_t(element)].icon, inner.removeFromLeft(16.0f), ink);
+        inner.removeFromLeft(4.0f);
+        g.setColour(ink);
+        g.setFont(font(10.0f, true));
+        g.drawFittedText(placeInfo(owner.type()).element[std::size_t(element)].name, inner.toNearestInt(), juce::Justification::centredLeft, 2, 0.8f);
+        if (controls.mute || controls.solo) {
+            const auto badge = juce::Rectangle<float>(11.0f, 11.0f).withPosition(r.getRight() - 12.0f, r.getY() + 1.0f);
+            g.setColour(controls.solo ? colours::cyan : colours::danger);
+            g.fillEllipse(badge);
+            g.setColour(colours::background);
+            g.setFont(font(8.0f, true));
+            g.drawText(controls.solo ? "S" : "M", badge, juce::Justification::centred, false);
+        }
+    }
+
+private:
+    PatternEditor& owner;
+    int element;
+};
+
+//==============================================================================
 // Drag a pattern out into the host as a MIDI clip.
 class PatternEditor::DragOut final : public juce::Component, public juce::SettableTooltipClient {
 public:
@@ -455,12 +485,29 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
 
     for (auto* b : { &draw, &select }) b->setColour(juce::TextButton::buttonOnColourId, colours::brass);
     for (int e = 0; e < placeElements; ++e) {
-        auto& tab = tabs[std::size_t(e)];
+        tabs[std::size_t(e)] = std::make_unique<ElementTab>(*this, e);
+        auto& tab = *tabs[std::size_t(e)];
         tab.setClickingTogglesState(false);
-        tab.setColour(juce::TextButton::buttonOnColourId, colours::brass);
         tab.onClick = [this, e] { selectElement(e); };
         addChildComponent(tab);
     }
+    // The instrument's own strip: its level and switch (host parameters), mute and solo.
+    elementLevel.setSliderStyle(juce::Slider::LinearHorizontal);
+    elementLevel.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    elementLevel.setDoubleClickReturnValue(true, 0.8);
+    elementLevel.setTooltip("This instrument's level");
+    addAndMakeVisible(elementLevel);
+    elementOn.setColour(juce::TextButton::buttonOnColourId, colours::brass);
+    elementOn.setTooltip("Switch this instrument on or off (automatable)");
+    addAndMakeVisible(elementOn);
+    muteButton.setColour(juce::TextButton::buttonOnColourId, colours::danger);
+    muteButton.setTooltip("Mute this instrument (saved with the project)");
+    muteButton.onClick = [this] { setMuteSolo(muteButton.getToggleState(), soloButton.getToggleState()); };
+    addAndMakeVisible(muteButton);
+    soloButton.setColour(juce::TextButton::buttonOnColourId, colours::cyan);
+    soloButton.setTooltip("Hear this instrument alone within its Place (other solos add to it)");
+    soloButton.onClick = [this] { setMuteSolo(muteButton.getToggleState(), soloButton.getToggleState()); };
+    addAndMakeVisible(soloButton);
     back.setTooltip("Back to the Place's controls");
     back.onClick = [this] { if (onClose) onClose(); };
     addAndMakeVisible(back);
@@ -592,7 +639,7 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
         });
     });
     button(saveButton, "Save this pattern as a MIDI file", [this] {
-        const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).elements[std::size_t(std::max(0, elementIndex))] + ".mid";
+        const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).element[std::size_t(std::max(0, elementIndex))].name + ".mid";
         chooser = std::make_unique<juce::FileChooser>("Save the pattern as MIDI", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(name),
                                                       "*.mid");
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [this](const juce::FileChooser& c) {
@@ -641,7 +688,16 @@ void PatternEditor::selectElement(int element) {
     elementIndex = element;
     undoStack.clear();
     redoStack.clear();
-    for (int e = 0; e < placeElements; ++e) tabs[std::size_t(e)].setToggleState(e == element, juce::dontSendNotification);
+    for (int e = 0; e < placeElements; ++e) tabs[std::size_t(e)]->setToggleState(e == element, juce::dontSendNotification);
+    // Attach the instrument's strip to its parameters.
+    levelAttachment.reset();
+    onAttachment.reset();
+    if (slotIndex >= 0) {
+        levelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processor.parameters, specs[std::size_t(placeParam(slotIndex, PlElement + element))].id, elementLevel);
+        onAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+            processor.parameters, specs[std::size_t(placeParam(slotIndex, PlElementOn + element))].id, elementOn);
+    }
     refreshFromStore();
     // Fit the pattern, and show the rows around its notes.
     const int count = working.pattern.lengthSteps;
@@ -661,10 +717,10 @@ void PatternEditor::selectElement(int element) {
 
 void PatternEditor::layoutTabs() {
     for (int e = 0; e < placeElements; ++e) {
-        auto& tab = tabs[std::size_t(e)];
+        auto& tab = *tabs[std::size_t(e)];
         tab.setVisible(patternInfo(shownType, e).kind != NoPattern);
-        tab.setButtonText(placeInfo(shownType).elements[std::size_t(e)]);
-        tab.setTooltip("Edit the " + juce::String(placeInfo(shownType).elements[std::size_t(e)]) + " pattern. Drop a MIDI file here to import it.");
+        tab.setButtonText(placeInfo(shownType).element[std::size_t(e)].name);
+        tab.setTooltip("Edit the " + juce::String(placeInfo(shownType).element[std::size_t(e)].name) + " pattern. Drop a MIDI file here to import it.");
     }
     resized();
 }
@@ -685,6 +741,8 @@ void PatternEditor::refreshFromStore() {
 void PatternEditor::refreshControls() {
     const juce::ScopedValueSetter<bool> guard(updating, true);
     const auto& p = working.pattern;
+    muteButton.setToggleState(working.controls.mute, juce::dontSendNotification);
+    soloButton.setToggleState(working.controls.solo, juce::dontSendNotification);
     length.setSelectedId(p.bars == 0 ? 99 : p.bars, juce::dontSendNotification);
     grid.setSelectedId(p.resolution + 1, juce::dontSendNotification);
     steps.setValue(p.lengthSteps, juce::dontSendNotification);
@@ -947,7 +1005,7 @@ void PatternEditor::addNote(int step, int degree, int noteLength, int velocity) 
 juce::File PatternEditor::tempMidiFile(int element) const {
     const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("WORLDBUILDER");
     dir.createDirectory();
-    const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).elements[std::size_t(std::clamp(element, 0, placeElements - 1))];
+    const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).element[std::size_t(std::clamp(element, 0, placeElements - 1))].name;
     return dir.getChildFile(juce::File::createLegalFileName(name) + ".mid");
 }
 
@@ -1003,7 +1061,7 @@ bool PatternEditor::isInterestedInFileDrag(const juce::StringArray& files) {
 void PatternEditor::filesDropped(const juce::StringArray& files, int x, int y) {
     int target = elementIndex;
     for (int e = 0; e < placeElements; ++e)
-        if (tabs[std::size_t(e)].isVisible() && tabs[std::size_t(e)].getBounds().contains(x, y)) target = e;
+        if (tabs[std::size_t(e)]->isVisible() && tabs[std::size_t(e)]->getBounds().contains(x, y)) target = e;
     for (const auto& f : files)
         if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi")) {
             importMidi(juce::File(f), target, snap);
@@ -1047,6 +1105,18 @@ void PatternEditor::timerCallback() {
     gridView->repaint();
 }
 
+void PatternEditor::setMuteSolo(bool mute, bool solo) {
+    if (slotIndex < 0 || elementIndex < 0) return;
+    const int t = type();
+    auto el = processor.patterns.element(slotIndex, t, elementIndex);
+    el.controls.mute = mute;
+    el.controls.solo = solo;
+    processor.patterns.setElement(slotIndex, t, elementIndex, el);
+    working.controls.mute = mute;
+    working.controls.solo = solo;
+    for (auto& tab : tabs) tab->repaint();
+}
+
 //==============================================================================
 void PatternEditor::resized() {
     auto r = getLocalBounds().reduced(14, 10);
@@ -1055,13 +1125,26 @@ void PatternEditor::resized() {
         auto t = titleArea;
         back.setBounds(t.removeFromRight(70).withSizeKeepingCentre(66, 24));
         t.removeFromRight(10);
-        t.removeFromLeft(250);   // icon and title
+        t.removeFromLeft(190);   // icon and title
+        int visible = 0;
+        for (const auto& tab : tabs) visible += tab->isVisible() ? 1 : 0;
+        const int w = std::min(100, t.getWidth() / std::max(visible, 1));
         for (int e = placeElements - 1; e >= 0; --e) {
-            auto& tab = tabs[std::size_t(e)];
+            auto& tab = *tabs[std::size_t(e)];
             if (!tab.isVisible()) continue;
-            tab.setBounds(t.removeFromRight(100).withSizeKeepingCentre(96, 26));
-            t.removeFromRight(4);
+            tab.setBounds(t.removeFromRight(w).withSizeKeepingCentre(w - 4, 30));
         }
+    }
+    r.removeFromTop(4);
+    elementArea = r.removeFromTop(24);
+    {
+        auto t = elementArea.withTrimmedLeft(200);
+        soloButton.setBounds(t.removeFromRight(56).reduced(2, 1));
+        muteButton.setBounds(t.removeFromRight(60).reduced(2, 1));
+        elementOn.setBounds(t.removeFromRight(48).reduced(2, 1));
+        t.removeFromRight(8);
+        t.removeFromLeft(44);   // "LEVEL"
+        elementLevel.setBounds(t.reduced(0, 4));
     }
     r.removeFromTop(4);
     toolbarArea = r.removeFromTop(28);
@@ -1156,7 +1239,7 @@ void PatternEditor::paint(juce::Graphics& g) {
                false);
     g.setColour(colours::brass);
     g.setFont(font(10.5f, true).withExtraKerningFactor(0.18f));
-    g.drawText("PATTERN EDITOR  -  PLACE " + juce::String(slotIndex + 1), title, juce::Justification::centredLeft, false);
+    g.drawText("PATTERNS  -  PLACE " + juce::String(slotIndex + 1), title, juce::Justification::centredLeft, false);
 
     g.setColour(colours::brass.withAlpha(0.85f));
     g.setFont(font(9.5f, true).withExtraKerningFactor(0.12f));
@@ -1173,6 +1256,19 @@ void PatternEditor::paint(juce::Graphics& g) {
     g.drawText("EVOLVE " + juce::String(juce::roundToInt(working.controls.evolve * 100.0f)) + "%",
                evolve.getBounds().translated(0, -13).withHeight(12).withWidth(140), juce::Justification::centredLeft, false);
     label(returnEvery, "RETURN");
+    {
+        // The instrument strip: glyph and name, then LEVEL.
+        auto strip = elementArea;
+        const auto& spec = placeInfo(t).element[std::size_t(std::clamp(elementIndex, 0, placeElements - 1))];
+        drawInstrumentIcon(g, spec.icon, strip.removeFromLeft(20).toFloat().reduced(1.0f), accent);
+        strip.removeFromLeft(6);
+        g.setColour(colours::parchment);
+        g.setFont(font(12.0f, true));
+        g.drawText(spec.name, strip.removeFromLeft(170), juce::Justification::centredLeft, true);
+        g.setColour(colours::brass.withAlpha(0.85f));
+        g.setFont(font(9.5f, true).withExtraKerningFactor(0.12f));
+        g.drawText("LEVEL", elementLevel.getBounds().withX(elementLevel.getX() - 44).withWidth(40), juce::Justification::centredLeft, false);
+    }
     label(snapButton, "MIDI FILES");
 
     // Status: generated or edited, and what the rows mean.

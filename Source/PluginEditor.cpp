@@ -46,13 +46,23 @@ juce::Colour globeColour(float temperature, float danger) {
 }
 
 // Each Place's accent colour on its card, strip and landmark.
-juce::Colour placeColour(int type) {
-    static const std::array<juce::Colour, PlaceTypeCount> table { juce::Colour(0xff6c7a8f), juce::Colour(0xffc9a45c), juce::Colour(0xffd08a4e),
-                                                                  juce::Colour(0xff5fd4e6), juce::Colour(0xffb36a4a), juce::Colour(0xff8fa6c9),
-                                                                  juce::Colour(0xffd8c27a), juce::Colour(0xff6fb37a), juce::Colour(0xff9a8f86),
-                                                                  juce::Colour(0xff7a8fb3), juce::Colour(0xffb78cff) };
-    return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
+juce::Colour placeColour(int type) { return ui::placeAccent(type); }
+
+// A weighted blend of colours.
+juce::Colour blend(const juce::Colour* c, const float* w, int n) {
+    float r = 0, g = 0, b = 0, total = 0;
+    for (int i = 0; i < n; ++i) {
+        r += c[i].getFloatRed() * w[i];
+        g += c[i].getFloatGreen() * w[i];
+        b += c[i].getFloatBlue() * w[i];
+        total += w[i];
+    }
+    if (total <= 0.0f) return c[0];
+    return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
+
+// Short names for the category chips.
+constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
 
 const char* slotTooltip(int field) {
     switch (field) {
@@ -167,6 +177,12 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     addChildComponent(detail.dice);
     detail.close.onClick = [this] { closeDetail(); };
     addChildComponent(detail.close);
+    detail.mood.setTooltip("This Place suggests a Mood. Click to use it (the Mood stays your choice).");
+    detail.mood.onClick = [this] {
+        if (detail.slot >= 0)
+            if (const int m = placeInfo(placeType(detail.slot)).mood; m >= 0) setParam(PMood, float(m));
+    };
+    addChildComponent(detail.mood);
     detail.patterns.setTooltip("Open the Pattern Editor: edit the notes each element of this Place plays");
     detail.patterns.setColour(juce::TextButton::buttonColourId, colours::brass.withAlpha(0.35f));
     detail.patterns.onClick = [this] {
@@ -222,8 +238,14 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     };
     addChildComponent(*patterns);
 
+    themeTint = colours::panel;
+    themeGlow = colours::cyan;
+    themeSky = colours::background;
+    listCards();
     setSize(baseWidth, baseHeight);
     refreshPlaceStrips();
+    updateTheme();
+    themeChange = 0;
     startTimerHz(30);
 }
 
@@ -318,6 +340,7 @@ void WorldbuilderEditor::openDetail(int slot) {
                                                              &d.seed, &d.sync, &d.dice, &d.close })
         c->setVisible(true);
     d.patterns.setVisible(hasPatterns(placeType(slot)));
+    d.mood.setVisible(placeInfo(placeType(slot)).mood >= 0);
     for (auto& s : d.element) s.setVisible(true);
     for (auto& t : d.elementOn) t.setVisible(true);
     updateDetailLabels();
@@ -332,7 +355,7 @@ void WorldbuilderEditor::closeDetail() {
     d.slot = -1;
     for (auto& b : d.character) b.setVisible(false);
     for (auto* c : std::initializer_list<juce::Component*> { &d.activity, &d.tension, &d.tone, &d.size, &d.variation, &d.density, &d.swing,
-                                                             &d.seed, &d.sync, &d.dice, &d.close, &d.patterns })
+                                                             &d.seed, &d.sync, &d.dice, &d.close, &d.patterns, &d.mood })
         c->setVisible(false);
     for (auto& s : d.element) s.setVisible(false);
     for (auto& t : d.elementOn) t.setVisible(false);
@@ -428,12 +451,16 @@ void WorldbuilderEditor::resized() {
         s.pan.setBounds(sliders.reduced(4, 0));
     }
 
-    // Place cards: two rows of five.
-    auto grid = cardsPanel.reduced(10, 8);
-    grid.removeFromTop(20);
-    const int cardW = grid.getWidth() / 5, cardH = grid.getHeight() / 2;
-    for (int i = 0; i < 10; ++i)
-        cards[std::size_t(i)] = juce::Rectangle<int>(grid.getX() + (i % 5) * cardW, grid.getY() + (i / 5) * cardH, cardW, cardH).reduced(4);
+    // Place cards: category chips on the title row, then a scrolling grid, five across.
+    {
+        auto top = cardsPanel.reduced(10, 6).removeFromTop(20);
+        for (int k = PlaceCategoryCount; k >= 0; --k) {
+            const int w = k == 0 ? 40 : 64;
+            categoryChips[std::size_t(k)] = top.removeFromRight(w).reduced(2, 2);
+        }
+        cardGrid = cardsPanel.reduced(8, 6).withTrimmedTop(22);
+        cardScroll = juce::jlimit(0.0f, maxCardScroll(), cardScroll);
+    }
 
     layoutDetail();
     patterns->setBounds(controlsPanel.getUnion(globePanel).getUnion(cardsPanel));
@@ -465,6 +492,7 @@ void WorldbuilderEditor::layoutDetail() {
     d.titleArea = r.removeFromTop(52);
     d.close.setBounds(d.titleArea.withTrimmedLeft(d.titleArea.getWidth() - 70).withSizeKeepingCentre(66, 24).translated(0, -8));
     d.patterns.setBounds(d.close.getBounds().translated(-96, 0).withWidth(88));
+    d.mood.setBounds(d.patterns.getBounds().translated(-134, 0).withWidth(126));
     r.removeFromTop(4);
     d.characterArea = r.removeFromTop(34);
     {
@@ -473,13 +501,13 @@ void WorldbuilderEditor::layoutDetail() {
         for (auto& b : d.character) b.setBounds(row.removeFromLeft(w).reduced(4, 4));
     }
     r.removeFromTop(8);
-    auto knobsRow = r.removeFromTop(96);
+    auto knobsRow = r.removeFromTop(90);
     {
         const int w = knobsRow.getWidth() / 5;
         for (auto* k : { &d.activity, &d.tension, &d.tone, &d.size, &d.variation }) k->setBounds(knobsRow.removeFromLeft(w).reduced(8, 0));
     }
     r.removeFromTop(6);
-    d.rhythmArea = r.removeFromTop(96);
+    d.rhythmArea = r.removeFromTop(88);
     {
         auto row = d.rhythmArea.withTrimmedTop(16);
         const int w = row.getWidth() / 5;
@@ -491,12 +519,13 @@ void WorldbuilderEditor::layoutDetail() {
         d.dice.setBounds(seedArea.withSizeKeepingCentre(seedArea.getWidth(), 22));
     }
     r.removeFromTop(8);
-    d.elementsArea = r.removeFromTop(20 + 5 * 26);
+    d.elementsArea = r.removeFromTop(20 + placeElements * 24);
     {
         auto rows = d.elementsArea.withTrimmedTop(20);
         for (int e = 0; e < placeElements; ++e) {
-            auto row = rows.removeFromTop(26);
-            d.elementOn[std::size_t(e)].setBounds(row.removeFromLeft(130).reduced(2, 3));
+            auto row = rows.removeFromTop(24);
+            row.removeFromLeft(24);   // the instrument's glyph
+            d.elementOn[std::size_t(e)].setBounds(row.removeFromLeft(130).reduced(2, 2));
             row.removeFromLeft(10);
             d.element[std::size_t(e)].setBounds(row.reduced(0, 5));
         }
@@ -505,16 +534,24 @@ void WorldbuilderEditor::layoutDetail() {
 
 //==============================================================================
 void WorldbuilderEditor::paint(juce::Graphics& g) {
-    g.setGradientFill(juce::ColourGradient(colours::background.brighter(0.08f), 0, 0, colours::background.darker(0.4f), 0,
-                                           float(getHeight()), false));
+    // The world's colours: the active Places tint the background, the panels and the glow.
+    const auto sky = colours::background.interpolatedWith(themeSky, 0.55f);
+    g.setGradientFill(juce::ColourGradient(sky.brighter(0.1f), 0, 0, colours::background.darker(0.4f), 0, float(getHeight()), false));
     g.fillAll();
+    {
+        const auto c = globePanel.toFloat().getCentre();
+        const auto glow = themeGlow.withAlpha(0.07f);
+        g.setGradientFill(juce::ColourGradient(glow, c.x, c.y, glow.withAlpha(0.0f), c.x + float(getWidth()) * 0.45f, c.y, true));
+        g.fillAll();
+    }
+    const auto panelColour = colours::panel.interpolatedWith(themeTint, 0.45f);
 
     g.setColour(colours::brass);
     g.setFont(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f));
     g.drawText("WORLDBUILDER", header.withTrimmedLeft(4), juce::Justification::centredLeft, false);
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
-    g.drawText("FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 4 PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
+    g.drawText("FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 5A PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
                juce::Justification::centredLeft, false);
     g.setColour(colours::brass.withAlpha(0.35f));
     g.drawHorizontalLine(header.getBottom() + 2, float(header.getX()), float(header.getRight()));
@@ -522,9 +559,9 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     const bool detailOpen = detail.slot >= 0;
     for (auto panel : { controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer }) {
         if (detailOpen && (panel == globePanel || panel == cardsPanel)) continue;
-        g.setColour(colours::panel.withAlpha(0.85f));
+        g.setColour(panelColour.withAlpha(0.85f));
         g.fillRoundedRectangle(panel.toFloat(), 10.0f);
-        g.setColour(colours::panelEdge);
+        g.setColour(colours::panelEdge.interpolatedWith(themeGlow, 0.15f));
         g.drawRoundedRectangle(panel.toFloat().reduced(0.5f), 10.0f, 1.0f);
     }
 
@@ -623,50 +660,111 @@ void WorldbuilderEditor::paintPlaceStrips(juce::Graphics& g) {
 void WorldbuilderEditor::paintCards(juce::Graphics& g) {
     g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)).withExtraKerningFactor(0.15f));
     g.setColour(colours::brass.withAlpha(0.85f));
-    g.drawText("ADD A PLACE", cardsPanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
+    const auto titleRow = cardsPanel.reduced(14, 6).withHeight(20);
     if (juce::Time::getMillisecondCounterHiRes() < fullMessageUntil) {
         g.setColour(colours::danger);
-        g.drawText("All four slots are in use: remove a Place first", cardsPanel.reduced(14, 8).withHeight(16), juce::Justification::centredRight, false);
+        g.drawText("All four slots are in use", titleRow, juce::Justification::centredLeft, false);
+    } else {
+        g.drawText("ADD A PLACE", titleRow, juce::Justification::centredLeft, false);
     }
-    for (int i = 0; i < 10; ++i) {
-        const int type = i + 1;
-        const auto card = cards[std::size_t(i)].toFloat();
+    // Category chips.
+    g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)).withExtraKerningFactor(0.1f));
+    for (int k = 0; k <= PlaceCategoryCount; ++k) {
+        const auto chip = categoryChips[std::size_t(k)].toFloat();
+        const bool on = category == k - 1;
+        g.setColour(on ? colours::brass.withAlpha(0.85f) : colours::panelEdge.withAlpha(0.6f));
+        g.fillRoundedRectangle(chip, chip.getHeight() * 0.5f);
+        g.setColour(on ? colours::background : colours::parchment.withAlpha(0.8f));
+        g.drawText(chipNames[std::size_t(k)], chip, juce::Justification::centred, false);
+    }
+
+    juce::Graphics::ScopedSaveState clip(g);
+    g.reduceClipRegion(cardGrid);
+    for (int i = 0; i < listedCount; ++i) {
+        const int type = listed[std::size_t(i)];
+        const auto bounds = cardBounds(i);
+        if (!bounds.intersects(cardGrid)) continue;
         const bool built = placeImplemented[std::size_t(type)];
+        const float hover = hoverAmount[std::size_t(type)];
+        // A hovered card lifts a little.
+        const auto card = bounds.toFloat().translated(0.0f, -2.0f * hover);
         const auto accent = placeColour(type);
         int count = 0;
         for (int slot = 0; slot < placeSlotCount; ++slot) count += placeType(slot) == type ? 1 : 0;
-        const bool hover = hoverCard == i && built;
-        g.setColour((built ? colours::panel.brighter(hover ? 0.25f : 0.1f) : colours::panel).withAlpha(0.95f));
-        g.fillRoundedRectangle(card, 8.0f);
-        g.setColour(built ? accent.withAlpha(hover ? 0.95f : 0.55f) : colours::panelEdge);
-        g.drawRoundedRectangle(card.reduced(0.5f), 8.0f, hover ? 1.6f : 1.0f);
-        auto art = card.reduced(10.0f, 6.0f).withTrimmedBottom(18.0f);
-        ui::drawPlaceIcon(g, type, art, built ? colours::parchment.withAlpha(0.95f) : colours::dim.withAlpha(0.6f),
-                          built ? accent.withAlpha(0.55f) : colours::panelEdge);
-        g.setColour(built ? colours::parchment : colours::dim);
-        g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
-        g.drawText(placeNames[std::size_t(type)], card.withTrimmedTop(card.getHeight() - 20.0f), juce::Justification::centred, false);
+        if (hover > 0.01f) {
+            const auto halo = accent.withAlpha(0.3f * hover);
+            g.setColour(halo);
+            g.fillRoundedRectangle(card.expanded(2.0f), 9.0f);
+        }
+        ui::drawPlaceScene(g, type, card, hover, animTime, built);
+        g.setColour(built ? accent.withAlpha(0.45f + 0.5f * hover) : colours::panelEdge);
+        g.drawRoundedRectangle(card.reduced(0.5f), 6.0f, 1.0f + 0.6f * hover);
+        g.setColour(built ? colours::parchment : colours::dim.brighter(0.3f));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawFittedText(placeNames[std::size_t(type)], card.withTrimmedTop(card.getHeight() - 18.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
         if (!built) {
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            g.setColour(colours::dim);
-            g.drawText("MILESTONE 4", card.reduced(6.0f, 4.0f).withHeight(12.0f), juce::Justification::centredRight, false);
+            g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+            g.setColour(colours::parchment.withAlpha(0.6f));
+            g.drawText(juce::String("IN ") + placeArrives[std::size_t(type)], card.reduced(5.0f, 3.0f).withHeight(11.0f), juce::Justification::centredRight, false);
         } else if (count > 0) {
-            const auto badge = juce::Rectangle<float>(16.0f, 16.0f).withPosition(card.getRight() - 20.0f, card.getY() + 4.0f);
+            const auto badge = juce::Rectangle<float>(15.0f, 15.0f).withPosition(card.getRight() - 18.0f, card.getY() + 3.0f);
             g.setColour(accent);
             g.fillEllipse(badge);
             g.setColour(colours::background);
-            g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
             g.drawText(juce::String(count), badge, juce::Justification::centred, false);
         }
     }
+    // The scroll position, when the list is longer than the panel.
+    if (const float range = maxCardScroll(); range > 0.0f) {
+        const auto track = juce::Rectangle<float>(float(cardGrid.getRight()) - 3.0f, float(cardGrid.getY()) + 2.0f, 2.5f, float(cardGrid.getHeight()) - 4.0f);
+        const float visible = float(cardGrid.getHeight()) / (float(cardGrid.getHeight()) + range);
+        g.setColour(colours::panelEdge);
+        g.fillRoundedRectangle(track, 1.2f);
+        g.setColour(colours::brass.withAlpha(0.7f));
+        g.fillRoundedRectangle(track.withHeight(track.getHeight() * visible).withY(track.getY() + track.getHeight() * (1.0f - visible) * cardScroll / range), 1.2f);
+    }
+}
+
+void WorldbuilderEditor::listCards() {
+    listedCount = 0;
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
+        if (category < 0 || placeInfo(type).category == category) listed[std::size_t(listedCount++)] = type;
+    cardScroll = juce::jlimit(0.0f, maxCardScroll(), cardScroll);
+}
+
+juce::Rectangle<int> WorldbuilderEditor::cardBounds(int index) const {
+    const int columns = 5, cardW = cardGrid.getWidth() / columns, cardH = cardGrid.getHeight() / 2;
+    return juce::Rectangle<int>(cardGrid.getX() + (index % columns) * cardW, cardGrid.getY() + (index / columns) * cardH - juce::roundToInt(cardScroll), cardW,
+                                cardH)
+        .reduced(3);
+}
+
+float WorldbuilderEditor::maxCardScroll() const {
+    const int rows = (listedCount + 4) / 5;
+    return std::max(0.0f, float(rows * (cardGrid.getHeight() / 2) - cardGrid.getHeight()));
+}
+
+int WorldbuilderEditor::categoryAt(juce::Point<int> p) const {
+    for (int k = 0; k <= PlaceCategoryCount; ++k)
+        if (categoryChips[std::size_t(k)].contains(p)) return k;
+    return -1;
 }
 
 void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     const auto& d = detail;
     const int type = placeType(d.slot);
     const auto accent = placeColour(type);
-    g.setColour(colours::panel.withAlpha(0.97f));
+    g.setColour(colours::panel.interpolatedWith(ui::placeTheme(type).tint, 0.5f).withAlpha(0.97f));
     g.fillRoundedRectangle(d.area.toFloat(), 10.0f);
+    // Header art: the Place's scene across the top, fading into the panel.
+    {
+        const auto banner = d.area.toFloat().reduced(1.5f).withHeight(float(d.titleArea.getBottom() - d.area.getY()) + 4.0f);
+        ui::drawPlaceScene(g, type, banner, 0.6f, animTime, true);
+        g.setGradientFill(juce::ColourGradient(colours::panel.withAlpha(0.92f), banner.getX(), 0.0f, colours::panel.withAlpha(0.5f),
+                                               banner.getX() + banner.getWidth() * 0.75f, 0.0f, false));
+        g.fillRoundedRectangle(banner, 9.0f);
+    }
     g.setColour(accent.withAlpha(0.7f));
     g.drawRoundedRectangle(d.area.toFloat().reduced(0.5f), 10.0f, 1.2f);
 
@@ -678,7 +776,7 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     g.drawText(juce::String(placeNames[std::size_t(type)]).toUpperCase(), title.removeFromTop(28), juce::Justification::centredLeft, false);
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
-    g.drawFittedText("Place " + juce::String(d.slot + 1) + "  -  " + placeInfo(type).description, title.withTrimmedRight(80),
+    g.drawFittedText("Place " + juce::String(d.slot + 1) + "  -  " + placeInfo(type).description, title.withTrimmedTop(2),
                      juce::Justification::topLeft, 2);
 
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)).withExtraKerningFactor(0.15f));
@@ -689,8 +787,13 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     g.drawText("ELEMENTS", d.elementsArea.withHeight(14), juce::Justification::centredLeft, false);
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText("Level, distance and pan are on the strip. Population scales Activity and the effect depth.",
+    g.drawText(juce::String("Effect: ") + placeInfo(type).effect + " (deeper with Activity and Population)",
                d.elementsArea.withHeight(14).withTrimmedLeft(90), juce::Justification::centredLeft, true);
+    for (int e = 0; e < placeElements; ++e) {
+        const auto row = d.elementOn[std::size_t(e)].getBounds();
+        ui::drawInstrumentIcon(g, placeInfo(type).element[std::size_t(e)].icon, row.withX(row.getX() - 22).withWidth(18).toFloat().reduced(0.0f, 2.0f),
+                               d.elementOn[std::size_t(e)].getToggleState() ? accent : colours::dim);
+    }
 }
 
 // Placeholder globe: shaded sphere coloured by the world, turning meridians, clouds,
@@ -702,7 +805,7 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
     const auto centre = area.getCentre();
     const float r = area.getWidth() * 0.5f;
 
-    const auto glow = colours::cyan.interpolatedWith(juce::Colour(0xffb78cff), magic).withAlpha(0.18f + 0.3f * magic);
+    const auto glow = themeGlow.interpolatedWith(juce::Colour(0xffb78cff), magic * 0.6f).withAlpha(0.18f + 0.3f * magic);
     g.setGradientFill(juce::ColourGradient(glow, centre.x, centre.y, glow.withAlpha(0.0f), centre.x + r * 1.18f, centre.y, true));
     g.fillEllipse(area.expanded(r * 0.18f));
 
@@ -731,6 +834,8 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
             g.drawHorizontalLine(int(centre.y + y), centre.x - half, centre.x + half);
         }
         g.drawHorizontalLine(int(centre.y), centre.x - r, centre.x + r);
+
+        paintGlobeFeatures(g, area, alpha);
 
         juce::Random random(7);
         const int clouds = 3 + int(weather * 9.0f);
@@ -787,8 +892,29 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
                                                juce::Colours::black.withAlpha(0.55f), centre.x + r, centre.y + r * 0.3f, false));
         g.fillEllipse(area);
     }
-    g.setColour(colours::brass.withAlpha(0.5f));
+    g.setColour(colours::brass.interpolatedWith(themeGlow, 0.4f).withAlpha(0.5f));
     g.drawEllipse(area, 1.2f);
+    // Atmosphere marks outside the disc: a golden aura (temples, palaces) and orbits (ports, ships).
+    if (const float aura = featureAmount[ui::GlobeGlow]; aura > 0.01f) {
+        const auto c = juce::Colour(0xffffe0a0).withAlpha(0.25f * aura * (0.8f + 0.2f * std::sin(animTime * 1.5f)));
+        g.setGradientFill(juce::ColourGradient(c, centre.x, centre.y - r * 1.02f, c.withAlpha(0.0f), centre.x, centre.y - r * 1.35f, false));
+        g.drawEllipse(area.expanded(r * 0.06f), r * 0.08f);
+    }
+    if (const float orbit = featureAmount[ui::GlobeOrbit]; orbit > 0.01f) {
+        const auto ring = juce::Rectangle<float>(r * 2.7f, r * 0.55f).withCentre(centre.translated(0, r * 0.08f));
+        g.setColour(colours::cyan.withAlpha(0.35f * orbit * alpha));
+        juce::Path front;
+        front.addCentredArc(ring.getCentreX(), ring.getCentreY(), ring.getWidth() * 0.5f, ring.getHeight() * 0.5f, 0.0f, juce::MathConstants<float>::halfPi,
+                            juce::MathConstants<float>::halfPi * 3.0f, true);
+        g.strokePath(front, juce::PathStrokeType(1.2f));
+        for (int k = 0; k < 2; ++k) {
+            const float a = animTime * (0.35f + 0.15f * float(k)) + float(k) * 2.4f;
+            const juce::Point<float> ship { ring.getCentreX() + ring.getWidth() * 0.5f * std::cos(a), ring.getCentreY() + ring.getHeight() * 0.5f * std::sin(a) };
+            if (std::sin(a) < -0.2f && std::abs(std::cos(a)) < 0.7f) continue;   // behind the planet
+            g.setColour(juce::Colours::white.withAlpha(0.8f * orbit * alpha));
+            g.fillEllipse(juce::Rectangle<float>(3.0f, 3.0f).withCentre(ship));
+        }
+    }
 
     if (flash > 0.02f) {
         g.setColour(juce::Colour(0xffdff6ff).withAlpha(0.3f * flash));
@@ -823,8 +949,14 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
         const auto halo = accent.withAlpha((0.15f + 0.45f * glowLevel) * alpha * lerp(1.0f, 0.5f, d));
         g.setGradientFill(juce::ColourGradient(halo, p.x, p.y, halo.withAlpha(0.0f), p.x + size * 0.9f, p.y, true));
         g.fillEllipse(juce::Rectangle<float>(size * 1.8f, size * 1.8f).withCentre(p));
-        ui::drawPlaceIcon(g, type, juce::Rectangle<float>(size, size).withCentre(p.translated(0, -size * 0.1f)),
-                          colours::parchment.withAlpha(alpha * lerp(1.0f, 0.55f, d)), accent.withAlpha(0.75f * alpha));
+        const auto landmark = juce::Rectangle<float>(size, size).withCentre(p.translated(0, -size * 0.1f));
+        if (const auto art = ui::artworkLayer(type, "front"); art.isValid()) {
+            g.setOpacity(alpha * lerp(1.0f, 0.6f, d));
+            g.drawImage(art, landmark, juce::RectanglePlacement::centred);
+            g.setOpacity(1.0f);
+        } else {
+            ui::drawPlaceIcon(g, type, landmark, colours::parchment.withAlpha(alpha * lerp(1.0f, 0.55f, d)), accent.withAlpha(0.75f * alpha));
+        }
         if (dragLandmark == slot) {
             g.setColour(colours::cyan.withAlpha(0.8f));
             g.drawEllipse(juce::Rectangle<float>(size * 1.3f, size * 1.3f).withCentre(p), 1.2f);
@@ -833,6 +965,136 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("LISTENER", juce::Rectangle<float>(80.0f, 14.0f).withCentre({ centre.x, area.getBottom() + 12.0f }), juce::Justification::centred, false);
+    // The air of the active Places drifts across the panel.
+    for (int kind = 0; kind < int(particleAmount.size()); ++kind)
+        ui::drawParticles(g, kind, globePanel.toFloat().reduced(6.0f), animTime, particleAmount[std::size_t(kind)] * alpha, themeGlow, 3);
+}
+
+void WorldbuilderEditor::paintGlobeFeatures(juce::Graphics& g, juce::Rectangle<float> area, float alpha) {
+    const auto centre = area.getCentre();
+    const float r = area.getWidth() * 0.5f;
+    // A point on the turning sphere: where it is drawn and how much it faces the listener.
+    const auto at = [&](float lon, float lat, float& facing) {
+        const float l = lon + spin;
+        facing = std::cos(l) * std::cos(lat);
+        return juce::Point<float> { centre.x + r * std::sin(l) * std::cos(lat), centre.y + r * std::sin(lat) * 0.9f };
+    };
+    const auto spots = [&](int feature, int seed, int count, auto&& draw) {
+        const float amount = featureAmount[std::size_t(feature)];
+        if (amount <= 0.01f) return;
+        juce::Random random(seed);
+        for (int i = 0; i < count; ++i) {
+            const float lon = random.nextFloat() * juce::MathConstants<float>::twoPi, lat = (random.nextFloat() - 0.5f) * 2.4f;
+            const float size = random.nextFloat();
+            float facing = 0;
+            const auto p = at(lon, lat, facing);
+            if (facing <= 0.0f) continue;
+            draw(p, facing, amount * alpha, size, i);
+        }
+    };
+    spots(ui::GlobeOcean, 51, 12, [&](juce::Point<float> p, float facing, float a, float size, int) {
+        const float w = r * (0.3f + 0.25f * size);
+        const auto c = juce::Colour(0xff1f5f9a).withAlpha(0.55f * a * facing);
+        g.setGradientFill(juce::ColourGradient(c, p.x, p.y, c.withAlpha(0.0f), p.x + w * 0.6f, p.y, true));
+        g.fillEllipse(juce::Rectangle<float>(w * 1.4f, w * 0.8f * (0.3f + 0.7f * facing)).withCentre(p));
+        g.setColour(juce::Colours::white.withAlpha(0.25f * a * facing * (0.5f + 0.5f * std::sin(animTime * 2.0f + size * 9.0f))));
+        g.fillEllipse(juce::Rectangle<float>(2.0f, 1.2f).withCentre(p.translated(w * 0.15f, -w * 0.1f)));
+    });
+    spots(ui::GlobeDunes, 53, 16, [&](juce::Point<float> p, float facing, float a, float size, int) {
+        const float w = r * (0.12f + 0.12f * size);
+        juce::Path dune;
+        dune.startNewSubPath(p.x - w, p.y);
+        dune.quadraticTo(p.x - w * 0.3f, p.y - w * 0.35f * facing, p.x + w, p.y + w * 0.05f);
+        g.setColour(juce::Colour(0xffe8c078).withAlpha(0.55f * a * facing));
+        g.strokePath(dune, juce::PathStrokeType(1.6f));
+    });
+    spots(ui::GlobeFields, 57, 18, [&](juce::Point<float> p, float facing, float a, float size, int i) {
+        const float w = r * (0.07f + 0.06f * size) * (0.4f + 0.6f * facing);
+        g.setColour(juce::Colour((i % 3) == 0 ? 0xffc8a850 : 0xff6f9a4a).withAlpha(0.35f * a * facing));
+        g.fillRect(juce::Rectangle<float>(w, w * 0.7f).withCentre(p));
+    });
+    spots(ui::GlobeForest, 59, 16, [&](juce::Point<float> p, float facing, float a, float size, int) {
+        const float w = r * (0.12f + 0.1f * size);
+        const auto c = juce::Colour(0xff2f6a3a).withAlpha(0.6f * a * facing);
+        g.setGradientFill(juce::ColourGradient(c, p.x, p.y, c.withAlpha(0.0f), p.x + w * 0.6f, p.y, true));
+        g.fillEllipse(juce::Rectangle<float>(w, w * 0.75f * (0.4f + 0.6f * facing)).withCentre(p));
+    });
+    spots(ui::GlobeCityLights, 61, 70, [&](juce::Point<float> p, float facing, float a, float size, int i) {
+        const float twinkle = 0.6f + 0.4f * std::sin(animTime * (2.0f + size * 3.0f) + float(i));
+        g.setColour(juce::Colour(i % 4 == 0 ? 0xffff8ad0 : 0xffffe08a).withAlpha(0.8f * a * facing * twinkle));
+        g.fillEllipse(juce::Rectangle<float>(1.6f + size, 1.6f + size).withCentre(p));
+    });
+    spots(ui::GlobeSmoke, 63, 8, [&](juce::Point<float> p, float facing, float a, float size, int i) {
+        const float rise = std::fmod(animTime * 0.15f + size, 1.0f);
+        const auto q = p.translated(r * 0.04f * std::sin(animTime + float(i)), -r * 0.25f * rise);
+        const auto c = juce::Colour(0xff8a8a8a).withAlpha(0.35f * a * facing * (1.0f - rise));
+        g.setGradientFill(juce::ColourGradient(c, q.x, q.y, c.withAlpha(0.0f), q.x + r * 0.1f, q.y, true));
+        g.fillEllipse(juce::Rectangle<float>(r * 0.2f, r * 0.14f).withCentre(q));
+    });
+    spots(ui::GlobeHive, 65, 10, [&](juce::Point<float> p, float facing, float a, float size, int i) {
+        juce::Path vein;
+        vein.startNewSubPath(p);
+        vein.quadraticTo(p.x + r * 0.1f * std::sin(size * 6.0f), p.y - r * 0.1f, p.x + r * 0.16f * std::cos(size * 4.0f + float(i)), p.y + r * 0.06f);
+        g.setColour(juce::Colour(0xffd07aff).withAlpha(0.5f * a * facing * (0.6f + 0.4f * std::sin(animTime * 3.0f + float(i)))));
+        g.strokePath(vein, juce::PathStrokeType(1.4f));
+    });
+    spots(ui::GlobeCrystals, 67, 16, [&](juce::Point<float> p, float facing, float a, float size, int i) {
+        const float s2 = 2.0f + 3.0f * size;
+        juce::Path gem;
+        gem.addTriangle(p.x, p.y - s2, p.x + s2 * 0.6f, p.y, p.x - s2 * 0.6f, p.y);
+        gem.addTriangle(p.x - s2 * 0.6f, p.y, p.x + s2 * 0.6f, p.y, p.x, p.y + s2 * 0.8f);
+        g.setColour(juce::Colour(0xff7ae8e0).withAlpha(0.7f * a * facing * (0.5f + 0.5f * std::sin(animTime * 2.5f + float(i)))));
+        g.fillPath(gem);
+    });
+    spots(ui::GlobeRuins, 69, 12, [&](juce::Point<float> p, float facing, float a, float size, int) {
+        const float w = 2.0f + 3.0f * size;
+        g.setColour(juce::Colour(0xff9a9a90).withAlpha(0.5f * a * facing));
+        g.fillRect(juce::Rectangle<float>(w, w * 1.6f).withCentre(p));
+        g.fillRect(juce::Rectangle<float>(w * 0.8f, w).withCentre(p.translated(w * 1.3f, w * 0.3f)));
+    });
+}
+
+void WorldbuilderEditor::updateTheme() {
+    // Each active Place weighs in by its level; the plain navy always keeps a share.
+    std::array<juce::Colour, placeSlotCount + 1> tints, glows, skies;
+    std::array<float, placeSlotCount + 1> weights {};
+    const auto& base = ui::placeTheme(NoPlace);
+    tints[0] = base.tint;
+    glows[0] = base.glow;
+    skies[0] = colours::background;
+    weights[0] = 0.35f;
+    std::array<float, 11> features {};
+    std::array<float, 8> particles {};
+    for (int slot = 0; slot < placeSlotCount; ++slot) {
+        const int type = placeType(slot);
+        const auto k = std::size_t(slot + 1);
+        tints[k] = glows[k] = skies[k] = colours::background;
+        if (type == NoPlace || param(placeParam(slot, PlMute)) > 0.5f) continue;
+        const auto& t = ui::placeTheme(type);
+        const float w = juce::jlimit(0.0f, 1.5f, juce::Decibels::decibelsToGain(param(placeParam(slot, PlLevel)))) * (1.0f - 0.6f * param(placeParam(slot, PlDistance)));
+        tints[k] = t.tint;
+        glows[k] = t.glow;
+        skies[k] = t.sky;
+        weights[k] = w;
+        features[std::size_t(t.globe)] = std::max(features[std::size_t(t.globe)], juce::jlimit(0.0f, 1.0f, w));
+        particles[std::size_t(t.particles)] = std::max(particles[std::size_t(t.particles)], juce::jlimit(0.0f, 1.0f, w));
+    }
+    const auto tint = blend(tints.data(), weights.data(), int(weights.size()));
+    const auto glow = blend(glows.data(), weights.data(), int(weights.size()));
+    const auto sky = blend(skies.data(), weights.data(), int(weights.size()));
+    // About one second to settle at 30 frames per second.
+    constexpr float step = 0.1f;
+    const auto towards = [](juce::Colour a, juce::Colour b) { return a.interpolatedWith(b, step); };
+    const float before = themeTint.getFloatRed() + themeTint.getFloatGreen() + themeTint.getFloatBlue() + themeSky.getFloatRed() + themeSky.getFloatGreen()
+                         + themeSky.getFloatBlue() + themeGlow.getFloatRed() + themeGlow.getFloatGreen();
+    themeTint = towards(themeTint, tint);
+    themeGlow = towards(themeGlow, glow);
+    themeSky = towards(themeSky, sky);
+    for (std::size_t i = 0; i < featureAmount.size(); ++i) featureAmount[i] += step * (features[i] - featureAmount[i]);
+    for (std::size_t i = 0; i < particleAmount.size(); ++i) particleAmount[i] += step * (particles[i] - particleAmount[i]);
+    const float after = themeTint.getFloatRed() + themeTint.getFloatGreen() + themeTint.getFloatBlue() + themeSky.getFloatRed() + themeSky.getFloatGreen()
+                        + themeSky.getFloatBlue() + themeGlow.getFloatRed() + themeGlow.getFloatGreen();
+    themeChange = std::abs(after - before);
 }
 
 juce::Point<float> WorldbuilderEditor::landmarkPosition(int slot) const {
@@ -858,16 +1120,24 @@ int WorldbuilderEditor::landmarkAt(juce::Point<float> p) const {
 }
 
 int WorldbuilderEditor::cardAt(juce::Point<int> p) const {
-    for (int i = 0; i < 10; ++i)
-        if (cards[std::size_t(i)].contains(p)) return i;
+    if (!cardGrid.contains(p)) return -1;
+    for (int i = 0; i < listedCount; ++i)
+        if (cardBounds(i).contains(p)) return listed[std::size_t(i)];
     return -1;
 }
 
 void WorldbuilderEditor::mouseDown(const juce::MouseEvent& e) {
     if (detail.slot >= 0 || patterns->isVisible()) return;
+    if (const int chip = categoryAt(e.getPosition()); chip >= 0) {
+        category = chip - 1;
+        cardScroll = 0;
+        listCards();
+        repaint(cardsPanel);
+        return;
+    }
     const int card = cardAt(e.getPosition());
     if (card >= 0) {
-        addPlace(card + 1);
+        addPlace(card);
         return;
     }
     dragLandmark = landmarkAt(e.position);
@@ -904,12 +1174,16 @@ void WorldbuilderEditor::mouseMove(const juce::MouseEvent& e) {
         repaint(cardsPanel);
     }
     const bool overLandmark = detail.slot < 0 && landmarkAt(e.position) >= 0;
-    const bool clickable = (card >= 0 && placeImplemented[std::size_t(card + 1)]) || overLandmark;
+    const bool clickable = (card >= 0 && placeImplemented[std::size_t(card)]) || overLandmark || (detail.slot < 0 && categoryAt(e.getPosition()) >= 0);
     setMouseCursor(clickable ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
-    if (card >= 0) {
-        const int type = card + 1;
-        setHelpText(placeInfo(type).description);
-    }
+    if (card >= 0) setHelpText(placeInfo(card).description);
+}
+
+void WorldbuilderEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
+    if (detail.slot >= 0 || patterns->isVisible() || !cardsPanel.contains(e.getPosition())) return;
+    const float before = cardScroll;
+    cardScroll = juce::jlimit(0.0f, maxCardScroll(), cardScroll - wheel.deltaY * 160.0f);
+    if (cardScroll != before) repaint(cardsPanel);
 }
 
 void WorldbuilderEditor::mouseExit(const juce::MouseEvent&) {
@@ -927,9 +1201,11 @@ void WorldbuilderEditor::updateDetailLabels() {
     if (type != detail.shownType) {
         detail.shownType = type;
         for (int k = 0; k < 3; ++k) detail.character[std::size_t(k)].setButtonText(info.characters[std::size_t(k)]);
+        if (info.mood >= 0)
+            detail.mood.setButtonText("USE " + juce::StringArray::fromTokens(moodChoices, "|", "")[info.mood].toUpperCase());
         for (int e = 0; e < placeElements; ++e) {
-            detail.elementOn[std::size_t(e)].setButtonText(info.elements[std::size_t(e)]);
-            detail.element[std::size_t(e)].setTooltip(juce::String(info.elements[std::size_t(e)]) + " level");
+            detail.elementOn[std::size_t(e)].setButtonText(info.element[std::size_t(e)].name);
+            detail.element[std::size_t(e)].setTooltip(juce::String(info.element[std::size_t(e)].name) + " level");
         }
         repaint(detail.area);
     }
@@ -939,6 +1215,21 @@ void WorldbuilderEditor::updateDetailLabels() {
 
 void WorldbuilderEditor::timerCallback() {
     if (!isShowing()) return;
+    animTime += 1.0f / 30.0f;
+    if (animTime > 3600.0f) animTime = 0;
+    updateTheme();
+    // The whole interface repaints only while its colours are moving.
+    if (themeChange > 0.002f) repaint();
+    bool animating = false;
+    for (int type = 0; type < PlaceTypeCount; ++type) {
+        auto& h = hoverAmount[std::size_t(type)];
+        const float target = hoverCard == type && detail.slot < 0 ? 1.0f : 0.0f;
+        h += 0.2f * (target - h);
+        if (std::abs(target - h) < 0.002f) h = target;
+        animating |= h > 0.0f;
+    }
+    if (animating && detail.slot < 0 && !patterns->isVisible()) repaint(cardsPanel);
+    if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 6));
     spin += 0.004f + 0.02f * processor.engine.frame()[Activity];
     if (spin > juce::MathConstants<float>::twoPi * 100.0f) spin = 0;
     precipitation += 0.05f + 0.06f * processor.engine.frame()[Weather];

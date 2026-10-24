@@ -152,8 +152,17 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         current->setSeed(key);
     }
 
-    // Settings, smoothed at control rate.
-    const auto target = settingsFor(world, c);
+    // Settings, smoothed at control rate. An element's mute and solo (set in the
+    // Pattern Editor) fade it like its switch.
+    auto target = settingsFor(world, c);
+    if (patterns.type == currentType) {
+        bool anySolo = false;
+        for (const auto& el : patterns.element) anySolo |= el.controls.solo;
+        for (int e = 0; e < placeElements; ++e) {
+            const auto& el = patterns.element[std::size_t(e)].controls;
+            if (el.mute || (anySolo && !el.solo)) target.element[std::size_t(e)] = 0.0f;
+        }
+    }
     const std::array<float, 8> targets { target.activity, target.tension, target.density, target.swing, target.tone, target.size, target.variation, target.fxDepth };
     if (fresh) {
         for (std::size_t i = 0; i < smooth.size(); ++i) smooth[i].snap(targets[i]);
@@ -211,7 +220,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     // Distance and pan.
     const float d = distance.next(effectiveDistance(world, c.distance));
     const float p = pan.next(std::clamp(c.pan, -1.0f, 1.0f));
-    for (auto& f : distanceLp) f.setCutoff(lerpExp(18000.0f, 2000.0f, d), rate);
+    for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 2400.0f, d), rate);
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = current->spaceSend() * lerp(0.4f, 1.6f, d);
@@ -221,8 +230,9 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         const float g = gain.next(target_) * fade * fade;
         float l = finiteOr(left[i]), r = finiteOr(right[i]);
         const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * width;
-        l = distanceLp[0].lp(dcBlock[0].hp(mid + side));
-        r = distanceLp[1].lp(dcBlock[1].hp(mid - side));
+        // Two poles: far away, bright instruments (bells, shakers, flutes) fade first.
+        l = distanceLp[2].lp(distanceLp[0].lp(dcBlock[0].hp(mid + side)));
+        r = distanceLp[3].lp(distanceLp[1].lp(dcBlock[1].hp(mid - side)));
         left[i] = (l * (1.0f - right_) + r * left_ * 0.7f) * g;
         right[i] = (r * (1.0f - left_) + l * right_ * 0.7f) * g;
     }

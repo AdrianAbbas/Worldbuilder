@@ -127,7 +127,7 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     juce::ScopedNoDenormals noDenormals;
     const auto begin = juce::Time::getHighResolutionTicks();
     const int n = buffer.getNumSamples();
-    // MIDI events (Place hits and phrases in key) arrive in Milestone 4.
+    // MIDI control (Play Mode MIDI, keyboard zones) arrives in Milestone 6.
     midi.clear();
     if (n <= 0 || buffer.getNumChannels() <= 0) return;
 

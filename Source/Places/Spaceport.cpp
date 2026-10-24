@@ -4,50 +4,32 @@ namespace wb {
 
 using namespace dsp;
 
-namespace {
-constexpr double buildBars = 8;   // Launch: the length of one build cycle
-}
+SpaceportPlace::SpaceportPlace() : EnsemblePlace(1300) { setParts({ &pulses, &pads, &risers, &pa, &engine, &blips }); }
 
-void SpaceportPlace::prepare(double sampleRate) {
-    rate = float(sampleRate);
+void SpaceportPlace::prepareFx() {
     hangar.prepare(rate);
     delay.prepare(rate, 1.5f);
-    riser.gain.setTime(0.02f, rate);
+    shimmer.prepare(rate);
     murmurGain.setTime(0.03f, rate);
     f1.setTime(0.04f, rate / float(chunk));
     f2.setTime(0.04f, rate / float(chunk));
     for (auto& r : rumble) r.setCutoff(140.0f, rate);
-    reset();
 }
 
-void SpaceportPlace::reset() {
-    noiseAt = 0;
-    for (auto& v : arp) v.reset();
-    for (auto& v : pad) v.reset();
-    for (auto& v : engine) v.reset();
-    for (auto& b : chime) b.reset();
-    impact.reset();
-    beep.reset();
-    riser.active = false;
-    riser.gain.snap(0);
-    for (auto& f : riser.band) f.reset();
+void SpaceportPlace::resetFx() {
+    hangar.clear();
+    delay.clear();
+    shimmer.clear();
     murmurUntil = -1;
     murmurOsc.phase = 0;
-    riser.pan = 0;
     murmurGain.snap(0);
+    murmurTarget = 0;
     f1.snap(600);
     f2.snap(1400);
     for (auto& f : formant) f.reset();
     murmurBand.reset();
     for (auto& r : rumble) r.reset();
-    hangar.clear();
-    delay.clear();
-}
-
-void SpaceportPlace::setSeed(uint32_t key) {
-    hits.setKey(key, 1304);
-    noise.setKey(key, 1302);
-    drift.setKey(key, 1303);
+    rumbleAt = 0;
 }
 
 void SpaceportPlace::generate(int element, const GenInputs& in, pat::Pattern& out) const {
@@ -133,180 +115,186 @@ void SpaceportPlace::generate(int element, const GenInputs& in, pat::Pattern& ou
         }
         return;
     }
+    PatternWriter w { out };
+
+    if (element == Pads) {
+        // Four wide voices on the chord: root, fifth, the third an octave up and the
+        // seventh. As Tension rises the third gives way to a semitone above the root.
+        out.setGrid(pat::Sixteenth, 4);
+        out.followChords = true;
+        out.base = -5;
+        w.note(0, 0, 64, 0.8f);
+        w.note(0, 4, 64, 0.8f);
+        if (in.character != 1) {
+            if (tension > 0.6f) w.note(0, size, 64, 0.7f, 1);
+            else w.note(0, 2 + size, 64, 0.8f);
+            w.note(0, 6, 64, 0.5f);
+        }
+        return;
+    }
+
+    if (element == Engines) {
+        // A sub drone two octaves below on the root and the fifth (not the chords).
+        out.setGrid(pat::Sixteenth, 4);
+        out.followChords = false;
+        w.note(0, -2 * size, 64, 1.0f);
+        w.note(0, music::nearestDegree(in.mood, 7) - 2 * size, 64, 0.5f);
+        return;
+    }
+
+    if (element == Blips) {
+        out.followChords = false;
+        const auto high = [&](uint32_t salt, int64_t at) { return 2 * size + int(ch(salt, at) * float(size)); };
+        if (in.character == 2) {
+            // Telemetry through the build: every beat, then every eighth, then sixteenths.
+            out.setGrid(pat::Sixteenth, int(buildBars));
+            const int total = out.lengthSteps;
+            for (int step = 0; step < total; ++step) {
+                const float x = float(step) / float(total);
+                const int every = x < 0.5f ? 4 : (x < 0.75f ? 2 : 1);
+                if (step % every != 0 || ch(80, step) >= 0.5f + 0.5f * act) continue;
+                w.note(step, 2 * size + ((step / every) % 2 == 0 ? 0 : 4), 1, 0.45f + 0.4f * x);
+            }
+            return;
+        }
+        out.setGrid(pat::Sixteenth, 2);
+        for (int step = 0; step < out.lengthSteps; ++step) {
+            if (in.character == 0) {
+                // Busy Hub: chattering bursts of two to four blips.
+                if ((step & 3) != 0 || ch(81, step) >= (0.2f + 0.45f * act) * lerp(0.6f, 1.4f, density)) continue;
+                const int count = 2 + int(ch(82, step) * 3.0f);
+                for (int k = 0; k < count && step + k < out.lengthSteps; ++k) w.note(step + k, high(83, step + k), 1, 0.55f + 0.35f * ch(84, step + k));
+                step += count - 1;
+            } else if ((step & 1) == 0) {
+                // Abandoned Dock: a stray glitch now and then (its chance is the note's), and
+                // sometimes a stutter.
+                const int degree = high(86, step);
+                const float chance = 0.08f + 0.2f * act;
+                w.note(step, degree, 1, 0.5f, 0, chance);
+                if (ch(87, step) < 0.4f) w.note(step + 1, degree, 1, 0.3f, 0, chance);
+            }
+        }
+        return;
+    }
     out.setGrid(pat::Sixteenth, 1);
 }
 
-void SpaceportPlace::trigger(const PlaceContext& c, const Scheduled& x) {
-    const auto& s = c.s;
-    const int mood = c.world->mood, root = c.world->root;
-    const auto& ev = x.event;
-    const uint64_t clock = c.clock + uint64_t(x.offset);
-    const float vel = ev.velocity;
-    const auto& pattern = *c.play[std::size_t(x.element)].pattern;
-    const double cyclePos = std::fmod(ev.beat / (4.0 * buildBars), 1.0) + (ev.beat < 0 ? 1.0 : 0.0);
-    const auto u = [&](uint64_t salt) { return hits.unit((uint64_t(x.element) << 56) ^ (salt << 48) ^ uint64_t(int64_t(std::floor(ev.beat * 48.0)) + (int64_t(1) << 40))); };
 
-    if (x.element == Risers) {
-        if (riser.active) return;
-        logEvent(clock, x.element, float(ev.degree), vel);
-        riser.active = true;
-        riser.shape = std::clamp(ev.degree, 0, 2);
-        riser.start = ev.beat;
-        riser.length = std::max(1.0, ev.length);
-        riser.size = (0.7f + 0.3f * u(11)) * (0.4f + 0.6f * vel / 0.8f);
-        const bool leftToRight = u(12) < 0.5f;
-        riser.panFrom = leftToRight ? -0.8f : 0.8f;
-        riser.panTo = -riser.panFrom;
-        return;
-    }
-    const int semis = pat::semitonesFor(pattern, mood, x.chord, ev.degree, ev.alter);
-    if (x.element == Pulses) {
-        auto& v = arp[pickVoice(arp, arpVoices, [](const SynthVoice& a) { return a.level(); })];
-        logEvent(clock, x.element, float(semis), vel);
-        const float detune = s.character == 1 ? -0.25f * u(3) : 0.0f;
-        const float decay = (s.character == 1 ? 0.45f : 0.16f) * lerp(1.2f, 0.7f, s.tension);
-        const float accent = std::min(vel / 0.8f, 1.6f);
-        v.start(music::noteHz(root, float(semis) + detune), 0.002f, decay, 0.0f, rate);
-        v.gain = accent;
-        v.filterEnvOctaves = s.character == 2 ? 1.5f + 2.5f * float(cyclePos) : (1.8f + 1.4f * std::min(accent, 1.0f)) * (s.character == 1 ? 0.6f : 1.0f);
-        v.pan = panGains(0.5f * (u(5) - 0.5f));
-        v.update(rate);
-        return;
-    }
-    if (x.element == Announce) {
-        logEvent(clock, x.element, float(semis), vel);
-        if (s.character == 2) {
-            beep.ratio = 2.0f;
-            beep.partial = 0.2f;
-            beep.start(music::noteHz(root, float(semis)), 1.0f, 0.25f, 0.375f * vel, 0.0f, 1000.0f, 1.0f, 0.05f, 0.0f, rate, noiseAt);
-            beep.update(rate);
-            noiseAt += 1ull << 24;
-            return;
-        }
-        // Chimes: soft, nearly harmonic partials; an abandoned dock's are flat and broken.
-        static constexpr float ratios[4] { 1.0f, 2.0f, 3.0f, 4.12f };
-        static constexpr float decays[4] { 1.0f, 0.55f, 0.3f, 0.2f };
-        static constexpr float gains[4] { 1.0f, 0.3f, 0.12f, 0.06f };
-        auto& b = chime[pickVoice(chime, chimes, [](const Bell& v) { return v.level(); })];
-        const float flat = s.character == 1 ? -0.35f : 0.0f;
-        b.start(music::noteHz(root, float(semis) + flat), 3.0f, 0.25f + 0.3f * s.tone, vel, 0.2f, rate, ratios, decays, gains, 4);
-        b.update();
-        // A chime on a bar line opens an announcement: on a busy hub (or a lively port)
-        // an abstract murmur follows.
-        const double inBar = ev.beat / 4.0 - std::floor(ev.beat / 4.0);
-        if (!ev.extra && inBar < 1.0e-6 && (s.character == 0 || s.life > 0.6f))
-            murmurUntil = ev.beat + 4.0 + 8.0 * double(u(23)) * double(0.5f + s.life);
-    }
-}
-
-void SpaceportPlace::render(const PlaceContext& c, float* left, float* right, int n) {
-    const auto& w = *c.world;
+void SpaceportPlace::configure(const PlaceContext& c) {
     const auto& s = c.s;
-    const int mood = w.mood, root = w.root, chord = c.chord;
-    const double span = c.beatsPerSample * double(n);
-    const double t = double(c.clock) / rate;
-    const int q = std::clamp(w.quality, 0, 2);
-    arpVoices = q == 0 ? 3 : (q == 1 ? 4 : arps);
+    const int q = frame.quality, root = c.world->root;
     const float tension = s.tension, tone = s.tone;
+    const double t = double(c.clock) / rate;
+    const bool hub = s.character == 0, dock = s.character == 1, launch = s.character == 2;
     const double cyclePos = std::fmod(c.beat / (4.0 * buildBars), 1.0) + (c.beat < 0 ? 1.0 : 0.0);
-    const float build = s.character == 2 ? float(cyclePos) : 0.0f;
+    const float build = launch ? float(cyclePos) : 0.0f;
 
-    std::array<Scheduled, maxScheduled> notes;
-    const int scheduled = schedule(c, n, notes);
-
-    // Arp timbre: resonant low-pass pluck.
-    for (auto& v : arp) {
-        v.detuneCents = s.character == 1 ? 14.0f : 5.0f;
-        v.subLevel = 0.0f;
-        v.cutoff = lerpExp(180.0f, 900.0f, tone) * (s.character == 1 ? 0.6f : 1.0f) * lerp(1.3f, 0.6f, tension);
-        v.envOctaves = 0.0f;
-        v.filterDecay = std::exp(-float(chunk) / (0.07f * rate));
-        v.q = lerp(1.6f, 3.2f, s.machinery * 0.5f + tension * 0.5f);
-        v.width = 0.3f;
-        v.vibratoDepth = 0;
-        if (v.active()) v.update(rate);
-    }
-
-    // Pads: four wide voices on the shared chord, gliding when it changes.
+    // Pulses: a resonant low-pass pluck; the launch opens it through the build.
     {
-        // As Tension rises the third gives way to a semitone above the chord root.
-        const int third = tension > 0.6f ? music::inRange(music::chordTone(mood, chord, 0) + 1, 7) : music::inRange(music::chordTone(mood, chord, 1), 7);
-        const int padNotes[pads] { music::inRange(music::chordTone(mood, chord, 0), -5), music::inRange(music::chordTone(mood, chord, 2), 0), third,
-                                music::inRange(music::chordTone(mood, chord, 3), 10) };
-        const float uneasy = tension > 0.6f ? clamp01((tension - 0.6f) * 3.0f) : clamp01((0.6f - tension) * 3.0f);
-        for (int i = 0; i < pads; ++i) {
-            auto& v = pad[std::size_t(i)];
-            const float hz = music::noteHz(root, float(padNotes[i]));
-            const float breath = drift.smooth(t + 7.0 * i, 0.07);
-            if (!v.active()) v.start(hz, 3.0f, 1.0f, 1.0f, rate);
-            v.targetHz = hz;
-            v.glide = glideFor(2.0f, rate);
-            v.detuneCents = s.character == 1 ? 22.0f : 11.0f;
-            v.subLevel = 0.0f;
-            v.cutoff = lerpExp(300.0f, 2200.0f, tone) * std::exp2(0.5f * breath + 1.5f * build) * (s.character == 1 ? 0.6f : 1.0f);
-            v.envOctaves = 0.0f;
-            v.q = 0.7f;
-            v.width = 1.0f;
-            v.vibratoHz = s.character == 1 ? 0.23f : 0.15f;
-            v.vibratoDepth = s.character == 1 ? 0.12f : 0.03f;
-            v.vibratoDelay = 0;
-            v.gain = s.element[1] * (0.8f + 0.2f * breath) * (i == 3 ? 0.6f : 1.0f) * (i == 2 ? uneasy : 1.0f);
-            v.update(rate);
-        }
+        auto& p = pulses.patch;
+        p.held = p.legato = false;
+        p.attack = 0.002f;
+        p.decay = (dock ? 0.45f : 0.16f) * lerp(1.2f, 0.7f, tension);
+        p.sustain = 0.0f;
+        p.detune = dock ? 14.0f : 5.0f;
+        p.sub = 0.0f;
+        p.cutoff = lerpExp(180.0f, 900.0f, tone) * (dock ? 0.6f : 1.0f) * lerp(1.3f, 0.6f, tension);
+        p.envOctaves = 0.0f;
+        p.filterEnvOctaves = launch ? 1.5f + 2.5f * build : 2.6f * (dock ? 0.6f : 1.0f);
+        p.filterDecay = 0.07f;
+        p.q = lerp(1.6f, 3.2f, s.machinery * 0.5f + tension * 0.5f);
+        p.width = 0.3f;
+        p.vibratoDepth = 0;
+        p.spread = 0.25f;
+        p.voices = byQuality(q, 3, 4, 6);
+        p.gain = 1.0f;
     }
-
-    // Engines: a sub drone on the root and fifth with a throb at half notes and a
-    // low rumble. Launch swells them through the build.
-    const float throbDepth = 0.25f + 0.45f * tension + 0.2f * s.machinery;
-    const float throb = 1.0f - throbDepth * (0.5f + 0.5f * std::cos(float(c.beat * 0.5 * double(twoPi))));
-    const float engineLevel = s.element[4] * throb * (s.character == 2 ? 0.6f + 1.2f * build * build : (s.character == 1 ? 0.6f : 1.0f))
-                              * lerp(0.7f, 1.6f, tension);
-    for (int i = 0; i < engines; ++i) {
-        auto& v = engine[std::size_t(i)];
-        const float wobble = s.character == 1 ? 0.15f * drift.smooth(t + 40.0 * i, 0.2) : 0.0f;
-        const float hz = music::noteHz(root, (i == 0 ? -24.0f : -17.0f) + wobble);
-        if (!v.active()) v.start(hz, 2.0f, 1.0f, 1.0f, rate);
-        v.targetHz = hz;
-        v.glide = glideFor(0.5f, rate);
-        v.detuneCents = 9.0f;
-        v.subLevel = 0.3f;
-        v.cutoff = lerpExp(90.0f, 260.0f, tone) * (1.0f + build);
-        v.envOctaves = 0.0f;
-        v.q = 1.1f;
-        v.width = 0.8f;
-        v.gain = engineLevel * (i == 0 ? 1.0f : 0.5f);
-        v.update(rate);
+    // Pads: wide, slowly breathing, gliding with the chords.
+    {
+        auto& p = pads.patch;
+        p.attack = 3.0f;
+        p.release = 3.0f;
+        p.held = p.legato = true;
+        p.glide = 2.0f;
+        p.detune = dock ? 22.0f : 11.0f;
+        p.sub = 0.0f;
+        p.cutoff = lerpExp(300.0f, 2200.0f, tone) * std::exp2(0.5f * drift.smooth(t, 0.07) + 1.5f * build) * (dock ? 0.6f : 1.0f);
+        p.envOctaves = 0.0f;
+        p.q = 0.7f;
+        p.width = 1.0f;
+        p.vibratoHz = dock ? 0.23f : 0.15f;
+        p.vibratoDepth = dock ? 0.12f : 0.03f;
+        p.vibratoDelay = 0;
+        p.spread = 0.5f;
+        p.voices = byQuality(q, 3, 4, 4);
+        p.gain = 1.0f;
     }
-
-    // Riser: a resonant noise band sweeping through the spectrum.
-    float riserTarget = 0;
-    if (riser.active) {
-        const float x = float((c.beat - riser.start) / riser.length);
-        float sweep = x, env = 0;
-        switch (riser.shape) {
-            case 0: env = std::pow(std::sin(pi * clamp01(x)), 2.0f); sweep = 0.25f + 0.5f * x; break;   // pass-by
-            case 1: env = x * x * x; sweep = x; break;                                                    // build
-            default: env = std::pow(std::sin(pi * clamp01(x)), 2.0f) * 0.7f; sweep = 1.0f - x; break;    // falling
+    risers.patch.rows[0] = { SweepPassBy, -12.0f, 48.0f, 2.0f, 1.0f, false, true };
+    risers.patch.rows[1] = { SweepBuild, -12.0f, 48.0f, 2.0f, 1.0f, true, false };
+    risers.patch.rows[2] = { SweepFall, -12.0f, 48.0f, 2.0f, 1.0f, false, false };
+    risers.patch.tension = tension;
+    risers.patch.voices = 1;
+    // PA tones: soft, nearly harmonic chimes (an abandoned dock's are flat and
+    // broken); the launch counts down in short beeps.
+    {
+        auto& p = pa.patch;
+        if (launch) {
+            p.set({ 1.0f, 2.0f }, { 1.0f, 0.8f }, { 1.0f, 0.2f });
+            p.decay = 0.25f;
+            p.hardness = 1.0f;
+        } else {
+            p.set({ 1.0f, 2.0f, 3.0f, 4.12f }, { 1.0f, 0.55f, 0.3f, 0.2f }, { 1.0f, 0.3f, 0.12f, 0.06f });
+            p.decay = 3.0f;
+            p.hardness = 0.25f + 0.3f * tone;
         }
-        riser.hz = music::noteHz(root, -12.0f) * std::exp2(5.0f * clamp01(sweep));
-        riser.pan = riser.shape == 0 ? lerp(riser.panFrom, riser.panTo, clamp01(x)) : 0.3f * std::sin(float(x * 6.0f));
-        riserTarget = env * riser.size * s.element[2];
-        for (auto& f : riser.band) f.set(riser.hz, lerp(2.0f, 5.0f, tension), rate);
-        if (x >= 1.0f) {
-            riser.active = false;
-            if (riser.shape == 1) {
-                // Launch: the build lands on a tuned low impact.
-                impact.ratio = 1.5f;
-                impact.partial = 0.4f;
-                impact.start(music::noteHz(root, -24.0f), 1.5f, 6.0f, 0.8f * s.element[2], 0.5f * s.element[2], 300.0f, 0.6f, 1.5f, 0.0f, rate, noiseAt);
-                noiseAt += 1ull << 24;
-            }
-        }
+        p.transpose = dock ? -0.35f : 0.0f;
+        p.pan = 0.2f;
+        p.spread = 0.0f;
+        p.toneHz = 12000.0f;
+        p.voices = 4;
+        p.gain = 1.0f;
     }
-    const PanGains riserPan = panGains(riser.pan);
+    // Engine: a sub drone that throbs at half notes; the launch swells it.
+    {
+        auto& p = engine.patch;
+        p.attack = 2.0f;
+        p.release = 2.0f;
+        p.held = p.legato = true;
+        p.glide = 0.5f;
+        p.detune = 9.0f;
+        p.sub = 0.3f;
+        p.cutoff = lerpExp(90.0f, 260.0f, tone) * (1.0f + build);
+        p.envOctaves = 0.0f;
+        p.q = 1.1f;
+        p.width = 0.8f;
+        p.spread = 0.1f;
+        p.transpose = dock ? 0.15f * drift.smooth(t + 40.0, 0.2) : 0.0f;
+        p.tremoloPerBeat = 0.5f;
+        p.tremoloDepth = std::min(0.25f + 0.45f * tension + 0.2f * s.machinery, 0.95f);
+        p.voices = 2;
+        engineLevel = (launch ? 0.6f + 1.2f * build * build : (dock ? 0.6f : 1.0f)) * lerp(0.7f, 1.6f, tension);
+        p.gain = engineLevel;
+    }
+    // Data blips: tiny FM chirps, glassy on a busy hub, flat and grainy when abandoned.
+    {
+        auto& p = blips.patch;
+        p.ratio = hub ? 3.0f : (dock ? 1.41f : 2.0f);
+        p.index = 2.5f + 2.0f * tone;
+        p.indexFloor = 0.1f;
+        p.indexSeconds = 0.05f;
+        p.attack = 0.001f;
+        p.decay = dock ? 0.15f : 0.08f;
+        p.sustain = 0;
+        p.held = false;
+        p.transpose = dock ? -0.3f : 0.0f;
+        p.spread = 0.7f;
+        p.voices = byQuality(q, 2, 3, 4);
+        p.gain = 1.0f;
+    }
+    level = { 0.2f, 0.05f, 1.0f, launch ? 0.5f : 0.25f, 0.085f, 0.12f };
 
     // Murmur: two formants that jump per "syllable" and glide, never words.
-    const bool murmuring = s.element[3] > 0.001f && c.beat < murmurUntil;
+    const bool murmuring = s.element[Announce] > 0.001f && c.beat < murmurUntil;
     if (murmuring || murmurGain.value > 1.0e-5f) {
         const double syllable = std::floor(c.beat * 3.0);
         const auto sy = uint64_t(int64_t(syllable) + (int64_t(1) << 40));
@@ -318,79 +306,65 @@ void SpaceportPlace::render(const PlaceContext& c, float* left, float* right, in
         murmurOsc.setFrequency(music::noteHz(root, -12.0f) * std::exp2(0.25f * drift.smooth(t, 0.8)), rate);
     }
     const float syllableEnv = std::pow(std::max(0.0f, std::sin(float(std::fmod(c.beat * 3.0, 1.0)) * pi)), 1.5f);
-    const float murmurTarget = murmuring ? 0.08f * s.element[3] * syllableEnv * (0.6f + 0.4f * drift.unit(uint64_t(std::floor(c.beat)) + 99)) : 0.0f;
+    murmurTarget = murmuring ? 0.08f * s.element[Announce] * syllableEnv * (0.6f + 0.4f * drift.unit(uint64_t(std::floor(c.beat)) + 99)) : 0.0f;
+    engineLevel *= level[Engines] * s.element[Engines];
 
-    for (auto& b : chime)
-        if (b.active) b.update();
-    if (impact.active()) impact.update(rate);
-    if (beep.active()) beep.update(rate);
-
+    // A metal hangar, a dotted-eighth ping-pong delay and a shimmer whose depth
+    // follows Activity and Population.
     hangar.set(lerp(0.25f, 0.95f, s.size), lerp(1.0f, 4.5f, s.size) * (1.0f + 0.4f * s.magic), lerpExp(3000.0f, 9000.0f, tone));
     const float beatSeconds = 60.0f / std::max(c.bpm, 20.0f);
     delay.set(std::min(0.75f * beatSeconds, 1.4f), 0.25f + 0.4f * s.fxDepth, lerpExp(2000.0f, 6000.0f, tone));
-    const float delaySend = 0.6f * s.fxDepth;
-    const float arpLevel = 0.2f * s.element[0], padLevel = 0.05f, engineOut = 0.085f, chimeLevel = 0.25f * s.element[3];
+    shimmer.set(0.8f, lerp(2.5f, 6.0f, s.size), 0.4f + 0.5f * s.fxDepth);
+    delaySend = 0.6f * s.fxDepth;
+    shimmerSend = 0.12f + 0.25f * s.fxDepth;
+}
 
-    // Render up to each scheduled note, then start it: notes begin on their exact sample.
-    int done = 0;
-    for (int next = 0; next <= scheduled; ++next) {
-        const int until = next < scheduled ? notes[std::size_t(next)].offset : n;
-        for (int i = done; i < until; ++i) {
-            const uint64_t index = c.clock + uint64_t(i);
-            float al = 0, ar = 0;
-            for (int k = 0; k < arpVoices; ++k) {
-                auto& v = arp[std::size_t(k)];
-                if (v.active()) v.tick(al, ar);
-            }
-            al *= arpLevel;
-            ar *= arpLevel;
-            float pl = 0, pr = 0;
-            for (auto& v : pad) v.tick(pl, pr);
-            float el = 0, er = 0;
-            for (auto& v : engine) v.tick(el, er);
-            const float rl = rumble[0].tick(noise.white(index)), rr = rumble[1].tick(noise.white(index + (1ull << 44)));
-            el = (el + 0.25f * rl * engineLevel) * engineOut;
-            er = (er + 0.25f * rr * engineLevel) * engineOut;
-            float cl = 0, cr = 0;
-            for (auto& b : chime) {
-                if (!b.active) continue;
-                const float y = b.tick() * chimeLevel;
-                cl += y * b.pan.l;
-                cr += y * b.pan.r;
-            }
-            if (beep.active()) {
-                const float y = beep.tick(noise) * 0.1f * s.element[3];
-                cl += y;
-                cr += y;
-            }
-            const float rg = riser.gain.next(riserTarget);
-            float xl = 0, xr = 0;
-            if (rg > 1.0e-5f) {
-                xl = riser.band[0].bandpass(noise.white(index + (2ull << 44))) * rg * 3.0f * riserPan.l;
-                xr = riser.band[1].bandpass(noise.white(index + (3ull << 44))) * rg * 3.0f * riserPan.r;
-            }
-            if (impact.active()) {
-                const float y = impact.tick(noise) * 0.16f;
-                xl += y;
-                xr += y;
-            }
-            const float mg = murmurGain.next(murmurTarget);
-            if (mg > 1.0e-5f) {
-                const float buzz = murmurOsc.tick();
-                const float voice = murmurBand.bandpass(formant[0].bandpass(buzz) + 0.7f * formant[1].bandpass(buzz)) * mg;
-                cl += voice * 0.8f;
-                cr += voice;
-            }
-            float dl = 0, dr = 0, wl = 0, wr = 0;
-            delay.process((al + cl) * delaySend, (ar + cr) * delaySend, dl, dr);
-            const float l = al + pl * padLevel + el + cl + xl, r = ar + pr * padLevel + er + cr + xr;
-            hangar.process(l * 0.4f + 0.5f * dl, r * 0.4f + 0.5f * dr, wl, wr);
-            left[i] = l + 0.7f * dl + 0.6f * wl;
-            right[i] = r + 0.7f * dr + 0.6f * wr;
-        }
-        done = until;
-        if (next < scheduled) trigger(c, notes[std::size_t(next)]);
+bool SpaceportPlace::shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) {
+    const auto& s = c.s;
+    if (x.element == Pulses) {
+        if (s.character == 1) on.semis -= 0.25f * on.random2;
+        on.velocity = std::min(on.velocity / 0.8f, 1.6f);
+    } else if (x.element == Announce && s.character != 2) {
+        // A chime on a bar line opens an announcement: on a busy hub (or a lively port)
+        // an abstract murmur follows.
+        const double inBar = on.beat / 4.0 - std::floor(on.beat / 4.0);
+        if (!on.extra && inBar < 1.0e-6 && (s.character == 0 || s.life > 0.6f))
+            murmurUntil = on.beat + 4.0 + 8.0 * double(on.random2) * double(0.5f + s.life);
     }
+    return true;
+}
+
+void SpaceportPlace::mix(const PlaceContext&, float* left, float* right, int n) {
+    for (int i = 0; i < n; ++i) {
+        const auto k = std::size_t(i);
+        float l = 0, r = 0;
+        for (int e = 0; e < placeElements; ++e) {
+            l += busL[std::size_t(e)][k];
+            r += busR[std::size_t(e)][k];
+        }
+        // A low rumble under the engine.
+        const uint64_t at = rumbleAt + uint64_t(i);
+        l += 0.25f * rumble[0].tick(noise.white(at)) * engineLevel;
+        r += 0.25f * rumble[1].tick(noise.white(at + (1ull << 44))) * engineLevel;
+        const float mg = murmurGain.next(murmurTarget);
+        float cl = busL[Announce][k], cr = busR[Announce][k];
+        if (mg > 1.0e-5f) {
+            const float buzz = murmurOsc.tick();
+            const float voice = murmurBand.bandpass(formant[0].bandpass(buzz) + 0.7f * formant[1].bandpass(buzz)) * mg;
+            l += voice * 0.8f;
+            r += voice;
+            cl += voice * 0.8f;
+            cr += voice;
+        }
+        const float sl = busL[Pulses][k] + cl + busL[Blips][k], sr = busR[Pulses][k] + cr + busR[Blips][k];
+        float dl = 0, dr = 0, wl = 0, wr = 0, hl = 0, hr = 0;
+        delay.process(sl * delaySend, sr * delaySend, dl, dr);
+        shimmer.process((busL[Pads][k] + cl) * shimmerSend, (busR[Pads][k] + cr) * shimmerSend, hl, hr);
+        hangar.process(l * 0.4f + 0.5f * dl, r * 0.4f + 0.5f * dr, wl, wr);
+        left[i] = l + 0.7f * dl + 0.6f * wl + 0.5f * hl;
+        right[i] = r + 0.7f * dr + 0.6f * wr + 0.5f * hr;
+    }
+    rumbleAt += uint64_t(n);
 }
 
 } // namespace wb

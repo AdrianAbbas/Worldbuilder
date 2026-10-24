@@ -848,3 +848,217 @@ All Milestone 3 tests still pass (the existing tests run in Play Mode Free).
 - Transport mode restarts the whole world at every locate, so reverb tails and long
   bells from before the locate are cut (by design: the same position always sounds the
   same).
+
+---
+
+## Milestone 5a: six-instrument Places, the 20-Place selector, the visual update (2026-10-24)
+
+Direction Update 3 ([DIRECTION_UPDATE_3.md](DIRECTION_UPDATE_3.md), which overrides the
+earlier files): Milestone 5 is 20 Places of at least five instruments each plus a
+visual update, in four sub-milestones. MIDI mode and keyboard zones move to
+Milestone 6. This is **5a**: the shared framework, the selector and the look for 20
+Places, and Castle, Village and Spaceport upgraded to the new standard.
+
+### Working conditions
+
+Same as before: Linux cloud container, no Mac. Verified here: Linux build (VST3,
+Standalone, tests) with GCC and Clang, **820 checks pass, 0 fail**. Sound was checked
+by measurement and event logs (`--probe-places`), **not by ear**. The editor was
+rendered and inspected (`--snapshot`). The artwork pipeline was tried with a test
+PNG (bundled and drawn), then removed.
+
+### Revised milestone order
+
+5. Places expansion + visual update: **5a** (this), **5b** Places 4-9 (Factory, City,
+   Forest, Alien Hive, Temple, Cavern), **5c** Places 10-14 (Ruins, Spaceship,
+   Biodome, Sea Ship, Suburbs), **5d** Places 15-20 (Mall, Military Camp, Beach,
+   Desert, Palace, Tavern).
+6. MIDI control: Play Mode MIDI and keyboard zones (Update 2, Section 1B).
+7. Locations & Journeys. 8. Full visual overhaul. 9. Presets & release.
+
+### What was built
+
+- **Instrument framework** (`Source/Places/Ensemble.h/.cpp`). A Place is now an
+  `EnsemblePlace` of up to six **parts**. A part is a pool of voices of one kind with a
+  patch the Place sets once per chunk:
+  - `SynthPart` (three-saw voices: drones, horns, pads, arps, engines; held or decaying,
+    legato glides from a note that ends as the next starts, an optional tonic pedal,
+    a beat-synced tremolo);
+  - `PluckPart` (Karplus-Strong: lute, harp), `ModalPart` (bells, marimba, chimes,
+    small bells; optional partials tuned to the scale), `DrumPart` (a kit of up to four
+    tuned or untuned rows), `NoisePart` (resonant sweeps: pass-by, build with an impact,
+    fall, swell);
+  - new voices (`Source/DSP/Instruments.h`): `FmPart` (two-operator FM: blips, and
+    electric pianos and glass for later Places), `ChoirPart` (formant choir, vowels
+    "oo" to "ee" that drift per voice), `WindPart` (sine with soft harmonics, breath,
+    scoop and delayed vibrato: recorder, later flutes and ney), and an octave-up
+    `Shimmer` reverb.
+  - Each part renders its own bus, split only at its own note starts (notes stay
+    sample-accurate); the Place mixes the buses through its effects (`mix()`).
+  - Held parts follow the chords while they sound (they retune and glide when the
+    chord changes, so free-running Places still agree with the shared harmony).
+  - **Catch-up:** a held part asks its pattern what is sounding now
+    (`Playback::sounding()`) when it starts, after a reset (Transport locate) and when
+    it is switched back on, so a drone sounds at once instead of at the next chord.
+  - A Place may add its own notes (`addNotes`: the Castle's anvil rings with
+    Machinery, the Village mill clack) and shape each note (`shape`: bell decays and
+    pans, the Spaceport murmur).
+- **Every instrument is an element with a pattern**: drones, pads, engines and the
+  choir play long notes (one per chord) from patterns too. Six elements per Place
+  (`pat::elementsPerPlace = 6`), each with a level and switch (host parameters) and a
+  **mute and solo** (Pattern Editor, saved with the patterns). Solo works within the
+  Place.
+- **Castle**: Brass Drone (chord tones over a tonic pedal), Bells (partials on the
+  scale's third and fifth), Horns, Timpani (+ side drum, + anvil with Machinery),
+  **Harp** (Fortress: rolled chords; Royal Court: flowing arpeggios; Besieged: a low
+  tense ostinato), **Choir** (open fifths "oh", triads "ah", uneasy swells "oo"). Stone
+  hall and slow tape echo. Every castle now trembles above 50 % Tension.
+- **Village**: Lute, Hurdy-Gurdy (root and fifth, buzzing on the beat at Harvest Night),
+  Hand Drums, Marimba, **Recorder** (folk phrases that walk the scale; long birdlike
+  notes at dawn), **Bells** (shop-bell clusters, tambourine-like off-beat jingles, a
+  distant bell). Characters renamed per Update 3: **Market Day, Harvest Night** (was
+  Festival), **Quiet Dawn** (was Hearth). Wooden room and tape warmth. Suggests Dorian.
+- **Spaceport**: Pulses, Pads, Risers, PA Tones (with the murmur; the Launch countdown),
+  Engine (sub drone throbbing at half notes, with a rumble), **Data Blips** (FM chatter,
+  stray glitches, accelerating telemetry through the launch build). Hangar, ping-pong
+  delay and a new **shimmer**.
+- **20 Places listed**: `PlaceType` now numbers all 20 in Update 3's order (Castle,
+  Village and Spaceport keep 1-3). `placeInfo` has each Place's Characters, six
+  instruments (name, icon, pattern kind, kit rows), description, effect character,
+  category and suggested Mood. The 17 not yet built are silent and their cards cannot
+  be added.
+- **Parameters**: 150 (was 142): each slot gained a sixth element level and switch
+  (`pN_e6`, `pN_e6_on`); the Place choice runs 0-20. IDs are unchanged otherwise.
+- **Visual update**:
+  - Place selector: 20 cards, ALL (scrolls with the wheel, with a position bar) or a
+    category (Fantasy, Modern, Sci-Fi, Nature). Cards are illustrated scenes (sky,
+    the Place's light, hills in depth, the landmark with a shadow, lit windows) that
+    come alive on hover: they lift, the light pulses, windows flicker, the layers
+    drift (parallax) and the Place's particles rise. Unbuilt Places are dimmed and
+    marked with their sub-milestone.
+  - New vector icons for the 10 new Places, and a glyph for every kind of instrument.
+  - **The theme follows the world**: each Place has a palette (sky, horizon, ground,
+    light, tint), particles (motes, embers, sparks, dust, fireflies, smoke, spores,
+    mist) and a globe feature. The background, panel tint, glow and the globe's halo
+    blend the active Places by level (the navy keeps a share) and move over about a
+    second. The whole window repaints only while the colours move.
+  - **Living Globe**: fields, orbit rings with ships, smoke, city lights, forests,
+    hive veins, a golden aura, crystals, ruins, oceans with glints and dunes, faded in
+    and out with the Places; the panel carries their particles. Landmarks use a
+    Place's artwork when bundled.
+  - Detail panel: the Place's scene as header art, its colour, the effect character,
+    an icon per instrument, six rows, and **USE <MOOD>** for a suggested Mood (only on
+    click; the Mood stays the user's).
+  - Pattern Editor: a tab per instrument with its icon (and M or S when muted or
+    soloed), and an instrument strip: LEVEL and ON (host parameters), MUTE, SOLO.
+  - **Artwork pipeline**: `assets/places/<key>/{back,mid,front,lights}.png` is bundled
+    at build time (CMake copies each to `<key>_<layer>.png` for JUCE binary data) and
+    used on cards (with parallax and flickering lights), the detail header and the
+    globe landmark; anything missing falls back to the procedural art. No artwork is
+    committed yet, so the CI build has no binary-data target.
+  - Animation stays at 30 fps.
+
+### Decisions
+
+- **Parts with patches, not per-Place voice code.** A new Place is a choice of parts,
+  patches, generators and an effect chain. The three Places shrank to configuration
+  plus generators, and later Places reuse the same eight part types.
+- **Each part renders its own bus.** Splitting rendering only at that part's own notes
+  costs less than splitting every voice at every note, and gives the Place a clean bus
+  per instrument for its effect sends.
+- **Held notes follow the chords.** Drones and pads are now pattern notes, but they
+  retune when the chord changes, so the old continuous behaviour (and free-running
+  Places) still works, and an edited drone pattern still fits the harmony.
+- **Mute and solo are pattern controls, not host parameters**: they are for auditioning
+  and arranging, and 48 more automatable parameters would crowd the host's list. The
+  on/off switch and level stay automatable.
+- **Rare sounds use per-note probability** (the Village's distant bell, the dock's
+  glitches), as decided in Milestone 4, so a seed never simply has none. Phrases that
+  must stay whole (the recorder) use eight-bar patterns with at least one phrase.
+- **Distance is now two poles** (12 dB/octave): with bright instruments (small bells,
+  shakers, recorder) a far Place has to darken more.
+- **Theme weight = level x nearness**, with the plain navy keeping a 35 % share, so the
+  interface never turns fully into one colour.
+
+### Problems and fixes
+
+- The old "switching an element off changes it by more than 0.3 dB in some band"
+  check failed for quiet instruments in a fuller six-part mix. It now checks that the
+  instrument is taken out (none of its notes play, and the output changes), and the
+  new solo tests check each instrument is audible alone.
+- Recorder phrases (Market Day) and the dock's blips could be absent for a seed (one
+  dice per pattern); fixed as above.
+- The Castle's response to Danger fell to 0.85 dB; Tension now darkens the drone, makes
+  every castle tremble above 50 % and darkens the choir's vowel.
+- The Village's distance darkening fell short with the new bright instruments; fixed by
+  the two-pole distance filter.
+- The accent colour tables had 11 entries for 21 Places; one shared table now
+  (`ui::placeAccent`).
+
+### Tests (Linux, through `processBlock`)
+
+New:
+- **Every instrument of every built Place, alone (its solo)**: audible and finite in
+  every Character; every note's pitch class in G major and in A Phrygian (melodic
+  instruments); on the host's sixteenth grid at 84 and 132 BPM (grid lock above 0.97
+  with no swing and no variation); each Place has at least five instruments.
+- Switching an instrument off takes it out; a muted instrument is silent while the
+  others play.
+- A held instrument (Castle drone, Village hurdy-gurdy, Spaceport pads) sounds at once
+  after a Transport locate into the middle of its pattern.
+- State round trip with **four active Places**, edited patterns, Evolve, mute and solo:
+  everything restored, and the restored world plays sample-identically.
+- **CPU gate**: four busy Places (24 instruments), Standard quality, 48 kHz / 256,
+  under 15 % of one core: **8.0 %** on this container. High quality with every
+  control at maximum: 8.5 % (Milestone 4, with five-element Places: 7-9 %).
+
+All earlier tests pass (Characters differ, in key, Activity, Tension, Tone, Seed,
+tempo, World Controls, slots, patterns, Play Mode, determinism, allocation-free
+processBlock with four Places of every Character).
+
+### Milestone 5a handoff
+
+**Done:**
+- the six-part instrument framework and the shared voices for all 20 Places;
+- Castle, Village and Spaceport with six instruments each, every one patterned, with
+  level, switch, mute and solo;
+- all 20 Places listed (cards, icons, instruments, Characters, themes, categories);
+- the visual update: categorised scrolling selector with animated scene cards, theme
+  following the active Places, globe features and particles, detail header art,
+  instrument icons, the artwork pipeline;
+- Linux tests pass with GCC and Clang.
+
+**Next (needs the developer):**
+1. CI on the macOS runner (the AU, `auval`, the harness). Nothing macOS-specific
+   changed; 150 parameters now (the harness looks them up by name).
+2. The Milestone 5a check in [MANUAL_TEST.md](MANUAL_TEST.md), mostly listening: each
+   instrument alone in each Character. The new ones (harp, choir, recorder, bells,
+   data blips) and the pattern-driven drones are the ones to judge; report any that
+   sound weak, harsh or out of balance, since 5b-5d reuse the same parts.
+3. Whether the hover animation and the theme transitions stay smooth in GarageBand.
+
+**Then 5b:** Factory, City, Forest, Alien Hive, Temple, Cavern. Per Place: a class
+deriving from `EnsemblePlace` with six parts (their names, icons and kit rows are
+already in `placeInfo`), `configure()` (patches per Character), `generate()` for each
+instrument, `mix()` with its effect, a case in `PlaceSlot::engineFor`, and
+`placeImplemented`. The tests pick up every implemented Place automatically. New
+effects needed: comb resonance (Factory), chorus (City), ring-mod shimmer and warped
+delay (Hive), long shimmer (Temple; `dsp::Shimmer` exists), slapback (Cavern).
+
+**Known issues / limits:**
+- Nothing here has been heard by a person yet; expect a level and tone pass on the
+  new instruments.
+- The drones, pads and choir are pattern notes now: an edited drone pattern with gaps
+  is silent in the gaps (as written). Tension still darkens them, but the semitone
+  cluster at high Tension is written by the generator, so an edited drone keeps its
+  notes.
+- The Castle's anvil and the Village's mill clack belong to the Timpani and Hand Drums
+  instruments (they follow their level, switch, mute and solo).
+- Old projects: the Castle's fifth element was Hall and the Village's Tape (effect
+  levels); those parameters now set the Harp and Recorder levels. The Village's
+  Characters follow Update 3's order (Market Day, Harvest Night, Quiet Dawn), so a
+  Village saved as Hearth (2nd) loads as Harvest Night (the old Festival's figures)
+  and one saved as Festival (3rd) as Quiet Dawn (the old Hearth's).
+- The theme tints the background, panels and glow; knobs, text and buttons keep the
+  brass-and-cyan palette (the full overhaul is Milestone 8).
+- The artwork pipeline is tested on Linux only; no artwork is committed yet.

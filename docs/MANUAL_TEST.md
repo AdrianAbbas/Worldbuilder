@@ -144,3 +144,45 @@ the detail panel). It covers the left and centre of the window.
 - [ ] Drag a .mid file from Finder onto the editor (or onto a tab): the notes become
   that element's pattern (snapped to the scale; turn **SNAP** off to keep exact
   pitches). **IMPORT** does the same through a file dialog.
+
+## Milestone 5a check: six instruments per Place, the new selector and look
+
+Install the new build the same way. Start from a **fresh** instance (press play: the
+default Play Mode is Transport). Projects from Milestone 4 load, but the Castle,
+Village and Spaceport now have six instruments, so they sound fuller and different.
+
+**The selector** (below the globe):
+- [ ] 20 cards. **ALL** scrolls with the mouse wheel or trackpad (a thin bar on the
+  right shows where you are); **FANTASY**, **MODERN**, **SCI-FI** and **NATURE** show
+  one group each.
+- [ ] Hover a card: it lifts, its light glows, windows flicker and particles drift.
+  The 17 Places still to come are dimmed, marked "IN 5B/5C/5D", and cannot be added.
+- [ ] Is the animation smooth, and does GarageBand stay responsive with the window
+  open? (The interface animates at 30 frames per second.)
+
+**The theme follows the world:**
+- [ ] With only a Castle, the interface turns towards dusk purple and amber; add a
+  Spaceport and it shifts to cold cyan; remove the Castle and it settles there. Each
+  change takes about a second. Muting a Place or turning it down weakens its colour.
+- [ ] The globe shows the Places: fields for Castle and Village, an orbit ring with
+  small ships for the Spaceport; drifting embers, motes or sparks in the globe panel.
+
+**Six instruments each** (EDIT on a strip):
+- [ ] The detail panel has header art and colour for the Place, the effect character
+  under ELEMENTS, and six instrument rows, each with an icon, a switch and a level.
+- [ ] **Castle:** Brass Drone, Bells, Horns, Timpani, Harp, Choir. **Village:** Lute,
+  Hurdy-Gurdy, Hand Drums, Marimba, Recorder, Bells (Characters: Market Day, Harvest
+  Night, Quiet Dawn). **Spaceport:** Pulses, Pads, Risers, PA Tones, Engine, Data Blips.
+  The Village shows **USE DORIAN** (its suggested Mood): it changes the Mood only when
+  clicked.
+- [ ] **PATTERNS**: six tabs with icons. Above the toolbar, the instrument's strip:
+  LEVEL, ON, **MUTE** and **SOLO**. Solo one instrument: you hear only it (within that
+  Place); its tab shows S, a muted one M. Mute and solo are saved with the project.
+- [ ] Listen to each instrument alone in each Character. Tell me which ones sound
+  weak, too loud, or not like their name: this is the tuning that matters most before
+  the other 17 Places use the same instruments.
+- [ ] The drones, pads and choir now play from patterns too (one long note per
+  chord). Press play in the middle of a song: they sound at once, not at the next
+  chord.
+- [ ] Root, Mood and the host tempo: every instrument follows them.
+- [ ] Four Places at once: does GarageBand's CPU meter stay comfortable?

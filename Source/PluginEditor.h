@@ -18,6 +18,7 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
     static constexpr int baseWidth = 1160, baseHeight = 720;
 
@@ -55,9 +56,9 @@ private:
         juce::Slider activity { "Activity" }, tension { "Tension" }, tone { "Tone" }, size { "Size" }, variation { "Variation" };
         juce::Slider density { "Density" }, swing { "Swing" }, seed;
         juce::ToggleButton sync { "SYNC TO HOST" };
-        juce::TextButton dice { "New seed" }, close { "CLOSE" }, patterns { "PATTERNS" };
-        std::array<juce::Slider, 5> element;
-        std::array<juce::ToggleButton, 5> elementOn;
+        juce::TextButton dice { "New seed" }, close { "CLOSE" }, patterns { "PATTERNS" }, mood;
+        std::array<juce::Slider, wb::placeElements> element;
+        std::array<juce::ToggleButton, wb::placeElements> elementOn;
         std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
         std::vector<std::unique_ptr<ButtonAttachment>> buttonAttachments;
         juce::Rectangle<int> area, titleArea, characterArea, elementsArea, rhythmArea;
@@ -78,6 +79,15 @@ private:
     float param(int param) const;
     int placeType(int slot) const;
     int cardAt(juce::Point<int>) const;
+    // The selector: the Places listed in the chosen category, their card bounds (with
+    // the scroll), the category chips.
+    void listCards();
+    juce::Rectangle<int> cardBounds(int index) const;
+    float maxCardScroll() const;
+    int categoryAt(juce::Point<int>) const;
+    // The interface takes on the colours of the active Places (blended, ~1 s).
+    void updateTheme();
+    void paintGlobeFeatures(juce::Graphics&, juce::Rectangle<float> area, float alpha);
     juce::Point<float> landmarkPosition(int slot) const;
     int landmarkAt(juce::Point<float>) const;
 
@@ -104,7 +114,16 @@ private:
 
     juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer;
     std::array<juce::Rectangle<int>, 4> groupAreas;
-    std::array<juce::Rectangle<int>, 10> cards;
+    juce::Rectangle<int> cardGrid;
+    std::array<juce::Rectangle<int>, wb::PlaceCategoryCount + 1> categoryChips;
+    std::array<int, wb::PlaceTypeCount> listed {};
+    int listedCount = 0, category = -1;   // -1: every Place
+    float cardScroll = 0, animTime = 0;
+    std::array<float, wb::PlaceTypeCount> hoverAmount {};
+    juce::Colour themeTint, themeGlow, themeSky;
+    std::array<float, 11> featureAmount {};
+    std::array<float, 8> particleAmount {};
+    float themeChange = 0;
     juce::Rectangle<float> globeArea;
     float spin = 0, precipitation = 0, flash = 0;
     int boltSeed = 1, hoverCard = -1, dragLandmark = -1;

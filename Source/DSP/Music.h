@@ -82,6 +82,16 @@ inline int chordDegree(double beat, float danger) {
 // chords in the whole-tone scale and diminished ones in the octatonic.
 inline int chordTone(int mood, int chord, int n) { return degree(mood, chord + 2 * n); }
 
+// The scale degree (0 .. size - 1) whose note is nearest to `semitones` (0..11) above
+// the root: the fifth where the scale has one, else its closest neighbour.
+inline int nearestDegree(int mood, int semitones) {
+    const auto& s = scaleFor(mood);
+    int best = 0;
+    for (int i = 1; i < s.size; ++i)
+        if (std::abs(s.steps[std::size_t(i)] - semitones) < std::abs(s.steps[std::size_t(best)] - semitones)) best = i;
+    return best;
+}
+
 // Places a pitch class (semitones, any octave) into [low, low + 12).
 inline int inRange(int semitones, int low) {
     int s = semitones;

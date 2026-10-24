@@ -12,8 +12,8 @@ struct PlaceSlotControls {
     bool mute = false, solo = false, sync = true;
     float activity = 0.5f, tension = 0.3f, density = 0.5f, swing = 0.15f, tone = 0.5f, size = 0.5f, variation = 0.35f;
     uint32_t seed = 1;
-    std::array<float, placeElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
-    std::array<bool, placeElements> elementOn { true, true, true, true, true };
+    std::array<float, placeElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
+    std::array<bool, placeElements> elementOn { true, true, true, true, true, true };
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -67,7 +67,8 @@ private:
     std::array<dsp::Smoother, 8> smooth;   // activity, tension, density, swing, tone, size, variation, fxDepth
     std::array<dsp::Smoother, placeElements> elementSmooth;
     dsp::Smoother gain, distance, pan;
-    std::array<dsp::OnePole, 2> distanceLp, dcBlock;
+    std::array<dsp::OnePole, 4> distanceLp;
+    std::array<dsp::OnePole, 2> dcBlock;
     float send = 0;
     bool fresh = true;
 

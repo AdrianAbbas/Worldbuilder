@@ -35,7 +35,9 @@ inline constexpr std::array<const char*, LayerCount> layerNames { "Air", "Water"
 inline constexpr const char* rootChoices = "C|C#|D|D#|E|F|F#|G|G#|A|A#|B";
 inline constexpr const char* moodChoices = "Minor|Major|Dorian|Phrygian|Lydian|Mixolydian|Whole-tone|Pentatonic|Chromatic";
 inline constexpr const char* qualityChoices = "Eco|Standard|High";
-inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Factory|City|Temple|Forest|Ruins|Cavern|Alien Hive";
+inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Factory|City|Forest|Alien Hive|Temple|Cavern|Ruins|Spaceship|Biodome|"
+                                            "Sea Ship|Suburbs|Mall|Military Camp|Beach|Desert|Palace|Tavern";
+inline constexpr int placeChoiceCount = 21;
 inline constexpr const char* characterChoices = "1|2|3";
 inline constexpr const char* playModeChoices = "Free|Transport";
 enum PlayMode { PlayFree, PlayTransport };
@@ -44,9 +46,9 @@ enum PlayMode { PlayFree, PlayTransport };
 enum PlaceParam {
     PlType, PlLevel, PlDistance, PlPan, PlMute, PlSolo, PlCharacter, PlActivity, PlTension, PlSync, PlDensity, PlSwing,
     PlTone, PlSize, PlVariation, PlSeed,
-    PlElement,                     // five element levels
-    PlElementOn = PlElement + 5,   // five element switches
-    PlaceParamCount = PlElementOn + 5
+    PlElement,                     // six element (instrument) levels
+    PlElementOn = PlElement + 6,   // six element switches
+    PlaceParamCount = PlElementOn + 6
 };
 inline constexpr int placeSlotCount = 4;
 
@@ -96,9 +98,9 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
 #define WB_ELEMENTS(id, name, kind, def, suffix, label) \
     { id "_e1" suffix, name " Element 1" label, kind, 0, 1, def }, { id "_e2" suffix, name " Element 2" label, kind, 0, 1, def }, \
     { id "_e3" suffix, name " Element 3" label, kind, 0, 1, def }, { id "_e4" suffix, name " Element 4" label, kind, 0, 1, def }, \
-    { id "_e5" suffix, name " Element 5" label, kind, 0, 1, def }
+    { id "_e5" suffix, name " Element 5" label, kind, 0, 1, def }, { id "_e6" suffix, name " Element 6" label, kind, 0, 1, def }
 #define WB_PLACE(id, name, type, pan, seed) \
-    { id "_type", name " Place", Kind::Choice, 0, 10, type, placeChoices }, \
+    { id "_type", name " Place", Kind::Choice, 0, 20, type, placeChoices }, \
     { id "_level", name " Level", Kind::Decibels, -60, 6, 0 }, \
     { id "_distance", name " Distance", Kind::Float, 0, 1, 0.35f }, \
     { id "_pan", name " Pan", Kind::Float, -1, 1, pan }, \

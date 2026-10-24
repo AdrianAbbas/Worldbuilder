@@ -123,9 +123,10 @@ struct Controls {
     uint8_t returnBars = 0;     // Evolve returns to the original every N bars (0: never)
     bool edited = false;        // false: the Place's generator writes the pattern
     uint8_t variant = 0;        // bumped by Generate for a fresh pattern
+    bool mute = false, solo = false;   // the element's mute and solo (within its Place)
     bool operator==(const Controls& o) const {
         return std::abs(randomness - o.randomness) < 1.0e-6f && vary == o.vary && std::abs(evolve - o.evolve) < 1.0e-6f
-               && returnBars == o.returnBars && edited == o.edited && variant == o.variant;
+               && returnBars == o.returnBars && edited == o.edited && variant == o.variant && mute == o.mute && solo == o.solo;
     }
 };
 
@@ -137,7 +138,8 @@ struct Element {
     Pattern pattern;
 };
 
-constexpr int elementsPerPlace = 5;
+// Every Place has up to six instruments, each an element with its own pattern.
+constexpr int elementsPerPlace = 6;
 
 // One slot's patterns, as the editor publishes them to the audio thread.
 struct SlotPatterns {
@@ -255,6 +257,35 @@ struct Playback {
         return c;
     }
 
+    // Calls f(Event) for each note that is sounding at `beat` (started before it and not
+    // yet over), exactly as play() would have played it. Held instruments use it to pick
+    // up notes they missed: a Place just added, an element switched back on, a locate.
+    template <typename F>
+    void sounding(double beat, F&& f) const {
+        if (pattern == nullptr || pattern->count <= 0 || pattern->lengthSteps <= 0) return;
+        const Pattern& p = *pattern;
+        const double perBeat = stepsPerBeat(p.resolution);
+        const int64_t length = p.lengthSteps;
+        const int perBar = stepsPerBar(p.resolution);
+        int longest = 1;
+        for (int i = 0; i < p.count; ++i) longest = std::max<int>(longest, p.notes[std::size_t(i)].length);
+        const auto now = int64_t(std::floor(beat * perBeat));
+        const int64_t lastPass = music::floorDiv(now, length), firstPass = music::floorDiv(now - longest - 3, length);
+        for (int64_t pass = firstPass; pass <= lastPass; ++pass)
+            for (int i = 0; i < p.count; ++i) {
+                const Note& n = p.notes[std::size_t(i)];
+                const int64_t s = pass * length + n.step;
+                if (s > now) break;
+                if (n.probability < 100 && unitOf(key, pass, i, 9) * 100.0f >= float(n.probability)) continue;
+                const Change c = changeFor(i, pass, music::floorDiv(s, int64_t(perBar)));
+                if (c.skip) continue;
+                const double swingSteps = (s & 1) != 0 ? 0.45 * double(swing) : 0.0;
+                const double at = (double(s) + swingSteps + double(c.delay)) / perBeat, len = double(n.length) / perBeat;
+                if (at <= beat && at + len > beat)
+                    f(Event { at, len, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(float(n.velocity) / 127.0f * c.velocity), i, false });
+            }
+    }
+
     // Calls f(Event) for each note that starts in [beat, beat + span).
     template <typename F>
     void play(double beat, double span, F&& f) const {
@@ -298,10 +329,13 @@ struct Playback {
 
 // Semitones above the key root for a melodic event. Follow Chords: the chord root is
 // placed in [base, base + 12) and the degree counts from it.
-inline int semitonesFor(const Pattern& p, int mood, int chord, int degree, int alter) {
-    if (!p.followChords) return music::degree(mood, degree) + alter;
+inline int semitonesFor(bool followChords, int base, int mood, int chord, int degree, int alter) {
+    if (!followChords) return music::degree(mood, degree) + alter;
     const int rootSemis = music::degree(mood, chord);
-    return music::inRange(rootSemis, p.base) + (music::degree(mood, chord + degree) - rootSemis) + alter;
+    return music::inRange(rootSemis, base) + (music::degree(mood, chord + degree) - rootSemis) + alter;
+}
+inline int semitonesFor(const Pattern& p, int mood, int chord, int degree, int alter) {
+    return semitonesFor(p.followChords, p.base, mood, chord, degree, alter);
 }
 
 } // namespace wb::pat

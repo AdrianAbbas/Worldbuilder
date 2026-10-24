@@ -42,6 +42,7 @@ private:
     class Grid;
     class Lane;
     class DragOut;
+    class ElementTab;
     struct Row {
         int degree = 0, alter = 0;
         juce::String label;
@@ -91,7 +92,13 @@ private:
     std::vector<pat::Note> clipboard;
     std::vector<Row> rows;
 
-    std::array<juce::TextButton, placeElements> tabs;
+    std::array<std::unique_ptr<ElementTab>, placeElements> tabs;
+    juce::Slider elementLevel;
+    juce::ToggleButton elementOn { "ON" }, muteButton { "MUTE" }, soloButton { "SOLO" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> levelAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAttachment;
+    juce::Rectangle<int> elementArea;
+    void setMuteSolo(bool mute, bool solo);
     juce::TextButton back { "BACK" }, draw { "DRAW" }, select { "SELECT" }, undoButton { "UNDO" }, redoButton { "REDO" };
     juce::TextButton copy { "COPY" }, pasteButton { "PASTE" }, clear { "CLEAR" }, generateButton { "GENERATE" };
     juce::TextButton up { "UP" }, down { "DOWN" }, twice { "x2" }, half { "/2" }, lock { "LOCK" };

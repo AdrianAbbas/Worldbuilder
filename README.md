@@ -7,16 +7,21 @@ a village or a spaceport, over a living environment of wind, water, fire, ice an
 thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 4 (Pattern Editor and Play Mode).** These work now:
-- **Places**, the centrepiece. Up to four play at once: Castle, Village and Spaceport.
+**Status: Milestone 5a (six-instrument Places, 20-Place selector, visual update).**
+These work now:
+- **Places**, the centrepiece. Up to four play at once: Castle, Village and Spaceport
+  (the selector already lists all 20 Places; the other 17 arrive in Milestones
+  5b-5d).
+  - Each is an ensemble of **six instruments**, for example the Castle's brass drone,
+    tuned bells, horn calls, timpani, harp and wordless choir.
   - Each has three Characters that change its patterns, harmony and sound.
-  - Each has five elements you can switch off or turn down, and its own effect
-    character (stone hall and tape echo; tape warmth; ping-pong delay and hangar).
+  - Every instrument has its own pattern, level, on/off switch, mute and solo.
+  - Each Place has its own effect character (stone hall and tape echo; wooden room
+    and tape warmth; hangar, ping-pong delay and shimmer).
   - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
     host tempo, or the Place's own free tempo) and a Seed.
   - Each slot also has level, distance and pan.
-- **Patterns.** Every rhythmic or melodic element (bells, horns, timpani, plucks, hand
-  drums, arps, risers...) plays from a pattern of notes. The Place generates it from
+- **Patterns.** Every instrument (drones and pads too) plays from a pattern of notes. The Place generates it from
   its seed and knobs until you edit it in the **Pattern Editor** (PATTERNS in a
   Place's detail panel):
   - a piano roll on the scale's notes (or all twelve semitones, or a drum kit), with
@@ -41,16 +46,21 @@ recordings.
   Machinery makes them straighter and more metallic, Life more human, and Danger
   darker.
 - the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
-- **The interface**: Place cards to add Places, Place strips, a detail panel for each
-  Place, the Pattern Editor, and landmarks on a placeholder globe that you can drag
-  to move a Place.
+- **The interface**: a Place selector of 20 illustrated cards (all, or by category:
+  Fantasy, Modern, Sci-Fi, Nature) that come alive on hover; Place strips; a detail
+  panel with header art and an icon per instrument; the Pattern Editor with a tab per
+  instrument; landmarks on the globe that you can drag to move a Place. The colours,
+  light and particles of the interface follow the active Places, and the globe shows
+  them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
+  dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Next: more Places and MIDI control from the host's piano roll (Milestone 5),
-Locations and Journeys (6), the visual overhaul (7), presets and release (8). See
+Next: the other 17 Places (Milestones 5b-5d), MIDI control from the host's piano roll
+(6), Locations and Journeys (7), the visual overhaul (8), presets and release (9). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
-[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) and
-[docs/DIRECTION_UPDATE_2.md](docs/DIRECTION_UPDATE_2.md); later files override earlier
+[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md),
+[docs/DIRECTION_UPDATE_2.md](docs/DIRECTION_UPDATE_2.md) and
+[docs/DIRECTION_UPDATE_3.md](docs/DIRECTION_UPDATE_3.md); later files override earlier
 ones.
 
 **GarageBand and exports:** in Play Mode Free, GarageBand exports a song only up to

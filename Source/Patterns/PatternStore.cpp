@@ -128,6 +128,8 @@ juce::ValueTree PatternStore::toValueTree() const {
             x.setProperty("evolve", el.controls.evolve, nullptr);
             x.setProperty("return", int(el.controls.returnBars), nullptr);
             x.setProperty("variant", int(el.controls.variant), nullptr);
+            if (el.controls.mute) x.setProperty("mute", true, nullptr);
+            if (el.controls.solo) x.setProperty("solo", true, nullptr);
             if (el.controls.edited) {
                 const auto& p = el.pattern;
                 x.setProperty("resolution", int(p.resolution), nullptr);
@@ -166,6 +168,8 @@ void PatternStore::fromValueTree(const juce::ValueTree& tree, const std::array<i
                 el.controls.evolve = number("evolve", 0.0f, 0.0f, 1.0f);
                 el.controls.returnBars = uint8_t(int(number("return", 0.0f, 0.0f, 64.0f)));
                 el.controls.variant = uint8_t(int(number("variant", 0.0f, 0.0f, 255.0f)));
+                el.controls.mute = bool(x.getProperty("mute", false));
+                el.controls.solo = bool(x.getProperty("solo", false));
                 if (x.hasProperty("notes")) {
                     auto& p = el.pattern;
                     const int bars = int(number("bars", 4.0f, 0.0f, float(pat::maxBars)));
