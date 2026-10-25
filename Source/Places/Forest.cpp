@@ -235,6 +235,11 @@ void ForestPlace::configure(const PlaceContext& c) {
         p.vibratoDelay = 0.3f;
         p.spread = 0.3f;
         p.voices = 1;
+        // A wooden flute: an airy tone, a soft chiff, the player's breath around it.
+        p.chiff = 0.3f;
+        p.chiffSeconds = 0.04f;
+        p.air = 0.12f;
+        p.wander = 3.0f;
         p.gain = 1.0f;
     }
     // Birds: nearly pure whistles that swoop into each note; trills, or an owl's hoot.
@@ -350,6 +355,8 @@ void ForestPlace::configure(const PlaceContext& c) {
     }
     // Tension: the strings swell and tremble while the birds and the kalimba hush.
     const float hush = 1.0f - 0.7f * tension;
+    // An enchanted wood rings; the dark woods swallow sound (moss, dense trees).
+    sendScale.fill(enchanted ? 1.35f : (dark ? 0.7f : 1.0f));
     level = { 0.1f, 0.13f * lerp(0.6f, 1.4f, s.life) * hush, 0.4f * (1.0f + 0.8f * s.machinery) * (glade ? 1.3f : 1.0f), 0.18f * hush,
               0.06f * (enchanted ? 1.4f : (glade ? 0.6f : 1.0f)) * (0.5f + 2.0f * tension), 1.2f * (glade ? 0.7f : 1.0f) };
 

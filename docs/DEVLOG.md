@@ -1805,7 +1805,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Village
   - [x] Palace
   - [x] Temple
-  - [ ] Forest
+  - [x] Forest
   - [ ] Desert
   - [ ] Sea Ship
   - [ ] Military Camp
@@ -2108,4 +2108,11 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   "oneri" beat), Zither (silk-and-metal strings, a box, sympathetic strings).
 - Space: the forsaken temple echoes emptily (1.5x sends), the rite holds it closer.
 - Effects: everything in the Cathedral except the zither (Hall, dotted echo).
+
+**Forest** (fantasy/nature)
+- Flute (a wooden flute: airy, a soft chiff, breath around the tone), Birds (whistles),
+  Wood (log, stick, shaker), Kalimba (a plucked steel tine, its modes near 6x and 17x),
+  Strings (moved from the saw synth to a bowed section of violas and cellos over the
+  fingerboard, tremolo with Tension), Rustle (tuned breath).
+- Space: an enchanted wood rings (1.35x sends), the dark woods swallow sound (0.7x).
 
