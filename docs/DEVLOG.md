@@ -1819,7 +1819,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Spaceport
   - [x] Spaceship Interior
   - [x] Biodome
-  - [ ] Alien Hive
+  - [x] Alien Hive
 - [ ] 5. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
 
 ### Working conditions
@@ -2195,4 +2195,10 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Pads, Mallets (now synthetic glass: partials 1, 3, 6, 9, a fast digital shimmer: they
   were close to the Beach's steel drum), Birdsong, Water Plucks, Vents, Shaker.
 - Space: night rings long, failing is dead and dry (step 2).
+
+**Alien Hive** (sci-fi)
+- Pulses, Glass Calls, Chitter, Throb Bass, Formants (the formant choir, step 2),
+  Swarm: reviewed; already apart from each other and from the other Places in the
+  distinctness report. Its space per Character came in step 1 (dormant: a vast cavity;
+  the swarm deadens it). No further change.
 
