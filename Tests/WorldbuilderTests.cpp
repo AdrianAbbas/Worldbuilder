@@ -1636,6 +1636,28 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     const int fourth = world->addPlace(Castle);
     s.check(fourth == 3 && world->addPlace(Village) == -1, "at most four Places");
     h.render(0.5);
+    {
+        // CAPTURE: the footer's render and scene MIDI, as their buttons do it.
+        auto& capture = world->capturePanel();
+        const auto footerTop = editor->getHeight() - 100;
+        s.check(capture.isVisible() && capture.getY() > footerTop && capture.getRight() < editor->getWidth() - 300 && capture.getWidth() >= 180,
+                "the CAPTURE section sits in the footer, clear of the output knobs",
+                juce::String(capture.getBounds().toString()).toStdString());
+        capture.setBars(4);
+        capture.setStems(true);
+        capture.startRender();
+        const bool finished = capture.waitForRender(60000);
+        bool files = capture.renderedFiles().size() == 5;   // Castle, Village, Spaceport, Castle 2, Environment
+        for (const auto& f : capture.renderedFiles()) files = files && f.existsAsFile() && f.getSize() > 100000;
+        s.check(finished && files, "RENDER writes one WAV per Place and the environment (stems)", std::to_string(capture.renderedFiles().size()) + " files");
+        capture.setStems(false);
+        capture.startRender();
+        capture.cancelRender();
+        s.check(!capture.rendering() && capture.renderedFiles().isEmpty(), "RENDER can be cancelled");
+        const auto midi = capture.tempMidiFile();
+        s.check(capture.writeSceneMidi(midi) && midi.getSize() > 100, "MIDI writes the scene's patterns", midi.getFullPathName().toStdString());
+        midi.deleteFile();
+    }
     const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
     s.check(image.isValid(), "editor paints");
     save(image, snapshotPath);
@@ -2589,6 +2611,352 @@ int renderToFile(const juce::String& path, double seconds, const juce::StringArr
     return 0;
 }
 
+//==============================================================================
+// Capture and export (Milestone 8): offline renders and scene MIDI.
+void testCapture(Suite& s) {
+    s.section("capture: offline render matches Transport playback, stems, scene MIDI");
+    // A world of three Places with an edited pattern, as a host at 120 bpm sees it.
+    const auto makeHost = [](int block = 512) {
+        auto h = std::make_unique<Host>(48000, block);
+        h->playHead.bpm = 120;
+        h->set("playmode", float(PlayTransport));
+        h->set("p1_type", float(Castle));
+        h->set("p2_type", float(Megacity));
+        h->set("p3_type", float(Forest));
+        h->set("wetness", 0.6f);
+        h->set("intensity", 0.7f);
+        h->p->patterns.syncTypes(h->p->slotTypes());
+        h->p->patterns.setElement(0, Castle, 1, editedElement({ makeNote(0, 0, 4), makeNote(6, 2, 2, 80), makeNote(10, 4, 3, 60) }, 0.4f));
+        // The host has played once, so the plugin knows its tempo.
+        h->playHead.playing = true;
+        h->render(0.1);
+        h->playHead.playing = false;
+        h->render(0.3);
+        return h;
+    };
+    auto host = makeHost();
+    const auto scene = host->p->captureScene();
+    s.check(scene.bpm == 120.0f && scene.sampleRate == 48000.0 && scene.controls.places[1].type == Megacity && scene.patterns[0].element[1].controls.edited,
+            "the scene holds the host's tempo and rate, the Places and the edited patterns");
+    const int bars = 4;
+    const auto samples = capture::lengthInSamples(scene, bars);
+    s.check(samples == 4 * 4 * 24000, "4 bars at 120 bpm are exactly 8 s", std::to_string(samples));
+
+    const auto offline = [&](const EngineControls& c, int block = 512) {
+        Audio a;
+        a.rate = scene.sampleRate;
+        capture::render(scene, c, samples, [&](const float* l, const float* r, int n) {
+            a.l.insert(a.l.end(), l, l + n);
+            a.r.insert(a.r.end(), r, r + n);
+            return true;
+        }, nullptr, nullptr, block);
+        return a;
+    };
+    const auto begin = juce::Time::getMillisecondCounterHiRes();
+    const auto mix = offline(scene.controls);
+    const double ms = juce::Time::getMillisecondCounterHiRes() - begin;
+    const auto st = measure(mix, 0.5);
+    s.check(mix.l.size() == std::size_t(samples) && st.finite && st.rmsDb > -40.0 && st.peak < 1.0, "the mix renders, audible and finite",
+            fmt(st.rmsDb) + " dB, " + fmt(toDb(st.peak)) + " dBFS peak");
+    s.metric("offline render speed (3 Places)", 8000.0 / std::max(ms, 1.0), "x real time");
+    s.check(ms < 8000.0, "the render is faster than real time", fmt(ms) + " ms for 8 s");
+    const auto again = offline(scene.controls, 300);
+    s.check(again.l == mix.l && again.r == mix.r, "the render is deterministic (any block size)");
+
+    // Real-time playback from bar 1 in Transport mode, at another block size.
+    {
+        auto live = makeHost(333);
+        live->playHead.playing = true;
+        live->playHead.position = 0;
+        const auto played = live->render(double(samples) / 48000.0);
+        std::size_t firstDiff = played.l.size();
+        for (std::size_t i = 0; i < played.l.size() && i < mix.l.size(); ++i)
+            if (played.l[i] != mix.l[i] || played.r[i] != mix.r[i]) {
+                firstDiff = i;
+                break;
+            }
+        s.check(played.l == mix.l && played.r == mix.r, "the render matches real-time Transport playback from bar 1, sample for sample",
+                "first difference at sample " + std::to_string(firstDiff));
+    }
+
+    // Stems.
+    {
+        auto c = scene.controls;
+        auto stemScene = scene;
+        stemScene.controls.places[2].mute = true;   // the Forest is muted: no stem
+        const auto list = capture::passes(stemScene, true);
+        std::string names;
+        for (const auto& pass : list) names += pass.name.toStdString() + ", ";
+        s.check(list.size() == 3 && list[0].name == "Castle" && list[1].name == "Cyberpunk Megacity" && list[2].name == "Environment",
+                "stems: one per audible Place and the environment (muted Places have none)", names);
+        double sum = 0;
+        bool each = true;
+        for (const auto& pass : list) {
+            const auto stem = offline(pass.controls);
+            const auto x = measure(stem, 0.5);
+            each = each && x.finite && x.rmsDb > -55.0;
+            sum += std::pow(10.0, x.rmsDb / 10.0);
+        }
+        const auto mixed = measure(offline(stemScene.controls), 0.5);
+        s.check(each, "every stem is audible and finite");
+        s.metric("stems' summed power against the mix", 10.0 * std::log10(sum) - mixed.rmsDb, " dB");
+        s.check(std::abs(10.0 * std::log10(sum) - mixed.rmsDb) < 3.0, "the stems add up to about the mix", fmt(10.0 * std::log10(sum)) + " vs " + fmt(mixed.rmsDb) + " dB");
+        // A soloed Place: only its stem.
+        stemScene.controls.places[1].solo = true;
+        const auto solo = capture::passes(stemScene, true);
+        s.check(solo.size() == 1 && solo[0].name == "Cyberpunk Megacity", "stems follow the solos", std::to_string(solo.size()));
+        s.check(capture::passes(scene, false).size() == 1, "the mix is one file");
+        juce::ignoreUnused(c);
+    }
+
+    // WAV files.
+    {
+        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wb-capture-test.wav");
+        std::atomic<float> progress { 0 };
+        const bool written = capture::renderToWav(scene, capture::passes(scene, false)[0], bars, file, nullptr, &progress);
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(new juce::FileInputStream(file), true));
+        bool same = reader != nullptr && reader->lengthInSamples == samples && reader->numChannels == 2 && reader->sampleRate == 48000.0 && reader->bitsPerSample == 24;
+        if (same) {
+            juce::AudioBuffer<float> back(2, int(samples));
+            reader->read(&back, 0, int(samples), 0, true, true);
+            double worst = 0;
+            for (int i = 0; i < int(samples); ++i)
+                worst = std::max({ worst, double(std::abs(back.getSample(0, i) - mix.l[std::size_t(i)])), double(std::abs(back.getSample(1, i) - mix.r[std::size_t(i)])) });
+            same = worst < 1.0e-5;
+        }
+        s.check(written && same && progress.load() == 1.0f, "the render writes a 24-bit WAV at the host's rate, exactly as long as the bars");
+        reader.reset();
+        file.deleteFile();
+        std::atomic<bool> cancel { true };
+        s.check(!capture::renderToWav(scene, capture::passes(scene, false)[0], bars, file, &cancel) && !file.existsAsFile(), "a cancelled render leaves no file");
+    }
+
+    // Scene MIDI.
+    {
+        const auto tracks = capture::sceneTracks(scene);
+        int castle = 0, megacity = 0, forest = 0;
+        bool named = true;
+        for (const auto& t : tracks) {
+            const int type = scene.controls.places[std::size_t(t.slot)].type;
+            (type == Castle ? castle : type == Megacity ? megacity : forest) += 1;
+            named = named && t.name == juce::String(placeNames[std::size_t(type)]) + " - " + placeInfo(type).element[std::size_t(t.element)].name;
+        }
+        int expected = 0;
+        for (int slot = 0; slot < 3; ++slot)
+            for (int e = 0; e < placeElements; ++e) expected += patternInfo(scene.controls.places[std::size_t(slot)].type, e).kind != NoPattern ? 1 : 0;
+        s.check(int(tracks.size()) == expected && castle > 0 && megacity > 0 && forest > 0 && named, "scene MIDI: one named track per patterned instrument of every active Place",
+                std::to_string(tracks.size()) + " of " + std::to_string(expected));
+        bool editedUsed = false;
+        for (const auto& t : tracks)
+            if (t.slot == 0 && t.element == 1) editedUsed = t.pattern.sameNotes(scene.patterns[0].element[1].pattern);
+        s.check(editedUsed, "scene MIDI uses the edited pattern where there is one");
+        // The generated ones are the patterns the slots play.
+        bool generatedSame = true;
+        for (const auto& t : tracks) {
+            const auto* playing = host->p->engine.placeSlot(t.slot).playingPattern(t.element);
+            generatedSame = generatedSame && playing != nullptr && playing->sameNotes(t.pattern);
+        }
+        s.check(generatedSame, "scene MIDI holds the patterns the Places play");
+
+        const auto file = capture::sceneMidi(tracks, 16, scene.bpm);
+        juce::MemoryOutputStream out;
+        file.writeTo(out, 1);
+        juce::MemoryInputStream in(out.getData(), out.getDataSize(), false);
+        juce::MidiFile read;
+        const bool parsed = read.readFrom(in);
+        bool aligned = parsed && read.getNumTracks() == int(tracks.size()) + 1;
+        double tempo = 0;
+        for (int i = 0; parsed && i < read.getTrack(0)->getNumEvents(); ++i)
+            if (const auto& m = read.getTrack(0)->getEventPointer(i)->message; m.isTempoMetaEvent()) tempo = 60.0 / m.getTempoSecondsPerQuarterNote();
+        int notes = 0;
+        for (int t = 1; aligned && t < read.getNumTracks(); ++t) {
+            const auto* track = read.getTrack(t);
+            juce::String name;
+            double last = 0;
+            for (int i = 0; i < track->getNumEvents(); ++i) {
+                const auto& m = track->getEventPointer(i)->message;
+                if (m.isTrackNameEvent()) name = m.getTextFromTextMetaEvent();
+                if (m.isNoteOn()) ++notes;
+                if (m.isNoteOnOrOff()) last = std::max(last, m.getTimeStamp());
+                if (m.isNoteOn() && m.getTimeStamp() < 0) aligned = false;
+            }
+            aligned = aligned && name == tracks[std::size_t(t - 1)].name && last <= 16.0 * 4.0 * 960.0 && track->getEndTime() == 16.0 * 4.0 * 960.0;
+        }
+        s.check(aligned && std::abs(tempo - 120.0) < 0.01 && notes > 0, "the MIDI file: a tempo track at 120 bpm, then named tracks, all from bar 1 to bar 17",
+                std::to_string(read.getNumTracks()) + " tracks, " + std::to_string(notes) + " notes, " + fmt(tempo) + " bpm");
+
+        // Round trip: each track imported into the Pattern Editor writes the same notes again.
+        int good = 0;
+        std::string bad;
+        for (const auto& t : tracks) {
+            const int trackBars = std::max(1, int(std::ceil(t.pattern.lengthBeats() / 4.0 - 1.0e-9)));
+            const auto one = capture::sceneMidi({ t }, trackBars, scene.bpm);
+            juce::MemoryOutputStream o;
+            one.writeTo(o, 1);
+            juce::MemoryInputStream i(o.getData(), o.getDataSize(), false);
+            juce::MidiFile r;
+            r.readFrom(i);
+            pat::Pattern imported;
+            pat::fromMidi(r, imported, t.target, false, t.pattern.resolution);
+            auto copy = t;
+            copy.pattern = imported;
+            const auto events = [&](const juce::MidiFile& f) {
+                std::vector<std::tuple<double, int, int, bool>> e;
+                for (int k = 0; k < f.getNumTracks(); ++k)
+                    for (int x = 0; x < f.getTrack(k)->getNumEvents(); ++x)
+                        if (const auto& m = f.getTrack(k)->getEventPointer(x)->message; m.isNoteOnOrOff())
+                            e.emplace_back(m.getTimeStamp(), m.getNoteNumber(), m.isNoteOn() ? m.getVelocity() : 0, m.isNoteOn());
+                std::sort(e.begin(), e.end());
+                return e;
+            };
+            if (events(one) == events(capture::sceneMidi({ copy }, trackBars, scene.bpm))) ++good;
+            else bad += t.name.toStdString() + "; ";
+        }
+        s.check(good == int(tracks.size()), "exported MIDI round-trips into the Pattern Editor (every track)", std::to_string(good) + " of " + std::to_string(tracks.size()) + " " + bad);
+
+        // Switched off and muted instruments are left out; so are muted Places.
+        auto fewer = scene;
+        fewer.controls.places[0].elementOn[0] = false;
+        fewer.controls.places[2].mute = true;
+        fewer.patterns[1].element[0].controls.mute = true;
+        const auto less = capture::sceneTracks(fewer);
+        bool none = true;
+        for (const auto& t : less) none = none && !(t.slot == 0 && t.element == 0) && t.slot != 2 && !(t.slot == 1 && t.element == 0);
+        s.check(none && less.size() < tracks.size(), "instruments switched off or muted, and muted Places, are not exported");
+    }
+}
+
+//==============================================================================
+// Automation-first (Milestone 8): the controls a composer shapes a cue with are host
+// parameters, and a sudden change of any of them (a step in the automation) never
+// clicks or jumps in level beyond what the world does by itself in either state.
+void testAutomation(Suite& s) {
+    s.section("automation: every important control is automatable and changes smoothly");
+    const std::vector<std::pair<std::string, std::string>> important {
+        { "intensity", "Score Intensity" }, { "p1_type", "a slot's Place" }, { "p1_level", "Place level" }, { "p1_mute", "Place mute" },
+        { "p1_solo", "Place solo" }, { "p1_character", "Character" }, { "p1_activity", "Place Activity" }, { "p1_tension", "Place Tension" },
+        { "p1_tone", "Place Tone" }, { "p1_distance", "Place distance" }, { "p1_pan", "Place pan" }, { "p1_e1", "instrument level" },
+        { "p1_e1_on", "instrument on" }, { "p1_e1_rev", "instrument reverb" }, { "p1_e1_char", "instrument character effect" },
+        { "temperature", "Temperature" }, { "danger", "Danger" }, { "scale", "Scale" }, { "root", "Root" }, { "mood", "Mood" },
+        { "master", "Master Level" }, { "power", "Power" } };
+    {
+        WorldbuilderProcessor p;
+        std::string missing;
+        for (const auto& [id, name] : important)
+            if (auto* parameter = p.parameters.getParameter(id); parameter == nullptr || !parameter->isAutomatable()) missing += name + " ";
+        for (int w = 0; w < WorldControlCount; ++w)
+            if (p.parameters.getParameter(worldId(w)) == nullptr) missing += std::string(worldId(w)) + " ";
+        s.check(missing.empty(), "Score Intensity, the Place controls, Characters, instrument effects and the World Controls are host parameters", missing);
+    }
+
+    // A four-Place world playing in Transport mode from bar 5.
+    const auto world = [](const std::vector<std::pair<std::string, float>>& settings) {
+        auto h = std::make_unique<Host>(48000, 512);
+        h->playHead.bpm = 120;
+        h->set("playmode", float(PlayTransport));
+        const std::array<int, 4> types { Castle, Megacity, Forest, Nebula };
+        for (int slot = 0; slot < placeSlotCount; ++slot) {
+            h->set(slotId(slot, PlType), float(types[std::size_t(slot)]));
+            for (int e = 0; e < placeElements; ++e)
+                for (int f = 0; f < FxFieldCount; ++f) h->set(fxId(slot, e, f), instrumentFxDefault(types[std::size_t(slot)], e, f));
+        }
+        for (const auto& [id, value] : settings) h->set(id, value);
+        h->playHead.playing = true;
+        h->playHead.position = 48000 * 8;
+        return h;
+    };
+    // A click: the render with the change equals the steady one up to the change, so
+    // their difference starts from zero. A smoothed change lets it grow over tens of
+    // milliseconds; a jump makes it as bright as the music at once. The measure: the
+    // high-frequency energy (second difference) of the difference in the first 3 ms,
+    // against that of the steady world (dB).
+    const auto suddenness = [](const Audio& changed, const Audio& base, double from) {
+        double diff = 0, ref = 0;
+        const auto begin = std::size_t(from * base.rate), end = begin + std::size_t(0.003 * base.rate);
+        for (std::size_t i = begin; i < end && i < base.l.size(); ++i)
+            for (const auto* ch : { &base.l, &base.r }) {
+                const auto& x = *ch;
+                const auto& y = ch == &base.l ? changed.l : changed.r;
+                const double d2 = (y[i] - x[i]) - 2.0 * (y[i - 1] - x[i - 1]) + (y[i - 2] - x[i - 2]);
+                const double x2 = x[i] - 2.0 * x[i - 1] + x[i - 2];
+                diff += d2 * d2;
+                ref += x2 * x2;
+            }
+        return 10.0 * std::log10((diff + 1.0e-30) / (ref + 1.0e-30));
+    };
+    // The largest rise of the 20 ms level in [from, to) s.
+    const auto rise = [](const Audio& a, double from, double to) {
+        const auto w = std::size_t(0.02 * a.rate);
+        double top = -240, previous = 0;
+        bool first = true;
+        for (auto start = std::size_t(from * a.rate); start + w <= std::min(a.l.size(), std::size_t(to * a.rate)); start += w) {
+            double sum = 0;
+            for (std::size_t i = start; i < start + w; ++i) sum += 0.5 * (a.l[i] * a.l[i] + a.r[i] * a.r[i]);
+            const double e = 10.0 * std::log10(sum / double(w) + 1.0e-12);
+            if (!first) top = std::max(top, e - previous);
+            previous = e;
+            first = false;
+        }
+        return top;
+    };
+    // The change lands off the beat grid (between sixteenths at 120 bpm), so no note
+    // starts with it. A whole number of 512-sample blocks.
+    const double at = 512.0 * 283.0 / 48000.0, length = 6.0;
+    const auto steady = world({})->render(length);
+    // The detector itself: an unsmoothed 3 dB drop of the whole mix, and a 1.5 dB one,
+    // are caught.
+    const double threshold = -20.0;
+    for (const float drop : { 0.708f, 0.841f }) {
+        auto clicked = steady;
+        for (auto i = std::size_t(at * clicked.rate); i < clicked.l.size(); ++i) {
+            clicked.l[i] *= drop;
+            clicked.r[i] *= drop;
+        }
+        const double x = suddenness(clicked, steady, at);
+        s.metric("detector: an unsmoothed " + fmt(-toDb(drop)) + " dB step, suddenness", x, " dB");
+        s.check(x > threshold, "the click detector catches an unsmoothed " + fmt(-toDb(drop)) + " dB step in the mix", fmt(x) + " dB");
+    }
+    struct Step {
+        std::string id;
+        float to;
+        std::string name;
+    };
+    const std::vector<Step> steps {
+        { "intensity", 1.0f, "Score Intensity 50 -> 100 %" }, { "p2_type", float(Tavern), "slot 2: Megacity -> Tavern" },
+        { "p1_level", -24.0f, "Castle level 0 -> -24 dB" }, { "p1_mute", 1.0f, "Castle mute" }, { "p2_solo", 1.0f, "Megacity solo" },
+        { "p1_character", 2.0f, "Castle Character 1 -> 3" }, { "p2_character", 2.0f, "Megacity Character 1 -> 3" },
+        { "p3_character", 1.0f, "Forest Character 1 -> 2" }, { "p4_character", 2.0f, "Nebula Character 1 -> 3" },
+        { "p1_activity", 1.0f, "Castle Activity -> 100 %" }, { "p2_tension", 1.0f, "Megacity Tension -> 100 %" },
+        { "p1_tone", 1.0f, "Castle Tone -> bright" }, { "p1_distance", 1.0f, "Castle distance -> far" }, { "p1_pan", 1.0f, "Castle pan -> right" },
+        { "p2_e1", 0.0f, "Megacity instrument 1 level -> 0" }, { "p2_e4_on", 0.0f, "Megacity drums off" },
+        { "p1_e2_rev", 1.0f, "Castle instrument 2 reverb -> 100 %" }, { "p1_e2_revtype", 2.0f, "Castle instrument 2 reverb type" },
+        { "p1_e2_dlytype", 3.0f, "Castle instrument 2 delay type" }, { "p1_e2_char", 5.0f, "Castle instrument 2 character -> Lo-Fi" },
+        { "temperature", 1.0f, "Temperature -> scorching" }, { "danger", 1.0f, "Danger -> hostile" }, { "scale", 1.0f, "Scale -> colossal" },
+        { "root", 7.0f, "Root D -> G" }, { "mood", 3.0f, "Mood Minor -> Phrygian" }, { "master", -12.0f, "Master Level -> -12 dB" },
+        { "width", 0.0f, "Width -> mono" }, { "spacemix", 1.0f, "Space Mix -> 100 %" }, { "power", 0.0f, "Power off" } };
+    int smooth = 0;
+    std::string rough;
+    for (const auto& step : steps) {
+        auto changed = world({});
+        auto a = changed->render(at);
+        changed->set(step.id, step.to);
+        const auto tail = changed->render(length - at);
+        a.l.insert(a.l.end(), tail.l.begin(), tail.l.end());
+        a.r.insert(a.r.end(), tail.r.begin(), tail.r.end());
+        const auto target = world({ { step.id, step.to } })->render(length);
+        const double click = suddenness(a, steady, at);
+        const double jump = rise(a, at - 0.02, at + 0.5), jumpRef = std::max(rise(steady, at - 2.0, length), rise(target, at - 2.0, length));
+        const bool okay = click < threshold && jump <= jumpRef + 3.0 && measure(a, 0.0).finite;
+        s.metric(step.name + ": suddenness", click, " dB");
+        s.metric(step.name + ": largest 20 ms rise against either state", jump - jumpRef, " dB");
+        if (okay) ++smooth;
+        else rough += step.name + " (" + fmt(click) + " dB sudden, " + fmt(jump - jumpRef) + " dB rise); ";
+    }
+    s.check(smooth == int(steps.size()), "a step in any of these controls is smooth: no click, no level jump beyond the world's own",
+            std::to_string(smooth) + " of " + std::to_string(steps.size()) + ": " + rough);
+}
+
 
 // The world theme and the Place overlays, through the real editor and its pixels.
 void testOverlays(Suite& s, const juce::String& snapshotPath) {
@@ -3048,6 +3416,8 @@ int main(int argc, char** argv) {
     if (run("distinct")) testDistinct(s);
     if (run("effects")) testEffects(s);
     if (run("intensity")) testIntensity(s);
+    if (run("capture")) testCapture(s);
+    if (run("automation")) testAutomation(s);
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);
     if (run("overlays")) testOverlays(s, snapshot);

@@ -17,6 +17,13 @@ struct MidiTarget {
     float danger = 0;   // the progression a Follow Chords pattern is written out against
 };
 
+constexpr int ticksPerBeat = 960;
+
+// Adds the pattern's notes to a track (960 ticks per beat from beat 0): repeated over
+// `beats` beats (notes running past the end are cut there), or one pass as written when
+// `beats` <= 0. Follow Chords patterns follow the shared chord progression throughout.
+void appendNotes(juce::MidiMessageSequence& track, const Pattern& pattern, const MidiTarget& target, double beats, int channel);
+
 // The pattern's notes over one pass, as a one-track MIDI file (960 ticks per beat).
 // Follow Chords patterns are written out on the shared chord progression from bar 1.
 juce::MidiFile toMidi(const Pattern& pattern, const MidiTarget& target);

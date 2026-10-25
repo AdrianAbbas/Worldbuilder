@@ -62,7 +62,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 7 PREVIEW";
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 8 PREVIEW";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -238,6 +238,8 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     dice.setTooltip("Roll a new seed for the whole world");
     dice.onClick = [this] { setParam(PSeed, float(juce::Random::getSystemRandom().nextInt({ 1, 10000 }))); };
     addAndMakeVisible(dice);
+    capture = std::make_unique<ui::CapturePanel>(processor);
+    addAndMakeVisible(*capture);
 
     patterns = std::make_unique<ui::PatternEditor>(processor);
     patterns->onClose = [this] {
@@ -529,6 +531,9 @@ void WorldbuilderEditor::resized() {
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })
         knobFor[std::size_t(param)]->setBounds(f.removeFromRight(92).withSizeKeepingCentre(78, 66));
+    // Capture (render and scene MIDI) in the space between.
+    f.removeFromLeft(14);
+    capture->setBounds(f.withTrimmedRight(8).withWidth(std::min(f.getWidth() - 8, 214)));
     overlays->setBounds(getLocalBounds());
     frameOutlines.clear();
     overlayKeepClear.clear();

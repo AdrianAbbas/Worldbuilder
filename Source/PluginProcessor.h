@@ -1,5 +1,6 @@
 #pragma once
 #include "Parameters.h"
+#include "Capture/Capture.h"
 #include "Patterns/PatternStore.h"
 #include "WorldEngine.h"
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -45,6 +46,10 @@ public:
     wb::PatternStore patterns { engine };
     std::atomic<float> cpuLoad { 0 };
 
+    // A snapshot of the world as it sounds now, for offline renders and scene MIDI
+    // (message thread): the parameters, the patterns, the host's tempo and sample rate.
+    wb::capture::Scene captureScene();
+
     // The Place type in each slot, from the parameters.
     std::array<int, wb::placeSlots> slotTypes() const;
 
@@ -57,7 +62,7 @@ private:
     double rate = 48000;
     int64_t expectedHostPosition = -1;
     bool hostWasPlaying = false;
-    float hostBpm = 0;
+    std::atomic<float> hostBpm { 0 };
     bool gateOpen = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorldbuilderProcessor)

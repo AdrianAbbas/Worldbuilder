@@ -500,3 +500,39 @@ Nebula). For each, add it alone, then try its three Characters:
 - [ ] Automate it in GarageBand over a few bars; the cue builds smoothly, and a
   bounce matches playback.
 - [ ] Double-click resets it to 50 %. An older project opens at 50 % and sounds as it did.
+
+## Milestone 8 check: capture and export
+
+Load the CI build in GarageBand with two or three Places (Transport mode). The new
+**CAPTURE** section is in the footer, between OVERLAYS and the output knobs.
+
+**RENDER**
+- [ ] Choose 8 bars and Mix, click RENDER: it shows its progress and turns into
+  CANCEL while it renders; the plugin keeps playing; then "Rendered" and WAV lights up.
+- [ ] Drag **WAV** onto an empty part of the tracks area (or an audio track at bar 1).
+  What happens? (JUCE's external file drag; untested in GarageBand and Logic.)
+- [ ] Click **WAV** instead: a save dialog. Save, then drag the file in from Finder at
+  bar 1. Mute WORLDBUILDER's track and play: the audio file sounds the same as the
+  plugin did from bar 1, in time with the song, and ends exactly at bar 9.
+- [ ] Stems: choose Stems, RENDER; clicking WAV asks for a folder and writes one file
+  per Place plus "Environment". Together they sound like the mix.
+- [ ] Try another tempo (e.g. 90 bpm) and a 44.1 kHz and a 48 kHz project: the render
+  follows the tempo and rate.
+- [ ] Click RENDER again while it runs: it cancels.
+
+**MIDI**
+- [ ] Click **MIDI**: a save dialog; save the .mid file and drag it onto the tracks
+  area: one track per instrument, named "Place - Instrument", starting at bar 1 and
+  ending at the chosen length, in the song's tempo.
+- [ ] Drag **MIDI** straight out of the plugin onto the tracks area: what happens?
+- [ ] Put one of those regions on a GarageBand instrument: the notes are the
+  instrument's part, in key.
+- [ ] Drop the saved .mid file (or one track exported from GarageBand) onto a Pattern
+  Editor tab: the notes come back.
+
+**Host sync and automation**
+- [ ] Play the same 4 bars several times from the same position, and export the song:
+  the export matches playback (Transport mode).
+- [ ] Automate a few controls over a cue, with steps as well as ramps: Score
+  Intensity, a Place's level and mute, a Character switch, Activity or Tension, Root.
+  Nothing clicks or jumps; the export matches playback.

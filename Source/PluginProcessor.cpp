@@ -111,9 +111,22 @@ EngineControls WorldbuilderProcessor::readControls() const noexcept {
             fx.width = field(fxField(e, FxWidth));
         }
     }
-    c.hostBpm = hostBpm;
+    c.hostBpm = hostBpm.load(std::memory_order_relaxed);
     c.gate = gateOpen;
     return c;
+}
+
+capture::Scene WorldbuilderProcessor::captureScene() {
+    capture::Scene scene;
+    scene.controls = readControls();
+    scene.sampleRate = rate;
+    const float bpm = hostBpm.load(std::memory_order_relaxed);
+    scene.bpm = bpm >= 20.0f && bpm <= 999.0f ? bpm : WorldEngine::defaultBpm;
+    scene.controls.hostBpm = scene.bpm;
+    scene.controls.gate = true;
+    patterns.syncTypes(slotTypes());
+    for (int slot = 0; slot < placeSlots; ++slot) scene.patterns[std::size_t(slot)] = patterns.get(slot);
+    return scene;
 }
 
 void WorldbuilderProcessor::prepareToPlay(double sampleRate, int) {
@@ -156,7 +169,7 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         if (const auto position = playHead->getPosition()) {
             hostHasTransport = position->getBpm().hasValue() || position->getPpqPosition().hasValue();
             transportMode = transportMode && hostHasTransport;
-            if (const auto bpm = position->getBpm(); bpm.hasValue() && std::isfinite(*bpm) && *bpm >= 20.0 && *bpm <= 999.0) hostBpm = float(*bpm);
+            if (const auto bpm = position->getBpm(); bpm.hasValue() && std::isfinite(*bpm) && *bpm >= 20.0 && *bpm <= 999.0) hostBpm.store(float(*bpm), std::memory_order_relaxed);
             if (position->getIsPlaying())
                 if (const auto samples = position->getTimeInSamples()) {
                     playing = true;

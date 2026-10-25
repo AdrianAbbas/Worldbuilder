@@ -7,8 +7,8 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 7 (26 Places of six instruments, each with its own instrument
-effects; Score Intensity).**
+**Status: Milestone 8 (26 Places of six instruments, each with its own instrument
+effects; Score Intensity; render to WAV and scene MIDI export).**
 These work now:
 - **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
@@ -50,6 +50,11 @@ These work now:
   a calm bed (0 %) through the Places as set (50 %) to a climax (100 %): busier,
   tenser, brighter and louder, each Place on its own curve. It glides rather than
   jumps; automate it to shape a cue over time.
+- **Capture** (the footer's CAPTURE section): **RENDER** the current world offline to a
+  WAV file (the full mix, or stems: one per Place plus the environment), and **MIDI**
+  exports the patterns of every active instrument as one multi-track MIDI file. Both
+  from bar 1 at the host's tempo, for 4 to 64 bars. See
+  [Getting WORLDBUILDER into your song](#getting-worldbuilder-into-your-song).
 - **Play Mode.** Transport (the default) plays only while the host plays, from silence
   and locked to the song position, so exports and bounces always contain it. Free
   plays all the time.
@@ -71,21 +76,61 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Now: Milestone 7, the sci-fi Places and Score Intensity. Next (Direction Update 5):
-capture and export, rendering audio and scene MIDI (8), Locations and Journeys (9), the
-visual revamp and planet types (10), pro features, presets and release (11). See
-[docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
-[docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
-[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md),
-[docs/DIRECTION_UPDATE_2.md](docs/DIRECTION_UPDATE_2.md),
-[docs/DIRECTION_UPDATE_3.md](docs/DIRECTION_UPDATE_3.md) and
-[docs/DIRECTION_UPDATE_4.md](docs/DIRECTION_UPDATE_4.md); later files override earlier
+Now: Milestone 8, capture and export. Next (Direction Update 5): Locations and
+Journeys (9), the visual revamp and planet types (10), pro features, presets and
+release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
+plan is in [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
+[docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) to
+[docs/DIRECTION_UPDATE_5.md](docs/DIRECTION_UPDATE_5.md); later files override earlier
 ones. How the instruments are modelled, and the acoustics data behind them:
 [docs/INSTRUMENT_NOTES.md](docs/INSTRUMENT_NOTES.md).
 
-**GarageBand and exports:** in Play Mode Free, GarageBand exports a song only up to
-its last region, so use Transport mode (the default) or put a region over the whole
-section.
+## Getting WORLDBUILDER into your song
+
+WORLDBUILDER writes its own notes (the Pattern Editor), so there is no MIDI part to
+record. Three ways to get it onto the timeline:
+
+1. **Play it in Transport mode (the default) and let the host bounce it.** In
+   Transport mode it plays only while the host plays, starts from silence and is
+   locked to the song position: the same position always sounds the same, so playback,
+   exports and bounces match. This is the way to keep **automation** (see below).
+2. **RENDER** (footer, CAPTURE): choose the length (4-64 bars) and **Mix** or
+   **Stems**, then click RENDER. It renders offline, faster than real time, while the
+   plugin keeps playing; click again to cancel. The result is exactly what the host
+   plays from bar 1 in Transport mode, at the host's tempo and sample rate (24-bit
+   WAV, exactly the bars' length, so it loops cleanly; the reverb tail is not added).
+   Then drag **WAV** onto a track at bar 1, or click it to save the file (a folder for
+   stems). Stems are one file per Place plus one for the environment layers; each is
+   rendered alone through the master section, so together they come to about, not
+   exactly, the mix. A render uses the current settings: automation is not included.
+3. **MIDI** (footer, CAPTURE): the patterns of every active instrument as one MIDI
+   file, one track per instrument named "Place - Instrument", from bar 1 at the host's
+   tempo for the chosen length. Drag it onto the tracks area, or click to save it.
+   The notes are the patterns as written (randomness, Evolve and swing are the
+   plugin's playing and are not written). Use it to double a part with another
+   instrument, or edit it and drop it back onto a Pattern Editor tab. The single
+   pattern DRAG MIDI in the Pattern Editor still works too.
+
+**GarageBand** has no bounce-in-place, and in Play Mode Free it exports a song only up
+to its last region. So: keep Play Mode on Transport and Share → Export Song, or RENDER
+and drag the WAV (or save it and drag it in from Finder) onto an audio track at bar 1.
+For MIDI, save the file and drag it onto the tracks area (GarageBand makes a track per
+MIDI track). Whether GarageBand accepts files dragged straight out of a plugin window
+is not yet tested; saving always works.
+
+**Logic Pro:** Transport mode, then **Bounce in Place** (Track → Bounce and Replace, or
+Ctrl-B) or **File → Bounce → Project or Section**; or RENDER and drag the WAV or stems
+into the arrange area; or drag the MIDI onto the tracks area. Separate outputs per
+Place (multi-output) arrive in a later milestone.
+
+**Automation replaces MIDI control.** Every control that shapes a cue is a host
+parameter and responds smoothly when automated: Score Intensity, each Place's level,
+mute and solo, its Character, Activity, Tension, Tone, distance and pan, each
+instrument's level, switch and effects, the World Controls, Root and Mood, Master
+Level and Power (Locations and the Planet follow in later milestones). In GarageBand,
+show automation (A) and choose WORLDBUILDER's parameters on the track; in Logic, the
+same in the track's automation lane. Draw Score Intensity rising into a climax, bring a
+Place in by its level, or switch Characters at a scene change.
 
 ## Install (macOS)
 

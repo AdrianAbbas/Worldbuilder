@@ -5,8 +5,8 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Current work: Milestone 7** (six sci-fi Places and Score Intensity, Direction
-Update 5). Its progress checklist is at the top of the [Milestone 7 section](#milestone-7-sci-fi-places-and-score-intensity-2026-10-25)
+**Current work: Milestone 8** (capture and export, Direction Update 5). Its progress
+checklist is at the top of the [Milestone 8 section](#milestone-8-capture-and-export-2026-10-25)
 at the end of this file; a resumed session continues from the first unticked item.
 
 ---
@@ -2495,3 +2495,130 @@ and Journeys, 10 visual revamp and planet types, 11 pro features, presets and re
   speeds up a little with Intensity (as Activity always did).
 - Carried over from Milestone 6: the Machinery and Danger checks at 0.5 dB; the
   `push-access-check` branch on GitHub can be deleted.
+
+---
+
+## Milestone 8: capture and export (2026-10-25)
+
+Direction Update 5, Milestone 8: get WORLDBUILDER's output into the song. Host MIDI
+input zones are cancelled. Milestone 7 (commit ed0dd49) is being tested by the
+developer in GarageBand while this runs. Unattended: decisions are recorded here.
+
+### Progress checklist
+
+Ticked when committed and pushed. A resumed session starts at the first unticked item.
+
+- [x] 1. Capture core (`Source/Capture`): scene snapshot, offline render (mix or stems) to WAV, scene MIDI; tests
+- [x] 2. CAPTURE section in the footer: bars, Mix/Stems, MIDI (drag or save), RENDER (background, cancel), WAV (drag or save)
+- [x] 3. Host sync and automation audit: every important control automatable and smooth; tests; fixes
+- [ ] 4. README "Getting WORLDBUILDER into your song", MANUAL_TEST check, handoff, final push without `[skip ci]`
+
+### Decisions
+
+- **A render is Transport playback from bar 1, offline.** `capture::render` builds its
+  own `WorldEngine`, gives it the slots' patterns, and restarts it at song position 0
+  exactly as the processor does when the host starts playing in Transport mode. So a
+  render is sample for sample what the host plays from bar 1 (tested, at another
+  block size). It runs on a background thread at low priority; the plugin keeps
+  playing. Parameters are held at their current values: host automation is not part
+  of a render (bounce in the host for that; Transport mode makes bounces contain
+  WORLDBUILDER).
+- Length: 4, 8, 16, 24, 32 or 64 bars of 4/4 at the host's tempo (the patterns and the
+  chord progression count in 4/4), exactly that long (it loops cleanly; the reverb
+  tail is not added). The file is 24-bit stereo WAV at the host's sample rate.
+- **Stems:** one file per audible Place (the mix's mutes and solos apply) plus one for
+  the environment layers. Each stem is its own render with everything else muted, so
+  it goes through the master section alone (glue, limiter): the stems add up to about
+  the mix (measured +0.9 dB summed power for three Places), not exactly.
+- Files are written into `<temp>/WORLDBUILDER/Capture` (replaced by the next render)
+  and streamed to disk as they render, so 64 bars at 192 kHz need no large buffers.
+- **Scene MIDI** is the patterns as written (one pass repeated over the bars, from bar
+  1 at the host's tempo), one track per instrument named "Place - Instrument", a tempo
+  track first, every track ending at the last bar. Randomness, Evolve and swing are
+  not written (they are the plugin's playing, not the notes). Generated patterns are
+  taken from a fresh engine started at bar 1 (the patterns a render plays), so the
+  export works even while the host is stopped in Transport mode (the live engine is
+  then silent and reports nothing). Instruments switched off, at zero level or muted
+  in the Pattern Editor, and muted Places, are left out. Drums are on channel 10 (GM
+  notes), everything else on channel 1.
+- MIDI fixes found by the round-trip test (they also improve DRAG MIDI): two notes of
+  the same pitch overlapping are written as the first ending where the second starts
+  (MIDI cannot hold both); importing a file that marks its tracks' end (as the scene
+  export does) keeps that length instead of cutting it at the last note.
+- A Place with Sync off plays at its own free tempo; its MIDI is still written at the
+  host tempo (it will not line up). Sync is on by default.
+- Drag-out uses JUCE's external file drag, as DRAG MIDI does; whether GarageBand
+  accepts files dropped from a plugin window is still untested. Clicking MIDI or WAV
+  saves through a file dialog instead (a folder for stems).
+
+### What was built
+
+- `Source/Capture/Capture.{h,cpp}`: `Scene`, `lengthInSamples`, `passes`, `render`,
+  `renderToWav`, `sceneTracks`, `sceneMidi`. `WorldbuilderProcessor::captureScene()`
+  takes the snapshot (parameters, patterns, host tempo and rate); the host tempo is now
+  an atomic (the editor reads it).
+- `Source/Patterns/PatternMidi`: `appendNotes` (one pass, or repeated over a length),
+  used by both DRAG MIDI and the scene export.
+- `Source/UI/CapturePanel.{h,cpp}`: the footer's CAPTURE section between OVERLAYS and
+  the output knobs. MIDI and WAV are pills with an arrow: drag them out, or click to
+  save. RENDER shows its progress and turns into CANCEL while it runs; a status line
+  says what happened ("21 MIDI tracks", "Rendered", "5 stems").
+- The header reads Milestone 8.
+
+### Tests (`--only capture`, and the editor group)
+
+- the scene holds tempo, rate, Places and edited patterns; 4 bars at 120 bpm are
+  exactly 8 s; the mix is audible and finite; faster than real time (about 4.5x here
+  for three Places on this container's slow cores); deterministic at any block size;
+- **the render matches real-time Transport playback from bar 1 sample for sample;**
+- stems: one per audible Place and the environment, none for a muted Place, solos
+  followed, each audible, the sum within 3 dB of the mix;
+- the WAV file: 24-bit, the host's rate, exactly the bars' length, the same samples; a
+  cancelled render leaves no file;
+- scene MIDI: one named track per patterned instrument of every active Place, the
+  edited pattern where there is one, the generated ones equal to what the slots play;
+  the file has a tempo track at the host tempo and every track runs from bar 1 to the
+  last bar; every track round-trips into the Pattern Editor (imported, then written
+  again, it gives the same notes); switched-off and muted instruments and muted Places
+  are left out;
+- editor: the CAPTURE section sits in the footer; RENDER writes the stems through the
+  panel, can be cancelled; MIDI writes the file.
+
+### Host sync and automation audit (`--only automation`)
+
+- **Host sync.** Transport mode (the default) already restarts the world from a fixed
+  state at every start or locate, so the same song position always gives the same
+  sound (the Play Mode test, from Milestone 4); the new capture test adds that an
+  offline render equals Transport playback from bar 1 sample for sample, at a
+  different block size. Nothing needed changing. Free mode is not repeatable by
+  design (the world keeps evolving while the host is stopped); the README says to use
+  Transport for bounces. A render holds the tempo constant: a song with tempo changes
+  should be bounced by the host instead.
+- **Automatable.** Every control the direction lists is a host parameter: Score
+  Intensity; each slot's Place, level, mute, solo, Character, Activity, Tension, Tone,
+  distance and pan; each instrument's level, switch and effects; all World Controls,
+  Root, Mood, Master Level, Width, Space Mix and Power (checked by the test). The
+  Planet (Milestone 10) and Locations (Milestone 9) will be added as parameters
+  when they exist. An instrument's mute and solo in the Pattern Editor are pattern
+  data, not host parameters (as before); its level and switch are.
+- **Smooth.** The test plays a four-Place world (Castle, Megacity, Forest, Nebula) in
+  Transport mode and steps one control at a time, off the beat grid, comparing with
+  the same world unchanged (identical up to the step): 29 steps (Score Intensity,
+  changing a slot's Place, level, mute, solo, Character in four Places, Activity,
+  Tension, Tone, distance, pan, an instrument's level and switch, reverb amount and
+  type, delay type, character effect, Temperature, Danger, Scale, Root, Mood, Master,
+  Width, Space Mix, Power). Two measures:
+  - suddenness: how bright the difference is in the first 3 ms against the music
+    itself. A smoothed change grows from nothing; a jump is as bright as the music at
+    once. The test first checks the detector: an unsmoothed 3 dB and 1.5 dB step of
+    the whole mix read -9.9 and -15.1 dB; the limit is -20 dB. Every control reads
+    -25 dB or below (the closest: a Place solo -25, Master -32, Space Mix -41; most
+    -45 to -110);
+  - level: the largest rise of the 20 ms level in the half second after the step is
+    within 3 dB of the largest rise either steady world has on its own.
+  All pass with the code as it was: every control was already smoothed (the slots'
+  gains and settings, the World Controls at 0.25 s, Score Intensity 0.5 s, Place
+  switches by a fade, Characters through the per-voice glides). No fix was needed.
+  The first detector (the sharpest sample step against either steady world) could not
+  see an unsmoothed 6 dB step (the music's own transients are sharper) and was
+  replaced before it was relied on.

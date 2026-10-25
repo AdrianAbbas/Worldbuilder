@@ -4,6 +4,7 @@
 // and the four Place strips on the right; key, quality, seed and output below.
 // The full Living Globe and resizable layout arrive in Milestone 6.
 #include "PluginProcessor.h"
+#include "UI/CapturePanel.h"
 #include "UI/PatternEditor.h"
 #include "UI/PlaceArt.h"
 #include "UI/PlaceOverlays.h"
@@ -31,6 +32,7 @@ public:
     // Opens the Pattern Editor on a slot's Place (on `element`, or its first pattern).
     void openPatterns(int slot, int element = -1);
     wb::ui::PatternEditor& patternEditor() { return *patterns; }
+    wb::ui::CapturePanel& capturePanel() { return *capture; }
     // Runs the animation (theme, overlays) on by `seconds`, as the timer does.
     void settle(float seconds);
     wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
@@ -123,6 +125,7 @@ private:
     std::unique_ptr<SliderAttachment> seedAttachment;
     juce::TextButton dice { "New world" };
     std::unique_ptr<wb::ui::PatternEditor> patterns;
+    std::unique_ptr<wb::ui::CapturePanel> capture;
     juce::ComboBox playMode;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
     juce::ComboBox overlayChoice;
