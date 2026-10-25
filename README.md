@@ -7,13 +7,13 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 5c (fourteen Places of six instruments, 20-Place selector, world
-theme and Place overlays).**
+**Status: Milestone 5 complete (all 20 Places of six instruments, 20-Place selector,
+world theme and Place overlays).**
 These work now:
-- **Places**, the centrepiece. Up to four play at once. Fourteen are built: Castle,
+- **Places**, the centrepiece. Up to four play at once. All 20 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
-  Ruins, Spaceship Interior, Biodome, Sea Ship and Suburbs (the selector already lists
-  all 20; the other 6 arrive in Milestone 5d).
+  Ruins, Spaceship Interior, Biodome, Sea Ship, Suburbs, Mall, Military Camp, Beach,
+  Desert, Palace and Tavern.
   - Each is an ensemble of **six instruments**, for example the Castle's brass drone,
     tuned bells, horn calls, timpani, harp and wordless choir, or the Factory's tuned
     anvil, pistons, steam, bowed metal, gear clicks and furnace bass.
@@ -21,11 +21,14 @@ These work now:
   - Every instrument has its own pattern, level, on/off switch, mute and solo.
   - Each Place has its own effect character (stone hall and tape echo; gritty
     saturation and a comb resonance tuned to the chord; a ring-modulated shimmer and a
-    warped delay; a long dark cave and a slapback...).
+    warped delay; a long dark cave and a slapback; a glossy, detuned mall that slows
+    into vaporwave; a gritty field radio...).
   - Each Place colours the interface and can decorate its edges with an animated
     overlay (grass, ivy and fireflies; girders, pipes and steam; neon signs and a
     night skyline; vines and falling leaves; tendrils and glowing pods; gold trim and
-    incense; crystals and dripping water...), blended when several play. Overlays:
+    incense; crystals and dripping water; neon storefronts; barbed wire and sandbags;
+    drifting sand and lanterns; chandeliers and velvet drapes...), blended when
+    several play. Overlays:
     Full, Subtle or **Off (the default)**.
   - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
     host tempo, or the Place's own free tempo) and a Seed.
@@ -63,8 +66,7 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Next: the other 6 Places (Milestone 5d), MIDI control from the host's piano roll
-(6), Locations and Journeys (7), the visual overhaul (8), presets and release (9). See
+Next: MIDI control from the host's piano roll (6), Locations and Journeys (7), the visual overhaul (8), presets and release (9). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md),

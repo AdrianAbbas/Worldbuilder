@@ -32,8 +32,8 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
     "empty", "castle", "village", "spaceport", "factory", "city", "forest", "hive", "temple", "cavern", "ruins", "spaceship",
     "biodome", "seaship", "suburbs", "mall", "military", "beach", "desert", "palace", "tavern"
 };
-// Which Places sound yet. The others are listed (cards, names, instruments) and arrive
-// in Milestone 5d; until then they are silent and their cards cannot be added.
+// Which Places sound (all 20 since Milestone 5d). An unbuilt Place would be listed but
+// silent, and its card could not be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
                                                                      true, true, true, true, true, true, true, true, true, true };
 // The sub-milestone each Place arrives in (shown on its card).

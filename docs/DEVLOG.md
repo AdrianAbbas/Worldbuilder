@@ -1608,3 +1608,168 @@ vaporwave detune option (Dead Mall). The "unbuilt Place" checks will need a new 
   so about 45 MB with 20.
 - Castle, Village and Spaceport overlays are still the heavy ones (Milestone 8).
 - The overlays are still designed for the fixed 1160 x 720 layout.
+
+## Milestone 5d: Places 15-20, Milestone 5 complete (2026-10-25)
+
+5c is tested in GarageBand and everything works. This session: Mall, Military Camp,
+Beach, Desert, Palace and Tavern, each with six instruments, three Characters, an effect
+character and an efficient overlay, built the same way as 5b and 5c. Each Place was
+committed and pushed to main on its own once its tests passed.
+
+### Working conditions
+
+Linux cloud container, no Mac. Linux build (VST3, Standalone, tests) with GCC,
+**2249 checks pass, 0 fail** (22 minutes here). Sound checked by measurement
+(`--probe-places`, the tests), **not by ear**. Overlay snapshots looked at, alone and
+four at once. Clang was not run.
+
+### What was built
+
+**Shared effects** (`PlaceFx.h`)
+- `Detune`: a gentle pitch shifter (two Hann-crossfaded read heads gliding through a
+  50 ms delay), each side shifted by its own few cents and mixed with the dry signal,
+  with an optional slow wow that bends the shift. Mall: a slight, glossy detune
+  (-7/+7 cents); Dead Mall: the vaporwave option (-28/-22 cents, mostly wet, wobbling).
+- `Radio`: a field radio's band (resonant high-pass and low-pass), driven into soft
+  clipping, with a faint flutter. Military Camp.
+
+**The new Places** (one class each, deriving from `EnsemblePlace`; free tempo in brackets)
+- **Mall** (92, suggests Lydian): E-Piano (FM), Vibraphone (a metal bar; its motor
+  tremolo is applied to its bus in the mix), PA Chimes (three-note announcement dings,
+  one always in the eight bars), Escalator (a low hum whose steps tick on the beat),
+  Fountain (high tuned spray), Drums (kick, brushed snare, hat). Busy Weekend, Empty
+  Night, Dead Mall (half time, slowed, detuned flat and wobbling in a dim long hall).
+  Effect: a big bright atrium and the detune.
+- **Military Camp** (112): Snare March (snare and rim), Bugle (only a bugle's notes:
+  root, third, fifth, octave), Low Drums, Radio Blips (Morse-like groups), Clanks
+  (struck steel, partials a quarter-tone off; chain rattles), Strings (bowed, short
+  strokes). Morning Drill (march, reveille), On Alert (driving sixteenths, a call to
+  arms), Night Watch (taps, heard over the radio). Effect: the radio on the blips (and
+  the night's bugle), a tight room and a slapback.
+- **Beach** (100, suggests Mixolydian): Guitar (nylon pluck), Steel Drum (note, octave,
+  twelfth, a quarter-tone-off shimmer), Waves, Shaker and clave, Breeze Pad, Gulls.
+  Tropical Day (a lilting strum, a 3-2 son clave), Sunset, Stormy Shore. Effect: an
+  open airy space; a chorus on the guitar, steel drum and pad.
+- **Desert** (88, suggests Phrygian): Oud, Frame Drums (doum, tek, riq), Ney Flute,
+  Tanpura (a buzzing drone whose resonant filter brightens as the strings are plucked
+  round, a jawari-like shimmer), Wind, metal Chimes. Oasis (maqsum), Endless Dunes (a
+  slow taqsim), Sandstorm (ayoub, tremolo oud). Effect: a wide dry space and a long
+  sparse tape echo (a dotted half) on the oud, ney and chimes.
+- **Palace** (96, suggests Major): Harpsichord, Strings (an ensemble pad), Fanfare,
+  Glockenspiel, Timpani, Choir. Grand Ball is a **waltz**: its harpsichord, glockenspiel
+  and timpani patterns are three 4/4 bars long, holding four 3/4 bars of 12 sixteenths.
+  Throne Room (rolled chords, fanfares answered, timpani rolls), Fallen Palace. Effect:
+  a grand hall.
+- **Tavern** (116, suggests Dorian): Lute Strum, Frame Drum, Fiddle (bowed, a tune over
+  its open string droned an octave down), Glass Clinks, Squeezebox, Stomps and claps.
+  Lively Night (a reel), Quiet Corner, Brawl. Effect: a warm wooden room and tape
+  warmth (`Warmth`).
+- Every new Place ends in the master Tone filter and the presence shelf the Spaceship
+  and Suburbs introduced (Tone and Era), and plays less of itself dry as Scale grows.
+
+**Overlays** (`OverlayArt.cpp`, still shapes plus sprite movers at 15 fps, as in 5b-5c)
+- Mall: pastel neon tubes bent round the corners, storefronts with signs, palms, a
+  polished floor; glints, flickering signs, a fountain, a light sweeping the floor.
+- Military Camp: barbed wire, camouflage netting, tents, a flag, a radio mast, crates,
+  sandbags; embers and smoke, a fluttering flag, blinking lamps, a searchlight.
+- Beach: sand, shells and starfish, surf and foam, palms, a low sun, an umbrella;
+  glints, foam bubbles, gulls.
+- Desert: dunes and heaped sand, sandstone trim, brass lanterns, a caravan and an oasis
+  palm under a pale sun; drifting sand, flickering lanterns, a glowing sun.
+- Palace: gilded moulding with scrolls, velvet drapes, marble columns, chandeliers, a
+  chequered floor; candles, glinting crystals, falling gold motes.
+- Tavern: oak beams, candles, barrels, floorboards and a hearth, tankards and bottles,
+  an INN sign; flickering candles and hearth, embers and smoke.
+
+**Other**
+- `placeImplemented` is true for all 20 Places. The "unbuilt Place" checks (the card
+  that cannot be added, the silent unbuilt Place) now look for any unbuilt Place and
+  are skipped when there is none.
+- The header reads MILESTONE 5D PREVIEW.
+
+### Decisions
+
+- **Vaporwave without leaving the key**: Dead Mall's detune stays within about 30
+  cents (plus a wobble of 9-19), so every note keeps its pitch class; the slowdown is
+  also in the patterns (half time, longer notes) and the darker, longer hall.
+- **A waltz on a 4/4 grid**: three-bar patterns of four 3/4 bars keep every note on
+  the host's sixteenth grid (the tempo tests hold) and the pattern loops cleanly.
+- **The vibraphone's motor is a bus tremolo**, not a per-voice one: one sine per sample
+  for the whole instrument, as a real motor turns all the discs at once.
+- **The bugle plays only a bugle's notes** (root, third, fifth, octave) in every Mood.
+- Mall, Beach, Desert, Palace and Tavern suggest a Mood (Lydian, Mixolydian, Phrygian,
+  Major, Dorian); the user's choice still wins. The Military Camp suggests none.
+
+### Problems and fixes
+
+- Mall: Population gave 1.15x the notes (needs 1.2x): the Busy Weekend hats were fixed
+  eighths; they now follow Activity.
+- Military: the first probe ran hot (-29.7 dBFS, the radio blips loudest); levelled.
+- Beach: Population 1.197x and Danger 0.63 dB (needs 1): the tropical shaker now
+  follows Activity, and Tension raises the surf, darkens the beach and pulls the steel
+  drum back.
+- Desert: Sandstorm's key fit was 4.4 dB (needs 5): a narrower storm wind, less of it,
+  and a duller tremolo oud (7+ dB after).
+- Palace: timpani about 12 dB too loud at first, the choir and fanfare buried; levelled.
+- Tavern: Population 1.12x and 1.0 dB: more of the reel follows Activity and
+  Population deepens the room.
+
+### Tests (Linux)
+
+- Every Place test picks up the six new Places: Characters, key (D minor, G major),
+  Activity, Tension, Tone, elements, Seed, tempo synced and free; World Controls; every
+  instrument alone (audible and finite in every Character, every note in G major and A
+  Phrygian, on the host's grid at 84 and 132 BPM); the held instrument after a locate.
+- State round trip with a fourth set of four Places (Mall, Military Camp, Desert,
+  Tavern): restored, and plays sample-identically.
+- Overlays: each new one alone, and Mall + Beach + Palace + Tavern (snapshot); clearly
+  visible, only on the drawable area, 15 fps, at most 40 rectangles a frame. CPU share
+  (metric): Mall 2.2 %, Military 1.3 %, Beach 1.2 %, Desert 1.4 %, Palace 0.6 %, Tavern
+  2.4 %; Military + Desert + Palace + Tavern 8.1 % (Factory + Hive + Temple + Cavern
+  14.6 %, Ruins + Spaceship + Sea Ship + Suburbs 17.4 %, the first three 21.9 % in the
+  same run).
+- CPU with four busy copies of each Place (report only, budget 15 %): Mall 12.3, Military
+  10.0, Beach 9.1, Desert 10.5, Palace 9.2, Tavern 12.9 %; every Place measured 7.5-12.9 %
+  in this run (the container was quieter than in 5c). The mixed four-Place check passed
+  at 11.3 %; High quality with everything at maximum 10.6 % (metric). Memory per
+  instance: 40.8 MB at 48 kHz with 20 Places.
+- **2249 checks pass, 0 fail** with GCC (22 minutes here). No CPU check had to become
+  report-only this time. Clang not run.
+
+### Milestone 5d handoff: Milestone 5 complete
+
+**Milestone 5 is complete:** all 20 Places are built, each with six instruments (every
+one patterned, with level, switch, mute and solo), three Characters, its own effect
+character, a suggested Mood where it suits, and its own overlay; the 20-Place selector,
+the world theme and the overlay system (Off by default) are in place.
+
+**Done in 5d:** Mall, Military Camp, Beach, Desert, Palace and Tavern; the `Detune`
+(vaporwave option) and `Radio` effects; tests for a fourth set of four Places and the
+new overlay combinations; the unbuilt-Place checks skip now that all are built.
+
+**Next (needs the developer):**
+1. CI on the macOS runner (the tests take about 22 minutes per architecture here).
+2. The Milestone 5d check in [MANUAL_TEST.md](MANUAL_TEST.md): each new Place and
+   instrument alone, by ear (the waltz, the vaporwave Dead Mall, the radio); four new
+   Places at once in GarageBand's CPU meter.
+3. Still open: listening to the 5a-5c instruments alone, and a level and tone pass
+   across all 20 Places.
+
+**Then Milestone 6:** MIDI control (Update 2 Section 1B): MIDI Play Mode and keyboard
+zones, with every Place playable. Then Locations and Journeys (7), the full visual
+overhaul (8, including making the Castle, Village and Spaceport overlays as light as
+the others), presets and release (9).
+
+**Known issues / limits:**
+- Nothing new has been heard by a person; expect a level and tone pass, especially the
+  noise-based instruments (Fountain, Shaker, Wind, Clanks, Stomps), levelled by
+  measurement only.
+- Memory: 40.8 MB per instance at 48 kHz (one engine of every Place in each of the four
+  slots; about twice that at 96 kHz). Sharing engines between slots, or making them on
+  demand off the audio thread, would cut it.
+- Per-Place CPU is reported, not checked; four busy Taverns or Malls are the heaviest
+  new ones (about 13 % of a core here). The Quality setting is the lever.
+- The Grand Ball's three-bar waltz patterns meet the four-bar chord changes on a
+  different waltz bar each time round (by design; it reads as phrasing).
+- Castle, Village and Spaceport overlays are still the heavy ones (Milestone 8); the
+  overlays are still designed for the fixed 1160 x 720 layout.

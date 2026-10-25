@@ -799,9 +799,9 @@ void testState(Suite& s) {
     s.check(measure(b.render(1.0), 0).finite, "restored instance renders");
 
     // Four active Places with edited patterns, mute and solo: everything comes back, and
-    // the restored world plays the same (the first Places, then four from 5b and four from 5c).
+    // the restored world plays the same (the first Places, then four each from 5b, 5c and 5d).
     for (const std::array<int, 4> types : { std::array<int, 4> { Castle, Village, Spaceport, Village }, std::array<int, 4> { Factory, City, Hive, Cavern },
-                                            std::array<int, 4> { Ruins, Spaceship, SeaShip, Suburbs } }) {
+                                            std::array<int, 4> { Ruins, Spaceship, SeaShip, Suburbs }, std::array<int, 4> { Mall, Military, Desert, Tavern } }) {
         if (!placeImplemented[std::size_t(types[3])]) continue;
         Host x;
         for (int slot = 0; slot < placeSlots; ++slot) {
@@ -2008,6 +2008,8 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
     if (ui::hasOverlay(Hive) && ui::hasOverlay(Temple) && ui::hasOverlay(Cavern)) cases.push_back({ { Factory, Hive, Temple, Cavern }, "-factory-hive-temple-cavern" });
     if (ui::hasOverlay(Ruins) && ui::hasOverlay(Biodome) && ui::hasOverlay(SeaShip) && ui::hasOverlay(Suburbs))
         cases.push_back({ { Ruins, Biodome, SeaShip, Suburbs }, "-ruins-biodome-seaship-suburbs" });
+    if (ui::hasOverlay(Mall) && ui::hasOverlay(Beach) && ui::hasOverlay(Palace) && ui::hasOverlay(Tavern))
+        cases.push_back({ { Mall, Beach, Palace, Tavern }, "-mall-beach-palace-tavern" });
     std::vector<std::array<float, 3>> panels(cases.size()), backgrounds(cases.size());
     for (std::size_t c = 0; c < cases.size(); ++c) {
         World w(cases[c].first);
@@ -2138,6 +2140,8 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
     if (ui::hasOverlay(Hive) && ui::hasOverlay(Temple) && ui::hasOverlay(Cavern)) cost({ Factory, Hive, Temple, Cavern }, "Factory + Alien Hive + Temple + Cavern", 15);
     if (ui::hasOverlay(Ruins) && ui::hasOverlay(Spaceship) && ui::hasOverlay(SeaShip) && ui::hasOverlay(Suburbs))
         cost({ Ruins, Spaceship, SeaShip, Suburbs }, "Ruins + Spaceship + Sea Ship + Suburbs", 15);
+    if (ui::hasOverlay(Military) && ui::hasOverlay(Desert) && ui::hasOverlay(Palace) && ui::hasOverlay(Tavern))
+        cost({ Military, Desert, Palace, Tavern }, "Military Camp + Desert + Palace + Tavern", 15);
 
     // Off by default: a new instance, and a project saved before overlays were off by
     // default (it stored Full), draw nothing and repaint nothing.

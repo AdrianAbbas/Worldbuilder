@@ -340,3 +340,71 @@ Overlays still start Off; switch OVERLAYS to Full or Subtle in the footer to see
 - [ ] Nothing covers a control; they combine with each other and with the others.
 - [ ] Like the 5b ones they move only small sprites at 15 frames a second: compare
   GarageBand's CPU meter with one of them on Full against a 5b overlay.
+
+## Milestone 5d check: the last six Places
+
+Install the new build the same way. The header should read **MILESTONE 5D PREVIEW**.
+Every card in the selector can now be added. Overlays still start Off; switch OVERLAYS
+to Full or Subtle in the footer to see them.
+
+**The new Places** (add each one alone first):
+- [ ] **Mall** (USE LYDIAN): E-Piano, Vibraphone, PA Chimes, Escalator, Fountain,
+  Drums. Busy Weekend (a light syncopated comp, a running vibraphone with its motor
+  tremolo, frequent three-note PA dings), Empty Night (long ninth chords, a lone
+  vibraphone, the escalator hum and the fountain), Dead Mall (the vaporwave option:
+  slowed, half-time, everything detuned flat and wobbling, a dim long hall). A glossy
+  reverb with a slight detune on the other two.
+- [ ] **Military Camp**: Snare March, Bugle, Low Drums, Radio Blips, Clanks, Strings.
+  Morning Drill (a brisk march, reveille), On Alert (driving sixteenths, a call to
+  arms, urgent radio traffic, a racing string ostinato), Night Watch (rim clicks, a
+  slow heartbeat, taps heard over the radio). The radio blips always go through a
+  gritty radio filter; a tight room and a slapback.
+- [ ] **Beach** (USE MIXOLYDIAN): Guitar, Steel Drum, Waves, Shaker, Breeze Pad,
+  Gulls. Tropical Day (a lilting strum, a steel-drum tune, a son clave), Sunset (slow
+  fingerpicking, the pad glowing), Stormy Shore (a nervous tremolo, the surf rising,
+  rain on the shaker). An open, airy space; a chorus on the guitar, steel drum and pad.
+- [ ] **Desert** (USE PHRYGIAN): Oud, Frame Drums, Ney Flute, Tanpura, Wind, Chimes.
+  Oasis (a maqsum rhythm, ornamented oud phrases), Endless Dunes (a slow taqsim over
+  the drone, long echoes), Sandstorm (driving drums, tremolo oud, the wind howling).
+  A wide dry space and a long sparse echo on the oud, ney and chimes.
+- [ ] **Palace** (USE MAJOR): Harpsichord, Strings, Fanfare, Glockenspiel, Timpani,
+  Choir. Grand Ball (a waltz: oom-pah-pah, four waltz bars to three of the song's),
+  Throne Room (rolled chords, fanfares answered, timpani rolls, a full choir), Fallen
+  Palace (a broken, slow harpsichord, thin strings, a distant call, a ghostly choir).
+  A grand hall.
+- [ ] **Tavern** (USE DORIAN): Lute Strum, Frame Drum, Fiddle, Glass Clinks,
+  Squeezebox, Stomps. Lively Night (a reel, everyone stamping and clapping), Quiet
+  Corner (slow arpeggios, a fiddle air by the fire), Brawl (everything too fast, the
+  fiddler sawing, glasses flying). A warm wooden room with tape warmth.
+- [ ] Listen to each instrument alone (SOLO in PATTERNS) in each Character. The new
+  voices to judge: the vibraphone's tremolo, the PA chimes, the fountain, the bugle,
+  the radio blips, the clanks, the steel drum, the oud, the ney, the tanpura, the
+  harpsichord, the fanfare, the fiddle, the squeezebox, the glass clinks, the stomps.
+  Tell me which sound weak, harsh, too loud or not like their name.
+- [ ] Root, Mood and the host tempo: every instrument follows them. The Grand Ball's
+  waltz still lands on the host's grid (it repeats every three bars).
+- [ ] Four of the new Places at once (for example Mall, Military Camp, Desert,
+  Tavern): does GarageBand's CPU meter stay comfortable?
+
+**Their overlays** (OVERLAYS: Full):
+- [ ] Mall: pastel neon tubes bent round the panels' corners, storefronts with
+  glowing signs and awnings in the header, potted palms in the gaps, a polished floor;
+  the floor glints, signs flicker, a fountain sprays, light sweeps the floor.
+- [ ] Military Camp: barbed wire along the panel tops, camouflage netting on the
+  corners, tents, a flag and a radio mast in the header, ammunition crates in the gaps,
+  sandbags; embers and smoke from fires, the flag flutters, lamps and the mast blink,
+  a searchlight sweeps the sandbags.
+- [ ] Beach: sand with shells and starfish, surf and foam, palm trunks in the gaps,
+  fronds at the corners, a low sun, an umbrella and the sea in the header; the water
+  glints, foam bubbles, gulls drift.
+- [ ] Desert: dunes with sand drifting across the bottom and heaped on the frames,
+  carved sandstone along the panel tops, brass lanterns in the gaps, a caravan and an
+  oasis palm under a pale sun; the lanterns flicker, the sun glows.
+- [ ] Palace: gilded moulding with scrolls at the corners, red velvet drapes, marble
+  columns, chandeliers with candles, a chequered floor; candles flicker, crystals
+  glint, gold motes fall.
+- [ ] Tavern: oak beams with nails, candles at the panels' corners, barrels in the
+  gaps, floorboards and a hearth, a shelf of tankards and bottles and an INN sign; the
+  candles and the hearth flicker, embers and smoke rise.
+- [ ] Nothing covers a control; they combine with each other and with the others.
+- [ ] Like the 5b and 5c ones they move only small sprites at 15 frames a second.
