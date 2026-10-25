@@ -120,11 +120,11 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { id "_mute", name " Mute", Kind::Bool, 0, 1, 0 }, \
     { id "_solo", name " Solo", Kind::Bool, 0, 1, 0 }, \
     { id "_character", name " Character", Kind::Choice, 0, 2, 0, characterChoices }, \
-    { id "_activity", name " Activity", Kind::Float, 0, 1, 0.5f }, \
+    { id "_activity", name " Activity", Kind::Float, 0, 1, 0.4f }, \
     { id "_tension", name " Tension", Kind::Float, 0, 1, 0.3f }, \
     { id "_sync", name " Sync", Kind::Bool, 0, 1, 1 }, \
-    { id "_density", name " Density", Kind::Float, 0, 1, 0.5f }, \
-    { id "_swing", name " Swing", Kind::Float, 0, 1, 0.15f }, \
+    { id "_density", name " Density", Kind::Float, 0, 1, 0.45f }, \
+    { id "_swing", name " Swing", Kind::Float, 0, 1, 0.08f }, \
     { id "_tone", name " Tone", Kind::Float, 0, 1, 0.5f }, \
     { id "_size", name " Size", Kind::Float, 0, 1, 0.5f }, \
     { id "_variation", name " Variation", Kind::Float, 0, 1, 0.35f }, \

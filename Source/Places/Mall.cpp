@@ -146,7 +146,7 @@ void MallPlace::generate(int element, const GenInputs& in, pat::Pattern& out) co
                     const int inBar = step % 16;
                     if (inBar == 0 || inBar == 10 || (inBar == 7 && ch(30, step) < 0.5f * busy)) w.note(step, 0, 1, 0.75f * human(31, step));
                     if (inBar == 4 || inBar == 12) w.note(step, 1, 1, 0.6f * human(32, step));
-                    if (step % 4 == 0 || (step % 2 == 0 && ch(42, step) < 0.2f + 0.7f * busy) || ch(33, step) < 0.4f * busy * density) w.note(step, 2, 1, (step % 4 == 2 ? 0.55f : 0.4f) * human(34, step));
+                    if (step % 4 == 0 || (step % 2 == 0 && ch(42, step) < 0.2f + 0.7f * busy) || ch(33, step) < 0.9f * act * act * (0.5f + density)) w.note(step, 2, 1, (step % 4 == 2 ? 0.55f : 0.4f) * human(34, step));
                 }
                 break;
             case EmptyNight:   // brushes: a rim on two and four, a soft hat

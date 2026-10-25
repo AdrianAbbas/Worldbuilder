@@ -186,10 +186,11 @@ void BeachPlace::configure(const PlaceContext& c) {
         p.sympathetic = 0.05f;
         p.gain = 1.0f;
     }
-    // Steel drum: the pan's note, its octave and a twelfth, and a quarter-tone-off shimmer.
+    // Steel drum: the pan's note, its octave, a twelfth and a double octave a shade sharp.
     {
         auto& p = steel.patch;
-        p.set({ 1.0f, 2.0f, 3.0f, 4.36f }, { 1.0f, 0.75f, 0.5f, 0.25f }, { 1.0f, 0.6f, 0.3f * (0.4f + tone), 0.12f * tone });
+        // A steel-pan note area: tuned to the octave and twelfth (and nearly the double octave).
+        p.set({ 1.0f, 2.0f, 3.0f, 4.02f }, { 1.0f, 0.75f, 0.5f, 0.25f }, { 1.0f, 0.6f, 0.3f * (0.4f + tone), 0.12f * tone });
         p.decay = sunset ? 1.8f : 1.0f;
         p.hardness = 0.45f + 0.35f * tone;
         p.toneHz = lerpExp(3000.0f, 10000.0f, tone);
@@ -205,7 +206,8 @@ void BeachPlace::configure(const PlaceContext& c) {
         auto& p = waves.patch;
         p.tone = 0.0f;
         p.breath = 1.0f;
-        p.breathQ = lerp(1.5f, 3.0f, tone);
+        // Tuned surf: a narrow enough band to sound the chord through the roar.
+        p.breathQ = lerp(4.0f, 7.0f, tone);
         p.attack = 0.7f;
         p.release = 2.5f;
         p.scoop = 0.0f;
@@ -289,7 +291,7 @@ void BeachPlace::configure(const PlaceContext& c) {
     // Tension: the wind tears the echoes away (less in the reverbs and delays).
     sendScale.fill(lerp(1.25f, 0.55f, tension));
     level = { 0.5f * (stormy ? 0.8f : 1.0f), 0.24f * (1.0f - 0.6f * tension) * (tropical ? 1.1f : 1.0f),
-              1.4f * (stormy ? 1.5f : (sunset ? 0.8f : 1.0f)) * (0.4f + 2.0f * tension), 1.6f * (stormy ? 3.0f : 1.0f) * (0.6f + 0.8f * tension) * (0.6f + 0.9f * s.machinery),
+              1.4f * (stormy ? 1.2f : (sunset ? 0.8f : 1.0f)) * (0.4f + 2.0f * tension), 1.6f * (stormy ? 2.2f : 1.0f) * (0.6f + 0.8f * tension) * (0.6f + 0.9f * s.machinery),
               0.04f * (sunset ? 1.3f : 1.0f) * (1.0f - 0.3f * tension), 0.08f * lerp(0.5f, 1.5f, s.life) };
 
     // Open, airy space: a wide bright tail, a gentle chorus.

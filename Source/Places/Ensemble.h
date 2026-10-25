@@ -69,6 +69,16 @@ struct HeldNote {
 
 inline int byQuality(int quality, int eco, int standard, int high) { return quality <= 0 ? eco : (quality == 1 ? standard : high); }
 
+// The weight of every instrument (Milestone 6): heavier, slower and more sustained
+// than the Places were first voiced. Each part scales its patch's times by these, so
+// the whole plugin can be made lighter or heavier here.
+namespace weight {
+inline constexpr float ring = 1.35f;      // plucked strings, struck bars and bells ring longer
+inline constexpr float release = 1.5f;    // held notes (pads, brass, reeds, bows, voices, winds) let go slower
+inline constexpr float skin = 1.15f;      // drum skins ring a little longer
+inline constexpr float keys = 1.3f;       // electric and FM keys sustain longer
+} // namespace weight
+
 class Part {
 public:
     virtual ~Part() = default;
@@ -165,7 +175,7 @@ public:
             auto& v = voice[std::size_t(i)];
             auto& h = held[std::size_t(i)];
             if (h.on && f.beat >= h.until) {
-                v.release(patch.release, rate);
+                v.release(patch.release * weight::release, rate);
                 h.on = false;
             }
             if (!v.active()) continue;
@@ -181,7 +191,7 @@ public:
             if (!pedalVoice.active() || pedalVoice.env.stage == dsp::Env::Release) pedalVoice.start(hz, std::max(patch.attack, 0.5f), 1.0f, 1.0f, rate);
             pedalVoice.targetHz = hz;
         } else if (pedalVoice.active() && pedalVoice.env.stage != dsp::Env::Release) {
-            pedalVoice.release(std::max(patch.release, 0.5f), rate);
+            pedalVoice.release(std::max(patch.release * weight::release, 0.5f), rate);
         }
         if (pedalVoice.active()) {
             apply(pedalVoice);
@@ -270,7 +280,7 @@ public:
     void start(const PartFrame& f, const NoteOn& n) override {
         auto& v = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Pluck& p) { return p.level(); })];
         const int length = patch.shape.dampSeconds > 0.0f ? std::max(1, int(n.seconds * rate)) : -1;
-        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay * (n.extra ? 0.5f : 1.0f), patch.brightness, n.velocity,
+        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::ring * n.decay * (n.extra ? 0.5f : 1.0f), patch.brightness, n.velocity,
                 n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, noiseAt, patch.shape, length);
         noiseAt += 1ull << 24;
     }
@@ -381,7 +391,7 @@ public:
         auto& b = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Bell& v) { return v.level(); })];
         b.extras = patch.extras;
         const float hardness = dsp::clamp01(patch.hardness + patch.velocityHardness * (n.velocity - 0.6f));
-        b.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay, hardness, n.velocity,
+        b.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::ring * n.decay, hardness, n.velocity,
                 n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, ratios.data(), patch.decays.data(), patch.gains.data(), patch.modes);
         b.update();
     }
@@ -453,7 +463,7 @@ public:
         d.shellHz = row.shellHz;
         d.shell = row.shell;
         const float hz = row.tuned ? music::noteHz(f.root, row.semis) : row.hz;
-        d.start(hz, row.bend, row.decay * n.decay, row.tone * n.velocity, row.noise * n.velocity, row.noiseHz, row.noiseQ, row.noiseDecay * n.decay,
+        d.start(hz, row.bend, row.decay * (row.kind == dsp::DrumTwoTone ? 1.0f : weight::skin) * n.decay, row.tone * n.velocity, row.noise * n.velocity, row.noiseHz, row.noiseQ, row.noiseDecay * n.decay,
                 n.hasPan ? n.pan : spreadPan(row.pan, patch.spread, n.random), rate, noiseAt);
         d.update(rate);
         noiseAt += 1ull << 24;
@@ -515,7 +525,7 @@ public:
         if (patch.model == FmTine) {
             const int k = int(dsp::pickVoice(tines, std::clamp(patch.voices, 1, maxVoices), [](const dsp::TineVoice& v) { return v.level(); }));
             auto& v = tines[std::size_t(k)];
-            v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay * 4.0f, patch.brightness, n.velocity, rate);
+            v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::keys * n.decay * 4.0f, patch.brightness, n.velocity, rate);
             v.gainLevel = 1.0f;
             v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
             held[std::size_t(k)].set(n);
@@ -525,7 +535,7 @@ public:
         const int k = int(dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::FmVoice& v) { return v.level(); }));
         auto& v = voice[std::size_t(k)];
         apply(v);
-        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, patch.decay * n.decay, patch.held ? patch.sustain : 0.0f, rate,
+        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, patch.decay * weight::keys * n.decay, patch.held ? patch.sustain : 0.0f, rate,
                 patch.indexSeconds * n.decay);
         v.gain = n.velocity;
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
@@ -540,7 +550,7 @@ public:
                 auto& h = held[std::size_t(i)];
                 if (h.on && f.beat >= h.until) {
                     // Keys held for the note's length, then the damper.
-                    v.release(std::max(patch.release, 0.08f));
+                    v.release(std::max(patch.release * weight::release, 0.08f));
                     h.on = false;
                 }
                 if (v.active()) v.update();
@@ -551,7 +561,7 @@ public:
             auto& v = voice[std::size_t(i)];
             auto& h = held[std::size_t(i)];
             if (h.on && f.beat >= h.until) {
-                v.release(patch.release, rate);
+                v.release(patch.release * weight::release, rate);
                 h.on = false;
             }
             if (!v.active()) continue;
@@ -653,7 +663,7 @@ public:
             auto& v = voice[std::size_t(i)];
             auto& h = held[std::size_t(i)];
             if (h.on && f.beat >= h.until) {
-                v.release(patch.release, rate);
+                v.release(patch.release * weight::release, rate);
                 h.on = false;
             }
             if (!v.active()) continue;
@@ -739,7 +749,8 @@ public:
         v.gain = n.velocity;
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
         held[std::size_t(k)].set(n);
-        held[std::size_t(k)].until = n.beat + std::max(n.length * 0.95, double(patch.minSeconds) * f.beatsPerSecond);
+        // Legato: each note lasts its whole length (the next one slurs on from it).
+        held[std::size_t(k)].until = n.beat + std::max(n.length, double(patch.minSeconds) * f.beatsPerSecond);
         v.update(rate);
     }
     void update(const PartFrame& f) override {
@@ -747,7 +758,7 @@ public:
             auto& v = voice[std::size_t(i)];
             auto& h = held[std::size_t(i)];
             if (h.on && f.beat >= h.until) {
-                v.release(patch.release, rate);
+                v.release(patch.release * weight::release, rate);
                 h.on = false;
             }
             if (!v.active()) continue;
@@ -888,7 +899,7 @@ public:
             if (string) {
                 auto& v = strings[std::size_t(i)];
                 if (end) {
-                    v.release(patch.release);
+                    v.release(patch.release * weight::release);
                     h.on = false;
                 }
                 if (!v.active()) continue;
@@ -898,7 +909,7 @@ public:
             } else {
                 auto& v = voice[std::size_t(i)];
                 if (end) {
-                    v.release(patch.release, rate);
+                    v.release(patch.release * weight::release, rate);
                     h.on = false;
                 }
                 if (!v.active()) continue;

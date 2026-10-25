@@ -64,10 +64,12 @@ struct Env {
                     stage = Decay;
                 }
                 break;
-            case Decay: value = sustain + (value - sustain) * decayCoef; if (sustain <= 0.0f && value < 1.0e-5f) { value = 0; stage = Off; } break;
+            // A voice retires at about -70 dB: below that a tail is inaudible under the rest,
+            // and the long releases of Milestone 6 would otherwise keep voices running.
+            case Decay: value = sustain + (value - sustain) * decayCoef; if (sustain <= 0.0f && value < 3.0e-4f) { value = 0; stage = Off; } break;
             case Release:
                 value *= releaseCoef;
-                if (value < 1.0e-5f) {
+                if (value < 3.0e-4f) {
                     value = 0;
                     stage = Off;
                 }
@@ -256,6 +258,16 @@ struct WaveguideString {
     void prepare(float rate, float lowestHz) { line.prepare(std::size_t(rate / lowestHz) + 8); }
     void clear() {
         line.clear();
+        clearFilters();
+    }
+    // Before a new pluck: only the part of the line the loop will read (cheaper than
+    // clearing it all for every note).
+    void clearRecent(float hz, float rate) {
+        const auto n = std::min(line.mask, std::size_t(rate / std::max(hz, 20.0f)) + 8);
+        for (std::size_t k = 0; k <= n; ++k) line.data[(line.write - k) & line.mask] = 0.0f;
+        clearFilters();
+    }
+    void clearFilters() {
         fracX = fracY = lossZ = 0;
         dispX.fill(0);
         dispY.fill(0);
@@ -353,7 +365,8 @@ struct Pluck {
         shape = s;
         hz = noteHz;
         t60 = decaySeconds;
-        for (auto& st : string) st.clear();
+        string[0].clearRecent(hz, rate);
+        if (shape.course > 0.0f) string[1].clearRecent(hz * 0.99f, rate);
         // Higher notes die sooner (shorter strings lose more per second).
         const float t = decaySeconds * std::clamp(std::pow(220.0f / std::max(hz, 30.0f), 0.35f), 0.35f, 1.8f);
         // Brightness is also the strings' age: new strings keep their highs longer.
@@ -374,7 +387,8 @@ struct Pluck {
         noiseRampStep = 1.0f / (0.0004f * rate);
         noiseDecay = std::exp(-1.0f / (0.0035f * rate));
         courseDelay = shape.course > 0.0f ? int(0.0012f * rate) : 0;
-        if (shape.course > 0.0f) courseIn.fill(0.0f);
+        if (shape.course > 0.0f)
+            for (int k = 0; k <= courseDelay + 1; ++k) courseIn[std::size_t((courseAt - k) & 4095)] = 0.0f;
         dampIn = lengthSamples;
         dampSamples = 0;
         lowCutZ = 0;
@@ -534,7 +548,7 @@ struct Bell {
         for (int k = 0; k < modes; ++k) e += gain[std::size_t(k)] * gain[std::size_t(k)] * mode[std::size_t(k)].energy();
         for (int k = 0; k < maxDoublets; ++k) e += partnerGain[std::size_t(k)] * partnerGain[std::size_t(k)] * partner[std::size_t(k)].energy();
         energy = e;
-        if (!striking() && e < 1.0e-9f && bloomLevel < 1.0e-4f) active = false;
+        if (!striking() && e < 1.0e-8f && bloomLevel < 1.0e-4f) active = false;
     }
 };
 

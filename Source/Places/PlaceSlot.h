@@ -11,7 +11,7 @@ struct PlaceSlotControls {
     int type = NoPlace, character = 0;
     float levelDb = 0, distance = 0.35f, pan = 0;
     bool mute = false, solo = false, sync = true;
-    float activity = 0.5f, tension = 0.3f, density = 0.5f, swing = 0.15f, tone = 0.5f, size = 0.5f, variation = 0.35f;
+    float activity = 0.4f, tension = 0.3f, density = 0.45f, swing = 0.08f, tone = 0.5f, size = 0.5f, variation = 0.35f;
     uint32_t seed = 1;
     std::array<float, placeElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
     std::array<bool, placeElements> elementOn { true, true, true, true, true, true };
@@ -79,6 +79,7 @@ private:
     dsp::Smoother gain, distance, pan;
     std::array<dsp::OnePole, 4> distanceLp;
     std::array<dsp::OnePole, 2> dcBlock;
+    std::array<dsp::OnePole, 2> fullness;   // a gentle low shelf: weight in the low mids and bass
     float send = 0;
     bool fresh = true;
     dsp::InstrumentFx fx;

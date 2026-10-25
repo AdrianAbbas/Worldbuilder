@@ -118,7 +118,10 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             }
             NoteOn on = noteFor(c, x);
             if (!shape(c, x, on)) continue;
-            part->start(frame, on);
+            // A player never hits two notes quite the same.
+            NoteOn played = on;
+            played.velocity = on.velocity * (0.92f + 0.16f * on.random2);
+            part->start(frame, played);
             logEvent(c.clock + uint64_t(x.offset), e, play.kit && x.tag == 0 ? float(on.row) : on.semis, on.velocity);
         }
         if (done < n) part->render(l + done, r + done, n - done);

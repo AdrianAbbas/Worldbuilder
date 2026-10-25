@@ -22,6 +22,7 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     fadeStep = 1.0f / (0.3f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
     fx.prepare(rate);
+    for (auto& f : fullness) f.setCutoff(260.0f, rate);
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.setCutoff(900.0f, rate);
     reset();
@@ -36,6 +37,7 @@ void PlaceSlot::reset() {
     gain.snap(0);
     for (auto& f : distanceLp) f.reset();
     for (auto& f : dcBlock) f.reset();
+    for (auto& f : fullness) f.reset();
     fx.reset();
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.reset();
@@ -103,7 +105,7 @@ PlaceSettings PlaceSlot::settingsFor(const WorldFrame& world, const PlaceSlotCon
     s.character = std::clamp(c.character, 0, placeCharacters - 1);
     const float population = world[Population], machinery = world[Machinery];
     // Population: how busy every Place is, and how deep its effect character goes.
-    s.activity = clamp01(c.activity * lerp(0.5f, 1.5f, population));
+    s.activity = clamp01(c.activity * lerp(0.4f, 1.6f, population));
     s.fxDepth = clamp01(0.15f + 0.85f * s.activity * lerp(0.6f, 1.3f, population));
     // Danger darkens harmony and tightens rhythm, on top of the Place's own Tension.
     s.tension = clamp01(c.tension + 0.6f * (world[Danger] - 0.2f));
@@ -284,6 +286,9 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         sendGain[0][std::size_t(i)] = g * sendDistance * (1.0f - 0.6f * right_);
         sendGain[1][std::size_t(i)] = g * sendDistance * (1.0f - 0.6f * left_);
         float l = finiteOr(left[i]), r = finiteOr(right[i]);
+        // Weight: about +2.5 dB below 260 Hz.
+        l += 0.33f * fullness[0].lp(l);
+        r += 0.33f * fullness[1].lp(r);
         const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * width;
         // Two poles: far away, bright instruments (bells, shakers, flutes) fade first.
         l = distanceLp[2].lp(distanceLp[0].lp(dcBlock[0].hp(mid + side)));

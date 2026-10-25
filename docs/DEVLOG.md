@@ -1798,7 +1798,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] membrane drums (membrane and timpani modes, slap, snare)
   - [x] formant choir (glottal source, five sung formants)
   - [x] keys (tine electric piano; harpsichord via the plucked string)
-- [ ] 3. Weight pass across all 20 Places
+- [x] 3. Weight pass across all 20 Places
 - [ ] 4. Per-Place uniqueness and realism pass
   - [ ] Tavern
   - [ ] Castle
@@ -2015,4 +2015,35 @@ decay, motion); the 20 closest pairs are printed for listening.
   8 %. The whole-plugin difference is reported.
 - Factory Life and Beach Danger checks fell just under their thresholds: Life brings
   the Factory's anvil and gears forward; Tension tears the Beach's echoes away.
+
+### Step 3: weight pass
+
+Toward heavier, slower and more sustained, for every Place at once:
+- Calmer defaults for a new Place: Activity 0.4 (was 0.5), Density 0.45 (0.5), Swing
+  0.08 (0.15: the swing made everything bounce). Saved projects keep their values.
+- One table of weights in `Ensemble.h` (`weight::`): plucked strings and struck bars
+  and bells ring 1.35x longer; every held instrument (pads, brass, reeds, bows,
+  voices, winds) releases 1.5x slower; drum skins ring 1.15x longer (wood and metal
+  hits stay short); FM and tine keys sustain 1.3x longer.
+- Winds play legato: each note lasts its whole length and the next slurs on from it.
+- Weight in the low mids and bass: a gentle shelf (+2.5 dB below 260 Hz) on every Place.
+- Human feel: every note's velocity varies by +-8 % (deterministic, so playback and
+  bounces still match; the pattern itself, and the editor, keep the written velocity).
+  On top of the models' own variation (strike position, pick noise, bow scrape, the
+  singers' jitter, a wind player's wander).
+
+Registers, patterns and levels per Place are part of the per-Place pass (step 4).
+
+Problems and fixes in the weight pass:
+- Population no longer made Castle, Spaceship, Mall and Palace 20 % busier with the
+  calmer default Activity: Population now scales Activity 0.4x-1.6x (was 0.5x-1.5x), and
+  the Mall's hi-hat sixteenths follow Activity more.
+- Four busy Places reached 14-15.5 % of a core (the 15 % budget): longer releases kept
+  voices alive deep into inaudible tails. Voices retire at about -70 dB (envelopes) and
+  -80 dB (struck modes) instead of -100 dB, and a pluck clears only the part of its
+  string it will read (a profile showed 5 % of the time in memset). 12.6 % after.
+- The Beach's Stormy Shore fell out of key (3.8 dB): its surf, the loudest part, was
+  breath noise five semitones wide (Q 1.5-3), and it now lasted longer. The surf is
+  tuned narrower (Q 4-7) and the storm raises it less (1.2x, was 1.5x); the steel
+  drum's top partial is the pan's tuned double octave (4.02, was a quarter-tone-off 4.36).
 
