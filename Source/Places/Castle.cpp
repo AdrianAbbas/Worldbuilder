@@ -269,6 +269,12 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.tremoloPerBeat = s.character == 2 ? 1.0f : 2.0f;
         p.tremoloDepth = s.character == 2 ? 0.6f * tension : 0.8f * std::max(0.0f, tension - 0.5f);
         p.voices = 4;
+        // A section of low horns and trombones (two players a few cents apart).
+        p.model = dsp::SynthBrass;
+        p.cutoff = lerpExp(550.0f, 1100.0f, tone) * lerp(0.9f, 1.3f, tension) * (s.character == 1 ? 1.15f : 1.0f);
+        p.formantHz = 520.0f;
+        p.formantLevel = 0.5f;
+        p.breath = 0.03f;
         p.gain = 1.0f;
     }
     // Bells: partials tuned to the key (hum an octave down, prime, the scale's own
@@ -282,6 +288,8 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.hardness = 0.35f + 0.5f * tone;
         p.toneHz = lerpExp(1800.0f, 7000.0f, tone);
         p.voices = byQuality(q, 3, 4, 6);
+        // Cast bronze is never quite round: the lowest partials beat slowly.
+        p.extras.beatHz = 0.6f;
     }
     // Horns: brassy swells that glide into each other's lines.
     {
@@ -303,6 +311,12 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.vibratoDelay = 0.35f;
         p.spread = 0.2f;
         p.voices = 2;
+        // French horns: dark, the bell turned away, a mellow formant low down.
+        p.model = dsp::SynthBrass;
+        p.cutoff = lerpExp(500.0f, 1000.0f, tone);
+        p.formantHz = 420.0f;
+        p.formantLevel = 0.7f;
+        p.breath = 0.04f;
         p.gain = 0.5f;
     }
     // Timpani tuned to the root and the fifth below (tighter with Tension), a side drum,
@@ -321,6 +335,9 @@ void CastlePlace::configure(const PlaceContext& c) {
         root.ratio = 1.5f;
         root.partial = 0.35f;
         root.pan = -0.1f;
+        root.kind = dsp::DrumTimpani;
+        root.position = 0.25f;
+        root.hardness = 0.45f;
         p.rows[1] = root;
         p.rows[1].semis = -5;
         p.rows[1].pan = 0.12f;
@@ -337,6 +354,10 @@ void CastlePlace::configure(const PlaceContext& c) {
         side.ratio = 2.3f;
         side.partial = 0.3f;
         side.pan = 0.15f;
+        side.kind = dsp::DrumMembrane;
+        side.position = 0.35f;
+        side.hardness = 0.8f;
+        side.snare = 0.6f;
         auto& anvil = p.rows[3];
         anvil.semis = float(music::inRange(music::chordTone(mood, c.chord, 2), 24));
         anvil.bend = 1.0f;
@@ -359,6 +380,10 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.brightness = 0.3f + 0.5f * tone;
         p.spread = 0.6f;
         p.voices = byQuality(q, 4, 6, 8);
+        // A gut-strung harp plucked mid-string (round), its soundboard, open strings ringing.
+        p.body = dsp::BodyHarp;
+        p.shape = { 0.3f, 0.45f, 0.05f, 0.0f, 0.0f, 0.1f, 0.0f };
+        p.sympathetic = 0.12f;
         p.gain = 1.0f;
     }
     // Choir: "oh" for the fortress, "ah" at court, a dark "oo" when besieged.

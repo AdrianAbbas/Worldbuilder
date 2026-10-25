@@ -180,6 +180,10 @@ void BeachPlace::configure(const PlaceContext& c) {
         p.spread = 0.4f;
         p.pan = -0.15f;
         p.voices = byQuality(q, 5, 7, 8);
+        // Nylon strings, fingers, a classical guitar's body.
+        p.body = dsp::BodyGuitar;
+        p.shape = { 0.2f, 0.45f, 0.05f, 0.0f, 0.0f, 0.2f, 0.0f };
+        p.sympathetic = 0.05f;
         p.gain = 1.0f;
     }
     // Steel drum: the pan's note, its octave and a twelfth, and a quarter-tone-off shimmer.
@@ -282,6 +286,8 @@ void BeachPlace::configure(const PlaceContext& c) {
     }
     // Tension: the surf rises and the shaker rattles, the steel drum and pad step back;
     // Life brings the gulls; Machinery a busier rhythm section.
+    // Tension: the wind tears the echoes away (less in the reverbs and delays).
+    sendScale.fill(lerp(1.25f, 0.55f, tension));
     level = { 0.5f * (stormy ? 0.8f : 1.0f), 0.24f * (1.0f - 0.6f * tension) * (tropical ? 1.1f : 1.0f),
               1.4f * (stormy ? 1.5f : (sunset ? 0.8f : 1.0f)) * (0.4f + 2.0f * tension), 1.6f * (stormy ? 3.0f : 1.0f) * (0.6f + 0.8f * tension) * (0.6f + 0.9f * s.machinery),
               0.04f * (sunset ? 1.3f : 1.0f) * (1.0f - 0.3f * tension), 0.08f * lerp(0.5f, 1.5f, s.life) };

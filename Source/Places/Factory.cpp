@@ -330,7 +330,8 @@ void FactoryPlace::configure(const PlaceContext& c) {
         p.voices = 2;
         p.gain = 1.0f;
     }
-    level = { 0.17f, 0.28f, 0.42f, 0.15f, 1.1f, 0.11f };
+    // Life: more hands at work, the anvil and the gears ring out more.
+    level = { 0.17f * lerp(0.75f, 1.3f, s.life), 0.28f, 0.42f, 0.15f, 1.1f * lerp(0.85f, 1.15f, s.life), 0.11f };
 
     // Combs tuned to the chord root, three and four octaves up, make the metal ring with
     // the harmony (high enough that their fifth harmonic, the root's major third, is

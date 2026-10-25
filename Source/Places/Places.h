@@ -80,13 +80,15 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     PluckPart lute;
-    SynthPart hurdy;
+    BowedPart hurdy;
     DrumPart drums;
     ModalPart marimba, jingles;
     WindPart recorder;
     dsp::SmallSpace room;
     dsp::Warmth warmth;
     float roomSend = 0;
+    std::array<dsp::OnePole, 2> shelf;   // Tone's presence above 2 kHz
+    float presence = 0;
 };
 
 // Spaceport: arpeggiated synth pulses over the shared chords, wide gliding pads,
@@ -221,7 +223,7 @@ private:
     WindPart flute, birds, rustle;
     DrumPart wood;
     ModalPart kalimba;
-    SynthPart strings;
+    BowedPart strings;
     dsp::Diffuser diffuser;
     dsp::SmallSpace space;
     std::array<dsp::OnePole, 4> tilt;   // Tone, two poles each side
@@ -641,7 +643,8 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     PluckPart harpsichord;
-    SynthPart strings, brass;
+    BowedPart strings;
+    SynthPart brass;
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;

@@ -85,7 +85,7 @@ private:
     // The Place's Tone on what its instruments send (the Place's own tone filters only
     // reach its dry sound): a tilt per shared bus.
     std::array<std::array<dsp::OnePole, 2>, ReverbTypeCount + DelayTypeCount> sendTilt;
-    void tiltSends(float tone, int n);
+    void tiltSends(float tone, float far, int n);
     std::array<std::array<float, dsp::chunk>, 2> sendGain {};
 
     void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns);

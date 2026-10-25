@@ -1026,10 +1026,63 @@ void testEffects(Suite& s) {
         s.metric("CPU, four busy Places, 24 instruments all with sends and character effects", used, " %");
         s.check(measure(a, 0).finite && st.p->engine.shared().awake() == ReverbTypeCount + DelayTypeCount,
                 "four Places with every effect in use render finite, all nine buses awake", std::to_string(st.p->engine.shared().awake()) + " awake");
-        // The effects' own cost is the check: the four Places themselves are checked
+        // Report only: the difference of two whole-plugin timings swings by several points
+        // on a shared machine. The effects' own cost is checked below; the four Places
         // against the 15 % budget in the real-time group (with their default effects).
-        s.check(used - plainUsed < 8.0, "CPU: every instrument effect in use on 24 instruments costs under 8 % of one core more",
-                fmt(used - plainUsed) + " % (" + fmt(used) + " % in all)");
+        s.metric("CPU, the instrument effects in a full four-Place render (report only)", used - plainUsed, " %");
+    }
+    {
+        // The effects alone: four slots of six instruments, every one with a character
+        // effect, tone, width and sends to a reverb and a delay; all nine buses busy.
+        const float rate = 48000;
+        std::array<dsp::InstrumentFx, placeSlots> slotFx;
+        dsp::SharedFx bank;
+        bank.prepare(rate);
+        std::array<dsp::ElementFxControls, placeElements> controls {};
+        for (auto& f : slotFx) f.prepare(rate);
+        dsp::Stream noise;
+        noise.setKey(3, 4);
+        std::array<float, dsp::chunk> l {}, r {}, outL {}, outR {}, gain {};
+        gain.fill(1.0f);
+        const int chunks = int(10.0f * rate / float(dsp::chunk));
+        // The input, made before the clock starts.
+        std::vector<float> table(8192);
+        for (std::size_t i = 0; i < table.size(); ++i) table[i] = 0.1f * noise.white(i);
+        std::size_t at = 0;
+        const auto begin = juce::Time::getHighResolutionTicks();
+        for (int c = 0; c < chunks; ++c) {
+            bank.begin(dsp::chunk);
+            for (int slot = 0; slot < placeSlots; ++slot) {
+                for (int e = 0; e < placeElements; ++e) {
+                    const int k = slot * placeElements + e;
+                    auto& x = controls[std::size_t(e)];
+                    x.reverb = 0.5f;
+                    x.reverbType = k % ReverbTypeCount;
+                    x.delay = 0.4f;
+                    x.delayType = k % DelayTypeCount;
+                    x.character = 1 + k % (CharacterTypeCount - 1);
+                    x.amount = 0.6f;
+                    x.tone = 0.35f;
+                    x.width = 1.4f;
+                }
+                auto& fx = slotFx[std::size_t(slot)];
+                fx.begin(controls, dsp::chunk);
+                for (int e = 0; e < placeElements; ++e) {
+                    for (int i = 0; i < dsp::chunk; ++i) {
+                        l[std::size_t(i)] = table[at++ & 8191];
+                        r[std::size_t(i)] = table[(at + 4001) & 8191];
+                    }
+                    fx.process(e, l.data(), r.data(), dsp::chunk);
+                }
+                bank.add(fx.sends, gain.data(), gain.data(), dsp::chunk);
+            }
+            outL.fill(0);
+            outR.fill(0);
+            bank.process(outL.data(), outR.data(), dsp::chunk, 96.0f);
+        }
+        const double effects = 100.0 * juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) / 10.0;
+        s.metric("CPU, the effects alone: 24 instruments (character, tone, width, two sends) and nine busy buses", effects, " %");
+        s.check(effects < 8.0 && std::isfinite(outL[0]), "CPU: every instrument effect in use on 24 instruments, under 8 % of one core", fmt(effects) + " %");
     }
     {
         // State: every effect parameter round trips, and an old project's instruments take
@@ -1064,6 +1117,348 @@ void testEffects(Suite& s) {
                     && std::abs(c.get(fxId(0, 0, FxReverb).c_str()) - instrumentFxDefault(Castle, 0, FxReverb)) < 1.0e-4f,
                 "a project from before the effects: each instrument starts from its Place's defaults");
     }
+}
+
+//==============================================================================
+// The rebuilt instrument models, each alone (no Place): in tune, partials where the
+// acoustics tables put them, finite, no click at the start, and louder and brighter
+// when played harder.
+namespace models {
+// The strongest frequency within 3 % of hz (a direct DFT, steps of 0.1 cent).
+double peakNear(const std::vector<float>& y, std::size_t from, std::size_t length, double rate, double hz) {
+    double best = -1, at = hz;
+    for (double cents = -50.0; cents <= 50.0; cents += 0.25) {
+        const double f = hz * std::exp2(cents / 1200.0);
+        std::complex<double> sum = 0;
+        const std::complex<double> step = std::polar(1.0, -2.0 * M_PI * f / rate);
+        std::complex<double> w = 1;
+        for (std::size_t i = 0; i < length; ++i) {
+            const double window = 0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(length));
+            sum += double(y[from + i]) * window * w;
+            w *= step;
+        }
+        if (std::abs(sum) > best) {
+            best = std::abs(sum);
+            at = f;
+        }
+    }
+    return at;
+}
+double rmsDb(const std::vector<float>& y, std::size_t from, std::size_t length) {
+    double e = 0;
+    for (std::size_t i = from; i < from + length; ++i) e += double(y[i]) * double(y[i]);
+    return 10.0 * std::log10(e / double(length) + 1.0e-24);
+}
+// Spectral centroid (Hz) over 8192 samples.
+double centroid(const std::vector<float>& y, std::size_t from, double rate) {
+    std::vector<std::complex<double>> buf(8192);
+    for (std::size_t i = 0; i < buf.size(); ++i) buf[i] = double(y[from + i]) * (0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(buf.size())));
+    fft(buf);
+    double num = 0, den = 0;
+    for (std::size_t k = 1; k < buf.size() / 2; ++k) {
+        const double m = std::abs(buf[k]);
+        num += m * double(k) * rate / double(buf.size());
+        den += m;
+    }
+    return num / std::max(den, 1.0e-12);
+}
+bool finite(const std::vector<float>& y) {
+    for (float v : y)
+        if (!std::isfinite(v)) return false;
+    return true;
+}
+// No click: it starts from silence (the first sample small against the attack's peak)
+// and the first millisecond is no burst far louder than the attack right after it (a
+// pick's or bow's noise is part of the attack; a click stands out of it).
+bool clickFree(const std::vector<float>& y, double rate) {
+    double peak = 1.0e-9;
+    for (std::size_t i = 0; i < std::size_t(0.05 * rate); ++i) peak = std::max(peak, double(std::abs(y[i])));
+    const auto ms = std::size_t(0.001 * rate);
+    const auto rms = [&](std::size_t from, std::size_t to) {
+        double e = 0;
+        for (std::size_t i = from; i < to; ++i) e += double(y[i]) * double(y[i]);
+        return std::sqrt(e / double(to - from));
+    };
+    return std::abs(y[0]) < 0.2 * peak && rms(0, ms) < 2.0 * rms(ms, 20 * ms);
+}
+} // namespace models
+
+void testModels(Suite& s) {
+    using namespace models;
+    s.section("instrument models: in tune, partials, finite, no clicks, velocity brightens");
+    const double rate = 48000;
+    const std::size_t seconds = std::size_t(rate);
+    dsp::Stream noise;
+    noise.setKey(7, 8);
+    // Renders `length` samples of a voice started at velocity v (mono).
+    using Render = std::function<std::vector<float>(double hz, float v)>;
+    struct Model {
+        const char* name;
+        Render render;
+        std::vector<double> ratios;   // partials expected (to the note)
+        double hz;
+        std::size_t from;              // analysis start (samples)
+        double tolerance;              // cents
+    };
+    std::vector<Model> list;
+    list.push_back({ "plucked string (guitar)", [&](double hz, float v) {
+                        dsp::Pluck p;
+                        p.prepare(float(rate), 40.0f);
+                        p.start(float(hz), 2.0f, 0.5f, v, 0.0f, float(rate), 1ull << 30, dsp::Pluck::Shape {});
+                        std::vector<float> y(seconds);
+                        for (auto& x : y) x = p.tick(noise);
+                        return y;
+                    }, { 1, 2, 3 }, 196.0, 2400, 2.0 });
+    list.push_back({ "plucked course (oud, two strings)", [&](double hz, float v) {
+                        dsp::Pluck p;
+                        p.prepare(float(rate), 40.0f);
+                        p.start(float(hz), 1.5f, 0.5f, v, 0.0f, float(rate), 1ull << 31, dsp::Pluck::Shape { 0.14f, 0.4f, 0.08f, 1.0f, 3.5f, 0.45f, 0.0f });
+                        std::vector<float> y(seconds);
+                        for (auto& x : y) x = p.tick(noise);
+                        return y;
+                    }, { 1, 2 }, 146.8, 2400, 4.0 });
+    list.push_back({ "bowed string (violin)", [&](double hz, float v) {
+                        dsp::StringVoice b;
+                        b.prepare(float(rate), 30.0f);
+                        b.players = 1;
+                        b.vibratoDepth = 0;
+                        b.brightness = 0.6f;
+                        b.start(float(hz), 0.08f, v, 0.5f, 99, false);
+                        b.gain = v;
+                        std::vector<float> y(seconds);
+                        for (std::size_t i = 0; i < y.size(); ++i) {
+                            if (i % dsp::chunk == 0) b.update();
+                            y[i] = b.tick(noise);
+                        }
+                        return y;
+                    }, { 1, 2, 3 }, 440.0, 14400, 3.0 });
+    const auto synth = [&](int model, float cutoff, float formant) {
+        return [&, model, cutoff, formant](double hz, float v) {
+            dsp::SynthVoice b;
+            b.model = model;
+            b.velocity = v;
+            b.cutoff = cutoff;
+            b.formantHz = formant;
+            b.detuneCents = 0;
+            b.envOctaves = 0.3f;
+            b.start(float(hz), 0.04f, 0.3f, 0.9f, float(rate));
+            b.gain = v;
+            std::vector<float> y(seconds);
+            for (std::size_t i = 0; i < y.size(); ++i) {
+                if (i % dsp::chunk == 0) b.update(float(rate));
+                float l = 0, r = 0;
+                b.tick(l, r);
+                y[i] = l + r;
+            }
+            return y;
+        };
+    };
+    list.push_back({ "brass (horn)", synth(dsp::SynthBrass, 1000.0f, 420.0f), { 1, 2, 3 }, 174.6, 9600, 3.0 });
+    list.push_back({ "free reed (accordion)", synth(dsp::SynthReed, 2500.0f, 1800.0f), { 1, 2 }, 261.6, 9600, 3.0 });
+    list.push_back({ "woodwind (flute)", [&](double hz, float v) {
+                        dsp::WindVoice w;
+                        w.h2 = 0.15f;
+                        w.h3 = 0.08f;
+                        w.vibratoDepth = 0;
+                        w.wander = 0;
+                        w.velocity = v;
+                        w.start(float(hz), 0.05f, 0.6f, float(rate), 1ull << 32);
+                        w.gain = v;
+                        std::vector<float> y(seconds);
+                        for (std::size_t i = 0; i < y.size(); ++i) {
+                            if (i % dsp::chunk == 0) w.update(float(rate));
+                            y[i] = w.tick(noise);
+                        }
+                        return y;
+                    }, { 1, 2 }, 587.3, 9600, 5.0 });
+    const auto modal = [&](std::vector<float> ratios, std::vector<float> decays, std::vector<float> gains, float hardness, float beat) {
+        return [&, ratios, decays, gains, hardness, beat](double hz, float v) {
+            dsp::Bell b;
+            b.extras.beatHz = beat;
+            b.start(float(hz), 3.0f, dsp::clamp01(hardness + 0.35f * (v - 0.6f)), v, 0.0f, float(rate), ratios.data(), decays.data(), gains.data(),
+                    int(ratios.size()));
+            std::vector<float> y(seconds);
+            for (std::size_t i = 0; i < y.size(); ++i) {
+                if (i % dsp::chunk == 0) b.update();
+                y[i] = b.tick();
+            }
+            return y;
+        };
+    };
+    list.push_back({ "church bell", modal({ 0.5f, 1.0f, 1.2f, 1.5f, 2.0f, 2.5f, 2.67f, 3.0f }, { 1.4f, 1.0f, 0.8f, 0.5f, 0.6f, 0.35f, 0.3f, 0.25f },
+                                          { 0.5f, 0.8f, 0.6f, 0.25f, 1.0f, 0.4f, 0.3f, 0.3f }, 0.5f, 0.6f),
+                     { 0.5, 1, 1.2, 1.5, 2 }, 392.0, 2400, 3.0 });
+    list.push_back({ "marimba bar", modal({ 1.0f, 3.99f, 9.2f }, { 1.0f, 0.25f, 0.1f }, { 1.0f, 0.3f, 0.1f }, 0.35f, 0.0f), { 1, 3.99 }, 220.0, 1200, 3.0 });
+    list.push_back({ "singing bowl", modal({ 1.0f, 2.778f, 5.181f, 8.163f }, { 1.0f, 0.7f, 0.5f, 0.3f }, { 1.0f, 0.5f, 0.3f, 0.15f }, 0.3f, 0.0f),
+                     { 1, 2.778, 5.181 }, 300.0, 2400, 3.0 });
+    const auto drum = [&](int kind) {
+        return [&, kind](double hz, float v) {
+            dsp::Drum d;
+            d.kind = kind;
+            d.position = 0.4f;
+            d.hardness = dsp::clamp01(0.5f + 0.3f * (v - 0.6f));
+            d.partial = 0.4f;
+            d.start(float(hz), 1.0f, 1.5f, v, 0.0f, 800.0f, 0.7f, 0.1f, 0.0f, float(rate), 1ull << 33);
+            std::vector<float> y(seconds);
+            for (std::size_t i = 0; i < y.size(); ++i) {
+                if (i % dsp::chunk == 0) d.update(float(rate));
+                y[i] = d.tick(noise);
+            }
+            return y;
+        };
+    };
+    list.push_back({ "membrane drum (tom)", drum(dsp::DrumMembrane), { 1, 1.594, 2.136 }, 110.0, 480, 6.0 });
+    list.push_back({ "timpani", drum(dsp::DrumTimpani), { 1, 1.5, 1.98 }, 98.0, 480, 6.0 });
+    list.push_back({ "choir (tenor ah)", [&](double hz, float v) {
+                        dsp::ChoirVoice c;
+                        c.vowel = 2;
+                        c.vibratoDepth = 0;
+                        c.detuneCents = 4;
+                        c.velocity = v;
+                        c.start(float(hz), 0.1f, float(rate));
+                        c.gain = v;
+                        std::vector<float> y(seconds);
+                        for (std::size_t i = 0; i < y.size(); ++i) {
+                            if (i % dsp::chunk == 0) c.update(float(rate));
+                            y[i] = c.tick();
+                        }
+                        return y;
+                    }, { 1, 2, 3 }, 220.0, 14400, 8.0 });
+    list.push_back({ "tine electric piano", [&](double hz, float v) {
+                        dsp::TineVoice t;
+                        t.start(float(hz), 3.0f, 0.5f, v, float(rate));
+                        std::vector<float> y(seconds);
+                        for (std::size_t i = 0; i < y.size(); ++i) {
+                            if (i % dsp::chunk == 0) t.update();
+                            y[i] = t.tick();
+                        }
+                        return y;
+                    }, { 1, 2 }, 261.6, 2400, 3.0 });
+
+    for (const auto& m : list) {
+        const std::string name = m.name;
+        const auto soft = m.render(m.hz, 0.3f), hard = m.render(m.hz, 0.9f);
+        s.check(finite(soft) && finite(hard), name + ": finite");
+        s.check(clickFree(soft, rate) && clickFree(hard, rate), name + ": starts without a click");
+        // Partials where expected, the note itself in tune.
+        std::string where;
+        bool inTune = true;
+        for (std::size_t k = 0; k < m.ratios.size(); ++k) {
+            const double expected = m.hz * m.ratios[k];
+            const double found = peakNear(hard, m.from, 8192, rate, expected);
+            const double cents = 1200.0 * std::log2(found / expected);
+            inTune = inTune && std::abs(cents) <= (k == 0 ? m.tolerance : 2.5 * m.tolerance + 2.0);
+            where += (k > 0 ? ", " : "") + fmt(m.ratios[k]) + "x " + fmt(cents) + " c";
+        }
+        s.check(inTune, name + ": in tune, partials where expected", where);
+        const double level = rmsDb(hard, m.from, 8192) - rmsDb(soft, m.from, 8192);
+        const double bright = centroid(hard, m.from, rate) / centroid(soft, m.from, rate);
+        s.check(level > 3.0 && bright > 1.04, name + ": played harder, louder and brighter",
+                "+" + fmt(level) + " dB, centroid x" + fmt(bright));
+    }
+}
+
+//==============================================================================
+// Distinctness (report only): every instrument of every Place alone, described by its
+// spectral shape (24 bands, level removed) and its envelope (attack, how fast it falls
+// away, how much its level moves); the closest pairs are listed for listening.
+struct Fingerprint {
+    std::array<double, 24> band {};
+    double attack = 0, decay = 0, motion = 0;
+};
+Fingerprint fingerprint(const Audio& a, double from) {
+    Fingerprint f;
+    const std::size_t size = 4096;
+    std::vector<std::complex<double>> buf(size);
+    int frames = 0;
+    for (std::size_t start = std::size_t(from * a.rate); start + size <= a.l.size(); start += size) {
+        for (std::size_t i = 0; i < size; ++i) buf[i] = 0.5 * (a.l[start + i] + a.r[start + i]) * (0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(size)));
+        fft(buf);
+        for (std::size_t k = 1; k < size / 2; ++k) {
+            const double hz = double(k) * a.rate / double(size);
+            // 24 bands, a third of an octave from 50 Hz.
+            const int b = int(std::floor(3.0 * std::log2(std::max(hz, 1.0) / 50.0)));
+            if (b >= 0 && b < 24) f.band[std::size_t(b)] += std::norm(buf[k]);
+        }
+        ++frames;
+    }
+    double total = 0;
+    for (double v : f.band) total += v;
+    for (auto& v : f.band) v = 10.0 * std::log10(v / std::max(total, 1.0e-30) + 1.0e-9);
+    // Envelope: 10 ms frames; attack = mean rise of the rises, decay = mean fall of the falls.
+    const std::size_t w = std::size_t(0.01 * a.rate);
+    std::vector<double> env;
+    for (std::size_t start = std::size_t(from * a.rate); start + w <= a.l.size(); start += w) {
+        double e = 0;
+        for (std::size_t i = start; i < start + w; ++i) e += 0.5 * (a.l[i] * a.l[i] + a.r[i] * a.r[i]);
+        env.push_back(10.0 * std::log10(e / double(w) + 1.0e-14));
+    }
+    double rise = 0, fall = 0, mean = 0;
+    int rises = 0, falls = 0;
+    for (std::size_t i = 1; i < env.size(); ++i) {
+        const double d = env[i] - env[i - 1];
+        if (d > 0.5) {
+            rise += d;
+            ++rises;
+        } else if (d < -0.1) {
+            fall -= d;
+            ++falls;
+        }
+        mean += env[i];
+    }
+    mean /= double(std::max<std::size_t>(env.size(), 1));
+    double var = 0;
+    for (double e : env) var += (e - mean) * (e - mean);
+    f.attack = rises > 0 ? rise / rises : 0.0;
+    f.decay = falls > 0 ? fall / falls : 0.0;
+    f.motion = std::sqrt(var / double(std::max<std::size_t>(env.size(), 1)));
+    return f;
+}
+double distance(const Fingerprint& a, const Fingerprint& b) {
+    double d = 0;
+    for (std::size_t k = 0; k < a.band.size(); ++k) {
+        const double x = std::clamp(a.band[k], -60.0, 0.0) - std::clamp(b.band[k], -60.0, 0.0);
+        d += x * x / 24.0;
+    }
+    // The envelope counts as much as the spectrum: a few dB per frame of attack or decay.
+    d += 4.0 * (a.attack - b.attack) * (a.attack - b.attack) + 16.0 * (a.decay - b.decay) * (a.decay - b.decay) + (a.motion - b.motion) * (a.motion - b.motion);
+    return std::sqrt(d);
+}
+
+Host instrumentHost(int type, int character, int element, const std::vector<std::pair<std::string, float>>& extra = {}, double bpm = 120.0);
+
+void testDistinct(Suite& s) {
+    s.section("distinctness: every instrument against every other (report only)");
+    struct Entry {
+        std::string name;
+        Fingerprint print;
+    };
+    std::vector<Entry> all;
+    for (int type : builtPlaces())
+        for (int e = 0; e < placeElements; ++e) {
+            if (placeInfo(type).element[std::size_t(e)].kind == NoPattern) continue;
+            // Dry (no reverb or delay sends): the instrument itself.
+            auto h = instrumentHost(type, 0, e, { { "p1_activity", 0.7f }, { "spacemix", 0.0f }, { fxId(0, e, FxReverb), 0.0f }, { fxId(0, e, FxDelay), 0.0f } });
+            const auto a = h.render(14.0);
+            all.push_back({ std::string(placeNames[std::size_t(type)]) + " " + placeInfo(type).element[std::size_t(e)].name, fingerprint(a, 2.0) });
+        }
+    struct Pair {
+        double d;
+        std::size_t a, b;
+    };
+    std::vector<Pair> pairs;
+    for (std::size_t i = 0; i < all.size(); ++i)
+        for (std::size_t j = i + 1; j < all.size(); ++j) pairs.push_back({ distance(all[i].print, all[j].print), i, j });
+    std::sort(pairs.begin(), pairs.end(), [](const Pair& x, const Pair& y) { return x.d < y.d; });
+    double sum = 0;
+    for (const auto& p : pairs) sum += p.d;
+    s.metric("instruments compared", double(all.size()));
+    s.metric("mean distance between instruments", sum / double(std::max<std::size_t>(pairs.size(), 1)));
+    std::cout << "  closest pairs (listen to these side by side):\n";
+    for (std::size_t k = 0; k < std::min<std::size_t>(20, pairs.size()); ++k)
+        std::cout << "    " << fmt(pairs[k].d) << "  " << all[pairs[k].a].name << "  <->  " << all[pairs[k].b].name << "\n";
+    // Report only for now: a pair this close is worth a listen, not a failure.
+    s.metric("closest pair distance (report only, below 3 sounds alike)", pairs.empty() ? 0.0 : pairs.front().d);
 }
 
 void testRealtimeSafety(Suite& s) {
@@ -1804,7 +2199,7 @@ void testPlaces(Suite& s) {
 
 // Every instrument of every Place, alone (its solo in the Pattern Editor): audible,
 // finite, in the key (each note's pitch class), on the host's tempo grid.
-Host instrumentHost(int type, int character, int element, const std::vector<std::pair<std::string, float>>& extra = {}, double bpm = 120.0) {
+Host instrumentHost(int type, int character, int element, const std::vector<std::pair<std::string, float>>& extra, double bpm) {
     auto h = placeHost(type, character, extra, bpm);
     h.p->patterns.syncTypes(h.p->slotTypes());
     auto el = h.p->patterns.element(0, type, element);
@@ -2495,6 +2890,8 @@ int main(int argc, char** argv) {
     if (run("power")) testPowerAndMaster(s);
     if (run("tonal")) testTonalChanges(s);
     if (run("state")) testState(s);
+    if (run("models")) testModels(s);
+    if (run("distinct")) testDistinct(s);
     if (run("effects")) testEffects(s);
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);

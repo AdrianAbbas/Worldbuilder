@@ -206,6 +206,11 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.spread = 0.3f;
         p.voices = 3;
         p.gain = 1.0f;
+        // A large gong: the pitch sags as the strike's energy spreads, and the shimmer of
+        // the high modes blooms after the strike (stronger at the rite).
+        p.extras.glideSemis = rite ? 0.2f : -0.2f;
+        p.extras.glideSeconds = 0.7f;
+        p.extras.bloom = rite ? 0.8f : 0.5f;
     }
     // Singing bowls: close pairs of partials beating slowly, ringing long.
     {
@@ -248,6 +253,8 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.spread = 0.7f;
         p.voices = byQuality(q, 3, 4, 6);
         p.gain = 1.0f;
+        // A temple bell's slow beating swell (its "oneri").
+        p.extras.beatHz = 1.6f;
     }
     // Zither: bright plucked strings.
     {
@@ -256,6 +263,10 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.brightness = 0.45f + 0.45f * tone;
         p.spread = 0.6f;
         p.voices = byQuality(q, 4, 6, 8);
+        // Silk-and-metal strings plucked near the bridge, a shallow box, the open strings ringing.
+        p.body = dsp::BodyZither;
+        p.shape = { 0.12f, 0.25f, 0.2f, 0.0f, 0.0f, 0.35f, 0.0f };
+        p.sympathetic = 0.2f;
         p.gain = 1.0f;
     }
     // Tension: the chant and the gongs come forward; Machinery quickens the ritual.

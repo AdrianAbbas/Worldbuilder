@@ -215,15 +215,18 @@ void CavernPlace::configure(const PlaceContext& c) {
     // The bowed bass: harmonic modes under a slow bow.
     {
         auto& p = bass.patch;
-        p.set({ 1.0f, 2.0f, 3.0f, 4.0f }, { 1.0f, 0.8f, 0.6f, 0.5f }, { 1.0f, 0.5f, 0.3f * (0.5f + tone), 0.2f * tone });
-        p.ring = 0.5f;
-        p.rosin = 0.7f;
+        // Double basses, two players, slow heavy bows.
+        p.model = BowedString;
+        p.size = dsp::DoubleBass;
+        p.players = 2;
+        p.spreadCents = 6.0f;
+        p.position = 0.15f;
+        p.brightness = lerp(0.2f, 0.55f, tone);
         p.noisiness = 0.25f + 0.2f * tension;
         p.attack = flooded ? 1.6f : 0.8f;
         p.release = 1.5f;
         p.glide = 0.2f;
-        p.vibratoHz = 4.5f;
-        p.vibratoDepth = 0.08f;
+        p.vibratoDepth = 0.1f;
         p.spread = 0.3f;
         p.voices = 2;
         p.held = true;

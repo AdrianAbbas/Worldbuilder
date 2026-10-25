@@ -71,11 +71,12 @@ std::unique_ptr<Place> makePlace(int type) {
     }
 }
 
-void PlaceSlot::tiltSends(float tone, int n) {
-    // Dark to bright, as the Places' own Tone filters go (unity at the middle).
+void PlaceSlot::tiltSends(float tone, float far, int n) {
+    // Dark to bright, as the Places' own Tone filters go (unity at the middle); far
+    // away the highs fade (the lows are left alone).
     const float t = tone - 0.5f;
-    if (std::abs(t) < 1.0e-3f) return;
-    const float low = dbToGain(-8.0f * t), high = dbToGain(28.0f * t);
+    if (std::abs(t) < 1.0e-3f && far < 1.0e-3f) return;
+    const float low = dbToGain(-8.0f * t), high = dbToGain(36.0f * t - 16.0f * far * far);
     const auto tilt = [&](std::array<float, chunk>& l, std::array<float, chunk>& r, std::array<OnePole, 2>& f) {
         for (int i = 0; i < n; ++i) {
             const float a = f[0].lp(l[std::size_t(i)]), b = f[1].lp(r[std::size_t(i)]);
@@ -263,12 +264,13 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     fx.begin(c.fx, n);
     context.fx = &fx;
     current->render(context, left, right, n);
-    tiltSends(settings.tone, n);
+    // The sends darken with distance too (the dry sound has its own distance filter).
+    tiltSends(settings.tone, distance.value, n);
 
     // Distance and pan.
     const float d = distance.next(effectiveDistance(world, c.distance));
     const float p = pan.next(std::clamp(c.pan, -1.0f, 1.0f));
-    for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 2400.0f, d), rate);
+    for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 1400.0f, std::pow(d, 1.6f)), rate);
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = current->spaceSend() * lerp(0.4f, 1.6f, d);

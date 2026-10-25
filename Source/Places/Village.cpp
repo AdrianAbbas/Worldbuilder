@@ -14,6 +14,7 @@ void VillagePlace::prepareFx() {
 void VillagePlace::resetFx() {
     room.clear();
     warmth.clear();
+    for (auto& f : shelf) f.reset();
 }
 
 void VillagePlace::generate(int element, const GenInputs& in, pat::Pattern& out) const {
@@ -238,25 +239,32 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.brightness = 0.25f + 0.6f * tone;
         p.spread = 0.5f;
         p.voices = byQuality(q, 4, 6, 8);
+        // Gut courses (pairs of strings) plucked by the fingers, a lute's light body.
+        p.body = dsp::BodyLute;
+        p.shape = { 0.16f, 0.55f, 0.05f, 0.8f, 2.5f, 0.25f, 0.0f };
+        p.sympathetic = 0.08f;
         p.gain = 1.0f;
     }
     // Hurdy-gurdy: a narrow, nasal buzz; at Harvest Night the wheel buzzes on the beats.
     {
         auto& p = hurdy.patch;
+        // A hurdy-gurdy: a rosined wheel bowing the strings near the bridge (nasal,
+        // grinding); at Harvest Night the wheel buzzes on the beats.
+        p.model = BowedString;
+        p.size = dsp::Viola;
+        p.players = 1;
+        p.position = 0.05f;
+        p.brightness = lerp(0.2f, 0.95f, tone) * (dawn ? 0.7f : 1.0f) * std::exp2(0.2f * drift.smooth(t, 0.06));
+        p.noisiness = 0.2f + 0.35f * tone;
         p.attack = 2.0f;
         p.release = 1.5f;
-        p.held = p.legato = true;
         p.glide = 1.2f;
-        p.detune = 3.0f;
-        p.sub = 0.0f;
-        p.cutoff = lerpExp(350.0f, 1500.0f, tone) * (dawn ? 0.7f : 1.0f) * std::exp2(0.3f * drift.smooth(t, 0.06));
-        p.envOctaves = 0.0f;
-        p.q = 1.6f;
-        p.width = 0.5f;
+        p.vibratoDepth = 0.0f;
         p.spread = 0.2f;
         p.tremoloPerBeat = night ? 2.0f : 0.0f;
         p.tremoloDepth = night ? 0.3f : 0.0f;
         p.voices = 2;
+        p.held = true;
         p.gain = (dawn ? 0.6f : 1.0f) * lerp(0.8f, 1.7f, tension);
     }
     // Frame drum (tuned to the root), hand drum (on the fifth), shaker, and with
@@ -275,6 +283,9 @@ void VillagePlace::configure(const PlaceContext& c) {
         doum.ratio = 1.6f;
         doum.partial = 0.3f;
         doum.pan = -0.15f;
+        doum.kind = dsp::DrumMembrane;
+        doum.position = 0.15f;
+        doum.hardness = 0.2f;
         auto& tek = p.rows[1];
         tek = {};
         tek.semis = 12.0f + float(music::degree(mood, 4));
@@ -288,6 +299,9 @@ void VillagePlace::configure(const PlaceContext& c) {
         tek.ratio = 1.5f;
         tek.partial = 0.2f;
         tek.pan = 0.25f;
+        tek.kind = dsp::DrumMembrane;
+        tek.position = 0.9f;
+        tek.hardness = 0.75f;
         auto& shaker = p.rows[2];
         shaker = {};
         shaker.tuned = false;
@@ -329,8 +343,9 @@ void VillagePlace::configure(const PlaceContext& c) {
     // Recorder: nearly pure, breathy, with a gentle vibrato (more at dawn).
     {
         auto& p = recorder.patch;
-        p.h2 = 0.1f + 0.1f * tone;
-        p.h3 = 0.06f;
+        p.h2 = 0.08f + 0.2f * tone;
+        p.h3 = 0.03f + 0.1f * tone;
+        p.h4 = 0.04f * tone;
         p.breath = 0.18f + 0.08f * (1.0f - tone);
         p.attack = 0.035f;
         p.release = dawn ? 0.3f : 0.1f;
@@ -358,6 +373,9 @@ void VillagePlace::configure(const PlaceContext& c) {
     room.set(lerp(0.05f, 0.55f, s.size), lerp(0.5f, 2.4f, s.size) * (1.0f + 0.3f * s.magic), lerpExp(2000.0f, 6000.0f, tone));
     warmth.set(0.8f * (0.35f + 0.65f * s.fxDepth));
     roomSend = 0.35f + 0.25f * s.size;
+    // Tone: a presence shelf over the whole village (as the later Places have).
+    presence = 1.1f * (s.tone - 0.4f);
+    for (auto& f : shelf) f.setCutoff(2000.0f, rate);
 }
 
 int VillagePlace::addNotes(const PlaceContext& c, int n, std::array<Scheduled, maxScheduled>& notes, int count) {
@@ -392,6 +410,8 @@ void VillagePlace::mix(const PlaceContext&, float* left, float* right, int n) {
         l += 0.7f * wl;
         r += 0.7f * wr;
         warmth.process(l, r);
+        l += presence * (l - shelf[0].lp(l));
+        r += presence * (r - shelf[1].lp(r));
         left[i] = 1.25f * l;
         right[i] = 1.25f * r;
     }

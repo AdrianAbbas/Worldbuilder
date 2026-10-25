@@ -186,6 +186,10 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.spread = 0.3f;
         p.pan = -0.15f;
         p.voices = byQuality(q, 4, 6, 8);
+        // Paired courses struck near the bridge with a risha (a quill), a deep bowl body.
+        p.body = dsp::BodyOud;
+        p.shape = { 0.14f, 0.4f, 0.08f, 1.0f, 3.5f, 0.45f, 0.0f };
+        p.sympathetic = 0.15f;
         p.gain = 1.0f;
     }
     // Frame drums: a deep doum on the root, a sharp tek, a riq's jingles.
@@ -203,6 +207,9 @@ void DesertPlace::configure(const PlaceContext& c) {
         doum.ratio = 1.6f;
         doum.partial = 0.3f;
         doum.pan = -0.1f;
+        doum.kind = dsp::DrumMembrane;
+        doum.position = 0.1f;
+        doum.hardness = 0.25f;
         auto& tek = p.rows[1];
         tek = {};
         tek.semis = 12.0f + float(music::degree(frame.mood, 4));
@@ -216,6 +223,9 @@ void DesertPlace::configure(const PlaceContext& c) {
         tek.ratio = 1.5f;
         tek.partial = 0.2f;
         tek.pan = 0.2f;
+        tek.kind = dsp::DrumMembrane;
+        tek.position = 0.95f;
+        tek.hardness = 0.8f;
         auto& riq = p.rows[2];
         riq = {};
         riq.tuned = false;

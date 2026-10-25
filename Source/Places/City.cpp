@@ -241,6 +241,9 @@ void CityPlace::configure(const PlaceContext& c) {
         p.vibratoDepth = 0.0f;
         p.spread = 0.5f;
         p.voices = byQuality(q, 4, 6, 8);
+        // A tine electric piano with a barking pickup (bright in a futuristic city).
+        p.model = FmTine;
+        p.brightness = clamp01(0.3f + 0.5f * tone + 0.3f * s.era + (rush ? 0.15f : 0.0f));
         p.gain = 1.0f;
     }
     // The crowd: many voices murmuring syllables on the chord tones, never words.

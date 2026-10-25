@@ -206,6 +206,9 @@ void RuinsPlace::configure(const PlaceContext& c) {
         p.spread = 0.5f;
         p.voices = byQuality(q, 3, 4, 5);
         p.gain = 1.0f;
+        // Cracked: the partials beat fast and strike unevenly.
+        p.extras.beatHz = 3.5f;
+        p.extras.variation = 0.5f;
     }
     // Wind: tuned breath alone through narrow bands, so it whistles on the key's harmonics.
     const float gust = clamp01(0.55f + 0.6f * drift.smooth(t + 40.0, 0.2));
@@ -254,6 +257,9 @@ void RuinsPlace::configure(const PlaceContext& c) {
         low.ratio = 1.5f;
         low.partial = 0.25f;
         low.pan = 0.25f;
+        low.kind = dsp::DrumMembrane;
+        low.position = 0.3f;
+        low.hardness = 0.4f;
         auto& floor = p.rows[1];
         floor = {};
         floor.semis = -24.0f;
@@ -267,6 +273,9 @@ void RuinsPlace::configure(const PlaceContext& c) {
         floor.ratio = 1.5f;
         floor.partial = 0.2f;
         floor.pan = -0.2f;
+        floor.kind = dsp::DrumMembrane;
+        floor.position = 0.25f;
+        floor.hardness = 0.4f;
         p.spread = 0.2f;
         p.voices = 3;
         p.gain = 1.0f;

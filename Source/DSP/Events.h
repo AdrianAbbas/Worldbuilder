@@ -53,6 +53,14 @@ struct Mode {
     }
     float energy() const { return y1 * y1 + y2 * y2; }
     void clear() { y1 = y2 = 0; }
+    // New frequency and decay keeping the ringing state (a gliding gong).
+    void retune(float hz, float decaySeconds, float rate) {
+        const float w = twoPi * std::min(hz, 0.45f * rate) / rate;
+        const float r = std::exp(-1.0f / (std::max(decaySeconds, 0.0005f) * rate));
+        b1 = 2.0f * r * std::cos(w);
+        b2 = -r * r;
+        in = std::sin(w);
+    }
 };
 
 // A decaying sine whose pitch glides: water drops and bubbles (pitch rising), ice

@@ -209,27 +209,30 @@ void PalacePlace::configure(const PlaceContext& c) {
         p.brightness = (fallen ? 0.45f : 0.65f) + 0.3f * tone;
         p.spread = 0.5f;
         p.voices = byQuality(q, 5, 7, 8);
+        // Two unison 8' choirs plucked by quills near the end of the string, the jack's
+        // damper stopping each note as it ends, a bright soundboard.
+        p.body = dsp::BodyHarpsichord;
+        p.shape = { 0.07f, 0.12f, 0.25f, 1.0f, 1.5f, 0.5f, 0.12f };
         p.gain = 1.0f;
     }
     // A string ensemble: many slightly detuned saws, slow bows (thin and wavering when fallen).
     {
         auto& p = strings.patch;
-        p.held = true;
-        p.legato = true;
+        // A court string ensemble (thin, wavering and out of tune when fallen).
+        p.model = BowedString;
+        p.size = dsp::Violin;
+        p.players = 3;
+        p.spreadCents = fallen ? 22.0f : 9.0f;
+        p.position = 0.12f;
+        p.brightness = lerp(0.35f, 0.8f, tone) * (fallen ? 0.6f : 1.0f);
+        p.noisiness = 0.15f;
         p.attack = fallen ? 2.5f : 1.2f;
         p.release = 1.8f;
         p.glide = 0.6f;
-        p.detune = fallen ? 22.0f : 12.0f;
-        p.sub = fallen ? 0.0f : 0.15f;
-        p.cutoff = lerpExp(600.0f, 2600.0f, tone) * (fallen ? 0.6f : 1.0f);
-        p.envOctaves = 0.4f;
-        p.q = 0.7f;
-        p.width = 0.9f;
-        p.vibratoHz = 5.2f;
-        p.vibratoDepth = (fallen ? 0.18f : 0.08f) + 0.1f * tension;
-        p.vibratoDelay = 0.4f;
+        p.vibratoDepth = (fallen ? 0.28f : 0.18f) + 0.1f * tension;
         p.spread = 0.8f;
-        p.voices = byQuality(q, 5, 6, 8);
+        p.voices = byQuality(q, 5, 6, 6);
+        p.held = true;
         p.gain = 1.0f;
     }
     // Fanfare brass: bright trumpets.
@@ -255,6 +258,12 @@ void PalacePlace::configure(const PlaceContext& c) {
         p.transpose = 12.0f;
         p.spread = 0.3f;
         p.voices = 3;
+        // Natural trumpets: bright, the bell's formant up high.
+        p.model = dsp::SynthBrass;
+        p.cutoff = lerpExp(800.0f, 1400.0f, tone) * (fallen ? 0.7f : 1.0f);
+        p.formantHz = 1300.0f;
+        p.formantLevel = 0.6f;
+        p.breath = 0.04f;
         p.gain = 1.0f;
     }
     // Glockenspiel: hard steel bars, the second partial a quarter-tone off any note.
@@ -286,6 +295,9 @@ void PalacePlace::configure(const PlaceContext& c) {
         root.ratio = 1.5f;
         root.partial = 0.35f;
         root.pan = -0.15f;
+        root.kind = dsp::DrumTimpani;
+        root.position = 0.25f;
+        root.hardness = 0.5f;
         p.rows[1] = root;
         p.rows[1].semis = float(music::degree(frame.mood, music::nearestDegree(frame.mood, 7))) - 12.0f;
         p.rows[1].pan = 0.15f;
@@ -308,6 +320,8 @@ void PalacePlace::configure(const PlaceContext& c) {
     }
     // Tension: timpani and brass come forward, the strings tremble, the harpsichord and
     // glockenspiel thin out; Life fills the hall's voices; Machinery the court's clockwork glock.
+    // Tension: the hall answers louder (more of everything in the reverbs and echoes).
+    sendScale.fill(lerp(0.6f, 1.6f, tension));
     level = { 1.0f * (1.0f - 0.35f * tension), 0.045f * (fallen ? 0.8f : 1.0f), 0.22f * (throne ? 1.1f : (fallen ? 0.7f : 0.9f)) * (0.7f + 0.6f * tension),
               0.16f * (1.0f - 0.3f * tension) * (0.7f + 0.8f * s.machinery), 0.13f * (0.7f + 0.8f * tension), 0.4f * lerp(0.7f, 1.3f, s.life) * (ball ? 1.3f : 1.0f) };
 

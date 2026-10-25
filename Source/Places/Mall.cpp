@@ -274,6 +274,9 @@ void MallPlace::configure(const PlaceContext& c) {
         kick.noiseDecay = 0.02f;
         kick.ratio = 1.5f;
         kick.partial = 0.1f;
+        kick.kind = dsp::DrumMembrane;
+        kick.position = 0.15f;
+        kick.hardness = 0.6f;
         auto& snare = p.rows[1];
         snare = {};
         snare.semis = float(music::degree(frame.mood, 4));
@@ -287,6 +290,10 @@ void MallPlace::configure(const PlaceContext& c) {
         snare.ratio = 1.6f;
         snare.partial = 0.3f;
         snare.pan = 0.1f;
+        snare.kind = dsp::DrumMembrane;
+        snare.position = 0.4f;
+        snare.hardness = 0.2f;
+        snare.snare = 0.6f;
         auto& hat = p.rows[2];
         hat = {};
         hat.tuned = false;

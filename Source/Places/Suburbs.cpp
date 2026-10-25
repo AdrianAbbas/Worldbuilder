@@ -208,6 +208,9 @@ void SuburbsPlace::configure(const PlaceContext& c) {
         p.vibratoDepth = waver;
         p.spread = 0.5f;
         p.voices = byQuality(q, 4, 6, 8);
+        // A mellow tine electric piano, played softly.
+        p.model = FmTine;
+        p.brightness = clamp01(0.1f + 0.4f * tone + 0.2f * s.era);
         p.gain = 1.0f;
     }
     // The pop pulse: a soft plucky synth.

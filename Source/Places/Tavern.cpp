@@ -215,6 +215,10 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.spread = 0.4f;
         p.pan = -0.25f;
         p.voices = byQuality(q, 5, 7, 8);
+        // Strummed gut courses, a lute's body.
+        p.body = dsp::BodyLute;
+        p.shape = { 0.18f, 0.5f, 0.05f, 0.8f, 3.0f, 0.4f, 0.0f };
+        p.sympathetic = 0.06f;
         p.gain = 1.0f;
     }
     // A frame drum on the root and its rim.
@@ -232,6 +236,9 @@ void TavernPlace::configure(const PlaceContext& c) {
         head.ratio = 1.6f;
         head.partial = 0.3f;
         head.pan = 0.15f;
+        head.kind = dsp::DrumMembrane;
+        head.position = 0.3f;
+        head.hardness = 0.35f;
         auto& rim = p.rows[1];
         rim = {};
         rim.semis = 12.0f + float(music::degree(frame.mood, 4));
@@ -252,15 +259,17 @@ void TavernPlace::configure(const PlaceContext& c) {
     // The fiddle: bowed gut strings, harmonic, a quick bow (long and sweet in the corner).
     {
         auto& p = fiddle.patch;
-        p.set({ 1.0f, 2.0f, 3.0f, 4.0f }, { 1.0f, 0.8f, 0.6f, 0.5f }, { 1.0f, 0.55f, 0.4f * (0.4f + tone), 0.25f * tone });
-        p.ring = quiet ? 0.5f : 0.2f;
-        p.rosin = brawl ? 0.9f : 0.75f;
+        // A fiddle: one player, bowed near the bridge in a brawl, a violin's body.
+        p.model = BowedString;
+        p.size = dsp::Violin;
+        p.players = 1;
+        p.position = brawl ? 0.06f : 0.1f;
+        p.brightness = lerp(0.4f, 0.85f, tone) * (quiet ? 0.85f : 1.0f);
         p.noisiness = 0.25f + 0.2f * tension;
-        p.attack = quiet ? 0.25f : 0.03f;
-        p.release = quiet ? 0.6f : 0.12f;
+        p.attack = quiet ? 0.25f : 0.05f;
+        p.release = quiet ? 0.6f : 0.15f;
         p.glide = 0.04f;
-        p.vibratoHz = 5.6f;
-        p.vibratoDepth = (quiet ? 0.15f : 0.06f) + 0.08f * s.life;
+        p.vibratoDepth = (quiet ? 0.25f : 0.12f) + 0.08f * s.life;
         p.transpose = 12.0f;
         p.spread = 0.2f;
         p.pan = 0.2f;
@@ -302,6 +311,11 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.spread = 0.3f;
         p.pan = -0.1f;
         p.voices = byQuality(q, 4, 6, 7);
+        // A squeezebox: free reeds in pairs, beating, a bright chamber.
+        p.model = dsp::SynthReed;
+        p.formantHz = 2000.0f;
+        p.formantLevel = 0.6f;
+        p.breath = 0.035f;
         p.gain = 1.0f;
     }
     // Stomps on the floorboards (tuned low, woody) and claps.

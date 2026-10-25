@@ -300,7 +300,9 @@ void ForestPlace::configure(const PlaceContext& c) {
     // Kalimba: a plucked tine, its bright overtone a quarter-tone off any note.
     {
         auto& p = kalimba.patch;
-        p.set({ 1.0f, 2.0f, 5.2f }, { 1.0f, 0.5f, 0.25f }, { 1.0f, 0.12f, 0.2f * (0.4f + tone) });
+        // A plucked steel tine: its cantilever modes near 6 and 17 times the note ring
+        // briefly over the fundamental.
+        p.set({ 1.0f, 5.95f, 17.0f }, { 1.0f, 0.18f, 0.07f }, { 1.0f, 0.3f * (0.4f + tone), 0.1f * tone });
         p.decay = dark ? 2.4f : (enchanted ? 2.6f : 1.1f);
         p.hardness = 0.5f + 0.35f * tone;
         p.toneHz = lerpExp(2500.0f, 10000.0f, tone);
@@ -311,23 +313,23 @@ void ForestPlace::configure(const PlaceContext& c) {
     // Strings: a soft section pad; in dark woods it trembles with Tension.
     {
         auto& p = strings.patch;
+        // A string section of violas and cellos, bowed over the fingerboard (soft, veiled).
+        p.model = BowedString;
+        p.size = dsp::Viola;
+        p.players = 3;
+        p.spreadCents = 10.0f;
+        p.position = 0.2f;
+        p.brightness = lerp(0.2f, 0.65f, tone) * (dark ? 0.6f : 1.0f) * std::exp2(0.3f * drift.smooth(t, 0.06));
+        p.noisiness = 0.12f;
         p.attack = 1.6f;
         p.release = 2.4f;
-        p.held = p.legato = true;
         p.glide = 1.2f;
-        p.detune = 11.0f;
-        p.sub = 0.0f;
-        p.cutoff = lerpExp(350.0f, 2400.0f, tone) * (dark ? 0.6f : 1.0f) * std::exp2(0.3f * drift.smooth(t, 0.06));
-        p.envOctaves = 0.4f;
-        p.q = 0.6f;
-        p.width = 0.9f;
-        p.vibratoHz = 5.0f;
-        p.vibratoDepth = 0.08f;
-        p.vibratoDelay = 0.6f;
+        p.vibratoDepth = 0.15f;
         p.tremoloPerBeat = 4.0f;
         p.tremoloDepth = 0.6f * std::max(0.0f, tension - 0.3f);
         p.spread = 0.6f;
         p.voices = byQuality(q, 3, 4, 4);
+        p.held = true;
         p.gain = 1.0f;
     }
     // Rustling leaves: tuned breath alone, in gusts.

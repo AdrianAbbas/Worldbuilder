@@ -234,6 +234,10 @@ void MilitaryPlace::configure(const PlaceContext& c) {
         head.ratio = 1.6f;
         head.partial = 0.3f;
         head.pan = 0.1f;
+        head.kind = dsp::DrumMembrane;
+        head.position = 0.35f;
+        head.hardness = 0.85f;
+        head.snare = 0.8f;
         auto& rim = p.rows[1];
         rim = {};
         rim.semis = 24.0f;
@@ -275,6 +279,13 @@ void MilitaryPlace::configure(const PlaceContext& c) {
         p.spread = 0.1f;
         p.pan = night ? -0.4f : 0.2f;
         p.voices = 2;
+        // One bugler: a conical bore, a little darker than a trumpet.
+        p.model = dsp::SynthBrass;
+        p.detune = 0.0f;
+        p.cutoff = lerpExp(800.0f, 1400.0f, tone) * (night ? 0.75f : 1.0f);
+        p.formantHz = 1100.0f;
+        p.formantLevel = 0.7f;
+        p.breath = 0.05f;
         p.gain = 1.0f;
     }
     // A bass drum on the root and a low tom on the fifth.
@@ -291,6 +302,9 @@ void MilitaryPlace::configure(const PlaceContext& c) {
         kick.noiseDecay = 0.05f;
         kick.ratio = 1.5f;
         kick.partial = 0.2f;
+        kick.kind = dsp::DrumMembrane;
+        kick.position = 0.2f;
+        kick.hardness = 0.35f;
         auto& tom = p.rows[1];
         tom = {};
         tom.semis = -12.0f + float(music::degree(frame.mood, 4));
@@ -303,6 +317,9 @@ void MilitaryPlace::configure(const PlaceContext& c) {
         tom.ratio = 1.5f;
         tom.partial = 0.3f;
         tom.pan = 0.3f;
+        tom.kind = dsp::DrumMembrane;
+        tom.position = 0.3f;
+        tom.hardness = 0.5f;
         p.spread = 0.1f;
         p.voices = 4;
         p.gain = 1.0f;
@@ -359,15 +376,18 @@ void MilitaryPlace::configure(const PlaceContext& c) {
     // Strings: short, hard bow strokes (long and trembling on the night watch).
     {
         auto& p = strings.patch;
-        p.set({ 1.0f, 2.0f, 3.0f, 4.0f }, { 1.0f, 0.8f, 0.6f, 0.5f }, { 1.0f, 0.5f, 0.35f * (0.4f + tone), 0.2f * tone });
-        p.ring = night ? 0.5f : 0.15f;
-        p.rosin = alert ? 0.85f : 0.7f;
+        // A string section (violins and violas), short hard strokes, sul ponticello on alert.
+        p.model = BowedString;
+        p.size = dsp::Violin;
+        p.players = 3;
+        p.spreadCents = 7.0f;
+        p.position = alert ? 0.07f : 0.12f;
+        p.brightness = lerp(0.35f, 0.8f, tone) * (night ? 0.75f : 1.0f);
         p.noisiness = 0.2f + 0.2f * tension;
-        p.attack = night ? 0.6f : 0.02f;
-        p.release = night ? 1.0f : 0.12f;
+        p.attack = night ? 0.6f : 0.04f;
+        p.release = night ? 1.0f : 0.15f;
         p.glide = 0.05f;
-        p.vibratoHz = 5.5f;
-        p.vibratoDepth = night ? 0.1f + 0.15f * tension : 0.04f;
+        p.vibratoDepth = night ? 0.15f + 0.15f * tension : 0.08f;
         p.spread = 0.4f;
         p.voices = byQuality(q, 3, 4, 5);
         p.held = true;

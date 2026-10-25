@@ -103,6 +103,11 @@ struct SynthPatch {
     int voices = 4;
     bool held = true;         // notes last their length (else they decay)
     bool legato = false;      // a note that starts as another ends glides on from it
+    // The voice model (dsp::SynthModel): Analog, Brass or Reed. Brass and Reed use
+    // cutoff as a brightness scale (1000 = as built), formantHz for the bell or reed
+    // chamber, breath for air noise; detune is a second player or reed (cents).
+    int model = dsp::SynthAnalog;
+    float formantHz = 1200, formantLevel = 0.6f, breath = 0.05f;
 };
 
 class SynthPart final : public Part {
@@ -142,6 +147,8 @@ public:
         const bool legato = k >= 0;
         if (k < 0) k = int(dsp::pickVoice(voice, limit, [](const dsp::SynthVoice& v) { return v.level(); }));
         auto& v = voice[std::size_t(k)];
+        v.model = patch.model;
+        v.velocity = n.velocity;
         v.start(hz, patch.attack, patch.decay, patch.held ? patch.sustain : 0.0f, rate, legato);
         v.gain = n.velocity;
         if (!legato) v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
@@ -211,6 +218,10 @@ private:
         v.vibratoHz = patch.vibratoHz;
         v.vibratoDepth = patch.vibratoDepth;
         v.vibratoDelay = patch.vibratoDelay;
+        v.formantHz = patch.formantHz;
+        v.formantLevel = patch.formantLevel;
+        v.breath = patch.breath;
+        if (!v.active()) v.model = patch.model;
     }
     std::array<dsp::SynthVoice, maxVoices> voice;
     std::array<HeldNote, maxVoices> held {};
@@ -220,10 +231,18 @@ private:
 };
 
 //==============================================================================
-// Plucked strings (Karplus-Strong): lutes, harps, guitars, ouds, zithers.
+// Plucked strings: lutes, harps, guitars, ouds, zithers, harpsichords. Each note a
+// waveguide string (or a course of two) plucked at its point; the part's body (the
+// instrument's measured resonances) colours them all, and open strings tuned to the
+// key ring along in sympathy.
 struct PluckPatch {
     float decay = 1.5f, brightness = 0.5f, gain = 1, pan = 0, spread = 0.5f;
     int voices = 6;
+    dsp::Pluck::Shape shape {};
+    int body = dsp::BodyGuitar;
+    float bodyAmount = 1;        // 0: the bare strings
+    float sympathetic = 0;       // open strings ringing along (root and fifth)
+    float transpose = 0;
 };
 
 class PluckPart final : public Part {
@@ -234,21 +253,49 @@ public:
         rate = r;
         for (auto& p : voice) p.prepare(rate, 40.0f);
         for (auto& f : dc) f.setCutoff(20.0f, rate);
+        for (auto& o : open) o.prepare(std::size_t(rate / 30.0f) + 8);
+        for (auto& f : openDamp) f.setCutoff(2500.0f, rate);
         reset();
     }
     void reset() override {
         for (auto& p : voice) p.reset();
         for (auto& f : dc) f.reset();
+        for (auto& b : bodyFilter)
+            for (auto& f : b) f.reset();
+        for (auto& o : open) o.clear();
+        for (auto& f : openDamp) f.reset();
         noiseAt = 0;
+        bodyType = -1;
     }
     void start(const PartFrame& f, const NoteOn& n) override {
         auto& v = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Pluck& p) { return p.level(); })];
-        v.start(music::noteHz(f.root, n.semis), patch.decay * n.decay * (n.extra ? 0.5f : 1.0f), patch.brightness, n.velocity,
-                n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, noiseAt);
+        const int length = patch.shape.dampSeconds > 0.0f ? std::max(1, int(n.seconds * rate)) : -1;
+        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay * (n.extra ? 0.5f : 1.0f), patch.brightness, n.velocity,
+                n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, noiseAt, patch.shape, length);
         noiseAt += 1ull << 24;
     }
-    void update(const PartFrame&) override {}
+    void update(const PartFrame& f) override {
+        if (patch.body != bodyType) {
+            bodyType = std::clamp(patch.body, 0, dsp::BodyCount - 1);
+            const auto& b = dsp::bodies[std::size_t(bodyType)];
+            for (auto& side : bodyFilter)
+                for (std::size_t k = 0; k < side.size(); ++k) side[k].set(b.mode[k].hz, b.mode[k].q, rate);
+        }
+        // The open strings: the key's root and fifth, low.
+        if (patch.sympathetic > 0.0f) {
+            const float root = music::noteHz(f.root, -12.0f), fifth = music::noteHz(f.root, -12.0f + float(music::degree(f.mood, 4)));
+            openPeriod[0] = rate / root;
+            openPeriod[1] = rate / fifth;
+        }
+    }
     void render(float* left, float* right, int n) override {
+        const auto& b = dsp::bodies[std::size_t(std::max(bodyType, 0))];
+        const float amount = dsp::clamp01(patch.bodyAmount);
+        const float direct = dsp::lerp(1.0f, b.direct, amount);
+        std::array<float, 4> g {};
+        for (std::size_t k = 0; k < 4; ++k) g[k] = b.mode[k].gain * amount;
+        const bool body = bodyType > dsp::BodyNone && amount > 0.0f;
+        const float sym = patch.sympathetic;
         for (int i = 0; i < n; ++i) {
             float l = 0, r = 0;
             for (auto& p : voice) {
@@ -256,6 +303,27 @@ public:
                 const float y = p.tick(noise);
                 l += y * p.pan.l;
                 r += y * p.pan.r;
+            }
+            if (body) {
+                float bl = l * direct, br = r * direct;
+                for (std::size_t k = 0; k < 4; ++k) {
+                    bl += g[k] * bodyFilter[0][k].bandpass(l);
+                    br += g[k] * bodyFilter[1][k].bandpass(r);
+                }
+                l = bl;
+                r = br;
+            }
+            if (sym > 0.0f) {
+                // Two open strings driven quietly by everything played, ringing on.
+                const float drive = 0.04f * (l + r);
+                float ring = 0;
+                for (std::size_t k = 0; k < 2; ++k) {
+                    const float y = openDamp[k].lp(open[k].read(openPeriod[k]));
+                    open[k].push(drive + 0.993f * y);
+                    ring += y;
+                }
+                l += sym * ring;
+                r += sym * ring;
             }
             // A plucked string's loop passes DC; block it.
             left[i] += dc[0].hp(l) * patch.gain;
@@ -266,21 +334,29 @@ public:
 private:
     std::array<dsp::Pluck, maxVoices> voice;
     std::array<dsp::OnePole, 2> dc;
+    std::array<std::array<dsp::Svf, 4>, 2> bodyFilter;
+    int bodyType = -1;
+    std::array<dsp::DelayLine, 2> open;
+    std::array<dsp::OnePole, 2> openDamp;
+    std::array<float, 2> openPeriod { 400, 300 };
 };
 
 //==============================================================================
 // Struck modal objects: bells, chimes, marimbas, glockenspiels, anvils, gongs.
 struct ModalPatch {
-    std::array<float, 6> ratios { 1, 2, 3, 4, 5, 6 }, decays { 1, 1, 1, 1, 1, 1 }, gains { 1, 0, 0, 0, 0, 0 };
+    static constexpr int maxModes = dsp::Bell::maxModes;
+    std::array<float, maxModes> ratios { 1, 2, 3, 4, 5, 6, 7, 8 }, decays { 1, 1, 1, 1, 1, 1, 1, 1 }, gains { 1, 0, 0, 0, 0, 0, 0, 0 };
     int modes = 1;
     bool scaleTuned = false;   // partials 3 and 4 become the scale's own third and fifth
     float decay = 2, hardness = 0.5f, gain = 1, pan = 0, spread = 0.6f, toneHz = 9000, transpose = 0;
+    float velocityHardness = 0.35f;   // a harder strike when played louder
+    dsp::Bell::Extras extras { 0.0f, 0.0f, 0.4f, 0.0f, 0.25f };
     int voices = 4;
     void set(std::initializer_list<float> r, std::initializer_list<float> d, std::initializer_list<float> g) {
-        modes = int(std::min<std::size_t>(r.size(), 6));
+        modes = int(std::min<std::size_t>(r.size(), maxModes));
         std::copy_n(r.begin(), modes, ratios.begin());
-        std::copy_n(d.begin(), std::min<std::size_t>(d.size(), 6), decays.begin());
-        std::copy_n(g.begin(), std::min<std::size_t>(g.size(), 6), gains.begin());
+        std::copy_n(d.begin(), std::min<std::size_t>(d.size(), maxModes), decays.begin());
+        std::copy_n(g.begin(), std::min<std::size_t>(g.size(), maxModes), gains.begin());
     }
 };
 
@@ -303,7 +379,9 @@ public:
             ratios[3] = std::exp2(float(music::degree(f.mood, 4)) / 12.0f);
         }
         auto& b = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Bell& v) { return v.level(); })];
-        b.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay, patch.hardness, n.velocity,
+        b.extras = patch.extras;
+        const float hardness = dsp::clamp01(patch.hardness + patch.velocityHardness * (n.velocity - 0.6f));
+        b.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay, hardness, n.velocity,
                 n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, ratios.data(), patch.decays.data(), patch.gains.data(), patch.modes);
         b.update();
     }
@@ -339,6 +417,10 @@ struct DrumRow {
     bool tuned = true;
     float hz = 200, bend = 1.05f, decay = 1, tone = 0.5f, noise = 0.05f, noiseHz = 800, noiseQ = 0.7f, noiseDecay = 0.1f;
     float ratio = 1.5f, partial = 0.3f, pan = 0;
+    // dsp::DrumKind: TwoTone (wood, metal, stomps), Membrane or Timpani; for the skins,
+    // where the stick lands (0 centre, 1 edge), how hard it is, snare wires, the shell.
+    int kind = dsp::DrumTwoTone;
+    float position = 0.3f, hardness = 0.5f, snare = 0, shellHz = 0, shell = 0;
 };
 struct DrumPatch {
     std::array<DrumRow, 4> rows {};
@@ -363,6 +445,13 @@ public:
         auto& d = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Drum& v) { return v.level(); })];
         d.ratio = row.ratio;
         d.partial = row.partial;
+        d.kind = row.kind;
+        d.position = row.position;
+        // Louder hits are harder.
+        d.hardness = dsp::clamp01(row.hardness + 0.3f * (n.velocity - 0.6f));
+        d.snare = row.snare;
+        d.shellHz = row.shellHz;
+        d.shell = row.shell;
         const float hz = row.tuned ? music::noteHz(f.root, row.semis) : row.hz;
         d.start(hz, row.bend, row.decay * n.decay, row.tone * n.velocity, row.noise * n.velocity, row.noiseHz, row.noiseQ, row.noiseDecay * n.decay,
                 n.hasPan ? n.pan : spreadPan(row.pan, patch.spread, n.random), rate, noiseAt);
@@ -393,6 +482,10 @@ private:
 
 //==============================================================================
 // FM voices: electric pianos, glassy calls, PA tones, data blips, vibraphones.
+// Model Fm: two-operator FM (glassy calls, PA tones, data blips, synthetic keys).
+// Model Tine: a tine electric piano (decay: the fundamental's T60; brightness: bell
+// and bark; release: the damper).
+enum FmModel { FmTwoOp, FmTine };
 struct FmPatch {
     float ratio = 2, index = 2, indexFloor = 0.2f, indexSeconds = 0.4f, feedback = 0;
     float attack = 0.002f, decay = 0.6f, sustain = 0, release = 0.3f;
@@ -400,6 +493,8 @@ struct FmPatch {
     float gain = 1, pan = 0, spread = 0.5f, transpose = 0;
     int voices = 4;
     bool held = false;
+    int model = FmTwoOp;
+    float brightness = 0.5f;
 };
 
 class FmPart final : public Part {
@@ -412,10 +507,21 @@ public:
     }
     void reset() override {
         for (auto& v : voice) v.reset();
+        for (auto& v : tines) v.reset();
         for (auto& h : held) h = {};
     }
     bool sustains() const override { return patch.held; }
     void start(const PartFrame& f, const NoteOn& n) override {
+        if (patch.model == FmTine) {
+            const int k = int(dsp::pickVoice(tines, std::clamp(patch.voices, 1, maxVoices), [](const dsp::TineVoice& v) { return v.level(); }));
+            auto& v = tines[std::size_t(k)];
+            v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * n.decay * 4.0f, patch.brightness, n.velocity, rate);
+            v.gainLevel = 1.0f;
+            v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
+            held[std::size_t(k)].set(n);
+            v.update();
+            return;
+        }
         const int k = int(dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::FmVoice& v) { return v.level(); }));
         auto& v = voice[std::size_t(k)];
         apply(v);
@@ -428,6 +534,19 @@ public:
         v.update(rate);
     }
     void update(const PartFrame& f) override {
+        if (patch.model == FmTine) {
+            for (int i = 0; i < maxVoices; ++i) {
+                auto& v = tines[std::size_t(i)];
+                auto& h = held[std::size_t(i)];
+                if (h.on && f.beat >= h.until) {
+                    // Keys held for the note's length, then the damper.
+                    v.release(std::max(patch.release, 0.08f));
+                    h.on = false;
+                }
+                if (v.active()) v.update();
+            }
+            return;
+        }
         for (int i = 0; i < maxVoices; ++i) {
             auto& v = voice[std::size_t(i)];
             auto& h = held[std::size_t(i)];
@@ -450,12 +569,19 @@ public:
                 l += y * v.pan.l;
                 r += y * v.pan.r;
             }
+            for (auto& v : tines) {
+                if (!v.active()) continue;
+                const float y = v.tick();
+                l += y * v.pan.l;
+                r += y * v.pan.r;
+            }
             left[i] += l * patch.gain;
             right[i] += r * patch.gain;
         }
     }
 
 private:
+    std::array<dsp::TineVoice, maxVoices> tines;
     void apply(dsp::FmVoice& v) const {
         v.ratio = patch.ratio;
         v.index = patch.index;
@@ -510,6 +636,7 @@ public:
         const bool legato = k >= 0;
         if (k < 0) k = int(dsp::pickVoice(voice, limit, [](const dsp::ChoirVoice& v) { return v.level(); }));
         auto& v = voice[std::size_t(k)];
+        v.velocity = n.velocity;
         v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, rate, legato);
         v.gain = n.velocity;
         if (!legato) v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
@@ -579,6 +706,8 @@ struct WindPatch {
     float gain = 1, pan = 0, spread = 0.3f, transpose = 0, minSeconds = 0.08f;
     int voices = 2;
     bool held = false;   // long notes it picks up again when it missed their start
+    // The upper harmonics, the attack's chiff, broad air noise and the pitch's wander (cents).
+    float h4 = 0, h5 = 0, chiff = 0.25f, chiffSeconds = 0.035f, air = 0.08f, wander = 3;
 };
 
 class WindPart final : public Part {
@@ -604,6 +733,7 @@ public:
         if (k < 0) k = int(dsp::pickVoice(voice, limit, [](const dsp::WindVoice& v) { return v.level(); }));
         auto& v = voice[std::size_t(k)];
         apply(v);
+        v.velocity = n.velocity;
         v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, patch.scoop, rate, noiseAt);
         noiseAt += 1ull << 24;
         v.gain = n.velocity;
@@ -650,14 +780,24 @@ private:
         v.vibratoHz = patch.vibratoHz;
         v.vibratoDepth = patch.vibratoDepth;
         v.vibratoDelay = patch.vibratoDelay;
+        v.h4 = patch.h4;
+        v.h5 = patch.h5;
+        // Breath alone (rustles, gusts) has no jet to chiff or wander.
+        v.chiff = patch.tone > 0.0f ? patch.chiff : 0.0f;
+        v.chiffSeconds = patch.chiffSeconds;
+        v.air = patch.tone > 0.0f ? patch.air : 0.0f;
+        v.wander = patch.tone > 0.0f ? patch.wander : 0.0f;
     }
     std::array<dsp::WindVoice, maxVoices> voice;
     std::array<HeldNote, maxVoices> held {};
 };
 
 //==============================================================================
-// Bowed resonators: bowed metal, bowed basses and strings, singing bowls, glassy hums.
-// Held notes that follow the chords while they sound (like the synth drones).
+// Bowed instruments. Model Resonator: a bow driving a few tuned modes (bowed metal,
+// singing bowls, glassy hums, a ship's hull). Model String: a violin, viola, cello or
+// double bass (one player or a section) through the violin family's body, scaled to
+// its size. Held notes follow the chords while they sound (like the synth drones).
+enum BowedModel { BowedResonator, BowedString };
 struct BowedPatch {
     std::array<float, 4> ratios { 1, 2, 3, 4 }, decays { 1, 1, 1, 1 }, gains { 1, 0.5f, 0.3f, 0.2f };
     int modes = 4;
@@ -665,6 +805,13 @@ struct BowedPatch {
     float vibratoHz = 5, vibratoDepth = 0, gain = 1, pan = 0, spread = 0.5f, transpose = 0;
     int voices = 4;
     bool held = true;   // notes last their length (else the bow lifts at once and the modes ring)
+    // Model String.
+    int model = BowedResonator, size = dsp::Violin, players = 1;
+    float position = 0.12f;      // bow point, fraction of the string from the bridge (sul tasto ~0.2, ponticello ~0.04)
+    float brightness = 0.5f;     // bow pressure and speed
+    float spreadCents = 8;       // a section's detune
+    float bodyAmount = 1;
+    float tremoloPerBeat = 0, tremoloDepth = 0;   // bowed tremolo, in time
     void set(std::initializer_list<float> r, std::initializer_list<float> d, std::initializer_list<float> g) {
         modes = int(std::min<std::size_t>(r.size(), 4));
         std::copy_n(r.begin(), modes, ratios.begin());
@@ -679,47 +826,110 @@ public:
     BowedPatch patch;
     void prepare(float r) override {
         rate = r;
+        for (auto& v : strings) v.prepare(rate, 30.0f);
         reset();
     }
     void reset() override {
         for (auto& v : voice) v.reset();
+        for (auto& v : strings) v.reset();
         for (auto& h : held) h = {};
+        for (auto& side : body)
+            for (auto& f : side) f.reset();
         noiseAt = 0;
+        bodyFor = -1;
     }
     bool sustains() const override { return patch.held; }
     void start(const PartFrame& f, const NoteOn& n) override {
         const int limit = std::clamp(patch.voices, 1, maxVoices);
+        const bool string = patch.model == BowedString;
         // A voice whose note ends here bows on into the new one.
         int k = -1;
         for (int i = 0; i < limit && k < 0; ++i)
             if (held[std::size_t(i)].on && held[std::size_t(i)].until <= n.beat + 1.0e-6 && held[std::size_t(i)].until >= n.beat - 0.07) k = i;
         const bool legato = k >= 0;
-        if (k < 0) k = int(dsp::pickVoice(voice, limit, [](const dsp::BowedVoice& v) { return v.level(); }));
-        auto& v = voice[std::size_t(k)];
-        apply(v);
-        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, rate, noiseAt, legato);
+        if (k < 0)
+            k = string ? int(dsp::pickVoice(strings, limit, [](const dsp::StringVoice& v) { return v.level(); }))
+                       : int(dsp::pickVoice(voice, limit, [](const dsp::BowedVoice& v) { return v.level(); }));
+        const float hz = music::noteHz(f.root, n.semis + patch.transpose);
+        const float pan = n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random);
+        if (string) {
+            auto& v = strings[std::size_t(k)];
+            apply(v);
+            // A harder stroke speaks sooner.
+            v.start(hz, patch.attack * dsp::lerp(1.3f, 0.6f, n.velocity), n.velocity, n.random2, noiseAt, legato);
+            v.gain = n.velocity;
+            if (!legato) v.pan = dsp::panGains(pan);
+            v.update();
+        } else {
+            auto& v = voice[std::size_t(k)];
+            apply(v);
+            v.start(hz, patch.attack, rate, noiseAt, legato);
+            v.gainLevel = n.velocity;
+            if (!legato) v.pan = dsp::panGains(pan);
+            v.update(rate);
+        }
         noiseAt += 1ull << 24;
-        v.gainLevel = n.velocity;
-        if (!legato) v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
         held[std::size_t(k)].set(n);
         if (!patch.held) held[std::size_t(k)].until = n.beat;   // the bow lifts at once
-        v.update(rate);
     }
     void update(const PartFrame& f) override {
+        const bool string = patch.model == BowedString;
+        trem = 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::cos(float(f.beat * double(patch.tremoloPerBeat)) * dsp::twoPi));
+        if (string && patch.size != bodyFor) {
+            bodyFor = std::clamp(patch.size, 0, dsp::StringSizeCount - 1);
+            const float scale = dsp::stringBodyScale[std::size_t(bodyFor)];
+            for (auto& side : body)
+                for (std::size_t m = 0; m < side.size(); ++m)
+                    side[m].set(dsp::violinBody[m].hz * (m == 4 ? std::sqrt(scale) : scale), dsp::violinBody[m].q, rate);
+        }
         for (int i = 0; i < maxVoices; ++i) {
-            auto& v = voice[std::size_t(i)];
             auto& h = held[std::size_t(i)];
-            if (h.on && f.beat >= h.until) {
-                v.release(patch.release, rate);
-                h.on = false;
+            const bool end = h.on && f.beat >= h.until;
+            if (string) {
+                auto& v = strings[std::size_t(i)];
+                if (end) {
+                    v.release(patch.release);
+                    h.on = false;
+                }
+                if (!v.active()) continue;
+                if (h.on && h.follow) v.targetHz = music::noteHz(f.root, h.now(f) + patch.transpose);
+                apply(v);
+                v.update();
+            } else {
+                auto& v = voice[std::size_t(i)];
+                if (end) {
+                    v.release(patch.release, rate);
+                    h.on = false;
+                }
+                if (!v.active()) continue;
+                if (h.on && h.follow) v.targetHz = music::noteHz(f.root, h.now(f) + patch.transpose);
+                apply(v);
+                v.update(rate);
             }
-            if (!v.active()) continue;
-            if (h.on && h.follow) v.targetHz = music::noteHz(f.root, h.now(f) + patch.transpose);
-            apply(v);
-            v.update(rate);
         }
     }
     void render(float* left, float* right, int n) override {
+        if (patch.model == BowedString) {
+            const float amount = dsp::clamp01(patch.bodyAmount);
+            for (int i = 0; i < n; ++i) {
+                float l = 0, r = 0;
+                for (auto& v : strings) {
+                    if (!v.active()) continue;
+                    const float y = v.tick(noise);
+                    l += y * v.pan.l;
+                    r += y * v.pan.r;
+                }
+                // The body: its modes on top of what passes straight through.
+                float bl = l * (1.0f - 0.55f * amount), br = r * (1.0f - 0.55f * amount);
+                for (std::size_t m = 0; m < body[0].size(); ++m) {
+                    bl += amount * dsp::violinBody[m].gain * body[0][m].bandpass(l);
+                    br += amount * dsp::violinBody[m].gain * body[1][m].bandpass(r);
+                }
+                left[i] += bl * patch.gain * trem;
+                right[i] += br * patch.gain * trem;
+            }
+            return;
+        }
         for (int i = 0; i < n; ++i) {
             float l = 0, r = 0;
             for (auto& v : voice) {
@@ -747,8 +957,22 @@ private:
         v.vibratoDepth = patch.vibratoDepth;
         v.glide = glideFor(patch.glide, rate);
     }
+    void apply(dsp::StringVoice& v) const {
+        v.players = std::clamp(patch.players, 1, dsp::StringVoice::maxPlayers);
+        v.position = std::clamp(patch.position, 0.02f, 0.4f);
+        v.brightness = dsp::clamp01(patch.brightness);
+        v.bowNoise = patch.noisiness;
+        v.vibratoDepth = patch.vibratoDepth;
+        v.vibratoDelay = 0.25f;
+        v.spreadCents = patch.spreadCents;
+        v.glide = glideFor(patch.glide, rate);
+    }
     std::array<dsp::BowedVoice, maxVoices> voice;
+    std::array<dsp::StringVoice, maxVoices> strings;
     std::array<HeldNote, maxVoices> held {};
+    std::array<std::array<dsp::Svf, 5>, 2> body;
+    int bodyFor = -1;
+    float trem = 1;
 };
 
 //==============================================================================

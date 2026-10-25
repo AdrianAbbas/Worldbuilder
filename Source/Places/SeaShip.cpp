@@ -227,6 +227,11 @@ void SeaShipPlace::configure(const PlaceContext& c) {
         p.tremoloDepth = (ghostShip ? 0.25f : 0.08f) + 0.35f * tension;   // the bellows shake
         p.spread = 0.3f;
         p.voices = byQuality(q, 4, 6, 7);
+        // Free reeds in pairs (musette), the reed chamber's formant, the bellows' air.
+        p.model = dsp::SynthReed;
+        p.formantHz = 1700.0f;
+        p.formantLevel = 0.5f;
+        p.breath = 0.04f;
         p.gain = 1.0f;
     }
     // Ropes: noise swelling and straining in bands tuned to the key.
@@ -248,6 +253,7 @@ void SeaShipPlace::configure(const PlaceContext& c) {
         p.pan = 0.2f;
         p.voices = byQuality(q, 3, 4, 5);
         p.gain = 1.0f;
+        p.extras.beatHz = 0.9f;
     }
     // Waves: low tuned breath that heaves with the swell.
     const float swell = 0.5f + 0.5f * std::sin(float(t) * twoPi * (storm ? 0.16f : 0.09f) + 1.3f * drift.smooth(t, 0.05));

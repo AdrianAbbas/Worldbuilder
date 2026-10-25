@@ -1789,15 +1789,15 @@ Milestone 7.
 Ticked when committed and pushed. A resumed session starts at the first unticked item.
 
 - [x] 1. Per-instrument effects: shared reverb and delay buses, character, tone, width, UI, state, tests
-- [ ] 2. Shared instrument library: research notes, then the models
-  - [ ] plucked string (waveguide, bodies, courses, sympathetic strings)
-  - [ ] bowed string (Helmholtz model, violin-family body, sections)
-  - [ ] brass (lip-buzz model) and free reed
-  - [ ] woodwind (jet model)
-  - [ ] modal mallets and bells (doublets, glide, bloom)
-  - [ ] membrane drums (membrane and timpani modes, slap, snare)
-  - [ ] formant choir (glottal source, five sung formants)
-  - [ ] keys (tine electric piano; harpsichord via the plucked string)
+- [x] 2. Shared instrument library: research notes, then the models
+  - [x] plucked string (waveguide, bodies, courses, sympathetic strings)
+  - [x] bowed string (Helmholtz model, violin-family body, sections)
+  - [x] brass (lip-buzz model) and free reed
+  - [x] woodwind (jet model)
+  - [x] modal mallets and bells (doublets, glide, bloom)
+  - [x] membrane drums (membrane and timpani modes, slap, snare)
+  - [x] formant choir (glottal source, five sung formants)
+  - [x] keys (tine electric piano; harpsichord via the plucked string)
 - [ ] 3. Weight pass across all 20 Places
 - [ ] 4. Per-Place uniqueness and realism pass
   - [ ] Tavern
@@ -1918,4 +1918,101 @@ run.
   9.5-14.9 % in the same runs.
 - State: every effect parameter round trips; an old project's instruments take their
   Place's defaults.
+
+### Step 2: the shared instrument library
+
+Research first: [INSTRUMENT_NOTES.md](INSTRUMENT_NOTES.md) holds the numbers used
+and their sources (web-checked where marked; the rest from the standard references,
+flagged to verify). The tables are in `Source/DSP/InstrumentData.h`.
+
+**What was rebuilt** (each in the shared library, so every Place using it changed)
+- **Plucked string** (`WaveguideString`, `Pluck`, `PluckPart`): a waveguide with exact
+  tuning at any rate (an all-pass solved at the note: fundamentals within 0.05 cent
+  from 82 Hz to 1.3 kHz), frequency-dependent loss, stiffness, a pluck-position pulse
+  softened by finger or plectrum and velocity, nail/pick noise, courses of two strings,
+  a damper; per part, the instrument's body (guitar, lute, oud, harp, zither,
+  harpsichord) and sympathetic open strings. Castle harp, Village lute, Temple zither,
+  Beach guitar, Desert oud, Palace harpsichord (two choirs, quill, damper) and Tavern
+  lute each have their own body and pluck.
+- **Bowed string** (`StringVoice`, `BowedPart` model String): Helmholtz-motion bow
+  force, the bow-position comb, pressure rounding (brighter when played harder),
+  slip-synchronous bow noise, attack scrape and pitch settling, delayed vibrato,
+  sections of up to three players, the violin family's body scaled for viola, cello
+  and double bass. The Tavern fiddle, the Military strings and the Cavern double basses
+  use it; the Forest and Palace string pads and the Village hurdy-gurdy moved from the
+  saw synth to it. The bowed resonator stays for bowed metal, bowls and the hull.
+- **Brass** (`SynthVoice` model Brass): a lip buzz whose brightness rises steeply with
+  level, the lip scoop and blat at the attack, a soft-clip edge when loud, the bell
+  formant. Castle brass drone (low horns and trombones) and horns (French horn), the
+  Palace trumpets, the Military bugle.
+- **Free reed** (`SynthVoice` model Reed): pulse reeds in beating pairs, the reed
+  chamber, valve click, bellows air. Sea Ship concertina, Tavern squeezebox.
+- **Woodwind** (`WindVoice`): five harmonics growing with breath, chiff, tuned
+  turbulence and broad air, breath-pulse vibrato, pitch wander. Every flute, recorder
+  and ney; breath-only parts (rustle, gusts, birds as breath) keep their sound.
+- **Modal** (`Bell`, `ModalPart`): up to eight modes, beating doublets, a gong's pitch
+  glide, a tam-tam bloom, harder strikes when louder, strike-to-strike variation.
+  Castle, Temple and Sea Ship bells beat; the Temple gongs glide and bloom; the Ruins'
+  cracked bells beat fast and strike unevenly; the Forest kalimba became a steel tine.
+- **Membrane drums** (`Drum` kinds Membrane and Timpani): skin modes, strike position,
+  stick hardness (harder when louder), the tension pitch drop, a stick slap, snare
+  wires. Castle and Palace timpani; the Village, Desert and Tavern frame drums; the
+  Castle side drum; the Military snare, bass drum and tom; the Ruins toms; the Mall's
+  kick and brushed snare. Wood, stomps, clanks and shakers keep the two-tone drum.
+- **Choir** (`ChoirVoice`): three singers per voice on a glottal source, five sung
+  formants for the voice range, aspiration, brighter with vocal effort.
+- **Keys**: the tine electric piano (`TineVoice`, `FmPart` model Tine) for City and
+  Suburbs (the Mall keeps the FM electric piano: three different e-pianos); the
+  harpsichord is the plucked string above.
+
+**Tests** (`--only models`): every model alone is finite, starts without a click,
+has its fundamental and partials where the tables put them, and is louder and brighter
+played harder. 52 checks.
+
+**Distinctness** (`--only distinct`, report only): every instrument of every Place
+alone, dry; a 24-band spectral shape (level removed) and its envelope (attack,
+decay, motion); the 20 closest pairs are printed for listening.
+
+**Decisions**
+- The bowed string is a shaped Helmholtz model, not a friction-curve waveguide: the
+  latter squeaks and stalls over parts of the range without a person to tune it by ear.
+- Two instruments of the same family in one Place are told apart by register,
+  articulation and formant (the Castle's low brass drone against its French-horn
+  calls). Three electric pianos: City (tine, barking, phaser), Suburbs (tine, mellow),
+  Mall (FM).
+- Step 2 was built and tested as one batch (all eight models share the parts and
+  their tests run together) and pushed as one commit, not one per model.
+
+**Problems and fixes**
+- The new string was 17 dB louder than the old one and the new choir 5-8 dB louder in
+  the middle range: both levelled against the old voices so the Places' mixes hold.
+- Model tests showed the flute louder but darker when blown harder (constant air noise
+  against growing harmonics; the air now grows with the breath), drums no brighter
+  when hit harder (six skin modes alone carry no attack: a stick slap added), and a
+  soft mallet as bright as a hard one (the strike is capped at half a period: the
+  upper modes now follow hardness directly).
+- Village Tone and Temple Tone weakened: the plucked string's damping no longer
+  followed brightness (it does again: bright is new strings), the Village (an early
+  Place) had no master Tone filter (a presence shelf like the later Places'), the
+  choir's brightness range was narrow (widened).
+- The Temple's Ancient Rite fell out of key: the gongs glided half a semitone (now 0.2).
+- Palace Tension and Biodome Characters lost contrast: Tension widens the Palace's hall,
+  Night Cycle rings long and Failing is dry.
+- The click check flagged a pick's noise: a click is now a first millisecond much
+  louder than the attack after it (a pick or bow noise is part of the attack).
+- Transport repeatability broke again (-31 dB at 0.3 s): the new choir's vibrato
+  phases and the drum's slap filter survived a reset, and a lute or oud course could
+  start with a stale pluck. All reset now.
+- Far Places stayed bright: their sends skipped the distance filter. The sends now lose
+  their highs with distance (only the highs: a first version tilted, which boosted
+  the lows and made colossal worlds louder), and the distance filter reaches 1.4 kHz
+  when furthest (was 2.4 kHz) on a curve (`d^1.6`) that leaves the default distance as
+  bright as before (darkening it there weakened Tone in Castle, Village, Spaceship).
+  The sends' Tone tilt is steeper (+-18 dB of highs over the knob) for the same reason.
+- The effects' CPU check measured the difference of two whole-plugin timings, which
+  swung from 5.5 % to 11.8 % on this machine. It now times the effects alone (four
+  slots of six instruments, every effect on, nine busy buses): 5.2 %, checked under
+  8 %. The whole-plugin difference is reported.
+- Factory Life and Beach Danger checks fell just under their thresholds: Life brings
+  the Factory's anvil and gears forward; Tension tears the Beach's echoes away.
 

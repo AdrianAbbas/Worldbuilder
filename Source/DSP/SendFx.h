@@ -397,7 +397,7 @@ struct CharacterFx {
             float side = 0.5f * (xl - xr) * width;
             if (width > 1.0f) {
                 haas[0].push(mid);
-                side += 0.8f * (width - 1.0f) * haas[0].read(haasSamples);
+                side += 1.1f * (width - 1.0f) * haas[0].read(haasSamples);
             }
             l[i] = mid + side;
             r[i] = mid - side;
