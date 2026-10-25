@@ -272,7 +272,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     // Distance and pan.
     const float d = distance.next(effectiveDistance(world, c.distance));
     const float p = pan.next(std::clamp(c.pan, -1.0f, 1.0f));
-    for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 1400.0f, std::pow(d, 1.6f)), rate);
+    for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 1100.0f, std::pow(d, 1.6f)), rate);
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = current->spaceSend() * lerp(0.4f, 1.6f, d);

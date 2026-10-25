@@ -1802,7 +1802,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [ ] 4. Per-Place uniqueness and realism pass
   - [x] Tavern
   - [x] Castle
-  - [ ] Village
+  - [x] Village
   - [ ] Palace
   - [ ] Temple
   - [ ] Forest
@@ -2079,4 +2079,16 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   rings longer), Choir (step 2's choir).
 - Effects: the bells and choir in the Cathedral, the rest in the Hall, a tape echo on
   bells and horns.
+
+**Village** (fantasy)
+- Lute (gut courses, lute body), Hurdy-Gurdy (moved from the saw synth to the bowed
+  string: a rosined wheel near the bridge, nasal and grinding, brighter with Tone),
+  Hand Drums (skins), Marimba (the measured tuning 1 : 3.99 : 9.2, the tube resonator
+  holding the fundamental), Recorder (a fipple flute: a quick clear chiff, little air,
+  steady pitch), Bells (little bronze bells, beating, each strike different).
+- The Village (an early Place) had no master Tone filter: a presence shelf like the
+  later Places' (needed for its Tone check after the new models).
+- Effects: the Room for most, the recorder in a Hall with a little tape echo.
+- The Village's brighter presence made it less dark when far: the furthest distance
+  filter now reaches 1.1 kHz (was 1.4 kHz; the default distance is unchanged).
 

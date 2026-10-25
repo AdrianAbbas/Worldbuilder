@@ -333,7 +333,9 @@ void VillagePlace::configure(const PlaceContext& c) {
     // A marimba-like bar: the strong fourth harmonic gives the wooden "tock".
     {
         auto& p = marimba.patch;
-        p.set({ 1.0f, 3.93f, 9.2f }, { 1.0f, 0.3f, 0.1f }, { 1.0f, 0.35f, 0.12f });
+        // A rosewood bar tuned to two octaves (and ~9.2), its tube resonator holding the
+        // fundamental.
+        p.set({ 1.0f, 3.99f, 9.2f }, { 1.3f, 0.25f, 0.08f }, { 1.0f, 0.35f, 0.12f });
         p.decay = lerp(0.5f, 1.4f, 1.0f - tension);
         p.hardness = 0.35f + 0.4f * tone;
         p.spread = 0.7f;
@@ -354,6 +356,11 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.scoop = 0.5f;
         p.spread = 0.25f;
         p.voices = 1;
+        // A fipple flute: a quick, clear chiff, little air beyond the tone, steady pitch.
+        p.chiff = 0.45f;
+        p.chiffSeconds = 0.025f;
+        p.air = 0.04f;
+        p.wander = 2.0f;
         p.gain = 1.0f;
     }
     // Small bells: bright, inharmonic, short.
@@ -365,6 +372,8 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.toneHz = lerpExp(6000.0f, 14000.0f, tone);
         p.spread = 0.8f;
         p.voices = byQuality(q, 3, 4, 6);
+        p.extras.beatHz = 3.0f;
+        p.extras.variation = 0.4f;
         p.gain = 1.0f;
     }
     level = { 0.8f, 0.09f, 0.5f, 0.4f, 0.08f, 0.14f };
@@ -374,7 +383,7 @@ void VillagePlace::configure(const PlaceContext& c) {
     warmth.set(0.8f * (0.35f + 0.65f * s.fxDepth));
     roomSend = 0.35f + 0.25f * s.size;
     // Tone: a presence shelf over the whole village (as the later Places have).
-    presence = 1.1f * (s.tone - 0.4f);
+    presence = 1.4f * (s.tone - 0.4f);
     for (auto& f : shelf) f.setCutoff(2000.0f, rate);
 }
 
