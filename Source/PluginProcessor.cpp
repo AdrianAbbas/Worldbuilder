@@ -220,6 +220,8 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     }
     // Patterns (Milestone 4 and later); older projects have none and keep the generated ones.
     patterns.fromValueTree(state.getChildWithName("Patterns"), slotTypes());
+    // Interface settings (the Place overlays: Full, Subtle, Off).
+    parameters.state.setProperty("overlays", juce::jlimit(0, 2, int(state.getProperty("overlays", 0))), nullptr);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

@@ -758,31 +758,32 @@ juce::Colour placeAccent(int type) {
 }
 
 const PlaceTheme& placeTheme(int type) {
-    const auto t = [](uint32_t sky, uint32_t horizon, uint32_t ground, uint32_t glow, uint32_t tint, int particles, int globe) {
-        return PlaceTheme { juce::Colour(sky), juce::Colour(horizon), juce::Colour(ground), juce::Colour(glow), juce::Colour(tint), particles, globe };
+    const auto t = [](uint32_t sky, uint32_t horizon, uint32_t ground, uint32_t glow, uint32_t tint, uint32_t backdrop, int particles, int globe) {
+        return PlaceTheme { juce::Colour(sky), juce::Colour(horizon), juce::Colour(ground), juce::Colour(glow), juce::Colour(tint), juce::Colour(backdrop),
+                            particles, globe };
     };
     static const std::array<PlaceTheme, PlaceTypeCount> table {
-        t(0xff101828, 0xff26364d, 0xff152031, 0xff5fd4e6, 0xff152031, ParticleMotes, GlobeFields),          // empty
-        t(0xff2a2340, 0xffb07a4a, 0xff2b2a33, 0xffe0b060, 0xff2a2433, ParticleMotes, GlobeFields),          // castle: torchlit stone at dusk
-        t(0xff3a2a2a, 0xffd89a52, 0xff3d3424, 0xffffb35c, 0xff2e241a, ParticleEmbers, GlobeFields),         // village: warm amber
-        t(0xff071426, 0xff1f6f8f, 0xff10202e, 0xff5fe0ff, 0xff0e2233, ParticleSparks, GlobeOrbit),          // spaceport: cold cyan
-        t(0xff201a18, 0xffa0502a, 0xff2a2220, 0xffff8a3c, 0xff2a1c16, ParticleEmbers, GlobeSmoke),          // factory: furnace orange
-        t(0xff100c24, 0xff6a3a8a, 0xff171630, 0xffff5fb0, 0xff1a1630, ParticleSparks, GlobeCityLights),     // city: neon night
-        t(0xff0c1c14, 0xff3f7a4a, 0xff12261a, 0xffc8ff8a, 0xff12241a, ParticleFireflies, GlobeForest),      // forest: deep green
-        t(0xff1a0c24, 0xff7a3aa0, 0xff220f2a, 0xffd07aff, 0xff221030, ParticleSpores, GlobeHive),           // alien hive
-        t(0xff1f1830, 0xffd8b070, 0xff2a2230, 0xffffe0a0, 0xff262033, ParticleMotes, GlobeGlow),            // temple: gold light
-        t(0xff060c14, 0xff1d4a5a, 0xff0b141c, 0xff7ae8e0, 0xff0c1a22, ParticleDust, GlobeCrystals),         // cavern
-        t(0xff1a1c22, 0xff6f7a6a, 0xff22261f, 0xffb0c8a0, 0xff1e221e, ParticleDust, GlobeRuins),            // ruins
-        t(0xff050a14, 0xff1c3c5c, 0xff0c1624, 0xff8ad8ff, 0xff0c1828, ParticleSparks, GlobeOrbit),          // spaceship
-        t(0xff0c2026, 0xff4aa88a, 0xff123026, 0xffb0ffd0, 0xff10262a, ParticleSpores, GlobeForest),         // biodome
-        t(0xff0c1a2c, 0xff3f7aa0, 0xff102838, 0xffbfe6ff, 0xff0e2030, ParticleMist, GlobeOcean),            // sea ship
-        t(0xff22283a, 0xffe0a07a, 0xff26302a, 0xffffd0a0, 0xff222634, ParticleMotes, GlobeCityLights),      // suburbs
-        t(0xff1c1430, 0xffd77ab0, 0xff241a34, 0xff7af0e0, 0xff221a32, ParticleSparks, GlobeCityLights),     // mall: pastel neon
-        t(0xff1c1414, 0xff8a3a2a, 0xff241c18, 0xffff6a4a, 0xff261816, ParticleSmoke, GlobeSmoke),           // military camp: smoky red
-        t(0xff123a5a, 0xfff0c080, 0xffc8a868, 0xffffe6a0, 0xff12283a, ParticleMist, GlobeOcean),            // beach
-        t(0xff3a2414, 0xffe8b060, 0xffb08040, 0xffffd27a, 0xff2e2216, ParticleDust, GlobeDunes),            // desert: sandy gold
-        t(0xff241a34, 0xffe8c890, 0xff2c2438, 0xfffff0c0, 0xff2a2236, ParticleSparks, GlobeGlow),           // palace
-        t(0xff2a1a12, 0xffc8783a, 0xff33241a, 0xffffa040, 0xff2c1e14, ParticleEmbers, GlobeFields),         // tavern: warm amber
+        t(0xff101828, 0xff26364d, 0xff152031, 0xff5fd4e6, 0xff152031, 0xff0d1420, ParticleMotes, GlobeFields),          // empty
+        t(0xff2a2340, 0xffb07a4a, 0xff2b2a33, 0xffe0b060, 0xff34243a, 0xff2a1838, ParticleMotes, GlobeFields),          // castle: torchlit stone at dusk
+        t(0xff3a2a2a, 0xffd89a52, 0xff3d3424, 0xffffb35c, 0xff3a281a, 0xff2e1a10, ParticleEmbers, GlobeFields),         // village: warm amber
+        t(0xff071426, 0xff1f6f8f, 0xff10202e, 0xff5fe0ff, 0xff06303f, 0xff021e2e, ParticleSparks, GlobeOrbit),          // spaceport: cold cyan
+        t(0xff201a18, 0xffa0502a, 0xff2a2220, 0xffff8a3c, 0xff3a2212, 0xff28140a, ParticleEmbers, GlobeSmoke),          // factory: furnace orange
+        t(0xff100c24, 0xff6a3a8a, 0xff171630, 0xffff5fb0, 0xff241842, 0xff160c30, ParticleSparks, GlobeCityLights),     // city: neon night
+        t(0xff0c1c14, 0xff3f7a4a, 0xff12261a, 0xffc8ff8a, 0xff12301c, 0xff081e10, ParticleFireflies, GlobeForest),      // forest: deep green
+        t(0xff1a0c24, 0xff7a3aa0, 0xff220f2a, 0xffd07aff, 0xff2e1238, 0xff1e0828, ParticleSpores, GlobeHive),           // alien hive
+        t(0xff1f1830, 0xffd8b070, 0xff2a2230, 0xffffe0a0, 0xff342c1c, 0xff241c10, ParticleMotes, GlobeGlow),            // temple: gold light
+        t(0xff060c14, 0xff1d4a5a, 0xff0b141c, 0xff7ae8e0, 0xff0a2830, 0xff04161c, ParticleDust, GlobeCrystals),         // cavern
+        t(0xff1a1c22, 0xff6f7a6a, 0xff22261f, 0xffb0c8a0, 0xff262c22, 0xff161a14, ParticleDust, GlobeRuins),            // ruins
+        t(0xff050a14, 0xff1c3c5c, 0xff0c1624, 0xff8ad8ff, 0xff0a2240, 0xff04122a, ParticleSparks, GlobeOrbit),          // spaceship
+        t(0xff0c2026, 0xff4aa88a, 0xff123026, 0xffb0ffd0, 0xff0e3229, 0xff06201a, ParticleSpores, GlobeForest),         // biodome
+        t(0xff0c1a2c, 0xff3f7aa0, 0xff102838, 0xffbfe6ff, 0xff0c263e, 0xff06182c, ParticleMist, GlobeOcean),            // sea ship
+        t(0xff22283a, 0xffe0a07a, 0xff26302a, 0xffffd0a0, 0xff2e2c3a, 0xff1e1c2c, ParticleMotes, GlobeCityLights),      // suburbs
+        t(0xff1c1430, 0xffd77ab0, 0xff241a34, 0xff7af0e0, 0xff301c3e, 0xff1e0e2e, ParticleSparks, GlobeCityLights),     // mall: pastel neon
+        t(0xff1c1414, 0xff8a3a2a, 0xff241c18, 0xffff6a4a, 0xff341a14, 0xff22100c, ParticleSmoke, GlobeSmoke),           // military camp: smoky red
+        t(0xff123a5a, 0xfff0c080, 0xffc8a868, 0xffffe6a0, 0xff143a4c, 0xff0a2838, ParticleMist, GlobeOcean),            // beach
+        t(0xff3a2414, 0xffe8b060, 0xffb08040, 0xffffd27a, 0xff3e2c16, 0xff2c1c0c, ParticleDust, GlobeDunes),            // desert: sandy gold
+        t(0xff241a34, 0xffe8c890, 0xff2c2438, 0xfffff0c0, 0xff32244a, 0xff201436, ParticleSparks, GlobeGlow),           // palace
+        t(0xff2a1a12, 0xffc8783a, 0xff33241a, 0xffffa040, 0xff3e2410, 0xff2a1608, ParticleEmbers, GlobeFields),         // tavern: warm amber
     };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }

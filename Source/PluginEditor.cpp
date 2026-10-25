@@ -61,6 +61,8 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 5A.1 PREVIEW";
+
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
 
@@ -238,14 +240,23 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     };
     addChildComponent(*patterns);
 
+    for (int m = 0; m < ui::OverlayModeCount; ++m) overlayChoice.addItem(ui::overlayModeNames[std::size_t(m)], m + 1);
+    overlayChoice.setTooltip("Place overlays: each Place decorates the edges of the interface (grass and ivy, neon, wooden beams...). "
+                             "Full, Subtle or Off. They never cover the controls.");
+    overlayChoice.onChange = [this] { setOverlayMode(overlayChoice.getSelectedId() - 1); };
+    addAndMakeVisible(overlayChoice);
+    // The overlays sit above everything and never take the mouse.
+    overlays = std::make_unique<ui::PlaceOverlays>();
+    addAndMakeVisible(*overlays);
+    setOverlayMode(int(processor.parameters.state.getProperty("overlays", int(ui::OverlaysFull))));
+
     themeTint = colours::panel;
     themeGlow = colours::cyan;
     themeSky = colours::background;
     listCards();
     setSize(baseWidth, baseHeight);
     refreshPlaceStrips();
-    updateTheme();
-    themeChange = 0;
+    updateTheme(0.0f, true);
     startTimerHz(30);
 }
 
@@ -304,11 +315,19 @@ int WorldbuilderEditor::addPlace(int type) {
     return -1;
 }
 
+void WorldbuilderEditor::setOverlayMode(int mode) {
+    mode = juce::jlimit(0, ui::OverlayModeCount - 1, mode);
+    overlays->setMode(mode);
+    overlayChoice.setSelectedId(mode + 1, juce::dontSendNotification);
+    processor.parameters.state.setProperty("overlays", mode, nullptr);
+}
+
 void WorldbuilderEditor::openPatterns(int slot, int element) {
     if (slot < 0 || slot >= placeSlotCount || !hasPatterns(placeType(slot))) return;
     closeDetail();
     patterns->setVisible(true);
     patterns->toFront(false);
+    overlays->toFront(false);
     patterns->open(slot, element);
     repaint();
 }
@@ -384,6 +403,15 @@ void WorldbuilderEditor::resized() {
     auto area = getLocalBounds().reduced(12, 10);
     header = area.removeFromTop(44);
     power.setBounds(header.withTrimmedLeft(header.getWidth() - 96).withSizeKeepingCentre(90, 28));
+    {
+        // The header's text, and the open space between it and POWER (the overlays may use it).
+        const auto width = [](const juce::Font& font, const char* text) { return juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, text)) + 8; };
+        headerTitle = header.withTrimmedLeft(4).withWidth(width(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f), "WORLDBUILDER"));
+        headerSubtitle = juce::Rectangle<int>(header.getX() + 300, header.getCentreY() - 9,
+                                              width(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f), headerText), 18);
+        headerOpen = header.withLeft(headerSubtitle.getRight() + 16).withRight(power.getX() - 16);
+        if (headerOpen.getWidth() < 60) headerOpen = {};
+    }
     area.removeFromTop(6);
     footer = area.removeFromBottom(80);
     area.removeFromBottom(8);
@@ -480,17 +508,27 @@ void WorldbuilderEditor::resized() {
     seed.setBounds(bottom.removeFromLeft(230).withSizeKeepingCentre(230, 20));
     bottom.removeFromLeft(10);
     dice.setBounds(bottom.removeFromLeft(110).withSizeKeepingCentre(110, 22));
+    {
+        f.removeFromLeft(14);
+        auto column = f.removeFromLeft(100);
+        overlayChoice.setBounds(column.removeFromTop(column.getHeight() / 2).withTrimmedTop(14).withSizeKeepingCentre(100, 22));
+    }
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })
         knobFor[std::size_t(param)]->setBounds(f.removeFromRight(92).withSizeKeepingCentre(78, 66));
+    overlays->setBounds(getLocalBounds());
+    frameOutlines.clear();
+    overlayKeepClear.clear();
+    updateOverlayFrames();
 }
 
 void WorldbuilderEditor::layoutDetail() {
     auto& d = detail;
     d.area = globePanel.getUnion(cardsPanel);
     auto r = d.area.reduced(16, 10);
-    d.titleArea = r.removeFromTop(52);
-    d.close.setBounds(d.titleArea.withTrimmedLeft(d.titleArea.getWidth() - 70).withSizeKeepingCentre(66, 24).translated(0, -8));
+    // The header: the Place's scene, its name and buttons on top, its description below.
+    d.titleArea = r.removeFromTop(86);
+    d.close.setBounds(d.titleArea.withHeight(30).withTrimmedLeft(d.titleArea.getWidth() - 70).withSizeKeepingCentre(66, 24));
     d.patterns.setBounds(d.close.getBounds().translated(-96, 0).withWidth(88));
     d.mood.setBounds(d.patterns.getBounds().translated(-134, 0).withWidth(126));
     r.removeFromTop(4);
@@ -534,47 +572,75 @@ void WorldbuilderEditor::layoutDetail() {
 
 //==============================================================================
 void WorldbuilderEditor::paint(juce::Graphics& g) {
-    // The world's colours: the active Places tint the background, the panels and the glow.
-    const auto sky = colours::background.interpolatedWith(themeSky, 0.55f);
-    g.setGradientFill(juce::ColourGradient(sky.brighter(0.1f), 0, 0, colours::background.darker(0.4f), 0, float(getHeight()), false));
+    // The world's colours: the active Places set the background, the panels' tint and
+    // the glow (blended by level, see updateTheme).
+    const float height = float(getHeight());
+    g.setGradientFill(juce::ColourGradient(themeSky.brighter(0.25f), 0, 0, themeSky.darker(0.7f), 0, height, false));
     g.fillAll();
     {
+        // The Places' light: a wide glow behind the globe and along the horizon.
         const auto c = globePanel.toFloat().getCentre();
-        const auto glow = themeGlow.withAlpha(0.07f);
-        g.setGradientFill(juce::ColourGradient(glow, c.x, c.y, glow.withAlpha(0.0f), c.x + float(getWidth()) * 0.45f, c.y, true));
+        const auto glow = themeGlow.withAlpha(0.06f + 0.16f * themeStrength);
+        g.setGradientFill(juce::ColourGradient(glow, c.x, c.y, glow.withAlpha(0.0f), c.x + float(getWidth()) * 0.55f, c.y, true));
+        g.fillAll();
+        const auto horizon = themeGlow.withAlpha(0.14f * themeStrength);
+        g.setGradientFill(juce::ColourGradient(horizon.withAlpha(0.0f), 0, height * 0.55f, horizon, 0, height, false));
         g.fillAll();
     }
-    const auto panelColour = colours::panel.interpolatedWith(themeTint, 0.45f);
+    const auto panelColour = themeTint;
 
-    g.setColour(colours::brass);
-    g.setFont(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f));
-    g.drawText("WORLDBUILDER", header.withTrimmedLeft(4), juce::Justification::centredLeft, false);
-    g.setColour(colours::dim);
-    g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
-    g.drawText("FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 5A PREVIEW", header.withTrimmedLeft(300).withTrimmedRight(110),
-               juce::Justification::centredLeft, false);
+    // Text only where the clip reaches: frames often repaint small areas.
+    if (g.clipRegionIntersects(headerTitle)) {
+        g.setColour(colours::brass);
+        g.setFont(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f));
+        g.drawText("WORLDBUILDER", header.withTrimmedLeft(4), juce::Justification::centredLeft, false);
+    }
+    if (g.clipRegionIntersects(headerSubtitle)) {
+        g.setColour(colours::dim);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
+        g.drawText(headerText, header.withTrimmedLeft(300).withTrimmedRight(110), juce::Justification::centredLeft, false);
+    }
     g.setColour(colours::brass.withAlpha(0.35f));
     g.drawHorizontalLine(header.getBottom() + 2, float(header.getX()), float(header.getRight()));
 
     const bool detailOpen = detail.slot >= 0;
     for (auto panel : { controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer }) {
-        if (detailOpen && (panel == globePanel || panel == cardsPanel)) continue;
-        g.setColour(panelColour.withAlpha(0.85f));
-        g.fillRoundedRectangle(panel.toFloat(), 10.0f);
-        g.setColour(colours::panelEdge.interpolatedWith(themeGlow, 0.15f));
-        g.drawRoundedRectangle(panel.toFloat().reduced(0.5f), 10.0f, 1.0f);
+        if ((detailOpen && (panel == globePanel || panel == cardsPanel)) || !g.clipRegionIntersects(panel.expanded(3))) continue;
+        const auto r = panel.toFloat();
+        // The frame's outlines (glow and edge), stroked once per size.
+        auto outline = std::find_if(frameOutlines.begin(), frameOutlines.end(), [&](const FrameOutline& o) { return o.panel == panel; });
+        if (outline == frameOutlines.end()) {
+            FrameOutline o { panel, {}, {} };
+            juce::Path p;
+            p.addRoundedRectangle(r.expanded(1.5f), 11.5f);
+            juce::PathStrokeType(3.0f).createStrokedPath(o.glow, p);
+            p.clear();
+            p.addRoundedRectangle(r.reduced(0.5f), 10.0f);
+            juce::PathStrokeType(1.0f).createStrokedPath(o.edge, p);
+            frameOutlines.push_back(std::move(o));
+            outline = frameOutlines.end() - 1;
+        }
+        if (themeStrength > 0.01f) {   // the frame glows in the Places' light
+            g.setColour(themeGlow.withAlpha(0.12f * themeStrength));
+            g.fillPath(outline->glow);
+        }
+        g.setGradientFill(juce::ColourGradient(panelColour.brighter(0.12f).withAlpha(0.9f), 0, r.getY(), panelColour.darker(0.2f).withAlpha(0.9f), 0, r.getBottom(), false));
+        g.fillRoundedRectangle(r, 10.0f);
+        g.setColour(colours::panelEdge.interpolatedWith(themeGlow, 0.15f + 0.45f * themeStrength));
+        g.fillPath(outline->edge);
     }
 
     g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)).withExtraKerningFactor(0.15f));
-    for (std::size_t i = 0; i < groups.size(); ++i) {
-        g.setColour(colours::brass.withAlpha(0.85f));
-        g.drawText(groups[i].title, groupAreas[i].withHeight(16).withTrimmedLeft(6), juce::Justification::centredLeft, false);
-    }
     g.setColour(colours::brass.withAlpha(0.85f));
-    g.drawText("ENVIRONMENT", layersPanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
-    g.drawText("PLACES", placesPanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
+    for (std::size_t i = 0; i < groups.size(); ++i)
+        if (const auto title = groupAreas[i].withHeight(16).withTrimmedLeft(6); g.clipRegionIntersects(title))
+            g.drawText(groups[i].title, title, juce::Justification::centredLeft, false);
+    if (g.clipRegionIntersects(layersPanel.reduced(14, 8).withHeight(16)))
+        g.drawText("ENVIRONMENT", layersPanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
+    if (g.clipRegionIntersects(placesPanel.reduced(14, 8).withHeight(16)))
+        g.drawText("PLACES", placesPanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
 
-    for (int l = 0; l < LayerCount; ++l) {
+    for (int l = 0; l < LayerCount && g.clipRegionIntersects(layersPanel.reduced(ui::PlaceOverlays::frameBand)); ++l) {
         const auto& s = strips[std::size_t(l)];
         auto nameArea = s.row.withWidth(86).withTrimmedLeft(4);
         g.setFont(juce::Font(juce::FontOptions(12.5f)));
@@ -587,16 +653,19 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
         g.setColour(colours::cyan.withAlpha(0.8f));
         g.fillRoundedRectangle(meterArea.withWidth(meterArea.getWidth() * level), 1.5f);
     }
-    paintPlaceStrips(g);
+    if (g.clipRegionIntersects(placesPanel.reduced(ui::PlaceOverlays::frameBand))) paintPlaceStrips(g);
 
     g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)).withExtraKerningFactor(0.12f));
     g.setColour(colours::brass.withAlpha(0.8f));
     for (auto [component, text] : { std::pair<juce::Component*, const char*> { &root, "ROOT" }, { &mood, "MOOD" },
-                                    { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" } })
-        g.drawText(text, component->getBounds().translated(0, -15).withHeight(14), juce::Justification::centredLeft, false);
-    g.setColour(colours::dim);
-    g.drawText(juce::String(processor.engine.frame().bpm, 1) + " BPM", dice.getBounds().translated(dice.getWidth() + 14, 0).withWidth(90),
-               juce::Justification::centredLeft, false);
+                                    { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" },
+                                    { &overlayChoice, "OVERLAYS" } })
+        if (const auto label = component->getBounds().translated(0, -15).withHeight(14); g.clipRegionIntersects(label))
+            g.drawText(text, label, juce::Justification::centredLeft, false);
+    if (const auto tempo = dice.getBounds().translated(dice.getWidth() + 14, 0).withWidth(90); g.clipRegionIntersects(tempo)) {
+        g.setColour(colours::dim);
+        g.drawText(juce::String(processor.engine.frame().bpm, 1) + " BPM", tempo, juce::Justification::centredLeft, false);
+    }
     const auto meter = juce::Rectangle<float>(float(footer.getRight() - 36), float(footer.getY() + 12), 10.0f, float(footer.getHeight() - 24));
     g.setColour(colours::panelEdge);
     g.fillRoundedRectangle(meter, 3.0f);
@@ -604,14 +673,18 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     g.setColour(masterMeter > 0.85f ? colours::danger : colours::cyan);
     g.fillRoundedRectangle(meter.withTop(meter.getBottom() - meter.getHeight() * masterLevel), 3.0f);
 
+    // The expensive parts only where the clip reaches inside their panel (overlay frames
+    // repaint small areas, often only a panel's edge).
     if (detailOpen) {
-        paintDetail(g);
+        if (g.clipRegionIntersects(detail.area)) paintDetail(g);
     } else {
-        g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)).withExtraKerningFactor(0.15f));
-        g.setColour(colours::brass.withAlpha(0.85f));
-        g.drawText("LIVING GLOBE", globePanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
-        paintGlobe(g, globeArea);
-        paintCards(g);
+        if (g.clipRegionIntersects(globePanel.reduced(ui::PlaceOverlays::frameBand))) {
+            g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)).withExtraKerningFactor(0.15f));
+            g.setColour(colours::brass.withAlpha(0.85f));
+            g.drawText("LIVING GLOBE", globePanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
+            paintGlobe(g, globeArea);
+        }
+        if (g.clipRegionIntersects(cardsPanel.reduced(ui::PlaceOverlays::frameBand))) paintCards(g);
     }
 }
 
@@ -755,29 +828,39 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     const auto& d = detail;
     const int type = placeType(d.slot);
     const auto accent = placeColour(type);
-    g.setColour(colours::panel.interpolatedWith(ui::placeTheme(type).tint, 0.5f).withAlpha(0.97f));
+    const auto& theme = ui::placeTheme(type);
+    const auto panel = colours::panel.interpolatedWith(theme.tint, 0.85f);
+    g.setGradientFill(juce::ColourGradient(panel.brighter(0.1f).withAlpha(0.97f), 0, float(d.area.getY()), panel.darker(0.25f).withAlpha(0.97f), 0,
+                                           float(d.area.getBottom()), false));
     g.fillRoundedRectangle(d.area.toFloat(), 10.0f);
-    // Header art: the Place's scene across the top, fading into the panel.
+    // Header art: the Place's scene across the top. The left, under the name, is shaded
+    // so the text reads; the scene shows clearly on the right.
     {
         const auto banner = d.area.toFloat().reduced(1.5f).withHeight(float(d.titleArea.getBottom() - d.area.getY()) + 4.0f);
-        ui::drawPlaceScene(g, type, banner, 0.6f, animTime, true);
-        g.setGradientFill(juce::ColourGradient(colours::panel.withAlpha(0.92f), banner.getX(), 0.0f, colours::panel.withAlpha(0.5f),
-                                               banner.getX() + banner.getWidth() * 0.75f, 0.0f, false));
-        g.fillRoundedRectangle(banner, 9.0f);
+        ui::drawPlaceScene(g, type, banner, 1.0f, animTime, true);
+        g.setGradientFill(juce::ColourGradient(panel.withAlpha(0.85f), banner.getX(), 0.0f, panel.withAlpha(0.0f), banner.getX() + banner.getWidth() * 0.5f, 0.0f,
+                                               false));
+        g.fillRect(banner.withHeight(float(d.titleArea.getY() - d.area.getY()) + 32.0f));
+        const float strip = float(d.titleArea.getY()) + 52.0f;   // under the description
+        g.setGradientFill(juce::ColourGradient(panel.withAlpha(0.0f), 0.0f, strip - 8.0f, panel.withAlpha(0.85f), 0.0f, strip + 4.0f, false));
+        g.fillRect(banner.withTop(strip - 8.0f));
+        g.setColour(theme.glow.withAlpha(0.6f));
+        g.fillRect(banner.withTop(banner.getBottom() - 1.0f).withTrimmedLeft(12.0f).withTrimmedRight(12.0f));
     }
     g.setColour(accent.withAlpha(0.7f));
     g.drawRoundedRectangle(d.area.toFloat().reduced(0.5f), 10.0f, 1.2f);
 
     auto title = d.titleArea;
-    ui::drawPlaceIcon(g, type, title.removeFromLeft(52).toFloat(), colours::parchment, accent.withAlpha(0.6f));
+    ui::drawPlaceIcon(g, type, title.removeFromLeft(52).withHeight(52).toFloat(), colours::parchment, accent.withAlpha(0.6f));
     title.removeFromLeft(10);
+    const int buttonsLeft = (d.mood.isVisible() ? d.mood : d.patterns.isVisible() ? d.patterns : d.close).getX();
     g.setColour(colours::parchment);
     g.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)).withExtraKerningFactor(0.12f));
-    g.drawText(juce::String(placeNames[std::size_t(type)]).toUpperCase(), title.removeFromTop(28), juce::Justification::centredLeft, false);
-    g.setColour(colours::dim);
-    g.setFont(juce::Font(juce::FontOptions(11.5f)));
-    g.drawFittedText("Place " + juce::String(d.slot + 1) + "  -  " + placeInfo(type).description, title.withTrimmedTop(2),
-                     juce::Justification::topLeft, 2);
+    g.drawFittedText(juce::String(placeNames[std::size_t(type)]).toUpperCase(), title.withHeight(30).withRight(buttonsLeft - 8), juce::Justification::centredLeft, 1, 0.7f);
+    g.setColour(colours::parchment.withAlpha(0.8f));
+    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.drawFittedText("Place " + juce::String(d.slot + 1) + "  -  " + placeInfo(type).description, title.withTrimmedTop(56).withTrimmedRight(4),
+                     juce::Justification::centredLeft, 2);
 
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)).withExtraKerningFactor(0.15f));
     g.setColour(colours::brass.withAlpha(0.85f));
@@ -901,18 +984,33 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
         g.drawEllipse(area.expanded(r * 0.06f), r * 0.08f);
     }
     if (const float orbit = featureAmount[ui::GlobeOrbit]; orbit > 0.01f) {
-        const auto ring = juce::Rectangle<float>(r * 2.7f, r * 0.55f).withCentre(centre.translated(0, r * 0.08f));
-        g.setColour(colours::cyan.withAlpha(0.35f * orbit * alpha));
-        juce::Path front;
-        front.addCentredArc(ring.getCentreX(), ring.getCentreY(), ring.getWidth() * 0.5f, ring.getHeight() * 0.5f, 0.0f, juce::MathConstants<float>::halfPi,
-                            juce::MathConstants<float>::halfPi * 3.0f, true);
-        g.strokePath(front, juce::PathStrokeType(1.2f));
-        for (int k = 0; k < 2; ++k) {
-            const float a = animTime * (0.35f + 0.15f * float(k)) + float(k) * 2.4f;
-            const juce::Point<float> ship { ring.getCentreX() + ring.getWidth() * 0.5f * std::cos(a), ring.getCentreY() + ring.getHeight() * 0.5f * std::sin(a) };
-            if (std::sin(a) < -0.2f && std::abs(std::cos(a)) < 0.7f) continue;   // behind the planet
-            g.setColour(juce::Colours::white.withAlpha(0.8f * orbit * alpha));
-            g.fillEllipse(juce::Rectangle<float>(3.0f, 3.0f).withCentre(ship));
+        // Two tilted rings (their front halves; the back halves pass behind the planet),
+        // ships with glowing trails.
+        for (int ringIndex = 0; ringIndex < 2; ++ringIndex) {
+            const float tilt = ringIndex == 0 ? -0.12f : 0.22f, scale = ringIndex == 0 ? 1.0f : 0.86f;
+            const auto ring = juce::Rectangle<float>(r * 2.7f * scale, r * 0.55f * scale).withCentre(centre.translated(0, r * 0.08f));
+            const auto rotate = juce::AffineTransform::rotation(tilt, centre.x, centre.y);
+            juce::Path front;
+            front.addCentredArc(ring.getCentreX(), ring.getCentreY(), ring.getWidth() * 0.5f, ring.getHeight() * 0.5f, 0.0f, juce::MathConstants<float>::halfPi,
+                                juce::MathConstants<float>::halfPi * 3.0f, true);
+            front.applyTransform(rotate);
+            g.setColour(colours::cyan.withAlpha(0.25f * orbit * alpha));
+            g.strokePath(front, juce::PathStrokeType(5.0f));
+            g.setColour(colours::cyan.interpolatedWith(juce::Colours::white, 0.3f).withAlpha(0.8f * orbit * alpha));
+            g.strokePath(front, juce::PathStrokeType(1.6f));
+            for (int k = 0; k < 2; ++k) {
+                const float speed = 0.35f + 0.15f * float(k) + 0.1f * float(ringIndex);
+                const float a = animTime * speed + float(k) * 2.4f + float(ringIndex) * 1.1f;
+                if (std::sin(a) < 0.0f) continue;   // behind the planet
+                for (int trail = 6; trail >= 0; --trail) {
+                    const float b = a - float(trail) * 0.035f;
+                    const auto ship = juce::Point<float> { ring.getCentreX() + ring.getWidth() * 0.5f * std::cos(b), ring.getCentreY() + ring.getHeight() * 0.5f * std::sin(b) }
+                                          .transformedBy(rotate);
+                    const float fade = 1.0f - float(trail) / 7.0f, size = trail == 0 ? 5.0f : 3.0f * fade;
+                    g.setColour((trail == 0 ? juce::Colours::white : colours::cyan).withAlpha(0.9f * fade * orbit * alpha));
+                    g.fillEllipse(juce::Rectangle<float>(size, size).withCentre(ship));
+                }
+            }
         }
     }
 
@@ -1008,10 +1106,17 @@ void WorldbuilderEditor::paintGlobeFeatures(juce::Graphics& g, juce::Rectangle<f
         g.setColour(juce::Colour(0xffe8c078).withAlpha(0.55f * a * facing));
         g.strokePath(dune, juce::PathStrokeType(1.6f));
     });
-    spots(ui::GlobeFields, 57, 18, [&](juce::Point<float> p, float facing, float a, float size, int i) {
-        const float w = r * (0.07f + 0.06f * size) * (0.4f + 0.6f * facing);
-        g.setColour(juce::Colour((i % 3) == 0 ? 0xffc8a850 : 0xff6f9a4a).withAlpha(0.35f * a * facing));
-        g.fillRect(juce::Rectangle<float>(w, w * 0.7f).withCentre(p));
+    spots(ui::GlobeFields, 57, 34, [&](juce::Point<float> p, float facing, float a, float size, int i) {
+        // Patchwork farmland: a few fields side by side, with hedges.
+        const float w = r * (0.07f + 0.07f * size) * (0.35f + 0.65f * facing), h = w * 0.7f * (0.5f + 0.5f * facing);
+        for (int k = 0; k < 3; ++k) {
+            const auto field = juce::Rectangle<float>(w, h).withCentre(p.translated(float(k - 1) * w * 1.04f, float(k % 2) * h * 0.3f));
+            const juce::uint32 tones[] { 0xffd8b84e, 0xff7fae4e, 0xff9cc45a, 0xffb89a44 };
+            g.setColour(juce::Colour(tones[(i + k) % 4]).withAlpha(0.7f * a * facing));
+            g.fillRect(field);
+            g.setColour(juce::Colour(0xff2f4a24).withAlpha(0.6f * a * facing));
+            g.drawRect(field, 0.8f);
+        }
     });
     spots(ui::GlobeForest, 59, 16, [&](juce::Point<float> p, float facing, float a, float size, int) {
         const float w = r * (0.12f + 0.1f * size);
@@ -1054,47 +1159,84 @@ void WorldbuilderEditor::paintGlobeFeatures(juce::Graphics& g, juce::Rectangle<f
     });
 }
 
-void WorldbuilderEditor::updateTheme() {
-    // Each active Place weighs in by its level; the plain navy always keeps a share.
-    std::array<juce::Colour, placeSlotCount + 1> tints, glows, skies;
-    std::array<float, placeSlotCount + 1> weights {};
-    const auto& base = ui::placeTheme(NoPlace);
-    tints[0] = base.tint;
-    glows[0] = base.glow;
-    skies[0] = colours::background;
-    weights[0] = 0.35f;
-    std::array<float, 11> features {};
-    std::array<float, 8> particles {};
+void WorldbuilderEditor::updateTheme(float seconds, bool snap) {
+    // Each Place's presence follows its level (0 dB: full, -36 dB: none; nothing when
+    // muted or removed) and moves there linearly in about 1.2 s, so Places fade in and
+    // out of the look, the globe and the overlays together.
+    std::array<float, PlaceTypeCount> target {};
     for (int slot = 0; slot < placeSlotCount; ++slot) {
         const int type = placeType(slot);
-        const auto k = std::size_t(slot + 1);
-        tints[k] = glows[k] = skies[k] = colours::background;
-        if (type == NoPlace || param(placeParam(slot, PlMute)) > 0.5f) continue;
-        const auto& t = ui::placeTheme(type);
-        const float w = juce::jlimit(0.0f, 1.5f, juce::Decibels::decibelsToGain(param(placeParam(slot, PlLevel)))) * (1.0f - 0.6f * param(placeParam(slot, PlDistance)));
-        tints[k] = t.tint;
-        glows[k] = t.glow;
-        skies[k] = t.sky;
-        weights[k] = w;
-        features[std::size_t(t.globe)] = std::max(features[std::size_t(t.globe)], juce::jlimit(0.0f, 1.0f, w));
-        particles[std::size_t(t.particles)] = std::max(particles[std::size_t(t.particles)], juce::jlimit(0.0f, 1.0f, w));
+        if (type <= NoPlace || type >= PlaceTypeCount || param(placeParam(slot, PlMute)) > 0.5f) continue;
+        const float level = juce::jlimit(0.0f, 1.0f, (param(placeParam(slot, PlLevel)) + 36.0f) / 36.0f);
+        target[std::size_t(type)] = std::min(1.0f, target[std::size_t(type)] + level);
     }
-    const auto tint = blend(tints.data(), weights.data(), int(weights.size()));
-    const auto glow = blend(glows.data(), weights.data(), int(weights.size()));
-    const auto sky = blend(skies.data(), weights.data(), int(weights.size()));
-    // About one second to settle at 30 frames per second.
-    constexpr float step = 0.1f;
-    const auto towards = [](juce::Colour a, juce::Colour b) { return a.interpolatedWith(b, step); };
-    const float before = themeTint.getFloatRed() + themeTint.getFloatGreen() + themeTint.getFloatBlue() + themeSky.getFloatRed() + themeSky.getFloatGreen()
-                         + themeSky.getFloatBlue() + themeGlow.getFloatRed() + themeGlow.getFloatGreen();
-    themeTint = towards(themeTint, tint);
-    themeGlow = towards(themeGlow, glow);
-    themeSky = towards(themeSky, sky);
-    for (std::size_t i = 0; i < featureAmount.size(); ++i) featureAmount[i] += step * (features[i] - featureAmount[i]);
-    for (std::size_t i = 0; i < particleAmount.size(); ++i) particleAmount[i] += step * (particles[i] - particleAmount[i]);
-    const float after = themeTint.getFloatRed() + themeTint.getFloatGreen() + themeTint.getFloatBlue() + themeSky.getFloatRed() + themeSky.getFloatGreen()
-                        + themeSky.getFloatBlue() + themeGlow.getFloatRed() + themeGlow.getFloatGreen();
-    themeChange = std::abs(after - before);
+    themeMoving = false;
+    const float step = seconds / 1.2f;
+    for (std::size_t type = 0; type < presence.size(); ++type) {
+        auto& p = presence[type];
+        if (p == target[type]) continue;
+        p = snap ? target[type] : target[type] > p ? std::min(target[type], p + step) : std::max(target[type], p - step);
+        themeMoving = true;
+    }
+
+    // Blend the present Places' palettes (eased); the plain look fills in what they leave.
+    std::array<juce::Colour, PlaceTypeCount> tints, glows, backdrops;
+    std::array<float, PlaceTypeCount> weights {};
+    std::array<float, ui::GlobeFeatureCount> features {};
+    std::array<float, 8> particles {};
+    float total = 0;
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) {
+        const auto& t = ui::placeTheme(type);
+        const float p = presence[std::size_t(type)], w = p * p * (3.0f - 2.0f * p);
+        tints[std::size_t(type)] = t.tint;
+        glows[std::size_t(type)] = t.glow;
+        backdrops[std::size_t(type)] = t.backdrop;
+        weights[std::size_t(type)] = w;
+        total += w;
+        features[std::size_t(t.globe)] = std::max(features[std::size_t(t.globe)], w);
+        particles[std::size_t(t.particles)] = std::max(particles[std::size_t(t.particles)], w);
+        overlays->setAmount(type, p);
+    }
+    themeStrength = std::min(1.0f, total);
+    const auto& plain = ui::placeTheme(NoPlace);
+    tints[0] = plain.tint;
+    glows[0] = plain.glow;
+    backdrops[0] = plain.backdrop;
+    weights[0] = total > 0.0f ? 0.0f : 1.0f;
+    themeTint = plain.tint.interpolatedWith(blend(tints.data(), weights.data(), PlaceTypeCount), themeStrength);
+    themeGlow = plain.glow.interpolatedWith(blend(glows.data(), weights.data(), PlaceTypeCount), themeStrength);
+    themeSky = plain.backdrop.interpolatedWith(blend(backdrops.data(), weights.data(), PlaceTypeCount), themeStrength);
+    featureAmount = features;
+    for (std::size_t i = 0; i < particleAmount.size(); ++i) particleAmount[i] = particles[i];
+}
+
+void WorldbuilderEditor::updateOverlayFrames() {
+    if (overlays == nullptr) return;
+    std::vector<juce::Rectangle<int>> panels { controlsPanel, layersPanel, placesPanel, footer };
+    if (detail.slot >= 0) {
+        panels.push_back(detail.area);
+    } else {
+        panels.push_back(globePanel);
+        panels.push_back(cardsPanel);
+    }
+    // Never on a control, nor on text near a frame (the header, the footer's labels).
+    std::vector<juce::Rectangle<int>> keep { headerTitle, headerSubtitle };
+    for (auto* c : getChildren())
+        if (c != overlays.get() && c->isVisible()) keep.push_back(c->getBounds().expanded(2));
+    for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice })
+        keep.push_back(c->getBounds().translated(0, -16).withHeight(16));
+    keep.push_back(dice.getBounds().translated(dice.getWidth() + 10, 0).withWidth(100));   // tempo
+    for (const auto& area : groupAreas) keep.push_back(area.withHeight(18));
+    keep.push_back(layersPanel.reduced(10, 6).withHeight(20));
+    keep.push_back(placesPanel.reduced(10, 6).withHeight(20));
+    if (detail.slot < 0) keep.push_back(juce::Rectangle<float>(90.0f, 16.0f).withCentre({ globeArea.getCentreX(), globeArea.getBottom() + 12.0f }).toNearestInt());   // LISTENER
+    if (keep == overlayKeepClear) return;
+    overlayKeepClear = keep;
+    juce::RectangleList<int> clear;
+    for (auto r : keep) clear.addWithoutMerging(r);
+    std::vector<juce::Rectangle<int>> open;
+    if (!headerOpen.isEmpty()) open.push_back(headerOpen);
+    overlays->setFrames(panels, open, clear);
 }
 
 juce::Point<float> WorldbuilderEditor::landmarkPosition(int slot) const {
@@ -1215,11 +1357,23 @@ void WorldbuilderEditor::updateDetailLabels() {
 
 void WorldbuilderEditor::timerCallback() {
     if (!isShowing()) return;
-    animTime += 1.0f / 30.0f;
+    stepAnimation(1.0f / 30.0f);
+}
+
+void WorldbuilderEditor::settle(float seconds) {
+    for (float t = 0; t < seconds; t += 1.0f / 30.0f) stepAnimation(1.0f / 30.0f);
+}
+
+void WorldbuilderEditor::stepAnimation(float seconds) {
+    animTime += seconds;
     if (animTime > 3600.0f) animTime = 0;
-    updateTheme();
-    // The whole interface repaints only while its colours are moving.
-    if (themeChange > 0.002f) repaint();
+    refreshPlaceStrips();
+    updateTheme(seconds);
+    // The whole interface repaints while the Places' colours are moving.
+    if (themeMoving) repaint();
+    if (const int stored = int(processor.parameters.state.getProperty("overlays", int(ui::OverlaysFull))); stored != overlays->mode()) setOverlayMode(stored);
+    updateOverlayFrames();
+    overlays->advance(seconds);
     bool animating = false;
     for (int type = 0; type < PlaceTypeCount; ++type) {
         auto& h = hoverAmount[std::size_t(type)];
@@ -1229,7 +1383,7 @@ void WorldbuilderEditor::timerCallback() {
         animating |= h > 0.0f;
     }
     if (animating && detail.slot < 0 && !patterns->isVisible()) repaint(cardsPanel);
-    if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 6));
+    if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 8));
     spin += 0.004f + 0.02f * processor.engine.frame()[Activity];
     if (spin > juce::MathConstants<float>::twoPi * 100.0f) spin = 0;
     precipitation += 0.05f + 0.06f * processor.engine.frame()[Weather];
@@ -1240,7 +1394,6 @@ void WorldbuilderEditor::timerCallback() {
     for (std::size_t i = 0; i < meters.size(); ++i) meters[i] = processor.engine.layerMeter[i].load(std::memory_order_relaxed);
     for (std::size_t i = 0; i < placeMeters.size(); ++i) placeMeters[i] = processor.engine.placeMeter[i].load(std::memory_order_relaxed);
     masterMeter = processor.engine.masterMeter.load(std::memory_order_relaxed);
-    refreshPlaceStrips();
 
     if (detail.slot >= 0) updateDetailLabels();
     else if (!patterns->isVisible()) repaint(globePanel);

@@ -1062,3 +1062,142 @@ delay (Hive), long shimmer (Temple; `dsp::Shimmer` exists), slapback (Cavern).
 - The theme tints the background, panels and glow; knobs, text and buttons keep the
   brass-and-cyan palette (the full overhaul is Milestone 8).
 - The artwork pipeline is tested on Linux only; no artwork is committed yet.
+
+---
+
+## Milestone 5a.1: world theme fix and Place overlays (2026-10-25)
+
+The 5a GarageBand test: the six instruments and the 20-card selector work, but the
+world theme and the other visual changes were not visible. Before 5b: fix the theme,
+make sure the globe features, header art and tab icons show, and add **Place
+overlays** (Direction Update 3, new Section 3a).
+
+### Why the theme was invisible
+
+It did reach the painting, but it had no visible effect:
+- the Places' tints were within a few percent of the navy panel colour (Castle
+  `#2a2433` against `#152031`), and the result was diluted three times (the navy kept
+  a 35 % share, the panels took 45 % of that, the background 55 %);
+- the full repaint stopped when one frame's colour step fell below a threshold, so
+  with small differences it stopped long before the colours arrived;
+- a fresh instance already holds a Castle in slot 1, so "before" and "after" looked
+  the same.
+
+### What was built
+
+- **Theme**: each Place has a clearly different panel tint and a new **backdrop**
+  (background) colour: Castle plum, Village warm brown, Spaceport deep teal, and so on
+  for all 20. Each Place's **presence** follows its level (0 dB full, -36 dB none,
+  nothing when muted or removed) and moves there in about 1.2 s; the background,
+  panel tint, frame glow, globe features, particles and overlays all follow it. With
+  several Places the palettes blend by presence. The whole window repaints while
+  anything moves.
+- **Globe**: patchwork fields with hedges (Castle, Village), two tilted orbit rings
+  with ships and trails (Spaceport), both much stronger than before.
+- **Detail header**: taller (86 px): the Place's scene is clearly visible, the name
+  and buttons on top, the description on a shaded strip below (it used to run under
+  the buttons). Tab icons in the Pattern Editor were already drawn; checked on the
+  snapshots.
+- **Place overlays** (`Source/UI/PlaceOverlays.h/.cpp`): a component above
+  everything that never takes the mouse.
+  - **Castle**: grass along the bottom and tufts on the panels' top edges, ivy up
+    both sides of every panel and along its edges, a stone trim, red-and-gold banners
+    in the top gaps and the header, fireflies.
+  - **Spaceport**: neon frames with glow and corner brackets, a tick scale along the
+    bottom, lights running along every frame, a scan line sweeping down and one
+    across, a flickering hologram with a radar in the header, blinking status lights
+    in the gaps, short glitches.
+  - **Village**: wooden beams with grain and pegs on the panels' top edges, corner
+    braces, posts in the gaps, a plank floor, rooftops with chimneys and a string of
+    lanterns in the header, lanterns in the gaps, chimney smoke.
+  - They combine (neon is drawn first, so grass and beams sit on it); each follows its
+    Place's presence (level, ~1.2 s fade in and out). **Overlays: Full / Subtle /
+    Off** in the footer, saved with the project (a state property, not a parameter).
+  - **Where they may draw**: the gaps between panels, the header's empty space, a
+    6 px band inside each frame and 12 px corners, minus every visible control
+    (+2 px) and the text near frames (header, footer labels, panel titles, LISTENER).
+    Nothing is blurred.
+  - **Cost**: the still parts are drawn once per layout into an image at the
+    display's pixel scale, already clipped (freed when the Place is gone); moving
+    parts are pre-rendered glow sprites stamped unscaled, plus a few lines. Each frame
+    repaints only where moving parts were and are, clipped to the decorated area and
+    merged into at most 40 small rectangles. 20 fps at Full, 10 at Subtle.
+- **Editor paint** skips the globe, cards, strips and text that the clip does not
+  reach inside their panel, and strokes the panel frames once. This also lightens the
+  per-frame globe and strip repaints that 5a already did.
+- `hasOverlay(type)` must be true for every built Place (tested).
+
+### Decisions
+
+- **Presence by level only** (not distance): the brief says the overlay follows the
+  Level; the theme uses the same value so they move together.
+- **20 fps for overlays.** First measured at 30 fps; 20 is smooth for fireflies,
+  smoke and scan lines and costs a third less.
+- **Dirty rectangles, not the whole band.** On macOS, JUCE paints each dirty
+  rectangle with its own paint call; a few large rectangles repaint the panels'
+  insides, many tiny ones cost a call each. Pieces are joined while that adds under
+  4000 px.
+
+### Problems and fixes
+
+- First version: 33 ms per frame for three overlays. Filling paths against a clip of
+  80 rectangles, and every scaled image or gradient converting that clip to an edge
+  table, were the cost (callgrind). Fixed by the pre-clipped image, unscaled sprites
+  and the local clip: 3-5 ms for the whole window.
+- Merging dirty rectangles into eight made them cover half the window; clipping to the
+  decorated area first fixed it.
+- A cached background image was tried and removed: no measurable gain.
+
+### Tests (Linux)
+
+New `overlays` group, through the real editor's pixels, from an empty world:
+- Castle only, Spaceport only, Castle + Spaceport: the overlay is clearly visible
+  (40,000 / 112,000 / 117,000 pixels changed), draws only inside its drawable area,
+  never on a control; Castle's green and Spaceport's neon both show when combined.
+- The theme: panels and background change clearly per Place (colour distance 0.16
+  against the plain look, threshold 0.08), Castle and Spaceport differ, two Places
+  blend between them.
+- An added Place's overlay grows in (partial after 0.4 s, full after 1.6 s), follows
+  its level (-18 dB: weaker), Subtle is lighter, a removed Place fades out.
+- Every built Place has an overlay; the Overlays setting survives a state round trip.
+- Cost: 20 frames a second, at most 40 rectangles; share of one core with the editor
+  repainted beneath (software renderer, this container): Castle about 4 %, Spaceport
+  about 7 %, Castle + Village + Spaceport about 17 % (gate 22 %).
+- Snapshots (`--snapshot f.png` writes `f-plain`, `f-castle`, `f-spaceport`,
+  `f-castle-spaceport`, `f-village-spaceport`, `f-village-detail`,
+  `f-spaceport-patterns`): looked at. Theme and overlays are clearly visible, they
+  combine well (grass and ivy with neon lining), and no control is covered.
+
+**856 checks pass, 0 fail** with GCC; Clang builds cleanly and passes the editor, overlays and state groups.
+
+### Milestone 5a.1 handoff
+
+**Done:** the theme is clearly visible and blends; globe features, header art and tab
+icons show; Castle, Village and Spaceport overlays, combined, level-following, fading,
+with Full / Subtle / Off; Direction Update 3 Section 3a (every new Place gets an
+overlay).
+
+**Next (needs the developer):**
+1. The Milestone 5a.1 check in [MANUAL_TEST.md](MANUAL_TEST.md). The header must read
+   MILESTONE 5A.1 PREVIEW (else the old build is loaded).
+2. GarageBand's CPU meter with overlays on. The software-renderer figures above are a
+   worst case; macOS draws with CoreGraphics. If it is heavy, report whether Subtle
+   helps.
+3. Still open from 5a: listening to each instrument alone.
+
+**Then 5b:** Factory, City, Forest, Alien Hive, Temple, Cavern, as described in the
+5a handoff, **plus an overlay for each** (`Source/UI/PlaceOverlays.cpp`): a case in
+`PlaceOverlays::build()` (its still shapes), in `drawMoving()` (its moving parts, each
+noted with `mark` or `stamp` so it is repainted) and in `hasOverlay()`. Ideas: Factory: rivets, pipes and steam
+puffs; City: neon signs and window lights; Forest: vines, leaves and falling leaves;
+Alien Hive: organic tendrils and pulsing spores; Temple: gold trim and incense smoke;
+Cavern: crystals and dripping water. Neon-like overlays go in the first (light) pass
+in `paint()`.
+
+**Known issues / limits:**
+- The overlays are designed for the fixed 1160 x 720 layout; they rebuild on resize.
+- Each active overlay keeps one window-sized image of its still parts: about 3 MB,
+  13 MB on a Retina display (freed when its Place is removed).
+- At Subtle the moving parts update 10 times a second (by design).
+- The globe's own colour still follows the climate controls, not the Places.
+- "WORLD SEED" overlaps the seed bar a little (from 5a's footer layout).

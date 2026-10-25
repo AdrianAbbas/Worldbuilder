@@ -66,9 +66,18 @@ For culturally specific sounds (Desert, Beach, etc.), aim for evocative film-sco
 - **Detail panel:** per-Place header art and colour; the Pattern Editor's element tabs show an icon for each instrument.
 - Keep the artwork asset pipeline from Update 2 (drop-in PNG layers per Place, procedural fallback). Keep animation ≤ 30 fps and CPU-light.
 
+### 3a. Place overlays (added after the 5a GarageBand test)
+
+- **Each Place decorates the whole interface with its own animated overlay**, drawn over the panel frames and edges. Examples: Castle: grass and ivy growing along the bottom and up the panel corners, banners or stone trim, drifting fireflies. Spaceport: bright neon edge lighting tracing the panel borders, scanning light lines, a subtle hologram flicker. Village: wooden beam trim, warm lantern glow, chimney smoke drifting up.
+- **Overlays combine** when several Places are active (Castle + Spaceport = grass with neon lining at the same time). Each overlay's strength follows its Place's Level, and it grows in or fades out smoothly (about 1–2 s) when the Place is added or removed.
+- **Edges and empty space only.** Overlays never cover or blur knobs, text, the Pattern Editor or the meters; every control stays fully readable and clickable.
+- Procedurally drawn, cached, animated at 30 fps or less, light on CPU, and switchable with an **Overlays: Full / Subtle / Off** setting.
+- **Every new Place in 5b–5d must get its own overlay**, for example: Forest: vines and leaves; Desert: sand drifting across the bottom; Sea Ship: rope trim and water reflections; Mall: glossy neon signage; Ruins: cracks and moss; Alien Hive: organic tendrils. A Place is not finished until it has one.
+- The world theme (background, panel tint, glow per Place, blended for several Places) must be clearly visible, not a faint tint.
+
 ## 4. Tests (lean)
 
-For each Place: every instrument audible on solo, finite output, follows Root/Mood (pitch-class check), follows tempo, every Character measurably different, CPU within budget with 4 Places active. State round trip with 4 active Places and edited patterns.
+For each Place: its overlay exists, shows, and draws only on the edges and empty space (never on a control); every instrument audible on solo, finite output, follows Root/Mood (pitch-class check), follows tempo, every Character measurably different, CPU within budget with 4 Places active. State round trip with 4 active Places and edited patterns.
 
 ## 5. Revised milestones
 

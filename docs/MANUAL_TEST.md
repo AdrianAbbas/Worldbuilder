@@ -186,3 +186,37 @@ Village and Spaceport now have six instruments, so they sound fuller and differe
   chord.
 - [ ] Root, Mood and the host tempo: every instrument follows them.
 - [ ] Four Places at once: does GarageBand's CPU meter stay comfortable?
+
+## Milestone 5a.1 check: world theme and Place overlays
+
+Install the new build the same way. The header should read **MILESTONE 5A.1 PREVIEW**;
+if it still says 5A, GarageBand is using the old build. Note: a fresh instance
+starts with a Castle in slot 1.
+
+**The theme** (set OVERLAYS to Off first, to see only the colours):
+- [ ] Castle only: background and panels plum-purple, with an amber glow on the panel
+  frames and behind the globe. Remove it (X): it goes back to navy in about a second.
+- [ ] Spaceport only: deep teal with cyan frames. Village only: warm brown and amber.
+- [ ] Castle + Spaceport: a mix between the two. Turning one Place's LEVEL down or
+  muting it moves the colours towards the other Place, smoothly.
+- [ ] The globe: patchwork fields for Castle and Village, two tilted orbit rings with
+  ships and trails for the Spaceport.
+- [ ] EDIT: the Place's scene is clearly visible across the top of the detail panel,
+  the name and description readable. PATTERNS: every tab has its instrument's icon.
+
+**The overlays** (OVERLAYS: Full):
+- [ ] Castle: grass along the bottom and on the panels' top edges, ivy climbing the
+  panel corners, red banners at the top, fireflies drifting in the gaps.
+- [ ] Spaceport: neon frames and corner brackets, lights running along the frames, a
+  scan line sweeping down, a flickering hologram with a radar in the header.
+- [ ] Village: wooden beams and posts, a plank floor, rooftops with chimney smoke and
+  a string of lanterns in the header, lanterns glowing in the gaps.
+- [ ] Castle + Spaceport: grass and ivy with neon lining at the same time.
+- [ ] Add or remove a Place: its overlay grows in or fades out over about a second.
+  Turn its LEVEL down: the overlay gets fainter.
+- [ ] No overlay covers a knob, a slider, text, a meter or the Pattern Editor, and
+  every control still works where it is.
+- [ ] Subtle is lighter and calmer; Off removes them. The setting is saved with the
+  project.
+- [ ] With overlays on, does GarageBand stay responsive and its CPU meter comfortable?
+  If not, tell me whether Subtle helps.

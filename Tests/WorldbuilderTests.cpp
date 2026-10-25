@@ -1879,6 +1879,205 @@ int renderToFile(const juce::String& path, double seconds, const juce::StringArr
     return 0;
 }
 
+
+// The world theme and the Place overlays, through the real editor and its pixels.
+void testOverlays(Suite& s, const juce::String& snapshotPath) {
+    s.section("overlays");
+    const auto save = [&](const juce::Image& image, const juce::String& suffix) {
+        if (snapshotPath.isEmpty()) return;
+        juce::File file(snapshotPath.upToLastOccurrenceOf(".", false, false) + suffix + ".png");
+        file.deleteFile();
+        juce::FileOutputStream out(file);
+        juce::PNGImageFormat().writeImageToStream(image, out);
+        std::cout << "  snapshot written to " << file.getFullPathName() << "\n";
+    };
+    // The average colour of an area.
+    const auto average = [](const juce::Image& image, juce::Rectangle<int> area) {
+        float r = 0, g = 0, b = 0;
+        int n = 0;
+        for (int y = area.getY(); y < area.getBottom(); ++y)
+            for (int x = area.getX(); x < area.getRight(); ++x, ++n) {
+                const auto c = image.getPixelAt(x, y);
+                r += c.getFloatRed();
+                g += c.getFloatGreen();
+                b += c.getFloatBlue();
+            }
+        return std::array<float, 3> { r / float(n), g / float(n), b / float(n) };
+    };
+    const auto distance = [](std::array<float, 3> a, std::array<float, 3> b) { return std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2]); };
+
+    struct World {
+        Host h;
+        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        WorldbuilderEditor* view = nullptr;
+        explicit World(std::initializer_list<int> places) {
+            for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), float(NoPlace));   // the default world has a Castle
+            h.render(0.3);
+            editor.reset(h.p->createEditor());
+            view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+            for (int type : places) view->addPlace(type);
+            view->settle(2.5f);
+        }
+        juce::Image snapshot() { return editor->createComponentSnapshot(editor->getLocalBounds()); }
+    };
+    // An empty cell of the World Controls (inside a panel, no control) and a stretch of
+    // the background (the header's right side, no text).
+    const juce::Rectangle<int> panelSample(222, 530, 70, 60), backgroundSample(1020, 14, 50, 8);
+
+    World plain({});
+    plain.view->setOverlayMode(ui::OverlaysOff);
+    const auto plainImage = plain.snapshot();
+    save(plainImage, "-plain");
+    const auto plainPanel = average(plainImage, panelSample), plainBackground = average(plainImage, backgroundSample);
+
+    std::array<std::array<float, 3>, 3> panels {}, backgrounds {};
+    const std::array<std::pair<std::vector<int>, const char*>, 3> cases { { { { Castle }, "-castle" }, { { Spaceport }, "-spaceport" },
+                                                                            { { Castle, Spaceport }, "-castle-spaceport" } } };
+    for (std::size_t c = 0; c < cases.size(); ++c) {
+        World w({});
+        for (int type : cases[c].first) w.view->addPlace(type);
+        w.view->settle(2.5f);
+        const auto full = w.snapshot();
+        save(full, cases[c].second);
+        auto& overlays = w.view->placeOverlays();
+        for (int type : cases[c].first) s.check(overlays.strength(type) > 0.99f, std::string("overlay at full strength: ") + placeNames[std::size_t(type)]);
+        w.view->setOverlayMode(ui::OverlaysOff);
+        const auto off = w.snapshot();
+        panels[c] = average(off, panelSample);
+        backgrounds[c] = average(off, backgroundSample);
+        // What the overlays drew: only on their drawable area, never on a control.
+        int drawn = 0, outside = 0, onControls = 0, green = 0, neon = 0;
+        const auto& area = overlays.drawableArea();
+        std::vector<juce::Rectangle<int>> controls;
+        juce::Rectangle<int> setting;   // the Overlays menu itself changes its text
+        for (auto* child : w.editor->getChildren())
+            if (child != &overlays && child->isVisible()) {
+                if (auto* box = dynamic_cast<juce::ComboBox*>(child); box != nullptr && box->getText() == "Off") setting = box->getBounds();
+                else controls.push_back(child->getBounds());
+            }
+        for (int y = 0; y < full.getHeight(); ++y)
+            for (int x = 0; x < full.getWidth(); ++x) {
+                if (setting.contains(x, y)) continue;
+                const auto a = full.getPixelAt(x, y), b = off.getPixelAt(x, y);
+                if (std::abs(a.getFloatRed() - b.getFloatRed()) + std::abs(a.getFloatGreen() - b.getFloatGreen()) + std::abs(a.getFloatBlue() - b.getFloatBlue()) < 0.02f) continue;
+                ++drawn;
+                if (!area.containsPoint({ x, y })) ++outside;
+                for (const auto& r : controls) onControls += r.contains(x, y) ? 1 : 0;
+                if (a.getFloatGreen() > a.getFloatRed() + 0.08f && a.getFloatGreen() > a.getFloatBlue() + 0.08f) ++green;
+                if (a.getFloatBlue() > 0.55f && a.getFloatGreen() > 0.55f && a.getFloatRed() < a.getFloatBlue() - 0.15f) ++neon;
+            }
+        const std::string name = cases[c].second + 1;
+        s.metric("overlay pixels (" + name + ")", drawn);
+        s.check(drawn > 8000, "the overlay is clearly visible (" + name + ")", std::to_string(drawn) + " pixels");
+        s.check(outside == 0, "the overlay draws only on the edges and empty space (" + name + ")", std::to_string(outside) + " pixels outside");
+        s.check(onControls == 0, "the overlay never covers a control (" + name + ")", std::to_string(onControls) + " pixels");
+        const bool castle = c != 1, spaceport = c != 0;
+        if (castle) s.check(green > 1500, "Castle's grass and ivy show (" + name + ")", std::to_string(green) + " green pixels");
+        if (spaceport) s.check(neon > 1500, "Spaceport's neon shows (" + name + ")", std::to_string(neon) + " neon pixels");
+    }
+    // The theme: each Place clearly changes the panels and the background, and two
+    // Places blend between them.
+    for (std::size_t c = 0; c < 2; ++c) {
+        s.metric(std::string("theme change, panel (") + (cases[c].second + 1) + ")", distance(panels[c], plainPanel));
+        s.check(distance(panels[c], plainPanel) > 0.08f, std::string("the theme clearly tints the panels (") + (cases[c].second + 1) + ")", fmt(distance(panels[c], plainPanel)));
+        s.check(distance(backgrounds[c], plainBackground) > 0.08f, std::string("the theme clearly changes the background (") + (cases[c].second + 1) + ")",
+                fmt(distance(backgrounds[c], plainBackground)));
+    }
+    s.check(distance(panels[0], panels[1]) > 0.08f, "Castle and Spaceport look clearly different", fmt(distance(panels[0], panels[1])));
+    s.check(distance(panels[2], panels[0]) > 0.02f && distance(panels[2], panels[1]) > 0.02f
+                && distance(panels[2], panels[0]) + distance(panels[2], panels[1]) < distance(panels[0], panels[1]) * 1.3f,
+            "Castle + Spaceport blends the two palettes");
+
+    // Village, its detail panel (header art) and the Pattern Editor (instrument icons) with
+    // the overlays, for looking at.
+    {
+        World w({ Village, Spaceport });
+        save(w.snapshot(), "-village-spaceport");
+        w.view->openDetail(0);
+        w.view->settle(0.5f);
+        const auto detailImage = w.snapshot();
+        s.check(detailImage.isValid(), "the detail panel paints with overlays");
+        save(detailImage, "-village-detail");
+        w.view->openPatterns(1);
+        w.view->settle(0.5f);
+        const auto patternImage = w.snapshot();
+        s.check(patternImage.isValid(), "the Pattern Editor paints with overlays");
+        save(patternImage, "-spaceport-patterns");
+    }
+    // Cost, as the host draws it: the editor beneath what the overlays repaint, one paint
+    // call per rectangle (as macOS hosts do), over three seconds.
+    const auto cost = [&](std::initializer_list<int> places, const std::string& name, bool gate) {
+        World w(places);
+        auto& overlays = w.view->placeOverlays();
+        juce::Image window(juce::Image::RGB, w.editor->getWidth(), w.editor->getHeight(), true);
+        double busy = 0, pixels = 0;
+        std::size_t most = 0;
+        int frames = 0;
+        for (int i = 0; i < 90; ++i) {
+            w.view->settle(1.0f / 30.0f);
+            const auto begin = juce::Time::getMillisecondCounterHiRes();
+            for (auto r : overlays.lastRepaint()) {
+                juce::Graphics g(window);
+                g.reduceClipRegion(r);
+                w.editor->paintEntireComponent(g, false);
+                pixels += double(r.getWidth() * r.getHeight());
+            }
+            busy += juce::Time::getMillisecondCounterHiRes() - begin;
+            frames += overlays.lastRepaint().empty() ? 0 : 1;
+            most = std::max(most, overlays.lastRepaint().size());
+        }
+        const double share = busy / 3000.0 * 100.0;
+        s.metric("overlays' share of one core, " + name + ", with the editor beneath (software renderer)", share, " %");
+        if (!gate) return;
+        s.metric("overlay frames per second (Full)", frames / 3.0);
+        s.metric("overlay frame: pixels repainted (of " + std::to_string(w.editor->getWidth() * w.editor->getHeight()) + ")", pixels / std::max(1, frames));
+        s.metric("overlay frame: most rectangles", double(most));
+        s.check(frames >= 55 && frames <= 62, "overlays animate at 20 frames a second", std::to_string(frames / 3.0));
+        s.check(most > 0 && most <= 40, "an overlay frame repaints at most 40 small rectangles", std::to_string(most));
+        s.check(share < 22.0, "three overlays at once take under 22 % of one core (software renderer)", fmt(share) + " %");
+    };
+    cost({ Castle }, "Castle", false);
+    cost({ Spaceport }, "Spaceport", false);
+    cost({ Castle, Village, Spaceport }, "Castle + Village + Spaceport", true);
+
+    // Overlays grow in and fade out over about a second, and follow the Place's level.
+    {
+        World w({});
+        auto& overlays = w.view->placeOverlays();
+        const int slot = w.view->addPlace(Castle);
+        w.view->settle(0.4f);
+        const float early = overlays.strength(Castle);
+        w.view->settle(1.2f);
+        s.check(early > 0.02f && early < 0.9f && overlays.strength(Castle) > 0.99f, "an added Place's overlay grows in over about a second",
+                fmt(early) + " then " + fmt(overlays.strength(Castle)));
+        w.h.set(slotId(slot, PlLevel), -18.0f);
+        w.view->settle(2.0f);
+        const float quieter = overlays.strength(Castle);
+        s.check(quieter > 0.1f && quieter < 0.8f, "the overlay follows the Place's level", fmt(quieter));
+        w.h.set(slotId(slot, PlLevel), 0.0f);
+        w.view->settle(2.0f);
+        w.view->setOverlayMode(ui::OverlaysSubtle);
+        s.check(overlays.strength(Castle) > 0.2f && overlays.strength(Castle) < 0.6f, "Subtle overlays are lighter", fmt(overlays.strength(Castle)));
+        w.view->setOverlayMode(ui::OverlaysFull);
+        w.h.set(slotId(slot, PlType), float(NoPlace));
+        w.view->settle(0.4f);
+        const float fading = overlays.strength(Castle);
+        w.view->settle(1.2f);
+        s.check(fading > 0.05f && overlays.strength(Castle) == 0.0f && !overlays.showing(), "a removed Place's overlay fades out", fmt(fading));
+    }
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
+        if (placeImplemented[std::size_t(type)]) s.check(ui::hasOverlay(type), std::string("every built Place has an overlay: ") + placeNames[std::size_t(type)]);
+    // The setting is saved with the project.
+    {
+        Host a;
+        a.p->parameters.state.setProperty("overlays", int(ui::OverlaysSubtle), nullptr);
+        juce::MemoryBlock state;
+        a.p->getStateInformation(state);
+        Host b;
+        b.p->setStateInformation(state.getData(), int(state.getSize()));
+        s.check(int(b.p->parameters.state.getProperty("overlays", -1)) == ui::OverlaysSubtle, "the Overlays setting is saved and restored");
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1918,6 +2117,7 @@ int main(int argc, char** argv) {
     if (run("state")) testState(s);
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);
+    if (run("overlays")) testOverlays(s, snapshot);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

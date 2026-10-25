@@ -7,7 +7,8 @@ a village or a spaceport, over a living environment of wind, water, fire, ice an
 thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 5a (six-instrument Places, 20-Place selector, visual update).**
+**Status: Milestone 5a.1 (six-instrument Places, 20-Place selector, world theme and
+Place overlays).**
 These work now:
 - **Places**, the centrepiece. Up to four play at once: Castle, Village and Spaceport
   (the selector already lists all 20 Places; the other 17 arrive in Milestones
@@ -18,6 +19,9 @@ These work now:
   - Every instrument has its own pattern, level, on/off switch, mute and solo.
   - Each Place has its own effect character (stone hall and tape echo; wooden room
     and tape warmth; hangar, ping-pong delay and shimmer).
+  - Each Place colours the interface and decorates its edges with an animated
+    overlay (grass, ivy and fireflies; wooden beams, lanterns and smoke; neon and
+    scan lines), blended when several play. Overlays: Full, Subtle or Off.
   - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
     host tempo, or the Place's own free tempo) and a Seed.
   - Each slot also has level, distance and pan.

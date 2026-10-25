@@ -20,9 +20,10 @@ enum GlobeFeature { GlobeFields, GlobeOrbit, GlobeSmoke, GlobeCityLights, GlobeF
                     GlobeFeatureCount };
 
 // Each Place's look: the sky and horizon of its card, its ground, the colour of its
-// light, the tint it gives the interface, its particles and its mark on the globe.
+// light, the tint it gives the interface's panels, the interface's background, its
+// particles and its mark on the globe.
 struct PlaceTheme {
-    juce::Colour sky, horizon, ground, glow, tint;
+    juce::Colour sky, horizon, ground, glow, tint, backdrop;
     int particles = ParticleMotes;
     int globe = GlobeFields;
 };

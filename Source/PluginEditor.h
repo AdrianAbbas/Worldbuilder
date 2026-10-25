@@ -5,6 +5,8 @@
 // The full Living Globe and resizable layout arrive in Milestone 6.
 #include "PluginProcessor.h"
 #include "UI/PatternEditor.h"
+#include "UI/PlaceArt.h"
+#include "UI/PlaceOverlays.h"
 #include "UI/WorldLookAndFeel.h"
 
 class WorldbuilderEditor final : public juce::AudioProcessorEditor, private juce::Timer {
@@ -29,6 +31,10 @@ public:
     // Opens the Pattern Editor on a slot's Place (on `element`, or its first pattern).
     void openPatterns(int slot, int element = -1);
     wb::ui::PatternEditor& patternEditor() { return *patterns; }
+    // Runs the animation (theme, overlays) on by `seconds`, as the timer does.
+    void settle(float seconds);
+    wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
+    void setOverlayMode(int mode);
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -85,8 +91,13 @@ private:
     juce::Rectangle<int> cardBounds(int index) const;
     float maxCardScroll() const;
     int categoryAt(juce::Point<int>) const;
-    // The interface takes on the colours of the active Places (blended, ~1 s).
-    void updateTheme();
+    // One animation frame: theme, overlays, globe, meters.
+    void stepAnimation(float seconds);
+    // The interface takes on the colours of the active Places (blended, ~1 s); `snap`
+    // jumps straight there (when the editor opens).
+    void updateTheme(float seconds, bool snap = false);
+    // Tells the overlays where the panels are and what they must keep clear.
+    void updateOverlayFrames();
     void paintGlobeFeatures(juce::Graphics&, juce::Rectangle<float> area, float alpha);
     juce::Point<float> landmarkPosition(int slot) const;
     int landmarkAt(juce::Point<float>) const;
@@ -111,19 +122,30 @@ private:
     std::unique_ptr<wb::ui::PatternEditor> patterns;
     juce::ComboBox playMode;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
+    juce::ComboBox overlayChoice;
+    std::unique_ptr<wb::ui::PlaceOverlays> overlays;
+    std::vector<juce::Rectangle<int>> overlayKeepClear;
 
     juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer;
     std::array<juce::Rectangle<int>, 4> groupAreas;
-    juce::Rectangle<int> cardGrid;
+    juce::Rectangle<int> cardGrid, headerTitle, headerSubtitle, headerOpen;
+    struct FrameOutline {
+        juce::Rectangle<int> panel;
+        juce::Path glow, edge;
+    };
+    std::vector<FrameOutline> frameOutlines;   // each panel's outlines, stroked once
     std::array<juce::Rectangle<int>, wb::PlaceCategoryCount + 1> categoryChips;
     std::array<int, wb::PlaceTypeCount> listed {};
     int listedCount = 0, category = -1;   // -1: every Place
     float cardScroll = 0, animTime = 0;
     std::array<float, wb::PlaceTypeCount> hoverAmount {};
+    // How present each Place is in the look (0..1, follows its level, fades in and out).
+    std::array<float, wb::PlaceTypeCount> presence {};
     juce::Colour themeTint, themeGlow, themeSky;
-    std::array<float, 11> featureAmount {};
+    float themeStrength = 0;
+    bool themeMoving = false;
+    std::array<float, wb::ui::GlobeFeatureCount> featureAmount {};
     std::array<float, 8> particleAmount {};
-    float themeChange = 0;
     juce::Rectangle<float> globeArea;
     float spin = 0, precipitation = 0, flash = 0;
     int boltSeed = 1, hoverCard = -1, dragLandmark = -1;
