@@ -63,6 +63,7 @@ enum P {
     PLayerFirst,   // then level, mute, solo for each layer
     PPlaceFirst = PLayerFirst + 3 * LayerCount,   // then PlaceParamCount per slot
     PPlayMode = PPlaceFirst + placeSlotCount * PlaceParamCount,
+    PIntensity,   // Score Intensity (Milestone 7)
     PCount
 };
 
@@ -143,6 +144,8 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     // Free: the world plays all the time. Transport: only while the host plays, from
     // silence and locked to the song position (so bounces always contain it).
     { "playmode", "Play Mode", Kind::Choice, 0, 1, PlayTransport, playModeChoices },
+    // Score Intensity: a calm bed at 0, every Place as set at 0.5, a climax at 1.
+    { "intensity", "Score Intensity", Kind::Float, 0, 1, 0.5f },
 } };
 // clang-format on
 

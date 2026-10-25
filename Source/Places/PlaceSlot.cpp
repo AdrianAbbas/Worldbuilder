@@ -122,6 +122,14 @@ PlaceSettings PlaceSlot::settingsFor(const WorldFrame& world, const PlaceSlotCon
     s.tone = clamp01(c.tone + 0.35f * (world[Era] - 0.3f) + 0.2f * (0.5f - world[Temperature]) - 0.12f * world[Weather] - 0.1f * world[Danger]);
     s.size = clamp01(c.size + 0.35f * (world[Scale] - 0.5f));
     s.variation = clamp01(c.variation * lerp(0.6f, 1.4f, world[Activity]));
+    // Score Intensity: calm below the middle, a climax above it, each Place on its own curve.
+    const auto& curve = intensityCurve(c.type);
+    const auto at = intensityPosition(world.intensity, curve);
+    s.activity = intensify(s.activity, curve.activity, at);
+    s.tension = intensify(s.tension, curve.tension, at);
+    s.density = intensify(s.density, curve.density, at);
+    s.tone = clamp01(s.tone + 0.3f * curve.tone * (at.above - 0.7f * at.below));
+    s.fxDepth = clamp01(0.15f + 0.85f * s.activity * lerp(0.6f, 1.3f, population));
     s.life = world[Life];
     s.machinery = machinery;
     s.magic = world[Magic];
@@ -282,7 +290,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = current->spaceSend() * lerp(0.4f, 1.6f, d);
-    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f)) * near : 0.0f;
+    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + intensityDb(currentType, world.intensity)) * near : 0.0f;
     // The sends follow the slot's gain and pan; far away, more of each instrument
     // reaches its reverb and delay.
     const float sendDistance = 1.0f + 0.5f * d;

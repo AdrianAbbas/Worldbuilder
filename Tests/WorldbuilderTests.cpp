@@ -2849,6 +2849,150 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
 }
 } // namespace
 
+//==============================================================================
+// Score Intensity (Milestone 7): a calm bed at 0, the Places as set at 0.5, a climax
+// at 1; monotonic in density and loudness, smoothed, in every Play Mode.
+
+// Every note and hit all four slots have played so far.
+uint32_t allEvents(const Host& h) {
+    uint32_t n = 0;
+    for (int slot = 0; slot < placeSlotCount; ++slot)
+        if (const auto* place = h.p->engine.placeSlot(slot).place()) n += place->eventCount();
+    return n;
+}
+
+// A world of up to four Places, each at its own defaults (as a Place card sets them),
+// soloed (Score Intensity drives the Places, not the environment layers).
+Host intensityWorld(const std::vector<int>& types, float intensity) {
+    Host h;
+    for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), float(NoPlace));
+    for (std::size_t k = 0; k < types.size(); ++k) {
+        const int slot = int(k);
+        h.set(slotId(slot, PlType), float(types[k]));
+        h.set(slotId(slot, PlSolo), 1.0f);
+        for (int e = 0; e < placeElements; ++e)
+            for (int f = 0; f < FxFieldCount; ++f) h.set(fxId(slot, e, f), instrumentFxDefault(types[k], e, f));
+    }
+    h.set("intensity", intensity);
+    return h;
+}
+
+void testIntensity(Suite& s) {
+    s.section("Score Intensity: monotonic density and loudness, smooth, every Play Mode");
+    {
+        const auto& spec = specs[std::size_t(PIntensity)];
+        s.check(std::string(spec.id) == "intensity" && spec.def == 0.5f && spec.min == 0.0f && spec.max == 1.0f, "Score Intensity is a host parameter, 0-100 %, default 50 %");
+        // At 50 % every Place is exactly as set.
+        PlaceSlotControls c;
+        c.type = Castle;
+        WorldFrame w;
+        w.c.fill(0.3f);
+        w.intensity = 0.5f;
+        const auto a = PlaceSlot::settingsFor(w, c);
+        w.intensity = 0.0f;
+        const auto calm = PlaceSlot::settingsFor(w, c);
+        w.intensity = 1.0f;
+        const auto climax = PlaceSlot::settingsFor(w, c);
+        s.check(intensityDb(Castle, 0.5f) == 0.0f && calm.activity < a.activity && a.activity < climax.activity && calm.tension < a.tension
+                    && a.tension < climax.tension && calm.tone < a.tone && a.tone < climax.tone && intensityDb(Castle, 0.0f) < 0.0f && intensityDb(Castle, 1.0f) > 0.0f,
+                "50 % leaves a Place as set; 0 % calms it, 100 % drives it (activity, tension, tone, level)");
+    }
+    // Monotonic: more notes and louder at every step, for each kind of Place and a full world.
+    const std::vector<std::pair<std::vector<int>, std::string>> worlds { { { Castle }, "Castle" }, { { Tavern }, "Tavern" }, { { Temple }, "Temple" },
+                                                                         { { Megacity }, "Cyberpunk Megacity" }, { { Nebula }, "Nebula" },
+                                                                         { { Bridge, Castle, Forest, Nebula }, "four Places" } };
+    for (const auto& [types, name] : worlds) {
+        std::vector<double> rms;
+        std::vector<uint32_t> notes;
+        std::string text;
+        for (float x : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) {
+            auto h = intensityWorld(types, x);
+            const auto st = measure(h.render(24.0), 4.0);
+            rms.push_back(st.rmsDb);
+            notes.push_back(allEvents(h));
+            text += fmt(st.rmsDb) + " dB/" + std::to_string(notes.back()) + (x < 1.0f ? ", " : "");
+            s.check(st.finite && st.peak < 0.95, name + ": finite and within the limiter at " + fmt(x * 100.0) + " %", fmt(toDb(st.peak)) + " dBFS peak");
+        }
+        bool louder = true, denser = true;
+        for (std::size_t k = 1; k < rms.size(); ++k) {
+            louder = louder && rms[k] > rms[k - 1] + 0.3;
+            denser = denser && notes[k] >= notes[k - 1];
+        }
+        s.check(louder, name + ": louder at every step of Score Intensity", text);
+        s.check(denser && double(notes.back()) > 1.3 * double(notes.front()), name + ": busier with Score Intensity (never fewer notes)", text);
+        s.check(rms.back() - rms.front() > 5.0 && rms.back() - rms[2] < 6.0, name + ": a calm bed to a climax, the climax within the loudness rules",
+                fmt(rms.front()) + " -> " + fmt(rms[2]) + " -> " + fmt(rms.back()) + " dB");
+        s.metric(name + " Score Intensity range", rms.back() - rms.front(), " dB");
+    }
+    // A jump from 0 % to 100 % glides: no level spike beyond what the climax itself has.
+    {
+        const std::vector<int> types { Megacity, Castle, Temple, Bridge };
+        auto steady = intensityWorld(types, 1.0f);
+        const auto st = steady.render(12.0);
+        auto jump = intensityWorld(types, 0.0f);
+        jump.render(4.0);
+        jump.set("intensity", 1.0f);
+        const auto after = jump.render(8.0);
+        const auto steadyEnv = envelopeDb(st, 0.2, 4.0), jumpEnv = envelopeDb(after, 0.2);
+        double steadyTop = -240, jumpTop = -240, rise = 0, steadyRise = 0;
+        for (double e : steadyEnv) steadyTop = std::max(steadyTop, e);
+        for (double e : jumpEnv) jumpTop = std::max(jumpTop, e);
+        const auto fine = envelopeDb(after, 0.02), steadyFine = envelopeDb(st, 0.02, 4.0);
+        for (std::size_t k = 1; k < fine.size(); ++k) rise = std::max(rise, fine[k] - fine[k - 1]);
+        for (std::size_t k = 1; k < steadyFine.size(); ++k) steadyRise = std::max(steadyRise, fine.size() > k ? steadyFine[k] - steadyFine[k - 1] : 0.0);
+        s.check(jumpTop < steadyTop + 1.5, "a jump to 100 % never overshoots the climax's own level", fmt(jumpTop) + " vs " + fmt(steadyTop) + " dB (200 ms windows)");
+        s.check(rise < steadyRise + 3.0, "a jump to 100 % adds no sudden steps (20 ms windows)", fmt(rise) + " dB vs " + fmt(steadyRise) + " dB in the climax itself");
+        // The level arrives over about a second, not at once.
+        const double first = jumpEnv.empty() ? 0.0 : jumpEnv.front();
+        s.check(!jumpEnv.empty() && first < steadyTop - 1.0, "the jump is smoothed (the first 200 ms are still on the way up)", fmt(first) + " dB");
+    }
+    // Automation: a ramp from 0 % to 100 % over 16 s rises steadily.
+    {
+        auto h = intensityWorld({ Castle, Tavern }, 0.0f);
+        h.render(2.0);
+        Audio a;
+        a.rate = h.rate;
+        const int blocks = int(16.0 * h.rate / double(h.block));
+        for (int b = 0; b < blocks; ++b) {
+            h.set("intensity", float(b) / float(blocks - 1));
+            h.processOne(h.block);
+            a.l.insert(a.l.end(), h.buffer.getReadPointer(0), h.buffer.getReadPointer(0) + h.block);
+            a.r.insert(a.r.end(), h.buffer.getReadPointer(1), h.buffer.getReadPointer(1) + h.block);
+        }
+        const auto env = envelopeDb(a, 4.0);
+        bool rising = env.size() == 4;
+        for (std::size_t k = 1; k < env.size(); ++k) rising = rising && env[k] > env[k - 1];
+        std::string text;
+        for (double e : env) text += fmt(e) + " ";
+        s.check(rising, "automating Score Intensity up raises the level steadily (4 s windows)", text);
+        const auto fine = envelopeDb(a, 0.02);
+        double worst = 0;
+        for (std::size_t k = 1; k < fine.size(); ++k) worst = std::max(worst, std::abs(fine[k] - fine[k - 1]));
+        s.metric("Score Intensity ramp: largest 20 ms step", worst, " dB");
+    }
+    // Transport mode: the same response while the host plays.
+    {
+        const auto level = [](float x) {
+            auto h = intensityWorld({ Castle }, x);
+            h.set("playmode", float(PlayTransport));
+            h.playHead.playing = true;
+            return measure(h.render(16.0), 4.0).rmsDb;
+        };
+        const double calm = level(0.0f), climax = level(1.0f);
+        s.check(climax > calm + 5.0, "Score Intensity works in Transport mode", fmt(calm) + " -> " + fmt(climax) + " dB");
+    }
+    // State: saved and restored.
+    {
+        Host a;
+        a.set("intensity", 0.8f);
+        juce::MemoryBlock block;
+        a.p->getStateInformation(block);
+        Host b;
+        b.p->setStateInformation(block.getData(), int(block.getSize()));
+        s.check(std::abs(b.get("intensity") - 0.8f) < 1.0e-4f, "Score Intensity is saved with the project", fmt(b.get("intensity")));
+    }
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -2893,6 +3037,7 @@ int main(int argc, char** argv) {
     if (run("models")) testModels(s);
     if (run("distinct")) testDistinct(s);
     if (run("effects")) testEffects(s);
+    if (run("intensity")) testIntensity(s);
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);
     if (run("overlays")) testOverlays(s, snapshot);

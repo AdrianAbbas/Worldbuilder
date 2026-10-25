@@ -128,7 +128,7 @@ private:
 
     juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer;
     std::array<juce::Rectangle<int>, 4> groupAreas;
-    juce::Rectangle<int> cardGrid, headerTitle, headerSubtitle, headerOpen;
+    juce::Rectangle<int> cardGrid, headerTitle, headerSubtitle, headerOpen, intensityLabel;
     struct FrameOutline {
         juce::Rectangle<int> panel;
         juce::Path glow, edge;

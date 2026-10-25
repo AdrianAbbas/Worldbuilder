@@ -27,6 +27,8 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     glue.prepare(r);
     limiter.prepare(r);
     for (auto& s : worldSmooth) s.setTime(0.25f, controlRate);
+    // Score Intensity glides (a cue builds, it never jumps).
+    intensity.setTime(0.5f, controlRate);
     for (auto& s : layerGain) s.setTime(0.03f, r);
     master.setTime(0.05f, r);
     width.setTime(0.1f, r);
@@ -54,6 +56,8 @@ void WorldEngine::reset(const EngineControls& initial) {
     master.snap(dbToGain(initial.masterDb));
     width.snap(initial.width);
     spaceMix.snap(initial.spaceMix);
+    intensity.snap(clamp01(initial.intensity));
+    world.intensity = intensity.value;
     seed = initial.seed + 1;   // forces setSeed on the first chunk
     // A freshly loaded world fades in, like switching Power on.
     powerRamp = 0;
@@ -129,6 +133,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             if (layer != nullptr) layer->setSeed(seed);
     }
     for (std::size_t i = 0; i < worldSmooth.size(); ++i) world.c[i] = worldSmooth[i].next(clamp01(finiteOr(controls.world[i], 0.5f)));
+    world.intensity = intensity.next(clamp01(finiteOr(controls.intensity, 0.5f)));
     world.root = controls.root;
     world.mood = controls.mood;
     world.quality = controls.quality;

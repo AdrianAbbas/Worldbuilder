@@ -18,6 +18,7 @@ constexpr std::array<Group, 4> groups { {
 
 const char* tooltipFor(int p) {
     switch (p) {
+        case PIntensity: return "Score Intensity: every active Place at once, from a calm bed (0%) through the Places as set (50%) to a climax (100%): busier, tenser, brighter and louder. Automate it to shape a cue.";
         case PTemperature: return "Frozen to scorching: singing ice and thin high wind, or crackling fire and lava in the key. Cold Places sound brighter.";
         case PWeather: return "Still to storm: wind and howling, drizzle to downpour, thunder (a tuned impact and swell). Storms push Places further away.";
         case PWetness: return "Arid to drenched: tuned drips, then rain plucks and shimmer, streams, a waterfall and lapping waves. Douses fire.";
@@ -61,7 +62,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 6 PREVIEW";
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 7 PREVIEW";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -88,6 +89,12 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         for (int param : group.params)
             if (param >= 0) addKnob(param);
     for (int param : { PSpaceMix, PWidth, PMaster }) addKnob(param);
+    // Score Intensity: the big macro in the header, labelled by the editor.
+    {
+        auto& knob = addKnob(PIntensity);
+        knob.getProperties().set("compact", true);
+        knob.onValueChange = [this] { repaint(intensityLabel); };
+    }
 
     for (int l = 0; l < LayerCount; ++l) {
         auto& s = strips[std::size_t(l)];
@@ -411,7 +418,11 @@ void WorldbuilderEditor::resized() {
         headerTitle = header.withTrimmedLeft(4).withWidth(width(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f), "WORLDBUILDER"));
         headerSubtitle = juce::Rectangle<int>(header.getX() + 300, header.getCentreY() - 9,
                                               width(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f), headerText), 18);
-        headerOpen = header.withLeft(headerSubtitle.getRight() + 16).withRight(power.getX() - 16);
+        // Score Intensity: its label and a large knob, clear of POWER.
+        const auto block = header.withRight(power.getX() - 48).withLeft(power.getX() - 48 - 170);
+        knobFor[std::size_t(PIntensity)]->setBounds(block.withLeft(block.getRight() - 46).withSizeKeepingCentre(46, 46));
+        intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(116, 30);
+        headerOpen = header.withLeft(headerSubtitle.getRight() + 16).withRight(intensityLabel.getX() - 12);
         if (headerOpen.getWidth() < 60) headerOpen = {};
     }
     area.removeFromTop(6);
@@ -601,6 +612,14 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
         g.setColour(colours::dim);
         g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
         g.drawText(headerText, header.withTrimmedLeft(300).withTrimmedRight(110), juce::Justification::centredLeft, false);
+    }
+    if (g.clipRegionIntersects(intensityLabel)) {
+        g.setColour(colours::brass);
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)).withExtraKerningFactor(0.1f));
+        g.drawText("SCORE INTENSITY", intensityLabel.withHeight(15), juce::Justification::centredRight, false);
+        g.setColour(colours::cyan);
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+        g.drawText(juce::String(juce::roundToInt(param(PIntensity) * 100.0f)) + "%", intensityLabel.withTrimmedTop(15), juce::Justification::centredRight, false);
     }
     g.setColour(colours::brass.withAlpha(0.35f));
     g.drawHorizontalLine(header.getBottom() + 2, float(header.getX()), float(header.getRight()));
@@ -1222,7 +1241,7 @@ void WorldbuilderEditor::updateOverlayFrames() {
         panels.push_back(cardsPanel);
     }
     // Never on a control, nor on text near a frame (the header, the footer's labels).
-    std::vector<juce::Rectangle<int>> keep { headerTitle, headerSubtitle };
+    std::vector<juce::Rectangle<int>> keep { headerTitle, headerSubtitle, intensityLabel };
     for (auto* c : getChildren())
         if (c != overlays.get() && c->isVisible()) keep.push_back(c->getBounds().expanded(2));
     for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice })

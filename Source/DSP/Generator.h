@@ -14,6 +14,7 @@ struct WorldFrame {
     double beat = 0;    // the world's beat position at the chunk start (host tempo, or the default)
     float bpm = 96;
     int chord = 0;      // scale degree of the current chord of the shared progression
+    float intensity = 0.5f;   // Score Intensity, smoothed (0 calm, 0.5 as set, 1 climax)
     float operator[](WorldControl w) const { return c[std::size_t(w)]; }
 };
 

@@ -2287,7 +2287,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 4. Asteroid Mining Colony
 - [x] 5. Alien Ruins
 - [x] 6. Nebula / Deep Space
-- [ ] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
+- [x] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
 - [ ] 8. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
 
 ### Decisions
@@ -2400,3 +2400,35 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - Overlay: soft violet, rose and teal gas clouds along the frames, pooling along the
   bottom and filling the header, fields of stars and a few bright glints; stars
   twinkle, gas puffs drift up.
+
+### Score Intensity
+
+- A host parameter `intensity` (Score Intensity, 0-100 %, default 50 %), appended to
+  the parameter table (old projects load it at 50 %: the Places exactly as they were).
+  It is smoothed in the engine (0.5 s) and reaches every slot through the world frame,
+  so it works the same in Free and Transport modes, and the Transport restart snaps it
+  (renders repeat).
+- `Source/Places/Intensity.h`: each Place has a response curve (rhythmic, ambient or
+  ensemble; the table is per Place type, so any Place can get its own): how far
+  Intensity moves its Activity, Tension, Density and Tone, the level at 0 % and at
+  100 %, and how late the climax arrives. Values only move towards their ends (down
+  towards a fifth of themselves, up towards full), so the response is monotonic, and
+  at 50 % nothing changes (bit for bit). Activity also deepens each Place's effects
+  (as Population does) and, through the pattern generators, adds notes.
+- Levels: 0 % is 6-8 dB quieter than the Place as set (plus the fewer notes); going up
+  the extra notes add 4-7 dB by themselves, so the level lift is 1 dB for the
+  ensembles and none for rhythmic and ambient Places. Measured (Places soloed): 9.6
+  to 14.4 dB from 0 % to 100 %, the climax 3.5-6 dB above 50 %.
+- Interface: a large knob in the header, between the subtitle and POWER, labelled
+  SCORE INTENSITY with its value; it is a normal host parameter (automation, double
+  click resets to 50 %). The header now reads Milestone 7.
+- Tests (`--only intensity`, 56 checks): the parameter; 50 % leaves a Place as set; for
+  Castle, Tavern, Temple, Megacity, Nebula and a four-Place world, louder (+0.3 dB at
+  least) and never fewer notes at every 25 % step, at least 1.3x the notes and 5 dB
+  from 0 to 100 %, the climax within 6 dB of 50 %; a jump from 0 % to 100 % never
+  overshoots the climax's own level and adds no sudden steps beyond the climax's own
+  transients, and is smoothed; a 16 s automation ramp rises in every 4 s window;
+  Transport mode responds the same; the value is saved with the project.
+- The environment layers (Air, Water, Fire, Earth, Thunder, Tonal Bed) are not part of
+  Score Intensity (the brief says it drives the Places); in a default world they are
+  loud enough to dilute it, so the tests solo the Places.

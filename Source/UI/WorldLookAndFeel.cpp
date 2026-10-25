@@ -26,7 +26,9 @@ WorldLookAndFeel::WorldLookAndFeel() {
 void WorldLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float position,
                                         float startAngle, float endAngle, juce::Slider& slider) {
     auto area = juce::Rectangle<int>(x, y, width, height).toFloat();
-    const float textHeight = 28.0f;
+    // A compact knob (the header's Score Intensity) draws no text: the editor labels it.
+    const bool compact = slider.getProperties().getWithDefault("compact", false);
+    const float textHeight = compact ? 0.0f : 28.0f;
     const auto knobArea = area.withTrimmedBottom(textHeight).reduced(4.0f);
     const float radius = std::min(knobArea.getWidth(), knobArea.getHeight()) * 0.5f;
     const auto centre = knobArea.getCentre();
@@ -57,6 +59,12 @@ void WorldLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wid
     g.setColour(colours::parchment.withAlpha(enabled ? 1.0f : 0.4f));
     g.drawLine({ base, tip }, 2.2f);
 
+    if (compact) {
+        // A glow that grows with the value: the cue heating up.
+        g.setColour(colours::cyan.withAlpha(0.12f * position));
+        g.fillEllipse(juce::Rectangle<float>(radius * 2.2f, radius * 2.2f).withCentre(centre));
+        return;
+    }
     // Name and value.
     auto text = area.removeFromBottom(textHeight);
     g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));

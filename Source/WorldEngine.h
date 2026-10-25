@@ -21,6 +21,7 @@ struct EngineControls {
     std::array<float, LayerCount> layerDb {};
     std::array<bool, LayerCount> mute {}, solo {};
     float masterDb = 0, width = 1, spaceMix = 0.4f;
+    float intensity = 0.5f;   // Score Intensity
     bool power = true;
     int root = 2, mood = 0, quality = 1;
     uint32_t seed = 1;
@@ -92,7 +93,7 @@ private:
     std::array<dsp::OnePole, 2> distance;
     dsp::Glue glue;
     dsp::SafetyLimiter limiter;
-    dsp::Smoother master, width, spaceMix;
+    dsp::Smoother master, width, spaceMix, intensity;
     float powerRamp = 1, powerStep = 0;
     float gateRamp = 1, gateUp = 0, gateDown = 0;
     float masterPeak = 0;

@@ -73,6 +73,7 @@ EngineControls WorldbuilderProcessor::readControls() const noexcept {
     c.masterDb = value(PMaster);
     c.width = value(PWidth);
     c.spaceMix = value(PSpaceMix);
+    c.intensity = value(PIntensity);
     c.seed = uint32_t(juce::roundToInt(value(PSeed)));
     c.quality = juce::roundToInt(value(PQuality));
     c.root = juce::roundToInt(value(PRoot));
