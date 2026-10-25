@@ -296,6 +296,8 @@ void SpaceshipPlace::configure(const PlaceContext& c) {
         p.gain = 1.0f;
     }
     // Tension: the hull strains and the alarm rises; Machinery drives the engine and pumps.
+    // The derelict's dead corridors ring on; red alert slams the bulkheads shut.
+    sendScale.fill(derelict ? 1.5f : (alert ? 0.7f : 1.0f));
     level = { 0.12f * (derelict ? 0.6f : 1.0f) * (0.7f + 0.6f * s.machinery), 0.4f * (0.6f + 0.8f * s.machinery) * (derelict ? 0.7f : 1.0f),
               0.13f * lerp(0.8f, 1.3f, s.life), 0.5f * (alert ? 1.2f : 1.0f), 0.14f * (derelict ? 1.6f : 1.0f) * (0.6f + 1.0f * tension),
               0.06f * (alert ? 2.2f : (cruising ? 0.8f : 1.0f)) * (0.6f + 1.0f * tension) };

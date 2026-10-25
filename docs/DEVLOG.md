@@ -1817,7 +1817,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Factory
   - [x] Beach
   - [x] Spaceport
-  - [ ] Spaceship Interior
+  - [x] Spaceship Interior
   - [ ] Biodome
   - [ ] Alien Hive
 - [ ] 5. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
@@ -2186,4 +2186,8 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Pulses, Pads, Risers, PA Tones, Engine, Data Blips: rich synthesis, each with its own
   effect (filter on the pulses, chorus on the pads, ping-pong and lo-fi on the blips).
 - Space: the abandoned dock is a vast empty hangar, the hub full of soft surfaces.
+
+**Spaceship Interior** (sci-fi)
+- Engine, Life Support, Computer, Airlock, Hull (the bowed resonator), Alarm.
+- Space: the derelict's dead corridors ring, red alert slams the bulkheads shut.
 
