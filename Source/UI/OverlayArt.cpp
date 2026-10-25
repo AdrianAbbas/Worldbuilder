@@ -1345,6 +1345,113 @@ OverlayArt suburbs(const Layout& L) {
     for (auto at : spotsIn(air, 6, 1415)) move(a, PlaceOverlays::MoveFall, at, butterfly, between(r, 6.0f, 9.0f), r.nextFloat(), 1.0f, between(r, 6.0f, 14.0f), 8.0f, 2);
     return a;
 }
+//==============================================================================
+// Mall: a polished floor along the bottom with reflections, pastel neon tubes on the
+// panel corners, storefronts with glowing signs in the open space, potted palms in the
+// gaps; the floor glints, the signs flicker, a fountain sprays, light sweeps the floor.
+OverlayArt mall(const Layout& L) {
+    OverlayArt a;
+    a.light = true;
+    juce::Random r(1515);
+    const juce::Colour pink(0xffff7ad0), teal(0xff58f0e0), lilac(0xffc8a0ff);
+    juce::Path floor, floorShine, pinkTubes, tealTubes, fronts, glass, awnings, signTube, signText, pots, fronds, trunks;
+    std::vector<Point> glints, signs, sprays;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // The polished floor: tiles with a glossy streak.
+    floor.addRectangle(0.0f, bottom - 8.0f, width, 8.0f);
+    for (float x = 0.0f; x < width; x += 26.0f) floorShine.addRectangle(x, bottom - 8.0f, 0.8f, 8.0f);
+    floorShine.addRectangle(0.0f, bottom - 6.0f, width, 0.8f);
+    for (float x = between(r, 10.0f, 40.0f); x < width; x += between(r, 50.0f, 90.0f)) glints.push_back({ x, bottom - between(r, 2.0f, 6.0f) });
+    // Neon tubes bent round the panels' corners, pink and teal by turns.
+    int k = 0;
+    for (auto p : L.panels) {
+        auto& tube = (k++ % 2 == 0) ? pinkTubes : tealTubes;
+        const float arm = std::min(60.0f, p.getWidth() * 0.25f);
+        tube.startNewSubPath(p.getX() + arm, p.getY() - 0.5f);
+        tube.lineTo(p.getX() + 10.0f, p.getY() - 0.5f);
+        tube.quadraticTo(p.getX() - 0.5f, p.getY() - 0.5f, p.getX() - 0.5f, p.getY() + 10.0f);
+        tube.lineTo(p.getX() - 0.5f, p.getY() + std::min(40.0f, p.getHeight() * 0.25f));
+        tube.startNewSubPath(p.getRight() - arm, p.getBottom() + 0.5f);
+        tube.lineTo(p.getRight() - 10.0f, p.getBottom() + 0.5f);
+        tube.quadraticTo(p.getRight() + 0.5f, p.getBottom() + 0.5f, p.getRight() + 0.5f, p.getBottom() - 10.0f);
+        tube.lineTo(p.getRight() + 0.5f, p.getBottom() - std::min(40.0f, p.getHeight() * 0.25f));
+    }
+    // Potted palms in the gaps.
+    for (auto gap : L.gutters) {
+        const float cx = gap.getCentreX(), base = gap.getBottom() - 4.0f;
+        if (gap.getHeight() < 60.0f) continue;
+        pots.addRoundedRectangle(cx - 5.0f, base - 9.0f, 10.0f, 9.0f, 2.0f);
+        const float top = base - std::min(70.0f, gap.getHeight() * 0.45f);
+        juce::Path trunk;
+        trunk.startNewSubPath(cx, base - 9.0f);
+        trunk.quadraticTo(cx + 3.0f, (base + top) * 0.5f, cx, top);
+        juce::PathStrokeType(2.2f).createStrokedPath(trunk, trunk);
+        trunks.addPath(trunk);
+        for (int f = 0; f < 6; ++f) {
+            const float angle = -2.6f + float(f) * 0.52f + between(r, -0.1f, 0.1f);
+            juce::Path frond;
+            const Point tip { cx + std::cos(angle) * 14.0f, top + std::sin(angle) * 9.0f + 6.0f };
+            frond.startNewSubPath(cx, top);
+            frond.quadraticTo((cx + tip.x) * 0.5f, top + std::sin(angle) * 9.0f - 3.0f, tip.x, tip.y);
+            juce::PathStrokeType(1.8f).createStrokedPath(frond, frond);
+            fronds.addPath(frond);
+        }
+        sprays.push_back({ cx, gap.getY() + 30.0f });
+    }
+    // Storefronts in the open space: glass fronts under striped awnings, a glowing sign over each.
+    static constexpr std::array<const char*, 5> names { "SALE", "MALL", "FOOD", "OPEN", "SHOP" };
+    int name = 0;
+    for (auto o : L.open) {
+        const float base = o.getBottom();
+        float x = o.getX() + 8.0f;
+        while (x < o.getRight() - 60.0f) {
+            const float w = between(r, 52.0f, 70.0f), h = std::min(o.getHeight() - 2.0f, between(r, 18.0f, 24.0f));
+            fronts.addRectangle(x, base - h, w, h);
+            glass.addRectangle(x + 4.0f, base - h * 0.55f, w - 8.0f, h * 0.55f - 1.0f);
+            for (float ax = x; ax < x + w - 1.0f; ax += 8.0f) awnings.addRectangle(ax, base - h * 0.55f - 4.0f, 4.0f, 4.0f);
+            const Rect sign { x + 6.0f, base - h + 2.0f, w - 12.0f, h * 0.45f - 4.0f };
+            if (sign.getHeight() > 6.0f) {
+                signTube.addRoundedRectangle(sign, 3.0f);
+                juce::GlyphArrangement glyphs;
+                glyphs.addLineOfText(juce::Font(juce::FontOptions(std::min(9.0f, sign.getHeight() - 1.0f), juce::Font::bold)), names[std::size_t(name++ % 5)], 0.0f, 0.0f);
+                juce::Path text;
+                glyphs.createPath(text);
+                const auto tb = text.getBounds();
+                text.applyTransform(juce::AffineTransform::translation(sign.getCentreX() - tb.getCentreX(), sign.getCentreY() - tb.getCentreY()));
+                signText.addPath(text);
+                signs.push_back(sign.getCentre());
+            }
+            x += w + between(r, 10.0f, 24.0f);
+        }
+    }
+    a.shapes.push_back({ floor, juce::Colour(0xffe8dcef) });
+    a.shapes.push_back({ floorShine, juce::Colour(0xffffffff) });
+    a.shapes.push_back({ fronts, juce::Colour(0xff2a2440) });
+    a.shapes.push_back({ glass, juce::Colour(0xff4a6a88) });
+    a.shapes.push_back({ awnings, pink.withAlpha(0.85f) });
+    a.shapes.push_back({ pots, juce::Colour(0xfff0e8f8) });
+    a.shapes.push_back({ trunks, juce::Colour(0xff8a6a50) });
+    a.shapes.push_back({ fronds, juce::Colour(0xff3aa878) });
+    neon(a, pinkTubes, pink);
+    neon(a, tealTubes, teal);
+    neon(a, signTube, lilac, 1.0f);
+    a.shapes.push_back({ signText, teal.interpolatedWith(juce::Colours::white, 0.4f) });
+
+    const int glint = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(4.0f, juce::Colour(0xffffe0ff)));
+    const int glow = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(7.0f, lilac.withAlpha(0.45f), juce::Colour(0x00ffffff), 0.0f));
+    const int drop = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.0f, juce::Colour(0x8080e8ff), juce::Colour(0xffe8ffff), 0.8f));
+    const int sweep = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(6.0f, juce::Colour(0x50ffffff), juce::Colour(0x90ffffff), 1.5f));
+    for (auto g : glints) move(a, PlaceOverlays::MovePulse, g, glint, between(r, 2.5f, 5.0f), r.nextFloat(), 0.9f);
+    for (std::size_t i = 0; i < signs.size() && i < 8; ++i) move(a, PlaceOverlays::MoveFlicker, signs[i], glow, between(r, 1.0f, 3.0f), r.nextFloat(), 0.8f);
+    for (auto at : sprays)
+        for (int d = 0; d < 4; ++d) move(a, PlaceOverlays::MoveRise, at.translated(between(r, -4.0f, 4.0f), 0.0f), drop, between(r, 1.4f, 2.2f), float(d) / 4.0f, 1.0f, between(r, 10.0f, 16.0f), 4.0f);
+    for (int c = 0; c < 2; ++c) move(a, PlaceOverlays::MoveDrift, { -10.0f, bottom - 4.0f }, sweep, between(r, 9.0f, 12.0f), float(c) / 2.0f, 0.8f, width + 20.0f, 0.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -1446,7 +1553,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -1462,6 +1569,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Biodome: return biodome(layout);
         case SeaShip: return seaship(layout);
         case Suburbs: return suburbs(layout);
+        case Mall: return mall(layout);
         default: return {};
     }
 }

@@ -55,6 +55,7 @@ std::unique_ptr<Place> makePlace(int type) {
         case Biodome: return std::make_unique<BiodomePlace>();
         case SeaShip: return std::make_unique<SeaShipPlace>();
         case Suburbs: return std::make_unique<SuburbsPlace>();
+        case Mall: return std::make_unique<MallPlace>();
         default: return nullptr;
     }
 }

@@ -484,6 +484,40 @@ private:
     float roomSend = 0, presence = 0;
 };
 
+// Mall: smooth electric-piano chords, vibraphone melodies with a motor tremolo, PA
+// chime dings, an escalator hum, fountain shimmer and a soft drum groove, in a glossy
+// reverb with a slight detune. Busy Weekend: a light shuffle, a running vibraphone,
+// frequent chimes. Empty Night: long ninth chords, a lone vibraphone, the escalator and
+// the fountain. Dead Mall: the vaporwave option, slowed right down, detuned flat and
+// wobbling, a half-time groove in a dim hall.
+class MallPlace final : public EnsemblePlace {
+public:
+    MallPlace();
+    float freeTempo() const override { return 92.0f; }
+    float spaceSend() const override { return 0.3f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { EPiano, Vibraphone, PAChimes, Escalator, Fountain, Drums };
+    enum Character { BusyWeekend, EmptyNight, DeadMall };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    FmPart piano;
+    ModalPart vibes, chimes;
+    SynthPart escalator;
+    WindPart fountain;
+    DrumPart drums;
+    dsp::SmallSpace hall;
+    dsp::Detune detune;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float hallSend = 0, presence = 0, motorPhase = 0, motorHz = 5, motorDepth = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

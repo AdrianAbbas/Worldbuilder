@@ -996,7 +996,10 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     const int village = world->addPlace(Village), spaceport = world->addPlace(Spaceport);
     s.check(village == 1 && spaceport == 2 && juce::roundToInt(h.get("p2_type")) == Village && juce::roundToInt(h.get("p3_type")) == Spaceport,
             "Place cards fill the next empty slots", std::to_string(village) + ", " + std::to_string(spaceport));
-    s.check(world->addPlace(Mall) == -1, "a Place from a later milestone cannot be added yet");
+    int unbuilt = NoPlace;
+    for (int type = PlaceTypeCount - 1; type > NoPlace; --type)
+        if (!placeImplemented[std::size_t(type)]) unbuilt = type;
+    if (unbuilt != NoPlace) s.check(world->addPlace(unbuilt) == -1, "a Place from a later milestone cannot be added yet");
     const int fourth = world->addPlace(Castle);
     s.check(fourth == 3 && world->addPlace(Village) == -1, "at most four Places");
     h.render(0.5);
@@ -1728,8 +1731,8 @@ void testPlaceSlots(Suite& s) {
         muted.set("p1_solo", 1);
         s.check(measure(muted.render(5.0), 3.0).rmsDb < -100.0, "a muted Place is silent even when soloed");
     }
-    // A Place from a later milestone is silent; so is an empty slot.
-    {
+    // A Place from a later milestone is silent (while any is left to build).
+    if (std::find(placeImplemented.begin() + 1, placeImplemented.end(), false) != placeImplemented.end()) {
         int later = NoPlace;
         for (int type = PlaceTypeCount - 1; type > NoPlace; --type)
             if (!placeImplemented[std::size_t(type)]) later = type;

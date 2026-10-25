@@ -505,4 +505,51 @@ struct Roll {
     }
 };
 
+// Detune: a gentle pitch shifter (two crossfaded read heads gliding through a short
+// delay), each side shifted by its own few cents and mixed with the dry signal, with
+// an optional slow wow that bends the shift. A glossy, slightly detuned sheen; turned
+// further down and wobbling it is a vaporwave slowdown. Mall.
+struct Detune {
+    std::array<DelayLine, 2> line;
+    std::array<float, 2> phase {}, step {};
+    float rate = 48000, window = 2400, mix = 0, wowPhase = 0, wowHz = 0.3f, wow = 0;
+    std::array<float, 2> cents {};
+    void prepare(float sampleRate) {
+        rate = sampleRate;
+        window = 0.05f * rate;
+        for (auto& l : line) l.prepare(std::size_t(window * 1.5f) + 8);
+        clear();
+    }
+    void clear() {
+        for (auto& l : line) l.clear();
+        phase = { 0.0f, 0.5f };
+        wowPhase = 0;
+    }
+    // Once per chunk: the shift of each side (cents), the wet mix, the wow (cents) and its speed.
+    void set(float centsLeft, float centsRight, float mixAmount, float wowCents, float wowSpeed) {
+        cents = { centsLeft, centsRight };
+        mix = clamp01(mixAmount);
+        wow = wowCents;
+        wowHz = wowSpeed;
+    }
+    void process(float& l, float& r) {
+        wowPhase += wowHz / rate;
+        if (wowPhase > 1.0f) wowPhase -= 1.0f;
+        const float bend = wow * std::sin(twoPi * wowPhase);
+        float* io[2] { &l, &r };
+        for (std::size_t c = 0; c < 2; ++c) {
+            line[c].push(*io[c]);
+            // The delay grows (pitch falls) or shrinks (rises) by 1 - ratio a sample.
+            const float ratio = std::exp2((cents[c] + bend) / 1200.0f);
+            float& p = phase[c];
+            p += (1.0f - ratio) / window;
+            p -= std::floor(p);
+            const float q = p + 0.5f - std::floor(p + 0.5f);
+            const float a = std::sin(pi * p), b = std::sin(pi * q);
+            const float wet = line[c].read(2.0f + p * window) * a * a + line[c].read(2.0f + q * window) * b * b;
+            *io[c] = lerp(*io[c], wet, mix);
+        }
+    }
+};
+
 } // namespace wb::dsp
