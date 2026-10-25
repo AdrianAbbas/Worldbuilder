@@ -1809,7 +1809,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Desert
   - [ ] Sea Ship
   - [x] Military Camp
-  - [ ] Ruins
+  - [x] Ruins
   - [ ] Cavern
   - [ ] City
   - [ ] Suburbs
@@ -2130,4 +2130,12 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   electronic sound, heard through a radio), Clanks (struck steel, two-tone), Strings (a
   bowed section, ponticello on alert).
 - Space: the night watch rings over open ground, on alert the camp is close.
+
+**Ruins** (fantasy)
+- Piano Shards (FM swells, reversed: the envelope sets them apart from the other
+  keys), Music Box (a worn comb: tine modes, bent teeth that beat, uneven strikes, the
+  spring sagging each note; it was the same instrument as the Suburbs' music box, now
+  each its own), Broken Bells (cracked: fast beating, uneven), Wind, Ghost Pad, Low Toms
+  (skins).
+- Space: desolate ruins echo emptily, overgrown ones are muffled.
 

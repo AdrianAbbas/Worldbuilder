@@ -186,8 +186,14 @@ void RuinsPlace::configure(const PlaceContext& c) {
     // Music box: small hard tines, the upper partial a quarter-tone off any note.
     {
         auto& p = box.patch;
-        p.set({ 1.0f, 2.0f, 5.19f }, { 1.0f, 0.4f, 0.2f }, { 1.0f, 0.2f, 0.25f * (0.4f + tone) });
-        p.decay = overgrown ? 1.4f : 1.9f;
+        // A worn music box: steel comb teeth (a tine's modes, 1 : 6.27 : 17.6), bent and
+        // rusted so they beat and strike unevenly, the spring running down (each note sags).
+        p.set({ 1.0f, 6.27f, 17.55f }, { 1.0f, 0.2f, 0.07f }, { 1.0f, 0.35f * (0.4f + tone), 0.1f * tone });
+        p.extras.beatHz = 4.0f;
+        p.extras.variation = 0.6f;
+        p.extras.glideSemis = -0.15f;
+        p.extras.glideSeconds = 1.5f;
+        p.decay = overgrown ? 1.8f : 2.4f;
         p.hardness = 0.75f + 0.2f * tone;
         p.toneHz = lerpExp(3000.0f, 11000.0f, tone);
         p.spread = 0.35f;
@@ -282,6 +288,8 @@ void RuinsPlace::configure(const PlaceContext& c) {
     }
     // Tension: the procession comes closer and the ghosts rise; Machinery wears the
     // recording further down; Life lets the moss grow back over the music box.
+    // Desolate ruins echo emptily; overgrown ones are muffled by leaves and moss.
+    sendScale.fill(desolate ? 1.5f : (haunted ? 1.2f : 0.75f));
     level = { 0.2f * (haunted ? 1.2f : 1.0f), 0.14f * (overgrown ? 1.3f : (desolate ? 0.8f : 1.0f)) * lerp(0.8f, 1.3f, s.life),
               0.12f * (desolate ? 1.4f : 1.0f), 1.4f * (desolate ? 1.6f : (overgrown ? 0.8f : 1.0f)) * (0.7f + 0.8f * tension),
               0.14f * (haunted ? 1.6f : (overgrown ? 0.7f : 0.9f)) * (0.6f + 0.9f * tension),
