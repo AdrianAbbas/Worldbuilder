@@ -1804,7 +1804,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Castle
   - [x] Village
   - [x] Palace
-  - [ ] Temple
+  - [x] Temple
   - [ ] Forest
   - [ ] Desert
   - [ ] Sea Ship
@@ -2100,4 +2100,12 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Tension widens the hall (more of everything in its reverbs).
 - Village and Palace were tested together (one full suite on both) and pushed as two
   commits; the Places after them are paired the same way to save suite time.
+
+**Temple** (fantasy)
+- Choir (glottal choir, high), Chant Drone (monks two octaves down on the bass formants,
+  almost no vibrato: a different range and role from the choir), Gongs (glide 0.2
+  semitone, tam-tam bloom), Bowls (split doublets beating), Temple Bells (a slow
+  "oneri" beat), Zither (silk-and-metal strings, a box, sympathetic strings).
+- Space: the forsaken temple echoes emptily (1.5x sends), the rite holds it closer.
+- Effects: everything in the Cathedral except the zither (Hall, dotted echo).
 

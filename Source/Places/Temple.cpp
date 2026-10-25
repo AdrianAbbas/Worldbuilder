@@ -239,6 +239,8 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.glide = 1.0f;
         p.spread = 0.3f;
         p.voices = 2;
+        // Monks holding a drone: almost no vibrato.
+        p.vibratoDepth = 0.03f;
         p.gain = 1.0f;
     }
     // Temple bells: bright bells whose third and fifth partials are the scale's own.
@@ -270,6 +272,8 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.gain = 1.0f;
     }
     // Tension: the chant and the gongs come forward; Machinery quickens the ritual.
+    // The forsaken temple echoes emptily; the rite's crowd and incense hold it closer.
+    sendScale.fill(forsaken ? 1.5f : (rite ? 0.85f : 1.1f));
     level = { 0.3f, 0.2f * (0.7f + 0.8f * tension), 0.18f, 0.5f * (0.6f + 1.0f * tension), 0.14f * (1.0f + 0.5f * s.machinery),
               0.6f * (1.0f + 0.5f * s.machinery) };
 
