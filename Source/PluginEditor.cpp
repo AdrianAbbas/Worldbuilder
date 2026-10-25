@@ -61,7 +61,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 5A.1 PREVIEW";
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 5B PREVIEW";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -248,7 +248,7 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     // The overlays sit above everything and never take the mouse.
     overlays = std::make_unique<ui::PlaceOverlays>();
     addAndMakeVisible(*overlays);
-    setOverlayMode(int(processor.parameters.state.getProperty("overlays", int(ui::OverlaysFull))));
+    setOverlayMode(int(processor.parameters.state.getProperty("overlays", ui::defaultOverlayMode)));
 
     themeTint = colours::panel;
     themeGlow = colours::cyan;
@@ -1371,7 +1371,7 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     updateTheme(seconds);
     // The whole interface repaints while the Places' colours are moving.
     if (themeMoving) repaint();
-    if (const int stored = int(processor.parameters.state.getProperty("overlays", int(ui::OverlaysFull))); stored != overlays->mode()) setOverlayMode(stored);
+    if (const int stored = int(processor.parameters.state.getProperty("overlays", ui::defaultOverlayMode)); stored != overlays->mode()) setOverlayMode(stored);
     updateOverlayFrames();
     overlays->advance(seconds);
     bool animating = false;

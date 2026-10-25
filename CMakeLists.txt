@@ -49,8 +49,9 @@ target_sources(WORLDBUILDER PRIVATE
     Source/DSP/AirLayer.cpp Source/DSP/WaterLayer.cpp Source/DSP/FireLayer.cpp Source/DSP/EarthLayer.cpp
     Source/DSP/ThunderLayer.cpp Source/DSP/TonalBed.cpp Source/DSP/WorldSpace.cpp
     Source/Places/PlaceSlot.cpp Source/Places/Ensemble.cpp Source/Places/Castle.cpp Source/Places/Village.cpp Source/Places/Spaceport.cpp
+    Source/Places/Factory.cpp Source/Places/City.cpp Source/Places/Forest.cpp Source/Places/Hive.cpp Source/Places/Temple.cpp Source/Places/Cavern.cpp
     Source/Patterns/PatternStore.cpp Source/Patterns/PatternMidi.cpp
-    Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/PatternEditor.cpp)
+    Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/OverlayArt.cpp Source/UI/PatternEditor.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
 # Hand-made Place artwork (optional): assets/places/<place>/{back,mid,front,lights}.png
 # is bundled as <place>_<layer>.png; without any, the procedural art is used.

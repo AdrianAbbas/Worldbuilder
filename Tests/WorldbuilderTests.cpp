@@ -21,14 +21,18 @@
 #include <string>
 #include <vector>
 
-// Count C++ allocations on the calling thread while enabled.
+// Count C++ allocations on the calling thread while enabled (and the bytes asked for,
+// for the memory metric).
 namespace allocationProbe {
 thread_local bool enabled = false;
-thread_local std::size_t calls = 0;
-void mark() noexcept { if (enabled) ++calls; }
+thread_local std::size_t calls = 0, bytes = 0;
+void mark(std::size_t n = 0) noexcept {
+    if (enabled) ++calls;
+    bytes += n;
+}
 }
 void* operator new(std::size_t n) {
-    allocationProbe::mark();
+    allocationProbe::mark(n);
     if (auto* p = std::malloc(n ? n : 1)) return p;
     throw std::bad_alloc();
 }
@@ -38,7 +42,7 @@ void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 void* operator new(std::size_t n, std::align_val_t alignment) {
-    allocationProbe::mark();
+    allocationProbe::mark(n);
     void* p = nullptr;
     if (posix_memalign(&p, static_cast<std::size_t>(alignment), n ? n : 1) == 0) return p;
     throw std::bad_alloc();
@@ -258,6 +262,16 @@ double dcDb(const Audio& a, double from) {
 
 struct Host;
 int placeType(const Host& h, int slot);
+
+// The built Places the Place tests cover (--place key[,key] narrows them, a development aid).
+std::vector<int> placeFilter;
+std::vector<int> builtPlaces() {
+    std::vector<int> out;
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
+        if (placeImplemented[std::size_t(type)] && (placeFilter.empty() || std::find(placeFilter.begin(), placeFilter.end(), type) != placeFilter.end()))
+            out.push_back(type);
+    return out;
+}
 
 // The parameter id of a Place slot field ("p1_type"...).
 std::string slotId(int slot, int field) { return specs[std::size_t(placeParam(slot, field))].id; }
@@ -785,10 +799,10 @@ void testState(Suite& s) {
     s.check(measure(b.render(1.0), 0).finite, "restored instance renders");
 
     // Four active Places with edited patterns, mute and solo: everything comes back, and
-    // the restored world plays the same.
-    {
+    // the restored world plays the same (the first Places, then four from 5b).
+    for (const std::array<int, 4> types : { std::array<int, 4> { Castle, Village, Spaceport, Village }, std::array<int, 4> { Factory, City, Hive, Cavern } }) {
+        if (!placeImplemented[std::size_t(types[3])]) continue;
         Host x;
-        const std::array<int, 4> types { Castle, Village, Spaceport, Village };
         for (int slot = 0; slot < placeSlots; ++slot) {
             x.set(slotId(slot, PlType), float(types[std::size_t(slot)]));
             x.set(slotId(slot, PlCharacter), float(slot % 3));
@@ -812,9 +826,11 @@ void testState(Suite& s) {
                 const auto a = x.p->patterns.element(slot, types[std::size_t(slot)], e), b = y.p->patterns.element(slot, types[std::size_t(slot)], e);
                 if (!(a.controls == b.controls) || (a.controls.edited && !a.pattern.sameNotes(b.pattern))) ++different;
             }
-        s.check(different == 0, "four Places with edited patterns, mute and solo survive a state round trip", std::to_string(different) + " elements differ");
+        const std::string names = std::string(placeNames[std::size_t(types[0])]) + ", " + placeNames[std::size_t(types[1])] + ", "
+                                  + placeNames[std::size_t(types[2])] + ", " + placeNames[std::size_t(types[3])];
+        s.check(different == 0, "four Places with edited patterns, mute and solo survive a state round trip (" + names + ")", std::to_string(different) + " elements differ");
         const auto ax = x.render(6.0), by = y.render(6.0);
-        s.check(ax.l == by.l && ax.r == by.r && measure(ax, 1.0).rmsDb > -60.0, "the restored four-Place world plays exactly the same");
+        s.check(ax.l == by.l && ax.r == by.r && measure(ax, 1.0).rmsDb > -60.0, "the restored four-Place world plays exactly the same (" + names + ")");
     }
 }
 
@@ -827,9 +843,10 @@ void testRealtimeSafety(Suite& s) {
         h.set("quality", float(quality % 3));
         for (int w = 0; w < WorldControlCount; ++w) h.set(worldId(w), 1.0f);
         if (quality >= 3) h.set("temperature", 0.0f);
-        // Four Places, every character in turn.
+        // Four Places, every built Place and every character in turn.
+        const auto built = builtPlaces();
         for (int slot = 0; slot < placeSlots; ++slot) {
-            h.set(slotId(slot, PlType), float(Castle + (slot + quality) % 3));
+            h.set(slotId(slot, PlType), float(built[std::size_t(slot + quality * placeSlots) % built.size()]));
             h.set(slotId(slot, PlCharacter), float((slot + quality) % 3));
             h.set(slotId(slot, PlActivity), 1.0f);
         }
@@ -894,6 +911,13 @@ void testRealtimeSafety(Suite& s) {
     }
     s.check(bad == 0, "24 random worlds: finite and below the ceiling", std::to_string(bad) + " bad");
 
+    // Memory: every slot keeps an engine of every built Place, prepared (report only).
+    {
+        const auto before = allocationProbe::bytes;
+        Host m(48000, 512);
+        s.metric("memory allocated by one instance at 48 kHz (" + std::to_string(builtPlaces().size()) + " built Places x 4 slots)",
+                 double(allocationProbe::bytes - before) / 1048576.0, " MB");
+    }
     // CPU: every World Control at maximum, four busy Places, High quality, 48 kHz / 256.
     Host h(48000, 256);
     h.set("quality", 2);
@@ -925,6 +949,25 @@ void testRealtimeSafety(Suite& s) {
         s.metric("CPU, Standard quality, four busy Places of six instruments (one core of this machine)", used, " %");
         s.check(used < 15.0, "CPU: four busy Places (24 instruments), Standard quality, 48 kHz / 256, under 15 % of one core", fmt(used) + " %");
     }
+    // Each built Place four times at once (its three Characters and a second seed), busy.
+    for (int type : builtPlaces()) {
+        Host st(48000, 256);
+        st.set("quality", 1);
+        for (int w = 0; w < WorldControlCount; ++w) st.set(worldId(w), 0.7f);
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            st.set(slotId(slot, PlType), float(type));
+            st.set(slotId(slot, PlCharacter), float(slot % 3));
+            st.set(slotId(slot, PlSeed), float(1 + slot));
+            st.set(slotId(slot, PlActivity), 1.0f);
+        }
+        st.render(1.0);
+        const auto begin = juce::Time::getHighResolutionTicks();
+        st.render(10.0);
+        const double used = 100.0 * juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) / 10.0;
+        const std::string name = placeNames[std::size_t(type)];
+        s.metric("CPU, four busy Places, all " + name + ", Standard quality", used, " %");
+        s.check(used < 15.0, "CPU: four busy Places, all " + name + ", Standard quality, 48 kHz / 256, under 15 % of one core", fmt(used) + " %");
+    }
 }
 
 void testEditor(Suite& s, const juce::String& snapshotPath) {
@@ -951,7 +994,7 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     const int village = world->addPlace(Village), spaceport = world->addPlace(Spaceport);
     s.check(village == 1 && spaceport == 2 && juce::roundToInt(h.get("p2_type")) == Village && juce::roundToInt(h.get("p3_type")) == Spaceport,
             "Place cards fill the next empty slots", std::to_string(village) + ", " + std::to_string(spaceport));
-    s.check(world->addPlace(Factory) == -1, "a Place from a later milestone cannot be added yet");
+    s.check(world->addPlace(Ruins) == -1, "a Place from a later milestone cannot be added yet");
     const int fourth = world->addPlace(Castle);
     s.check(fourth == 3 && world->addPlace(Village) == -1, "at most four Places");
     h.render(0.5);
@@ -1392,7 +1435,7 @@ void testPlayMode(Suite& s) {
 
 
 void testPlaces(Suite& s) {
-    for (int type : { Castle, Village, Spaceport }) {
+    for (int type : builtPlaces()) {
         const std::string place = placeNames[std::size_t(type)];
         s.section((place + ": characters, key, activity, tension, elements, seed").c_str());
         std::array<Stats, placeCharacters> character;
@@ -1497,7 +1540,7 @@ void testPlaces(Suite& s) {
             h.render(40.0);
             const auto at = placeEvents(h, 2.0);
             // Free tempo: the Place's own, scaled by Activity (Population at its default leaves Activity as set).
-            const double own = (type == Castle ? 66.0 : (type == Village ? 92.0 : 112.0)) * (0.85 + 0.3 * 0.8);
+            const double own = double(h.p->engine.placeSlot(0).place()->freeTempo()) * (0.85 + 0.3 * 0.8);
             const double ownLock = eventGridLock(at, own), hostLock = eventGridLock(at, 132.0);
             s.check(ownLock > 0.9 && hostLock < 0.5, place + ": free, it keeps its own tempo",
                     "grid lock " + fmt(ownLock) + " at " + fmt(own) + " BPM vs " + fmt(hostLock) + " at the host's 132");
@@ -1517,8 +1560,7 @@ Host instrumentHost(int type, int character, int element, const std::vector<std:
 }
 
 void testInstruments(Suite& s) {
-    for (int type = Castle; type < PlaceTypeCount; ++type) {
-        if (!placeImplemented[std::size_t(type)]) continue;
+    for (int type : builtPlaces()) {
         const std::string place = placeNames[std::size_t(type)];
         s.section((place + ": every instrument alone (solo), in key and on tempo").c_str());
         const auto& info = placeInfo(type);
@@ -1585,8 +1627,11 @@ void testInstruments(Suite& s) {
     }
     {
         // Transport mode located into the middle of a four-bar drone: it sounds at once.
-        for (int type : { Castle, Village, Spaceport }) {
-            const int e = type == Castle ? int(CastlePlace::Drone) : (type == Village ? int(VillagePlace::HurdyGurdy) : int(SpaceportPlace::Pads));
+        for (int type : builtPlaces()) {
+            int e = -1;   // its first held instrument
+            for (int k = placeElements - 1; k >= 0; --k)
+                if (placeInfo(type).element[std::size_t(k)].sustained) e = k;
+            if (e < 0) continue;
             Host h;
             h.set("playmode", float(PlayTransport));
             h.playHead.bpm = 120;
@@ -1613,7 +1658,7 @@ void testPlaceWorld(Suite& s) {
         const auto x = a.render(32.0), y = b.render(32.0);
         return std::pair<Stats, Stats> { measure(x, 4.0), measure(y, 4.0) };
     };
-    for (int type : { Castle, Village, Spaceport }) {
+    for (int type : builtPlaces()) {
         const std::string place = placeNames[std::size_t(type)];
         {
             auto a = placeHost(type, 0, { { "population", 0.0f } }), b = placeHost(type, 0, { { "population", 1.0f } });
@@ -1683,7 +1728,10 @@ void testPlaceSlots(Suite& s) {
     }
     // A Place from a later milestone is silent; so is an empty slot.
     {
-        auto h = placeHost(Factory, 0);
+        int later = NoPlace;
+        for (int type = PlaceTypeCount - 1; type > NoPlace; --type)
+            if (!placeImplemented[std::size_t(type)]) later = type;
+        auto h = placeHost(later, 0);
         const auto st = measure(h.render(6.0), 2.0);
         s.check(st.finite && st.rmsDb < -100.0, "a Place from a later milestone is silent for now", fmt(st.rmsDb));
     }
@@ -1831,7 +1879,7 @@ int probe() {
 
 // Tuning aid: each Place's level per character, and each element alone.
 int probePlaces() {
-    for (int type : { Castle, Village, Spaceport })
+    for (int type : builtPlaces())
         for (int c = 0; c < placeCharacters; ++c) {
             std::printf("\n%-10s %-15s", placeNames[std::size_t(type)], placeInfo(type).characters[std::size_t(c)]);
             for (int e = -1; e < placeElements; ++e) {
@@ -1910,16 +1958,31 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
         Host h;
         std::unique_ptr<juce::AudioProcessorEditor> editor;
         WorldbuilderEditor* view = nullptr;
-        explicit World(std::initializer_list<int> places) {
+        explicit World(std::vector<int> places) {
             for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), float(NoPlace));   // the default world has a Castle
             h.render(0.3);
             editor.reset(h.p->createEditor());
             view = dynamic_cast<WorldbuilderEditor*>(editor.get());
-            for (int type : places) view->addPlace(type);
+            view->setOverlayMode(ui::OverlaysFull);   // Off by default
+            add(places);
             view->settle(2.5f);
+        }
+        // Places go straight into the next slots (the editor's cards refuse Places that do
+        // not sound yet; their overlays are tested all the same).
+        void add(const std::vector<int>& places) {
+            for (int type : places)
+                for (int slot = 0; slot < placeSlotCount; ++slot)
+                    if (placeType(h, slot) == NoPlace) {
+                        h.set(slotId(slot, PlType), float(type));
+                        break;
+                    }
         }
         juce::Image snapshot() { return editor->createComponentSnapshot(editor->getLocalBounds()); }
     };
+    std::vector<int> overlaid;   // every Place with an overlay
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
+        if (ui::hasOverlay(type)) overlaid.push_back(type);
+    const auto lower = [](int type) { return juce::String(placeKeys[std::size_t(type)]); };
     // An empty cell of the World Controls (inside a panel, no control) and a stretch of
     // the background (the header's right side, no text).
     const juce::Rectangle<int> panelSample(222, 530, 70, 60), backgroundSample(1020, 14, 50, 8);
@@ -1930,13 +1993,17 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
     save(plainImage, "-plain");
     const auto plainPanel = average(plainImage, panelSample), plainBackground = average(plainImage, backgroundSample);
 
-    std::array<std::array<float, 3>, 3> panels {}, backgrounds {};
-    const std::array<std::pair<std::vector<int>, const char*>, 3> cases { { { { Castle }, "-castle" }, { { Spaceport }, "-spaceport" },
-                                                                            { { Castle, Spaceport }, "-castle-spaceport" } } };
+    // Castle, Spaceport, the two together (for the theme), then every other overlay alone
+    // and two combinations of the later ones.
+    std::vector<std::pair<std::vector<int>, std::string>> cases { { { Castle }, "-castle" }, { { Spaceport }, "-spaceport" },
+                                                                  { { Castle, Spaceport }, "-castle-spaceport" } };
+    for (int type : overlaid)
+        if (type != Castle && type != Spaceport) cases.push_back({ { type }, "-" + lower(type).toStdString() });
+    if (ui::hasOverlay(Forest) && ui::hasOverlay(City)) cases.push_back({ { Forest, City }, "-forest-city" });
+    if (ui::hasOverlay(Hive) && ui::hasOverlay(Temple) && ui::hasOverlay(Cavern)) cases.push_back({ { Factory, Hive, Temple, Cavern }, "-factory-hive-temple-cavern" });
+    std::vector<std::array<float, 3>> panels(cases.size()), backgrounds(cases.size());
     for (std::size_t c = 0; c < cases.size(); ++c) {
-        World w({});
-        for (int type : cases[c].first) w.view->addPlace(type);
-        w.view->settle(2.5f);
+        World w(cases[c].first);
         const auto full = w.snapshot();
         save(full, cases[c].second);
         auto& overlays = w.view->placeOverlays();
@@ -1966,21 +2033,24 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
                 if (a.getFloatGreen() > a.getFloatRed() + 0.08f && a.getFloatGreen() > a.getFloatBlue() + 0.08f) ++green;
                 if (a.getFloatBlue() > 0.55f && a.getFloatGreen() > 0.55f && a.getFloatRed() < a.getFloatBlue() - 0.15f) ++neon;
             }
-        const std::string name = cases[c].second + 1;
+        const std::string name = cases[c].second.substr(1);
         s.metric("overlay pixels (" + name + ")", drawn);
         s.check(drawn > 8000, "the overlay is clearly visible (" + name + ")", std::to_string(drawn) + " pixels");
         s.check(outside == 0, "the overlay draws only on the edges and empty space (" + name + ")", std::to_string(outside) + " pixels outside");
         s.check(onControls == 0, "the overlay never covers a control (" + name + ")", std::to_string(onControls) + " pixels");
-        const bool castle = c != 1, spaceport = c != 0;
-        if (castle) s.check(green > 1500, "Castle's grass and ivy show (" + name + ")", std::to_string(green) + " green pixels");
-        if (spaceport) s.check(neon > 1500, "Spaceport's neon shows (" + name + ")", std::to_string(neon) + " neon pixels");
+        if (c < 3) {
+            const bool castle = c != 1, spaceport = c != 0;
+            if (castle) s.check(green > 1500, "Castle's grass and ivy show (" + name + ")", std::to_string(green) + " green pixels");
+            if (spaceport) s.check(neon > 1500, "Spaceport's neon shows (" + name + ")", std::to_string(neon) + " neon pixels");
+        }
     }
     // The theme: each Place clearly changes the panels and the background, and two
     // Places blend between them.
     for (std::size_t c = 0; c < 2; ++c) {
-        s.metric(std::string("theme change, panel (") + (cases[c].second + 1) + ")", distance(panels[c], plainPanel));
-        s.check(distance(panels[c], plainPanel) > 0.08f, std::string("the theme clearly tints the panels (") + (cases[c].second + 1) + ")", fmt(distance(panels[c], plainPanel)));
-        s.check(distance(backgrounds[c], plainBackground) > 0.08f, std::string("the theme clearly changes the background (") + (cases[c].second + 1) + ")",
+        const std::string name = cases[c].second.substr(1);
+        s.metric("theme change, panel (" + name + ")", distance(panels[c], plainPanel));
+        s.check(distance(panels[c], plainPanel) > 0.08f, "the theme clearly tints the panels (" + name + ")", fmt(distance(panels[c], plainPanel)));
+        s.check(distance(backgrounds[c], plainBackground) > 0.08f, "the theme clearly changes the background (" + name + ")",
                 fmt(distance(backgrounds[c], plainBackground)));
     }
     s.check(distance(panels[0], panels[1]) > 0.08f, "Castle and Spaceport look clearly different", fmt(distance(panels[0], panels[1])));
@@ -2004,9 +2074,24 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
         s.check(patternImage.isValid(), "the Pattern Editor paints with overlays");
         save(patternImage, "-spaceport-patterns");
     }
+    {
+        World w({ Forest, Factory });
+        w.h.render(0.5);   // the audio thread writes the generated patterns
+        w.view->openDetail(0);
+        w.view->settle(0.5f);
+        save(w.snapshot(), "-forest-detail");
+        w.view->openPatterns(1, FactoryPlace::Pistons);
+        w.view->settle(0.5f);
+        const auto patternImage = w.snapshot();
+        s.check(patternImage.isValid() && w.view->patternEditor().shown().pattern.count > 0, "a 5b Place's Pattern Editor shows its generated pattern",
+                std::to_string(w.view->patternEditor().shown().pattern.count) + " notes");
+        save(patternImage, "-factory-patterns");
+    }
     // Cost, as the host draws it: the editor beneath what the overlays repaint, one paint
-    // call per rectangle (as macOS hosts do), over three seconds.
-    const auto cost = [&](std::initializer_list<int> places, const std::string& name, bool gate) {
+    // call per rectangle (as macOS hosts do), over three seconds. The share of a core is
+    // reported, not gated: this container's software renderer says little about a Mac's.
+    // How often each overlay moves, and how much it repaints, is checked.
+    const auto cost = [&](std::vector<int> places, const std::string& name, int fps) {
         World w(places);
         auto& overlays = w.view->placeOverlays();
         juce::Image window(juce::Image::RGB, w.editor->getWidth(), w.editor->getHeight(), true);
@@ -2027,19 +2112,43 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
             most = std::max(most, overlays.lastRepaint().size());
         }
         const double share = busy / 3000.0 * 100.0;
-        s.metric("overlays' share of one core, " + name + ", with the editor beneath (software renderer)", share, " %");
-        if (!gate) return;
-        s.metric("overlay frames per second (Full)", frames / 3.0);
-        s.metric("overlay frame: pixels repainted (of " + std::to_string(w.editor->getWidth() * w.editor->getHeight()) + ")", pixels / std::max(1, frames));
-        s.metric("overlay frame: most rectangles", double(most));
-        s.check(frames >= 55 && frames <= 62, "overlays animate at 20 frames a second", std::to_string(frames / 3.0));
-        s.check(most > 0 && most <= 40, "an overlay frame repaints at most 40 small rectangles", std::to_string(most));
-        s.metric("three overlays at once, report-only (budget 22 %)", share, " %");
+        s.metric("overlays' share of one core, " + name + ", with the editor beneath (software renderer, report only)", share, " %");
+        s.metric("overlay frames per second, " + name, frames / 3.0);
+        s.metric("overlay frame: pixels repainted, " + name + " (of " + std::to_string(w.editor->getWidth() * w.editor->getHeight()) + ")",
+                 pixels / std::max(1, frames));
+        s.check(frames >= fps * 3 - 5 && frames <= fps * 3 + 2, "overlays move at " + std::to_string(fps) + " frames a second (" + name + ")",
+                std::to_string(frames / 3.0));
+        s.check(most > 0 && most <= 40, "an overlay frame repaints at most 40 small rectangles (" + name + ")", std::to_string(most));
     };
-    cost({ Castle }, "Castle", false);
-    cost({ Spaceport }, "Spaceport", false);
-    cost({ Castle, Village, Spaceport }, "Castle + Village + Spaceport", true);
+    cost({ Castle }, "Castle", 20);
+    cost({ Spaceport }, "Spaceport", 20);
+    cost({ Castle, Village, Spaceport }, "Castle + Village + Spaceport", 20);
+    for (int type : overlaid)
+        if (type != Castle && type != Village && type != Spaceport) {
+            s.check(ui::PlaceOverlays::framesPerSecond(type, ui::OverlaysFull) <= 15, std::string("a later overlay moves at 15 frames a second or less: ") + placeNames[std::size_t(type)]);
+            cost({ type }, placeNames[std::size_t(type)], 15);
+        }
+    if (ui::hasOverlay(Hive) && ui::hasOverlay(Temple) && ui::hasOverlay(Cavern)) cost({ Factory, Hive, Temple, Cavern }, "Factory + Alien Hive + Temple + Cavern", 15);
 
+    // Off by default: a new instance, and a project saved before overlays were off by
+    // default (it stored Full), draw nothing and repaint nothing.
+    {
+        Host h;
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->addPlace(Castle);
+        view->settle(2.0f);
+        auto& overlays = view->placeOverlays();
+        s.check(overlays.mode() == ui::OverlaysOff && !overlays.showing() && overlays.lastRepaint().empty(), "overlays are Off by default and repaint nothing");
+        auto older = h.p->parameters.copyState();
+        older.setProperty("version", 2, nullptr);
+        older.setProperty("overlays", int(ui::OverlaysFull), nullptr);
+        juce::MemoryBlock saved;
+        if (auto xml = older.createXml()) juce::AudioProcessor::copyXmlToBinary(*xml, saved);
+        Host b;
+        b.p->setStateInformation(saved.getData(), int(saved.getSize()));
+        s.check(int(b.p->parameters.state.getProperty("overlays", -1)) == ui::OverlaysOff, "a project from before 5b (which stored Full) opens with overlays Off");
+    }
     // Overlays grow in and fade out over about a second, and follow the Place's level.
     {
         World w({});
@@ -2083,6 +2192,11 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
+    for (int i = 1; i + 1 < argc; ++i)
+        if (juce::String(argv[i]) == "--place")
+            for (const auto& key : juce::StringArray::fromTokens(argv[i + 1], ",", ""))
+                for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
+                    if (key == placeKeys[std::size_t(type)]) placeFilter.push_back(type);
     for (int i = 1; i < argc; ++i)
         if (juce::String(argv[i]) == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (juce::String(argv[i]) == "--probe") return probe();
@@ -2093,7 +2207,8 @@ int main(int argc, char** argv) {
             return renderToFile(argv[i + 1], juce::String(argv[i + 2]).getDoubleValue(), settings);
         }
 
-    // --only name[,name]: run only those groups (a development aid).
+    // --only name[,name]: run only those groups; --place key[,key]: only those Places in
+    // the Place groups (development aids).
     juce::StringArray only;
     for (int i = 1; i + 1 < argc; ++i)
         if (juce::String(argv[i]) == "--only") only = juce::StringArray::fromTokens(argv[i + 1], ",", "");

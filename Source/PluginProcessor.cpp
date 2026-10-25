@@ -192,7 +192,7 @@ juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new W
 
 void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = parameters.copyState();
-    state.setProperty("version", 2, nullptr);
+    state.setProperty("version", 3, nullptr);
     patterns.syncTypes(slotTypes());
     state.removeChild(state.getChildWithName("Patterns"), nullptr);
     state.appendChild(patterns.toValueTree(), nullptr);
@@ -220,8 +220,10 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     }
     // Patterns (Milestone 4 and later); older projects have none and keep the generated ones.
     patterns.fromValueTree(state.getChildWithName("Patterns"), slotTypes());
-    // Interface settings (the Place overlays: Full, Subtle, Off).
-    parameters.state.setProperty("overlays", juce::jlimit(0, 2, int(state.getProperty("overlays", 0))), nullptr);
+    // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
+    // project stored Full, the old default, so those open with the new default (Off).
+    const int overlays = int(state.getProperty("version", 0)) >= 3 ? int(state.getProperty("overlays", ui::defaultOverlayMode)) : ui::defaultOverlayMode;
+    parameters.state.setProperty("overlays", juce::jlimit(0, ui::OverlayModeCount - 1, overlays), nullptr);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

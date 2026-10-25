@@ -3,25 +3,29 @@
 A film-scoring soundscape instrument for Logic Pro and GarageBand on macOS (Apple
 Silicon and Intel, macOS 10.15+). It scores a place rather than recording it:
 musical, tonal and rhythmic sound in your song's key and tempo that evokes a castle,
-a village or a spaceport, over a living environment of wind, water, fire, ice and
-thunder. Everything is synthesised in real time. It uses no samples and no
+a forge, a city at night, a forest or a cavern, over a living environment of wind,
+water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 5a.1 (six-instrument Places, 20-Place selector, world theme and
-Place overlays).**
+**Status: Milestone 5b (nine Places of six instruments, 20-Place selector, world
+theme and Place overlays).**
 These work now:
-- **Places**, the centrepiece. Up to four play at once: Castle, Village and Spaceport
-  (the selector already lists all 20 Places; the other 17 arrive in Milestones
-  5b-5d).
+- **Places**, the centrepiece. Up to four play at once. Nine are built: Castle,
+  Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple and Cavern /
+  Mine (the selector already lists all 20; the other 11 arrive in Milestones 5c-5d).
   - Each is an ensemble of **six instruments**, for example the Castle's brass drone,
-    tuned bells, horn calls, timpani, harp and wordless choir.
+    tuned bells, horn calls, timpani, harp and wordless choir, or the Factory's tuned
+    anvil, pistons, steam, bowed metal, gear clicks and furnace bass.
   - Each has three Characters that change its patterns, harmony and sound.
   - Every instrument has its own pattern, level, on/off switch, mute and solo.
-  - Each Place has its own effect character (stone hall and tape echo; wooden room
-    and tape warmth; hangar, ping-pong delay and shimmer).
-  - Each Place colours the interface and decorates its edges with an animated
-    overlay (grass, ivy and fireflies; wooden beams, lanterns and smoke; neon and
-    scan lines), blended when several play. Overlays: Full, Subtle or Off.
+  - Each Place has its own effect character (stone hall and tape echo; gritty
+    saturation and a comb resonance tuned to the chord; a ring-modulated shimmer and a
+    warped delay; a long dark cave and a slapback...).
+  - Each Place colours the interface and can decorate its edges with an animated
+    overlay (grass, ivy and fireflies; girders, pipes and steam; neon signs and a
+    night skyline; vines and falling leaves; tendrils and glowing pods; gold trim and
+    incense; crystals and dripping water...), blended when several play. Overlays:
+    Full, Subtle or **Off (the default)**.
   - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
     host tempo, or the Place's own free tempo) and a Seed.
   - Each slot also has level, distance and pan.
@@ -58,7 +62,7 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Next: the other 17 Places (Milestones 5b-5d), MIDI control from the host's piano roll
+Next: the other 11 Places (Milestones 5c-5d), MIDI control from the host's piano roll
 (6), Locations and Journeys (7), the visual overhaul (8), presets and release (9). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
@@ -102,7 +106,8 @@ JUCE checkout. On macOS it also builds the AU as a universal binary.
 `WorldbuilderTests --snapshot editor.png` writes images of the interface (and of a
 Place's detail panel and the Pattern Editor); `WorldbuilderTests --probe` prints per-layer measurements for
 each World Control; `WorldbuilderTests --probe-places` prints each Place's level per
-character and element;
+character and element (`--place forest,cavern` narrows the Place tests and probes to
+those Places);
 `WorldbuilderTests --render storm.wav 30 weather=1 wetness=0.8` renders any world
 (parameter IDs from `Source/Parameters.h`, e.g. `p1_type=2 p1_character=2` for a
 Village festival in slot 1) to a WAV file.

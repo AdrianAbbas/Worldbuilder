@@ -152,6 +152,7 @@ struct WindVoice {
     Svf breathBand;
     Env env;
     float hz = 440, targetHz = 440, scoop = 1, scoopCoef = 0.9f, h2 = 0.2f, h3 = 0.1f, breath = 0.2f;
+    float tone = 1, breathQ = 3, scoopSeconds = 0.06f;   // tone 0: breath alone (a tuned rustle or gust)
     float vibratoHz = 5, vibratoDepth = 0.15f, vibratoDelay = 0.25f, vibratoPhase = 0, age = 0, gain = 1;
     uint64_t noiseIndex = 0;
     PanGains pan { 0.7071f, 0.7071f };
@@ -168,7 +169,7 @@ struct WindVoice {
         targetHz = startHz;
         // A new breath scoops up into the note; a slurred one moves over quickly.
         scoop = std::exp2(-(sounding ? 0.3f : 1.0f) * scoopSemitones / 12.0f);
-        scoopCoef = std::exp(-float(chunk) / ((sounding ? 0.02f : 0.06f) * rate));
+        scoopCoef = std::exp(-float(chunk) / ((sounding ? 0.02f : scoopSeconds) * rate));
         if (!sounding) {
             hz = startHz;
             age = 0;
@@ -190,17 +191,97 @@ struct WindVoice {
                                  0.3f * rate);
         osc.setFrequency(f, rate);
         osc.normalise();
-        breathBand.set(f, 3.0f, rate);
+        breathBand.set(f, breathQ, rate);
     }
     float tick(const Stream& noise) {
         const float e = env.tick();
         osc.step();
         if (e <= 0.0f) return 0.0f;
         const float s = osc.im, c = osc.re;
-        const float tone = s + h2 * 2.0f * s * c + h3 * s * (3.0f - 4.0f * s * s);
+        const float voiced = (s + h2 * 2.0f * s * c + h3 * s * (3.0f - 4.0f * s * s)) * tone;
         // Breath is strongest in the attack and follows the envelope.
         const float air = breathBand.bandpass(noise.white(noiseIndex++)) * breath * (0.6f + 1.4f * (1.0f - std::min(age * 4.0f, 1.0f)));
-        return (tone + air) * e * gain;
+        return (voiced + air) * e * gain;
+    }
+};
+
+//==============================================================================
+// A bowed resonator: a sawtooth "stick-slip" pulse and bow noise drive up to four
+// tuned modes that ring on while the bow moves. Harmonic ratios give bowed strings
+// (a low bass, cellos); stretched or quarter-tone ratios with close doublets that beat
+// give bowed metal, singing bowls and glassy hums. Each mode is normalised to unity
+// gain at its centre, so the decay sets the bandwidth, not the level.
+struct BowedVoice {
+    static constexpr int maxModes = 4;
+    std::array<Mode, maxModes> mode;
+    std::array<float, maxModes> ratio { 1, 2, 3, 4 }, decay { 1, 1, 1, 1 }, gain { 1, 0, 0, 0 }, norm {};
+    int modes = 1;
+    Saw saw;
+    OnePole bowLp;
+    Env env;
+    float hz = 220, targetHz = 220, glide = 0, tunedHz = 0, ringSeconds = 0.4f;
+    float rosin = 0.5f, noisiness = 0.3f, vibratoHz = 5, vibratoDepth = 0, vibratoPhase = 0, age = 0, gainLevel = 1;
+    uint64_t noiseIndex = 0;
+    bool ringing = false;   // the modes ring on after the bow stops
+    PanGains pan { 0.7071f, 0.7071f };
+    bool active() const { return env.active() || ringing; }
+    float level() const { return active() ? env.value * gainLevel + (ringing ? 1.0e-3f : 0.0f) : 0.0f; }
+    void reset() {
+        env.stop();
+        for (auto& m : mode) m.clear();
+        bowLp.reset();
+        saw.phase = 0;
+        age = vibratoPhase = 0;
+        tunedHz = 0;
+        ringing = false;
+    }
+    void start(float startHz, float attack, float rate, uint64_t noiseAt, bool legato = false) {
+        targetHz = startHz;
+        if (!(legato && env.active())) {
+            hz = startHz;
+            age = 0;
+            if (!env.active()) {
+                for (auto& m : mode) m.clear();
+                saw.phase = 0;
+            }
+        }
+        env.trigger(attack, 1.0f, 1.0f, rate);
+        noiseIndex = noiseAt;
+    }
+    void release(float seconds, float rate) { env.release(seconds, rate); }
+    // Once per chunk: glide, vibrato, and the modes retuned when the pitch moves.
+    void update(float rate) {
+        hz = glide > 0 ? targetHz * std::pow(hz / targetHz, glide) : targetHz;
+        const float chunkSeconds = float(chunk) / rate;
+        age += chunkSeconds;
+        vibratoPhase += vibratoHz * chunkSeconds;
+        vibratoPhase -= std::floor(vibratoPhase);
+        const float f = hz * std::exp2(vibratoDepth * smoothstep(0.3f, 0.9f, age) * sinCycles(vibratoPhase) / 12.0f);
+        saw.setFrequency(f, rate);
+        bowLp.setCutoff(std::min(f * 6.0f, 0.4f * rate), rate);
+        if (std::abs(f - tunedHz) > tunedHz * 0.0005f) {
+            tunedHz = f;
+            for (int k = 0; k < modes; ++k) {
+                const float mf = f * ratio[std::size_t(k)];
+                const float seconds = std::max(ringSeconds * decay[std::size_t(k)], 0.01f);
+                mode[std::size_t(k)].set(mf, seconds / 6.91f, rate);
+                // A two-pole resonator's centre gain is about 1 / (2 (1 - r)) of its input
+                // (scaled by sin w inside Mode); normalise to unity.
+                const float r = std::exp(-6.91f / (seconds * rate));
+                norm[std::size_t(k)] = mf < 0.45f * rate ? 2.0f * (1.0f - r) * gain[std::size_t(k)] : 0.0f;
+            }
+        }
+        float energy = 0;
+        for (int k = 0; k < modes; ++k) energy += mode[std::size_t(k)].energy();
+        ringing = energy > 1.0e-10f;
+    }
+    float tick(const Stream& noise) {
+        if (!env.active() && !ringing) return 0.0f;
+        const float e = env.tick();
+        const float bow = (rosin * saw.tick() + noisiness * bowLp.lp(noise.white(noiseIndex++))) * e;
+        float y = 0;
+        for (int k = 0; k < modes; ++k) y += mode[std::size_t(k)].tick(bow * norm[std::size_t(k)]);
+        return y * gainLevel;
     }
 };
 

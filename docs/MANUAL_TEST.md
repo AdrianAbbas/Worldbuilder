@@ -220,3 +220,63 @@ starts with a Castle in slot 1.
   project.
 - [ ] With overlays on, does GarageBand stay responsive and its CPU meter comfortable?
   If not, tell me whether Subtle helps.
+
+## Milestone 5b check: six new Places
+
+Install the new build the same way. The header should read **MILESTONE 5B PREVIEW**.
+**Overlays now start Off**, also in projects saved with 5a.1 (they stored Full, the
+old default); switch OVERLAYS to Full or Subtle in the footer to see them.
+
+**The new Places** (their cards are no longer dimmed; add each one alone first):
+- [ ] **Factory / Forge**: Anvil, Pistons, Steam, Bowed Metal, Gears, Furnace Bass.
+  Steam Mill (a lilting chug, a ringing anvil marking the bar, steam swells), Iron
+  Forge (hammer strikes with bounces, slow bellows, a dark drone), Assembly Line (a
+  driving sixteenth-note machine). Gritty saturation and a metallic ring tuned to the
+  chord.
+- [ ] **City**: Chimes, Synth Bass, E-Piano, Crowd, Sirens, Traffic Hum. Rush Hour
+  (pulsing bass, syncopated chords, a loud crowd, sirens), Night City (slow rich
+  chords, a walking bass, a distant siren, a lone chime), Rain-soaked (soft broken
+  chords, wet and blurred, rain). The crowd is a murmur in the key, never words.
+- [ ] **Forest** (USE LYDIAN): Flute, Birds, Wood, Kalimba, Strings, Rustle. Enchanted
+  (a floating flute, glittering kalimba, deep and blurred), Dark Woods (low and
+  sparse, a knocking log, an owl), Morning Glade (a dawn chorus, a dancing flute, wood
+  clicks, close and open).
+- [ ] **Alien Hive** (USE WHOLE-TONE): Pulses, Glass Calls, Chitter, Throb Bass,
+  Formants, Swarm. Dormant (slow breathing), Awakening (calls answering each other),
+  Swarm (a buzzing mass). Raising Tension or Danger wakes the hive. A fluttering,
+  ring-modulated shimmer and a warped delay.
+- [ ] **Temple** (USE PENTATONIC): Choir, Gongs, Bowls, Chant Drone, Temple Bells,
+  Zither. Sacred Dawn, Ancient Rite, Forsaken. A long shimmer reverb.
+- [ ] **Cavern / Mine**: Drips, Sub Drone, Metal Taps, Bowed Bass, Crystals, Rumble.
+  Crystal Cave (ringing crystals, bright drips), Deep Mine (pick-axe taps echoing, a
+  rumble), Flooded (dense dripping, everything muffled under water). A long dark
+  reverb and a slapback.
+- [ ] Listen to each instrument alone (SOLO in PATTERNS) in each Character, as for
+  5a. The new voices to judge: the bowed metal and bowed bass, the drips, the crowd,
+  the sirens, the swarm, the gongs and singing bowls, the rustle. Tell me which sound
+  weak, harsh, too loud or not like their name.
+- [ ] Root, Mood and the host tempo: every instrument follows them.
+- [ ] Four of the new Places at once (for example Factory, City, Hive, Cavern): does
+  GarageBand's CPU meter stay comfortable?
+
+**Their overlays** (OVERLAYS: Full):
+- [ ] Factory: riveted girders on the panel tops, pipes with valves down the gaps,
+  hazard stripes, a skyline with smokestacks; steam rising, embers, turning gears, a
+  blinking lamp.
+- [ ] City: a night skyline with an antenna and a neon OPEN sign in the header, neon
+  strips on the frames, a street along the bottom; windows switch on and off, the sign
+  buzzes, car lights pass.
+- [ ] Forest: thick vines, ferns, moss and mushrooms, a tree line in the header;
+  leaves fall down the gaps, pollen drifts, pale mushrooms glow.
+- [ ] Alien Hive: tendrils curling along the frames, honeycomb in the gaps, egg pods
+  that pulse, spores rising.
+- [ ] Temple: gold trim and corner filigree, stone pillars in the gaps, a facade with
+  incense burners in the header; incense smoke, flickering lamps, gold motes.
+- [ ] Cavern: rock, stalactites and crystal clusters; water drips from the
+  stalactites, the crystals glint.
+- [ ] Nothing covers a control, and they combine with each other and with the first
+  three.
+- [ ] These six move only small sprites, at 15 frames a second (10 at Subtle). Compare
+  GarageBand's CPU meter with one of them on Full against the Castle or Spaceport on
+  Full: they should cost clearly less. (Making the first three as light is part of the
+  visual polish milestone.)

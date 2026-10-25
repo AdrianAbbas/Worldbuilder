@@ -34,7 +34,7 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
 };
 // Which Places sound yet. The others are listed (cards, names, instruments) and arrive
 // in Milestones 5b-5d; until then they are silent and their cards cannot be added.
-inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, false, false, false, false, false, false, false,
+inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, false,
                                                                      false, false, false, false, false, false, false, false, false, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
@@ -64,6 +64,7 @@ struct ElementSpec {
     std::array<const char*, 4> kit {};   // kit row names
     int rows = 0;
     uint8_t vary = pat::VaryVelocity | pat::VarySkip;   // default randomness switches
+    bool sustained = false;   // long held notes (drones, pads)
 };
 
 struct PlaceInfo {
@@ -97,7 +98,11 @@ inline ElementSpec kit(const char* name, int icon, std::array<const char*, 4> ro
     return e;
 }
 // A sustained instrument (drones, pads): long notes that follow the chords.
-inline ElementSpec held(const char* name, int icon) { return mel(name, icon, VaryVelocity); }
+inline ElementSpec held(const char* name, int icon) {
+    auto e = mel(name, icon, VaryVelocity);
+    e.sustained = true;
+    return e;
+}
 inline PlaceInfo info(std::array<const char*, 3> characters, std::array<ElementSpec, placeElements> elements, const char* description,
                       const char* effect, int category, int mood = -1) {
     PlaceInfo i;
@@ -156,7 +161,7 @@ inline const PlaceInfo& placeInfo(int type) {
              { held("Choir", IconChoir), mel("Gongs", IconGong), mel("Bowls", IconBowl), held("Chant Drone", IconDrone),
                mel("Temple Bells", IconBell), mel("Zither", IconHarp) },
              "A formant choir pad, gongs, singing bowls, a low chant drone, temple bells and zither plucks.",
-             "A long shimmer reverb", MedievalFantasy),
+             "A long shimmer reverb", MedievalFantasy, 7),
         info({ "Crystal Cave", "Deep Mine", "Flooded" },
              { mel("Drips", IconDrip), held("Sub Drone", IconDrone), mel("Metal Taps", IconAnvil), mel("Bowed Bass", IconStrings),
                mel("Crystals", IconCrystal), kit("Rumble", IconTimpani, { "Rumble", "Thud", nullptr, nullptr }) },

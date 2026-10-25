@@ -1201,3 +1201,239 @@ in `paint()`.
 - At Subtle the moving parts update 10 times a second (by design).
 - The globe's own colour still follows the climate controls, not the Places.
 - "WORLD SEED" overlaps the seed bar a little (from 5a's footer layout).
+
+---
+
+## Milestone 5b: Places 4-9, lighter overlays (2026-10-25)
+
+5a is tested. On a real MacBook Air the overlays are heavy: three on Full add about 40 %
+of a core. Instructions for this session: make Off the default Overlays setting; build
+every new overlay the efficient way (static art pre-rendered once into cached images,
+only small sprites animated, at 15 fps or less); replace the CI overlay CPU gate with a
+report-only metric; optimising the first three overlays waits for the visual polish
+milestone. Then 5b: Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine.
+
+### Working conditions
+
+Linux cloud container, no Mac. Linux build (VST3, Standalone, tests) with GCC and Clang,
+**1371 checks pass, 0 fail**. Sound checked by measurement (`--probe-places`,
+the tests, a spectrum per instrument), **not by ear**. Snapshots looked at. This
+container is slower than 5a's: the unchanged 5a.1 build measures 9.9-10.1 % in the
+four-Place CPU test here (8.0 % in the 5a entry), so CPU figures below compare only
+with each other.
+
+### What was built
+
+**Overlays**
+- **Off by default.** A new instance starts with overlays Off. Projects saved before
+  this build (state version below 3) all stored Full, the old default, so they open
+  Off too; from now on the setting is saved and restored as chosen.
+- **Each overlay has its own frame clock** (`PlaceOverlays::framesPerSecond`). Castle,
+  Village and Spaceport are unchanged: drawn shapes at 20 fps (10 at Subtle); their
+  optimisation is for Milestone 8. Every later overlay:
+  - its still art is drawn once per layout into the cached, pre-clipped image (as
+    before);
+  - it moves only small pre-rendered sprites (`PlaceOverlays::Mover`: pulse, blink,
+    flicker, spin, rise, fall, drift; images drawn once in `build`), stamped unscaled;
+  - at **15 fps** (10 at Subtle, with half the sprites), and it repaints only on its
+    own frames: between them it stays exactly as drawn, even where another overlay
+    repaints;
+  - its sprites move only in the gaps between panels and the 6 px band along the
+    frames, never in a panel's corners, so a frame never repaints the globe or the
+    cards beneath (`roamingArea`).
+- **The six overlays** (`Source/UI/OverlayArt.h/.cpp`, with the drawing helpers every
+  overlay shares, moved there from `PlaceOverlays.cpp`):
+  - Factory: riveted girders and gusset plates on the frames, pipes with flanges and
+    valve wheels down the gaps and along the bottom, hazard stripes on the ledges, a
+    sawtooth-roof skyline with smokestacks in the header; steam puffs, embers, turning
+    gears, blinking warning lamps.
+  - City (drawn in the light pass, like the neon): a night skyline with lit windows
+    and an antenna, a neon OPEN sign, neon strips on the frames and down the gaps, a
+    street; windows switching on and off, the sign buzzing, car lights passing, the
+    antenna blinking.
+  - Forest: thick vines, ferns in the corners, moss and mushrooms on the frames, roots,
+    a two-row tree line in the header; leaves falling (turning) down the gaps, the
+    window's edges and the header, pollen drifting, pale mushrooms glowing.
+  - Alien Hive: tapering tendrils with suckers curling from the corners, honeycomb in
+    the gaps, veins along the bottoms, egg pods; pods pulsing, spores rising, tendril
+    tips glowing.
+  - Temple: gold trim with studs and corner filigree, fluted pillars in the gaps, a
+    facade with a pediment and incense burners, stone steps; incense smoke, flickering
+    lamps, gold motes.
+  - Cavern: rock along the bottom and the window's sides, overhangs on the frames,
+    stalactites, crystal clusters; drops falling from the stalactites, crystals
+    glinting and glowing.
+
+**Engine**
+- `PlaceSlot` makes one engine of every built Place through `makePlace(type)` (off the
+  audio thread, prepared in `prepare`). A slot reset (every Transport start) no longer
+  clears every engine's delay lines, only the engine that starts playing is reset (as
+  before). With 20 Places the old way would clear about 100 MB on the audio thread.
+- New shared voices (`Instruments.h`, `Ensemble.h`):
+  - `BowedPart` (`dsp::BowedVoice`): a sawtooth stick-slip pulse and bow noise drive
+    four modes, each normalised to unity gain at its centre; held notes that follow the
+    chords. Harmonic ratios: a bowed bass; stretched ratios with beating doublets:
+    bowed metal (later: singing bowls, hull resonances).
+  - `DripPart`: a short bloop rising into the note, then a sine on the note and a faint
+    twelfth (cave drips; later Biodome water plucks).
+  - `ChoirPart` babble and chatter: each voice moves through syllables and gets louder
+    and softer (the City's crowd in key; morphing formants; a slow mantra).
+  - `WindPart`: tone 0 gives a tuned breath alone (the Forest's rustle; later wind),
+    breath Q, scoop time (bird chirps), held notes.
+  - `ElementSpec::sustained` marks the held instruments.
+- New effects (`PlaceFx.h`): `CombResonance` (two damped combs tuned to notes),
+  `Chorus`, `WarpDelay` (repeats whose time drifts, so they bend), `Slapback`,
+  `Diffuser` (all-passes).
+
+**The six Places** (six instruments each, every one patterned, with level, switch,
+mute and solo; three Characters; their own effect character):
+- **Factory / Forge** (free tempo 104): Anvil (modal, upper partials a quarter-tone off
+  any note), Pistons (thump and tuned valve chuff), Steam (a whistling swell around the
+  fifth, a falling hiss), Bowed Metal (bowed modes beating against the octave),
+  Gears (a tuned tick, a ratchet), Furnace Bass. Steam Mill: a lilting chug, a ringing
+  anvil marking the bar. Iron Forge: hammer strikes with two bounces on root and fifth,
+  slow bellows, a low drone and bass. Assembly Line: pumps on every beat, a 3-3-4-2-4
+  stamping figure, sixteenth ticks, an eighth-note bass. Effect: combs tuned three and
+  four octaves above the chord root, gritty saturation, an iron hall. Machinery makes
+  the gears and the comb ring harder.
+- **City** (96): Chimes (muted bells), Synth Bass, E-Piano (FM), Crowd (babbling choir
+  on the chord), Sirens (a pure wail gliding between root and fifth), Traffic Hum (with
+  a road rumble). Rush Hour: pulsing eighths, syncopated stabs, a platform chime, a
+  loud crowd, sirens. Night City: a walking bass, slow sevenths and ninths, a lone
+  bell, a distant wail. Rain-soaked: long bass notes, soft broken chords, rain. Effect:
+  a dense short room and a chorus on piano, chimes and crowd. Tension agitates the
+  crowd and brings the sirens closer; Machinery the traffic.
+- **Forest** (78, suggests Lydian): Flute (breathy wind), Birds (whistles that swoop
+  into each note, with trills; an owl in the dark), Wood (log, stick, seed shaker),
+  Kalimba (a quarter-tone overtone), Strings, Rustle (tuned breath in gusts). Enchanted:
+  floating flute phrases, glittering kalimba, deep and blurred. Dark Woods: low and
+  sparse, a falling sigh, a knocking log. Morning Glade: a dancing flute in dotted
+  rhythms, a dawn chorus, close and open. Effect: diffusion and a damped space.
+  Tension: the strings swell and tremble, birds and kalimba hush, the canopy darkens.
+- **Alien Hive** (90, suggests Whole-tone): Pulses (wet resonant plucks that wobble),
+  Glass Calls (FM at ratio 4.5), Chitter (tuned clicks, falling chirps), Throb Bass
+  (beat-synced tremolo), Formants (vowels morphing), Swarm (buzzing feedback FM).
+  Dormant, Awakening, Swarm; Tension (and Danger) wake the hive. Effect: a shimmer whose
+  tail is ring-modulated (7-33 Hz, a fluttering halo) and a warped delay.
+- **Temple** (60, now suggests Pentatonic): Choir, Gongs (an octave below, partials a
+  quarter-tone off above the fifth), Bowls (beating pairs, long), Chant Drone (low
+  voices on a slow mantra), Temple Bells (scale-tuned partials), Zither. Sacred Dawn:
+  rippling runs, a morning bell. Ancient Rite: a gong every other bar, a processional
+  ostinato, ritual bells. Forsaken: two thin swells, a lone gong, broken bells. Effect:
+  a long shimmer and a stone hall. Tension brings the chant and the gongs forward.
+- **Cavern / Mine** (64): Drips, Sub Drone, Metal Taps, Bowed Bass, Crystals (glassy
+  modes), Rumble (a long roll and a thud). Crystal Cave, Deep Mine (a pick-axe figure,
+  a rumble every other bar, a pulsing drone), Flooded (dense drips, a deep low-pass
+  over everything). Effect: a long dark reverb and a slapback off the far wall.
+  Machinery makes the mine work harder; Tension presses the rumble in.
+- Most of the new Places end in a gentle two-pole **Tone** filter on the whole Place
+  (the first three do this through their drone and pad filters).
+
+### Decisions
+
+- **Per-overlay frame clocks, drawing at each overlay's own frame time.** With mixed
+  rates, an overlay drawn at the current time inside a rectangle repainted for another
+  overlay would leave stale copies of its sprites elsewhere.
+- **Sprites only, no paths or gradients per frame, for every new overlay**, and a
+  roaming area without the panels' corners: the cost of a frame is mostly the editor
+  repainting beneath it, so where sprites move matters as much as how they are drawn.
+- **Old projects open with overlays Off** rather than keeping their stored Full: every
+  5a.1 project stored Full whether or not anyone chose it.
+- **Inharmonic partials a quarter-tone off any note** (anvil, gongs, taps, kalimba,
+  crystals, bowls): heard as the metal's or glass's colour, never as a wrong note.
+  Partials that land near a note are kept to the octave, the fifth and the scale's own
+  third and fifth.
+- The Factory's combs sit three and four octaves above the chord root, damped, so their
+  fifth harmonic (the root's major third, out of key on minor chords) stays faint.
+- A City siren is a whole wail written into the eight-bar pattern (one always, more
+  with Activity and Tension), not a per-note chance: a siren with gaps sounds broken.
+- Engines are still made for every Place in every slot (not on demand): nothing may
+  allocate on the audio thread, and a host can switch a slot's Place from there. Memory
+  is reported (21.7 MB per instance at 48 kHz with nine Places).
+
+### Problems and fixes
+
+- The first Hive and Cavern overlays cost 5-6 % here: sprites in the panels' corners
+  made every frame repaint the globe and the cards. Confining sprites to the roaming
+  area brought them to about 3-5 % and 2 %.
+- The Factory was about 8 dB louder than the other Places at first; every new Place was
+  levelled with `--probe-places` against the first three (about -27 to -31 dBFS), and
+  each instrument against the others.
+- Factory in G major: key fit 4.9 dB (needs 5): saturation's intermodulation and the
+  comb's fifth harmonic. Less drive, the combs moved up.
+- Tone failed for Factory, City and Forest: the tests' high band is mostly 1-3 kHz, which
+  the instruments' own tone controls barely moved. Fixed with the master Tone filter.
+- Cavern drips swept through several semitones (key fit -2 dB): rebuilt as a short
+  bloop over a sine on the note (13-16 dB).
+- Forest's Enchanted and Morning Glade differed by 0.96 dB: they now differ in space,
+  diffusion and balance. Tension was too weak (0.7 dB) in the glade.
+- Hive: Activity hardly changed Dormant (Population test), and Danger changed it by
+  0.4 dB: Dormant now stirs with Activity, and Tension wakes the hive.
+- Temple: the dawn zither ran even at low Activity, and the long shimmer grew so much
+  with Size that a colossal world did not sound further away.
+- The four-Place CPU test read 11 % against 8 % in 5a: the unchanged 5a.1 build measures
+  9.9-10.1 % on this machine, so it is the container, not a regression.
+
+### Tests (Linux)
+
+- The Place tests now cover every built Place (they named Castle, Village and Spaceport
+  before): Characters, key (D minor, G major), Activity, Tension, Tone, elements,
+  Seed, tempo synced and free; World Controls; every instrument alone (audible and
+  finite in every Character, every note in G major and A Phrygian, on the host's grid
+  at 84 and 132 BPM); the held instrument after a locate. `--place key[,key]` narrows
+  them (development aid).
+- New: **CPU with four busy copies of each built Place**, Standard quality, under 15 %
+  of one core here: Castle 10.8 %, Village 8.1, Spaceport 10.9, Factory 8.5, City 10.3,
+  Forest 7.9, Alien Hive 10.9, Temple 9.9, Cavern 9.1; the original mix 10.6 %. Memory
+  per instance: 21.7 MB at 48 kHz (metric).
+- Overlays: every Place with an overlay, alone, and two combinations: clearly visible,
+  only on the drawable area, never on a control; the first three move at 20 fps, the
+  new ones at 15; at most 40 rectangles a frame; Off by default and for an old project.
+  **The CPU share is a metric, not a check** (software renderer, this container, the
+  editor repainted beneath): Castle 6.8 %, Spaceport 8.1 %, Castle + Village +
+  Spaceport 23.2 %; Factory 2.8 %, City 1.2 %, Forest 3.7 %, Alien Hive 4.6 %, Temple
+  4.5 %, Cavern 1.9 %, Factory + Hive + Temple + Cavern 13.8 %.
+- State round trip with four active 5b Places (Factory, City, Alien Hive, Cavern),
+  edited patterns, Evolve, mute and solo, besides the first three: restored, and plays
+  sample-identically.
+- The "unbuilt Place is silent" test uses the first unbuilt Place; a 5b Pattern Editor
+  shows its generated pattern (snapshot `-factory-patterns`).
+- **1371 checks pass, 0 fail** with GCC (about 10 minutes here); Clang builds
+  cleanly and passes all 1371 too.
+
+### Milestone 5b handoff
+
+**Done:** overlays Off by default; the efficient overlay path (sprites at 15 fps,
+cached still art, roaming area) used by six new overlays; the overlay CPU check is a
+metric; Factory, City, Forest, Alien Hive, Temple and Cavern with six instruments,
+three Characters and their effects; the shared bowed, drip, babble and breath voices
+and five effects; the slot's engine registry.
+
+**Next (needs the developer):**
+1. CI on the macOS runner. Nothing macOS-specific changed; the tests take longer (about
+   10 minutes per architecture here).
+2. The Milestone 5b check in [MANUAL_TEST.md](MANUAL_TEST.md): each new Place and
+   instrument alone, by ear; the new overlays' CPU in GarageBand against the first
+   three.
+3. Still open: listening to the 5a instruments alone.
+
+**Then 5c:** Ruins, Spaceship Interior, Biodome, Sea Ship, Suburbs. Per Place: a class
+deriving from `EnsemblePlace` (names, icons and kit rows are in `placeInfo`), a case in
+`makePlace`, `placeImplemented`, and an overlay in `OverlayArt.cpp` (`hasArt`,
+`build`: still shapes plus sprite movers only). The tests pick up every built Place.
+Voices to reuse: `BowedPart` (hull resonances), `DripPart` (water plucks), `WindPart`
+with tone 0 (cold wind harmonics), `ChoirPart` babble. Effects still needed: lo-fi
+decay and reverse echoes (Ruins), a confined metallic room and filtered delay
+(Spaceship), rolling modulation (Sea Ship); `Chorus`, `Warmth` and `SmallSpace` exist.
+
+**Known issues / limits:**
+- Nothing new has been heard by a person; expect a level and tone pass.
+- Castle, Village and Spaceport overlays are unchanged (20 fps, drawn shapes) until the
+  visual polish milestone; they are the heavy ones.
+- Memory grows with each Place (one engine of each per slot): 21.7 MB at 48 kHz with
+  nine Places, perhaps 45-50 MB with 20 (twice that at 96 kHz). If that is too much,
+  engines could be shared between slots.
+- Saw and feedback-FM voices (bass lines, the swarm) carry their natural harmonics,
+  including each note's major third; key fits are 5-17 dB, as for the first three.
+- At Subtle, the new overlays show half their sprites at 10 fps (by design).
+- The overlays are still designed for the fixed 1160 x 720 layout.

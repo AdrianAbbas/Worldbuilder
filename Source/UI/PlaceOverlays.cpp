@@ -1,4 +1,5 @@
 #include "PlaceOverlays.h"
+#include "OverlayArt.h"
 
 namespace wb::ui {
 
@@ -6,93 +7,7 @@ namespace {
 using Shape = PlaceOverlays::Shape;
 using Layout = PlaceOverlays::Layout;
 using Point = juce::Point<float>;
-
-float between(juce::Random& r, float a, float b) { return a + (b - a) * r.nextFloat(); }
-
-// A curved blade of grass rising from its base.
-void blade(juce::Path& p, float x, float base, float height, float lean, float width) {
-    p.startNewSubPath(x - width * 0.5f, base);
-    p.quadraticTo(x - width * 0.2f + lean * 0.3f, base - height * 0.55f, x + lean, base - height);
-    p.quadraticTo(x + width * 0.2f + lean * 0.3f, base - height * 0.55f, x + width * 0.5f, base);
-    p.closeSubPath();
-}
-
-// A pointed leaf from its stalk, pointing along `angle`.
-void leaf(juce::Path& p, Point at, float size, float angle) {
-    juce::Path l;
-    l.startNewSubPath(0.0f, 0.0f);
-    l.quadraticTo(size * 0.5f, -size * 0.45f, size, 0.0f);
-    l.quadraticTo(size * 0.5f, size * 0.45f, 0.0f, 0.0f);
-    l.closeSubPath();
-    p.addPath(l, juce::AffineTransform::rotation(angle).translated(at));
-}
-
-// Ivy growing from a to b along a frame: a wavy stem, leaves on alternate sides that
-// get smaller towards the tip.
-void vine(juce::Path& stem, juce::Path& leavesA, juce::Path& leavesB, Point a, Point b, juce::Random& r) {
-    const auto d = b - a;
-    const float length = d.getDistanceFromOrigin();
-    if (length < 6.0f) return;
-    const Point u { d.x / length, d.y / length }, n { -u.y, u.x };
-    const float phase = r.nextFloat() * 6.28f;
-    const auto at = [&](float s) { return a + u * s + n * (2.0f * std::sin(s * 0.12f + phase)); };
-    stem.startNewSubPath(at(0.0f));
-    for (float s = 3.0f; s < length; s += 3.0f) stem.lineTo(at(s));
-    const float direction = std::atan2(u.y, u.x);
-    float side = 1.0f;
-    for (float s = 3.0f; s < length; s += between(r, 4.0f, 7.0f)) {
-        const float size = between(r, 6.5f, 10.0f) * (1.0f - 0.4f * s / length);
-        leaf(r.nextBool() ? leavesA : leavesB, at(s), size, direction + side * between(r, 0.6f, 1.15f));
-        side = -side;
-    }
-}
-
-// Evenly spaced points around a rounded frame (lights run along them).
-std::vector<Point> trackAround(juce::Rectangle<float> frame, float corner) {
-    juce::Path p;
-    p.addRoundedRectangle(frame, corner);
-    const float length = p.getLength();
-    const int count = std::max(8, int(length / 3.0f));
-    std::vector<Point> points;
-    points.reserve(std::size_t(count));
-    for (int i = 0; i < count; ++i) points.push_back(p.getPointAlongPath(length * float(i) / float(count)));
-    return points;
-}
-
-// Random places in an area, chosen by size (where fireflies and the like live).
-std::vector<Point> spotsIn(const juce::RectangleList<int>& area, int count, int seed) {
-    std::vector<Point> spots;
-    float total = 0;
-    for (const auto& r : area) total += float(r.getWidth() * r.getHeight());
-    if (total <= 0.0f) return spots;
-    juce::Random random(seed);
-    for (int i = 0; i < count; ++i) {
-        float pick = random.nextFloat() * total;
-        for (const auto& r : area) {
-            pick -= float(r.getWidth() * r.getHeight());
-            if (pick > 0.0f) continue;
-            spots.push_back({ float(r.getX()) + random.nextFloat() * float(r.getWidth()), float(r.getY()) + random.nextFloat() * float(r.getHeight()) });
-            break;
-        }
-    }
-    return spots;
-}
-
-void glowDot(juce::Graphics& g, Point p, float radius, juce::Colour glow, juce::Colour core, float coreRadius) {
-    g.setGradientFill(juce::ColourGradient(glow, p.x, p.y, glow.withAlpha(0.0f), p.x + radius, p.y, true));
-    g.fillEllipse(juce::Rectangle<float>(radius * 2.0f, radius * 2.0f).withCentre(p));
-    g.setColour(core);
-    g.fillEllipse(juce::Rectangle<float>(coreRadius * 2.0f, coreRadius * 2.0f).withCentre(p));
-}
-
-// A glow drawn once, to be stamped unscaled.
-juce::Image glowSprite(float radius, juce::Colour glow, juce::Colour core, float coreRadius) {
-    const int size = int(std::ceil(radius * 2.0f)) + 2;
-    juce::Image image(juce::Image::ARGB, size, size, true);
-    juce::Graphics g(image);
-    glowDot(g, { float(size) * 0.5f, float(size) * 0.5f }, radius, glow, core, coreRadius);
-    return image;
-}
+using art::between, art::blade, art::vine, art::trackAround, art::spotsIn, art::glowSprite;
 
 // The Spaceport's hologram: a slight shimmer and, every few seconds, a brief dropout.
 float hologramFlicker(float t) {
@@ -285,7 +200,7 @@ void buildVillage(const Layout& L, std::vector<Shape>& shapes, std::vector<Point
 }
 } // namespace
 
-bool hasOverlay(int type) { return type == Castle || type == Village || type == Spaceport; }
+bool hasOverlay(int type) { return type == Castle || type == Village || type == Spaceport || art::hasArt(type); }
 
 PlaceOverlays::PlaceOverlays() {
     setInterceptsMouseClicks(false, false);
@@ -336,6 +251,11 @@ void PlaceOverlays::rebuildArea() {
     }
     drawable = decorated;
     drawable.subtract(clear);
+    roaming.clear();
+    roaming.add(getLocalBounds());
+    for (auto p : panelList) roaming.subtract(p.reduced(frameBand));
+    roamingDrawable = roaming;
+    roamingDrawable.subtract(clear);
     ++areaVersion;
 
     layout.bounds = getLocalBounds().toFloat();
@@ -351,6 +271,11 @@ void PlaceOverlays::rebuildArea() {
         for (auto b : panelList) {
             const int gap = b.getX() - a.getRight(), top = std::max(a.getY(), b.getY()), bottom = std::min(a.getBottom(), b.getBottom());
             if (gap >= 4 && gap <= 40 && bottom - top > 30) layout.gutters.push_back(juce::Rectangle<int>(a.getRight(), top, gap, bottom - top).toFloat());
+        }
+    for (auto a : panelList)
+        for (auto b : panelList) {
+            const int gap = b.getY() - a.getBottom(), left = std::max(a.getX(), b.getX()), right = std::min(a.getRight(), b.getRight());
+            if (gap >= 4 && gap <= 40 && right - left > 30) layout.ledges.push_back(juce::Rectangle<int>(left, a.getBottom(), right - left, gap).toFloat());
         }
     for (auto o : openList) layout.open.push_back(o.toFloat());
 }
@@ -379,6 +304,24 @@ bool PlaceOverlays::showing() const {
     return false;
 }
 
+bool PlaceOverlays::isLegacy(int type) { return type == Castle || type == Village || type == Spaceport; }
+
+int PlaceOverlays::framesPerSecond(int type, int mode) {
+    if (mode == OverlaysOff) return 0;
+    if (mode == OverlaysSubtle) return 10;
+    return isLegacy(type) ? 20 : 15;
+}
+
+bool PlaceOverlays::movesOn(int type, int tick) const {
+    // On the editor's 30 Hz timer: 20 fps is two ticks of three, 15 every other, 10 every third.
+    switch (framesPerSecond(type, overlayMode)) {
+        case 20: return tick % 3 != 2;
+        case 15: return tick % 2 == 0;
+        case 10: return tick % 3 == 0;
+        default: return false;
+    }
+}
+
 void PlaceOverlays::advance(float seconds) {
     time += seconds;
     if (time > 3600.0f) time -= 3600.0f;
@@ -395,21 +338,23 @@ void PlaceOverlays::advance(float seconds) {
     repainted.clear();
     if (fading) {
         repaint();
-        moved = movingParts();
+        for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) {
+            animTime[std::size_t(type)] = time;
+            moved[std::size_t(type)] = movingParts(type);
+        }
         return;
     }
-    // 20 frames a second at Full, 10 at Subtle (the editor's timer runs at 30).
     ++frame;
-    if (!show || (overlayMode == OverlaysSubtle ? frame % 3 != 0 : frame % 3 == 2)) return;
-    // Repaint where things were and where they are now, only within the decorated area,
-    // joining pieces while that adds little area (each rectangle is a paint call in some
-    // hosts, but a large one would repaint the panels' insides).
-    auto now = movingParts();
+    if (!show) return;
+    // Each overlay moves on its own frames: repaint where its parts were and where they
+    // are now, only within the decorated area, joining pieces while that adds little
+    // area (each rectangle is a paint call in some hosts, but a large one would repaint
+    // the panels' insides). An overlay between its frames stays exactly as it was.
     std::vector<juce::Rectangle<int>> dirty;
     const auto area = [](juce::Rectangle<int> r) { return int64_t(r.getWidth()) * int64_t(r.getHeight()); };
-    for (const auto& list : { moved, now })
+    const auto add = [&](const std::vector<juce::Rectangle<int>>& list, const juce::RectangleList<int>& within) {
         for (auto r : list)
-            for (auto d : decorated) {
+            for (auto d : within) {
                 const auto piece = r.getIntersection(d);
                 if (piece.isEmpty()) continue;
                 // Into the first rectangle it joins cheaply, else a new one.
@@ -418,7 +363,17 @@ void PlaceOverlays::advance(float seconds) {
                 if (joined != dirty.end()) *joined = joined->getUnion(piece);
                 else dirty.push_back(piece);
             }
-    moved = std::move(now);
+    };
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) {
+        const auto k = std::size_t(type);
+        if (strength(type) < 0.004f || !still[k].built || !movesOn(type, frame)) continue;
+        animTime[k] = time;
+        auto now = movingParts(type);
+        const auto& within = isLegacy(type) ? decorated : roaming;
+        add(moved[k], within);
+        add(now, within);
+        moved[k] = std::move(now);
+    }
     while (dirty.size() > 40) {   // rarely: join the cheapest pair
         std::size_t bestA = 0, bestB = 1;
         int64_t bestCost = std::numeric_limits<int64_t>::max();
@@ -436,11 +391,12 @@ void PlaceOverlays::advance(float seconds) {
     repainted = dirty;
 }
 
-std::vector<juce::Rectangle<int>> PlaceOverlays::movingParts() const {
+std::vector<juce::Rectangle<int>> PlaceOverlays::movingParts(int type) const {
     std::vector<juce::Rectangle<int>> marks;
-    marks.reserve(256);
-    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
-        if (const float s = strength(type); s >= 0.004f && still[std::size_t(type)].built) drawMoving(nullptr, type, still[std::size_t(type)], s, marks);
+    if (const float s = strength(type); s >= 0.004f && still[std::size_t(type)].built) {
+        marks.reserve(128);
+        drawMoving(nullptr, type, still[std::size_t(type)], s, marks);
+    }
     return marks;
 }
 
@@ -457,7 +413,15 @@ void PlaceOverlays::build(int type) {
             s.spots = lanterns;
             s.vents = chimneys;
             break;
-        default: break;
+        default:
+            if (art::hasArt(type)) {
+                auto a = art::build(type, layout);
+                s.shapes = std::move(a.shapes);
+                s.sprite = std::move(a.sprites);
+                s.movers = std::move(a.movers);
+                s.light = a.light;
+            }
+            break;
     }
     // Strokes become fills once, so a frame only fills paths.
     for (auto& shape : s.shapes)
@@ -479,7 +443,7 @@ void PlaceOverlays::paint(juce::Graphics& g) {
     int count = 0;
     for (int pass = 0; pass < 2; ++pass)
         for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
-            if (strength(type) >= 0.004f && (type == Spaceport) == (pass == 0)) order[std::size_t(count++)] = type;
+            if (strength(type) >= 0.004f && (type == Spaceport || still[std::size_t(type)].light) == (pass == 0)) order[std::size_t(count++)] = type;
     // The still parts: their image, drawn once per layout and already clipped.
     for (int i = 0; i < count; ++i) {
         const int type = order[std::size_t(i)];
@@ -510,6 +474,18 @@ void PlaceOverlays::paint(juce::Graphics& g) {
     marks.reserve(256);
     for (int i = 0; i < count; ++i) {
         const int type = order[std::size_t(i)];
+        if (!isLegacy(type)) continue;
+        g.setOpacity(1.0f);
+        drawMoving(&g, type, still[std::size_t(type)], strength(type), marks);
+    }
+    // The later overlays' sprites, only where they may move.
+    auto roam = roamingDrawable;
+    roam.clipTo(g.getClipBounds());
+    if (roam.isEmpty()) return;
+    g.reduceClipRegion(roam);
+    for (int i = 0; i < count; ++i) {
+        const int type = order[std::size_t(i)];
+        if (isLegacy(type)) continue;
         g.setOpacity(1.0f);
         drawMoving(&g, type, still[std::size_t(type)], strength(type), marks);
     }
@@ -517,7 +493,11 @@ void PlaceOverlays::paint(juce::Graphics& g) {
 
 void PlaceOverlays::drawMoving(juce::Graphics* g, int type, const Still& st, float s, std::vector<juce::Rectangle<int>>& marks) const {
     const bool subtle = overlayMode == OverlaysSubtle;
-    const float t = time;
+    const float t = animTime[std::size_t(type)];
+    if (!isLegacy(type)) {
+        drawMovers(g, st, s, t, marks);
+        return;
+    }
     // Notes an area drawn on; true when it is to be drawn now (inside the clip).
     const auto mark = [&](juce::Rectangle<float> r) {
         const auto area = r.getSmallestIntegerContainer().expanded(2);
@@ -637,6 +617,43 @@ void PlaceOverlays::drawMoving(juce::Graphics* g, int type, const Still& st, flo
             break;
         }
         default: break;
+    }
+}
+
+void PlaceOverlays::drawMovers(juce::Graphics* g, const Still& st, float s, float t, std::vector<juce::Rectangle<int>>& marks) const {
+    if (st.sprite.empty()) return;
+    const bool subtle = overlayMode == OverlaysSubtle;
+    for (std::size_t i = 0; i < st.movers.size(); ++i) {
+        if (subtle && (i & 1) != 0) continue;   // Subtle: half of them
+        const auto& m = st.movers[i];
+        const float u = std::fmod(t / m.period + m.phase, 1.0f);
+        // Travellers fade in and out at the ends of their path.
+        const float ends = std::min(1.0f, u * 5.0f) * std::min(1.0f, (1.0f - u) * 3.0f);
+        auto p = m.at;
+        float a = m.alpha;
+        int frame = 0;
+        switch (m.kind) {
+            case MovePulse: a *= 0.3f + 0.7f * (0.5f + 0.5f * std::sin(juce::MathConstants<float>::twoPi * u)); break;
+            case MoveBlink: a *= std::sin(juce::MathConstants<float>::twoPi * u) > -0.2f ? 1.0f : 0.1f; break;
+            case MoveFlicker: a *= 0.7f + 0.3f * std::sin(t * 12.7f + float(i) * 1.9f) * std::sin(t * 5.3f + float(i)); break;
+            case MoveSpin: frame = int(u * float(m.frames)); break;
+            case MoveRise:
+                p += { m.sway * std::sin(juce::MathConstants<float>::twoPi * (1.3f * u + m.phase)) + 0.3f * m.sway * u, -m.travel * u };
+                a *= ends;
+                frame = int(u * float(m.frames));
+                break;
+            case MoveFall:
+                p += { m.sway * std::sin(juce::MathConstants<float>::twoPi * (1.7f * u + m.phase)), m.travel * u };
+                a *= ends;
+                frame = int(u * float(m.frames) * 3.0f) % std::max<int>(1, m.frames);
+                break;
+            default:   // drift
+                p += { m.travel * u, m.sway * std::sin(juce::MathConstants<float>::twoPi * (2.0f * u + m.phase)) };
+                a *= ends;
+                break;
+        }
+        const auto index = std::min(st.sprite.size() - 1, std::size_t(m.sprite) + std::size_t(std::clamp(frame, 0, std::max(0, m.frames - 1))));
+        stamp(g, st.sprite[index], p, s * a, marks);
     }
 }
 

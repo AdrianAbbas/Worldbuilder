@@ -1,5 +1,6 @@
 #pragma once
 #include "Places.h"
+#include <memory>
 
 namespace wb {
 
@@ -26,6 +27,7 @@ struct PlaceSlotControls {
 // those change). Generated patterns are reported back to the editor.
 class PlaceSlot {
 public:
+    PlaceSlot();
     void prepare(double sampleRate, int slotIndex);
     void reset();
     // Renders n <= dsp::chunk samples (writes). Returns false, writing nothing, when the
@@ -54,9 +56,9 @@ private:
 
     float rate = 48000;
     int slot = 0;
-    CastlePlace castle;
-    VillagePlace village;
-    SpaceportPlace spaceport;
+    // One engine of every built Place, made and prepared off the audio thread. Only the
+    // one playing is ever reset (when it starts), so a slot's reset stays cheap.
+    std::array<std::unique_ptr<Place>, PlaceTypeCount> engines;
     Place* current = nullptr;
     int currentType = NoPlace;
     float fade = 0, fadeStep = 0.001f;

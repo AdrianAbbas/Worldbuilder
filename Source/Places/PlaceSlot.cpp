@@ -4,13 +4,16 @@ namespace wb {
 
 using namespace dsp;
 
+PlaceSlot::PlaceSlot() {
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) engines[std::size_t(type)] = makePlace(type);
+}
+
 void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     rate = float(sampleRate);
     slot = slotIndex;
     const float controlRate = rate / float(chunk);
-    castle.prepare(sampleRate);
-    village.prepare(sampleRate);
-    spaceport.prepare(sampleRate);
+    for (auto& e : engines)
+        if (e != nullptr) e->prepare(sampleRate);
     for (auto& s : smooth) s.setTime(0.15f, controlRate);
     for (auto& s : elementSmooth) s.setTime(0.08f, controlRate);
     gain.setTime(0.05f, rate);
@@ -22,9 +25,6 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
 }
 
 void PlaceSlot::reset() {
-    castle.reset();
-    village.reset();
-    spaceport.reset();
     current = nullptr;
     currentType = NoPlace;
     fade = 0;
@@ -39,14 +39,22 @@ void PlaceSlot::reset() {
     lastBeat = 0;
 }
 
-Place* PlaceSlot::engineFor(int type) {
+std::unique_ptr<Place> makePlace(int type) {
     switch (type) {
-        case Castle: return &castle;
-        case Village: return &village;
-        case Spaceport: return &spaceport;
+        case Castle: return std::make_unique<CastlePlace>();
+        case Village: return std::make_unique<VillagePlace>();
+        case Spaceport: return std::make_unique<SpaceportPlace>();
+        case Factory: return std::make_unique<FactoryPlace>();
+        case City: return std::make_unique<CityPlace>();
+        case Forest: return std::make_unique<ForestPlace>();
+        case Hive: return std::make_unique<HivePlace>();
+        case Temple: return std::make_unique<TemplePlace>();
+        case Cavern: return std::make_unique<CavernPlace>();
         default: return nullptr;
     }
 }
+
+Place* PlaceSlot::engineFor(int type) { return type > NoPlace && type < PlaceTypeCount ? engines[std::size_t(type)].get() : nullptr; }
 
 float PlaceSlot::effectiveDistance(const WorldFrame& world, float d) {
     // Colossal worlds and storms push every Place further away.
