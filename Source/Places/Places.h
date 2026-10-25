@@ -552,6 +552,39 @@ private:
     float roomSend = 0, presence = 0, bugleRadio = 0, dry = 1;
 };
 
+// Beach: warm guitar plucks, steel-drum tones, wave swells, a shaker and clave, a
+// breezy pad and gull calls, in an open, airy space with a gentle chorus. Tropical Day:
+// a lilting strum, a dancing steel-drum tune, a son clave. Sunset: slow fingerpicked
+// arpeggios, a few long steel-drum notes, the pad glowing. Stormy Shore: a nervous
+// tremolo, the surf rising, rain on the shaker, the gulls blown about.
+class BeachPlace final : public EnsemblePlace {
+public:
+    BeachPlace();
+    float freeTempo() const override { return 100.0f; }
+    float spaceSend() const override { return 0.35f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Guitar, SteelDrum, Waves, Shaker, BreezePad, Gulls };
+    enum Character { TropicalDay, Sunset, StormyShore };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    PluckPart guitar;
+    ModalPart steel;
+    WindPart waves, gulls;
+    DrumPart shaker;
+    SynthPart pad;
+    dsp::SmallSpace air;
+    dsp::Chorus chorus;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float airSend = 0, presence = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

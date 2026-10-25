@@ -1577,6 +1577,129 @@ OverlayArt military(const Layout& L) {
     move(a, PlaceOverlays::MoveDrift, { width + 12.0f, bottom - 9.0f }, beam, 13.0f, 0.5f, 0.6f, -(width + 24.0f), 0.0f);
     return a;
 }
+//==============================================================================
+// Beach: sand along the bottom with shells and starfish, turquoise surf with foam above
+// it, palm fronds hanging over the panels' top corners, palm trunks in the gaps, a low
+// sun over the sea with a striped umbrella in the open space; the water glints, foam
+// bubbles, the sun glows, gulls drift.
+OverlayArt beach(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1717);
+    juce::Path sand, sandDots, sea, foam, shells, stars, fronds, frondDark, trunks, trunkRings, umbrella, umbrellaStripes, sun;
+    std::vector<Point> glints, bubbles, suns;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // The surf, then the sand in front of it.
+    sea.addRectangle(0.0f, bottom - 10.0f, width, 4.0f);
+    for (float x = 0.0f; x < width; x += 12.0f) {
+        foam.addEllipse(x, bottom - 8.0f - between(r, 0.0f, 1.5f), between(r, 7.0f, 11.0f), 2.2f);
+        if (r.nextFloat() < 0.3f) bubbles.push_back({ x + 5.0f, bottom - 7.5f });
+    }
+    juce::Path dune;
+    dune.startNewSubPath(0.0f, bottom);
+    dune.lineTo(0.0f, bottom - 6.0f);
+    for (float x = 0.0f; x <= width; x += 40.0f) dune.quadraticTo(x + 20.0f, bottom - between(r, 5.0f, 8.0f), x + 40.0f, bottom - 6.0f);
+    dune.lineTo(width, bottom);
+    dune.closeSubPath();
+    sand.addPath(dune);
+    for (int k = 0; k < int(width / 6.0f); ++k) sandDots.addEllipse(between(r, 0.0f, width), bottom - between(r, 0.5f, 5.0f), 0.9f, 0.9f);
+    for (float x = between(r, 30.0f, 90.0f); x < width; x += between(r, 110.0f, 200.0f)) {
+        if (r.nextBool()) {
+            shells.addPieSegment(x - 3.0f, bottom - 6.0f, 6.0f, 5.0f, -1.5708f, 1.5708f, 0.0f);
+        } else {
+            stars.addStar({ x, bottom - 3.5f }, 5, 1.2f, 3.4f, r.nextFloat());
+        }
+        glints.push_back({ x + between(r, 20.0f, 50.0f), bottom - 8.5f });
+    }
+    // Palm fronds over the panels' top corners.
+    const auto frond = [&](Point base, float angle, float length) {
+        juce::Path stem;
+        const Point tip = base + Point { std::cos(angle), std::sin(angle) } * length;
+        const Point mid = base + Point { std::cos(angle), std::sin(angle) } * (length * 0.5f) + Point { 0.0f, length * 0.15f };
+        stem.startNewSubPath(base);
+        stem.quadraticTo(mid, tip);
+        juce::PathStrokeType(1.2f).createStrokedPath(stem, stem);
+        frondDark.addPath(stem);
+        for (float f = 0.15f; f < 0.95f; f += 0.12f) {
+            const Point at = base + (mid - base) * (2.0f * f * (1.0f - f)) * 2.0f * 0.5f + (tip - base) * (f * f) + (mid - base) * (f * (1.0f - f));
+            for (float side : { -1.0f, 1.0f }) leaf(fronds, at, 6.0f * (1.1f - f), angle + side * 1.1f + 0.4f);
+        }
+    };
+    for (auto p : L.panels) {
+        frond({ p.getX() - 2.0f, p.getY() - 2.0f }, 0.35f, 34.0f);
+        frond({ p.getX() - 2.0f, p.getY() - 2.0f }, 1.25f, 26.0f);
+        frond({ p.getRight() + 2.0f, p.getY() - 2.0f }, twoPi * 0.5f - 0.35f, 34.0f);
+        frond({ p.getRight() + 2.0f, p.getY() - 2.0f }, twoPi * 0.5f - 1.25f, 26.0f);
+    }
+    // Palm trunks up the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 60.0f) continue;
+        const float cx = gap.getCentreX();
+        for (float y = gap.getBottom() - 10.0f; y > gap.getY() + gap.getHeight() * 0.35f; y -= 6.0f) {
+            const float sway = 2.0f * std::sin((gap.getBottom() - y) * 0.02f);
+            trunks.addEllipse(cx + sway - 3.0f, y - 3.0f, 6.0f, 6.5f);
+            trunkRings.addRectangle(cx + sway - 2.5f, y + 1.5f, 5.0f, 0.8f);
+        }
+    }
+    // A low sun over the sea, and a striped umbrella, in the open space.
+    for (auto o : L.open) {
+        const float radius = std::min(o.getHeight() * 0.45f, 14.0f);
+        const Point centre { o.getX() + o.getWidth() * 0.3f, o.getBottom() - radius * 0.4f };
+        sun.addPieSegment(centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, -1.5708f, 1.5708f, 0.0f);
+        suns.push_back(centre.translated(0.0f, -radius * 0.4f));
+        for (float x = o.getX(); x < o.getRight(); x += 9.0f) {
+            sea.addRectangle(x, o.getBottom() - 2.0f, 6.0f, 1.0f);
+            if (r.nextFloat() < 0.2f) glints.push_back({ x + 3.0f, o.getBottom() - 1.5f });
+        }
+        const float ux = o.getRight() - 40.0f, top = o.getBottom() - std::min(o.getHeight() - 2.0f, 22.0f);
+        umbrella.addRectangle(ux - 0.6f, top + 4.0f, 1.2f, o.getBottom() - top - 4.0f);
+        juce::Path canopy;
+        canopy.addPieSegment(ux - 16.0f, top, 32.0f, 16.0f, -1.5708f, 1.5708f, 0.0f);
+        umbrella.addPath(canopy);
+        for (int k = 0; k < 4; k += 2) {
+            juce::Path stripe;
+            const float a0 = -1.5708f + float(k) * 0.785f;
+            stripe.addPieSegment(ux - 16.0f, top, 32.0f, 16.0f, a0, a0 + 0.785f, 0.0f);
+            umbrellaStripes.addPath(stripe);
+        }
+    }
+    a.shapes.push_back({ sun, juce::Colour(0xffffb050) });
+    a.shapes.push_back({ sea, juce::Colour(0xff28b8c0) });
+    a.shapes.push_back({ foam, juce::Colour(0xfff0fbff) });
+    a.shapes.push_back({ sand, juce::Colour(0xffe8cc8a) });
+    a.shapes.push_back({ sandDots, juce::Colour(0xffb89a60) });
+    a.shapes.push_back({ shells, juce::Colour(0xfff8e0d0) });
+    a.shapes.push_back({ stars, juce::Colour(0xffe87a50) });
+    a.shapes.push_back({ trunks, juce::Colour(0xff8a6440) });
+    a.shapes.push_back({ trunkRings, juce::Colour(0xff5a4028) });
+    a.shapes.push_back({ umbrella, juce::Colour(0xfff4f0e8) });
+    a.shapes.push_back({ umbrellaStripes, juce::Colour(0xffe8505a) });
+    a.shapes.push_back({ frondDark, juce::Colour(0xff2e6a30) });
+    a.shapes.push_back({ fronds, juce::Colour(0xff48a040) });
+
+    const int glint = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(4.0f, juce::Colour(0xffd0fbff)));
+    const int bubble = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.5f, juce::Colour(0x80ffffff), juce::Colour(0xffffffff), 0.8f));
+    const int glow = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(12.0f, juce::Colour(0x50ffc060), juce::Colour(0x00ffffff), 0.0f));
+    const int gull = int(a.sprites.size());
+    {
+        juce::Path g;
+        g.startNewSubPath(-5.0f, 0.0f);
+        g.quadraticTo(-2.5f, -2.5f, 0.0f, 0.0f);
+        g.quadraticTo(2.5f, -2.5f, 5.0f, 0.0f);
+        juce::PathStrokeType(1.3f).createStrokedPath(g, g);
+        a.sprites.push_back(pathSprite(g, juce::Colour(0xfff8f8f0)));
+    }
+    for (auto g : glints) move(a, PlaceOverlays::MovePulse, g, glint, between(r, 1.5f, 3.0f), r.nextFloat());
+    for (std::size_t i = 0; i < bubbles.size() && i < 16; ++i) move(a, PlaceOverlays::MovePulse, bubbles[i], bubble, between(r, 2.0f, 3.5f), r.nextFloat(), 0.8f);
+    for (auto s : suns) move(a, PlaceOverlays::MovePulse, s, glow, 6.0f, 0.0f, 0.8f);
+    juce::RectangleList<int> sky;
+    for (auto o : L.open) sky.add(o.toNearestInt());
+    for (auto l : L.ledges) sky.add(l.toNearestInt());
+    for (auto at : spotsIn(sky, 6, 1718)) move(a, PlaceOverlays::MoveDrift, at, gull, between(r, 8.0f, 12.0f), r.nextFloat(), 0.9f, between(r, -40.0f, 40.0f), 4.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -1678,7 +1801,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -1696,6 +1819,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Suburbs: return suburbs(layout);
         case Mall: return mall(layout);
         case Military: return military(layout);
+        case Beach: return beach(layout);
         default: return {};
     }
 }
