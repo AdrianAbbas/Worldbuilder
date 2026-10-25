@@ -41,7 +41,7 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
 // silent, and its card could not be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
                                                                      true, true, true, true, true, true, true, true, true, true,
-                                                                     true, false, false, false, false, false };
+                                                                     true, true, false, false, false, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
                                                                         "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D",
@@ -235,6 +235,11 @@ inline const PlaceInfo& placeInfo(int type) {
                held("Airflow", IconWind), mel("Reactor Pulse", IconBass), mel("Zero-G Lead", IconCrystal, VaryVelocity | VarySkip | VaryPitch) },
              "A rotating-hull drone, docking-clamp hits, comms-beep motifs, an airflow pad, a reactor pulse bass and a gliding zero-g lead.",
              "A sealed metallic room and a filtered delay", SciFi),
+        info({ "Night Market", "Corporate Tower", "Riot" },
+             { mel("Grit Bass", IconBass), mel("Neon Arp", IconPulse), held("Rain Pad", IconPad),
+               kit("Drum Machine", IconSnare, { "Kick", "Snare", "Hat", "Clap" }), mel("Glitch Stabs", IconBlip, VaryVelocity | VarySkip | VaryExtra), held("Megastructure", IconEngine) },
+             "A gritty synth bass, a neon arpeggio, a rain-soaked pad, a distorted drum machine, glitch stabs and a distant megastructure hum.",
+             "A wet neon reverb, a bitcrusher and a ping-pong delay", SciFi, 0),
     } };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }

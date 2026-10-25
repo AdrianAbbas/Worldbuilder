@@ -2282,7 +2282,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 
 - [x] 0. Registration for six new Place types (types 21-26, appended so saved projects keep their numbers), sci-fi category, card art, themes
 - [x] 1. Space Station
-- [ ] 2. Cyberpunk Megacity
+- [x] 2. Cyberpunk Megacity
 - [ ] 3. Starship Bridge
 - [ ] 4. Asteroid Mining Colony
 - [ ] 5. Alien Ruins
@@ -2318,3 +2318,19 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - Overlay: pale hull panels along the frames with seams and blinking status lights,
   lattice trusses down the gaps, a solar array along the bottom, stars over a
   planet's limb with a ring station far off; a satellite drifts across.
+
+**Cyberpunk Megacity** (sci-fi)
+- Grit Bass: detuned saws with a snapping resonant filter, driven into soft clipping
+  (harder in a riot): long notes with octave pops, steady eighths, or snarling sixteenths.
+- Neon Arp: a bright FM pluck (index snapping shut), chord tones up and down.
+- Rain Pad: wide detuned saws, slow filter, with a faint bright rain hiss that follows
+  the pad's level.
+- Drum Machine: an 808-like kick, a wired snare, a metallic hat, a clap; half-time,
+  four-on-the-floor or a breakbeat by Character.
+- Glitch Stabs: very short buzzy reed chords on syncopated sixteenths, stuttering.
+- Megastructure: a huge bowed girder far off (bowed resonator, slightly stretched overtones).
+- Space: a wet neon reverb, a bitcrusher on the drums and stabs (Riot crushes hard), a
+  ping-pong on the arp and stabs.
+- Overlay: magenta and cyan neon tubes on the frames, vertical glyph signs in the gaps,
+  a wet street with neon reflections, a lit skyline in the header; rain falls, signs
+  flicker, windows blink.

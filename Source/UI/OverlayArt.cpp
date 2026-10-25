@@ -2130,6 +2130,92 @@ OverlayArt station(const Layout& L) {
     for (const auto& [at, length] : drifts) move(a, PlaceOverlays::MoveDrift, at, satellite, 24.0f, r.nextFloat(), 0.9f, length, 1.5f);
     return a;
 }
+
+//==============================================================================
+// Cyberpunk Megacity: magenta and cyan neon tubes along the panel tops, vertical neon
+// signs (abstract glyph bars) down the gaps, wet street reflections along the bottom
+// and a skyline of lit towers in the open space. Rain streaks fall, signs flicker,
+// window lights blink.
+OverlayArt megacity(const Layout& L) {
+    OverlayArt a;
+    a.light = true;
+    juce::Random r(2222);
+    const juce::Colour magenta(0xffff3fa8), cyan(0xff3fe8ff), amber(0xffffb84a);
+    juce::Path pink, blue, signs, glyphs, street, puddles, towers;
+    std::vector<Point> windows, signLights, rainTops;
+    std::vector<float> rainLengths;
+    for (auto p : L.panels) {
+        juce::Path tube;
+        const bool top = r.nextBool();
+        tube.startNewSubPath(p.getX() + 12.0f, p.getY() - 0.5f);
+        tube.lineTo(p.getX() + p.getWidth() * 0.45f, p.getY() - 0.5f);
+        (top ? pink : blue).addPath(tube);
+        juce::Path tube2;
+        tube2.startNewSubPath(p.getX() + p.getWidth() * 0.55f, p.getBottom() + 0.5f);
+        tube2.lineTo(p.getRight() - 12.0f, p.getBottom() + 0.5f);
+        (top ? blue : pink).addPath(tube2);
+        for (float x = p.getX() + 20.0f; x < p.getRight() - 20.0f; x += between(r, 50.0f, 90.0f)) {
+            rainTops.push_back({ x, p.getY() + 2.0f });
+            rainLengths.push_back(std::min(40.0f, p.getHeight() * 0.1f));
+        }
+    }
+    // Vertical signs down the gaps, each with a few glyph bars.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 60.0f) continue;
+        const float w = std::min(9.0f, gap.getWidth() - 2.0f), cx = gap.getCentreX();
+        for (float y = gap.getY() + 20.0f; y < gap.getBottom() - 50.0f; y += between(r, 110.0f, 170.0f)) {
+            const Rect sign { cx - w * 0.5f, y, w, 40.0f };
+            signs.addRoundedRectangle(sign, 1.5f);
+            for (float gy = sign.getY() + 4.0f; gy < sign.getBottom() - 5.0f; gy += 7.0f) {
+                glyphs.addRectangle(sign.getX() + 2.0f, gy, w - 4.0f, 1.2f);
+                if (r.nextBool()) glyphs.addRectangle(cx - 0.6f, gy, 1.2f, 4.0f);
+            }
+            signLights.push_back(sign.getCentre());
+        }
+    }
+    // Wet street along the bottom: dark asphalt with neon reflections.
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    street.addRectangle(0.0f, bottom - 6.0f, width, 6.0f);
+    for (float x = between(r, 10.0f, 40.0f); x < width; x += between(r, 60.0f, 140.0f)) puddles.addRoundedRectangle(x, bottom - 4.0f, between(r, 18.0f, 40.0f), 1.6f, 0.8f);
+    // A skyline in the open space.
+    for (auto o : L.open) {
+        for (float x = o.getX() + 4.0f; x < o.getRight() - 10.0f;) {
+            const float w = between(r, 10.0f, 22.0f), h = between(r, 0.45f, 1.0f) * (o.getHeight() - 2.0f);
+            towers.addRectangle(x, o.getBottom() - h, w, h);
+            for (int k = 0; k < 3; ++k)
+                if (r.nextFloat() < 0.7f) windows.push_back({ x + between(r, 2.0f, w - 2.0f), o.getBottom() - between(r, 2.0f, h - 2.0f) });
+            x += w + between(r, 2.0f, 8.0f);
+        }
+    }
+    a.shapes.push_back({ towers, juce::Colour(0xff160c26) });
+    a.shapes.push_back({ street, juce::Colour(0xff121018) });
+    a.shapes.push_back({ puddles, magenta.withAlpha(0.6f) });
+    a.shapes.push_back({ signs, juce::Colour(0xff1a0e24) });
+    a.shapes.push_back({ glyphs, cyan.withAlpha(0.9f) });
+    // Neon tubes: glow, then a bright core.
+    for (auto [tube, colour] : { std::pair { pink, magenta }, std::pair { blue, cyan } }) {
+        a.shapes.push_back({ tube, colour.withAlpha(0.14f), 9.0f });
+        a.shapes.push_back({ tube, colour.withAlpha(0.35f), 4.0f });
+        a.shapes.push_back({ tube, colour.interpolatedWith(juce::Colours::white, 0.55f), 1.4f });
+    }
+
+    const int glow = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(14.0f, magenta.withAlpha(0.35f), juce::Colours::transparentBlack, 0.0f));
+    const int window = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.5f, amber.withAlpha(0.6f), juce::Colour(0xffffe0a0), 0.9f));
+    const int drop = int(a.sprites.size());
+    {
+        juce::Path streak;
+        streak.addRoundedRectangle(0.0f, 0.0f, 1.0f, 9.0f, 0.5f);
+        a.sprites.push_back(pathSprite(streak, juce::Colour(0x90b8d8ff)));
+    }
+    for (auto p : signLights) move(a, PlaceOverlays::MoveFlicker, p, glow, 1.0f, r.nextFloat(), 0.9f);
+    for (auto p : windows) move(a, PlaceOverlays::MoveBlink, p, window, between(r, 3.0f, 9.0f), r.nextFloat(), 0.9f);
+    for (std::size_t i = 0; i < rainTops.size(); ++i)
+        for (int k = 0; k < 2; ++k)
+            move(a, PlaceOverlays::MoveFall, rainTops[i].translated(float(k) * 6.0f - 3.0f, 0.0f), drop, between(r, 0.5f, 0.9f), r.nextFloat(), 0.8f, rainLengths[i], 0.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2232,7 +2318,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
            || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern
-           || type == SpaceStation;
+           || type == SpaceStation || type == Megacity;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2255,6 +2341,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Palace: return palace(layout);
         case Tavern: return tavern(layout);
         case SpaceStation: return station(layout);
+        case Megacity: return megacity(layout);
         default: return {};
     }
 }

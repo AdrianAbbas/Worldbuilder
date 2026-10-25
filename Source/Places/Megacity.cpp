@@ -318,8 +318,8 @@ void MegacityPlace::configure(const PlaceContext& c) {
         p.gain = 1.0f;
     }
     sendScale.fill(market ? 1.2f : (riot ? 0.8f : 1.0f));
-    level = { 0.10f * (riot ? 1.15f : 1.0f) * (0.8f + 0.4f * s.machinery), 0.10f * lerp(0.8f, 1.2f, s.life), 0.045f * (tower ? 1.2f : 1.0f),
-              0.42f * (tower ? 0.85f : 1.0f) * (0.75f + 0.5f * tension), 0.06f * (riot ? 1.2f : 1.0f), 0.30f * (0.7f + 0.6f * s.machinery) };
+    level = { 0.10f * (riot ? 1.15f : 1.0f) * (0.8f + 0.4f * s.machinery), 0.14f * lerp(0.8f, 1.2f, s.life), 0.07f * (tower ? 1.2f : 1.0f),
+              0.32f * (tower ? 0.85f : 1.0f) * (0.75f + 0.5f * tension), 0.45f * (riot ? 1.2f : 1.0f), 0.18f * (0.7f + 0.6f * s.machinery) };
 
     // Wet neon: a big bright reverb with a long tail (a street of glass and puddles).
     neon.set(lerp(0.5f, 1.0f, s.size), lerp(1.8f, 4.0f, s.size) * (market ? 1.2f : 1.0f) * (1.0f + 0.3f * s.magic), lerpExp(4000.0f, 12000.0f, tone));

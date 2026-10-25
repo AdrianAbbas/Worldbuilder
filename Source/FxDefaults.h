@@ -152,6 +152,10 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
     // Space Station: Hull Drone, Docking Clamps, Comms Beeps, Airflow, Reactor Pulse, Zero-G Lead.
     t[21] = { room(0.15f).with(ChFilter, 0.2f).wide(1.3f), plate(0.2f).echo(DlyTape, 0.1f), plate(0.2f).echo(DlyPingPong, 0.25f),
               room(0.15f).wide(1.6f), room(0.05f).with(ChSaturation, 0.2f).toned(0.45f).wide(0.6f), hall(0.35f).echo(DlyDotted, 0.2f).with(ChChorus, 0.3f).wide(1.5f) };
+    // Cyberpunk Megacity: Grit Bass, Neon Arp, Rain Pad, Drum Machine, Glitch Stabs, Megastructure.
+    t[22] = { room(0.05f).with(ChSaturation, 0.35f).toned(0.45f).wide(0.6f), plate(0.25f).echo(DlyPingPong, 0.3f).wide(1.4f),
+              hall(0.35f).with(ChChorus, 0.4f).wide(1.7f), room(0.15f).with(ChSaturation, 0.25f), plate(0.2f).echo(DlyDotted, 0.15f).with(ChLoFi, 0.35f).wide(1.3f),
+              hall(0.25f).with(ChFilter, 0.2f).wide(1.2f) };
     return t;
 }();
 
