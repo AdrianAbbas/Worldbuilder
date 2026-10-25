@@ -261,15 +261,19 @@ void SeaShipPlace::configure(const PlaceContext& c) {
         auto& p = waves.patch;
         p.tone = 0.0f;
         p.breath = 1.0f;
-        p.breathQ = lerp(1.5f, 3.0f, tone);
-        p.attack = 0.7f;
-        p.release = 2.5f;
+        // The open sea heard through the hull: a deep swell an octave below the shore's
+        // surf, rising and falling slowly.
+        p.breathQ = lerp(3.0f, 5.0f, tone);
+        p.transpose = -12.0f;
+        p.attack = 0.9f;
+        p.release = 3.0f;
         p.scoop = 0.0f;
         p.vibratoDepth = 0.0f;
         p.spread = 0.9f;
         p.voices = 3;
         p.held = true;
-        p.gain = 0.6f + 0.7f * swell * swell;
+        // (The narrower band carries less noise: level kept.)
+        p.gain = (0.6f + 0.7f * swell * swell) * 1.6f;
     }
     // Gulls: bright whistles that swoop up and fall away.
     {
@@ -291,6 +295,8 @@ void SeaShipPlace::configure(const PlaceContext& c) {
     }
     // Tension: the timbers groan, the ropes strain, the sea rises and the bell rings out;
     // Life brings the gulls; Machinery works the ropes and timbers like rigging.
+    // The ghost ship drifts in fog that rings; the storm's wind tears echoes away.
+    sendScale.fill(ghostShip ? 1.6f : (storm ? 0.7f : 1.0f));
     level = { 0.6f * (storm ? 1.3f : (ghostShip ? 1.2f : 0.8f)) * (0.6f + 0.9f * tension) * (0.5f + 1.5f * s.machinery), 0.13f * (storm ? 0.7f : (ghostShip ? 0.9f : 1.0f)),
               0.45f * (storm ? 1.3f : 1.0f) * (0.6f + 0.8f * tension) * (0.5f + 1.2f * s.machinery), 0.13f * (storm ? 1.1f : 1.0f) * (0.8f + 0.6f * tension),
               0.9f * (storm ? 1.4f : (calm ? 0.8f : 1.0f)) * (0.5f + 1.2f * tension), 0.08f * lerp(0.5f, 1.5f, s.life) };

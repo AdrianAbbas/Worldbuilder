@@ -1807,7 +1807,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Temple
   - [x] Forest
   - [x] Desert
-  - [ ] Sea Ship
+  - [x] Sea Ship
   - [x] Military Camp
   - [x] Ruins
   - [ ] Cavern
@@ -2138,4 +2138,13 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   each its own), Broken Bells (cracked: fast beating, uneven), Wind, Ghost Pad, Low Toms
   (skins).
 - Space: desolate ruins echo emptily, overgrown ones are muffled.
+
+**Sea Ship** (historical)
+- Creaks (wood), Concertina (free reeds in beating pairs, step 2), Rope Swells (tuned
+  noise), Ship Bell (beating), Waves, Gulls.
+- Waves: the open sea heard through the hull, an octave below the shore's surf, a slow
+  swell in a narrower band (it was nearly identical to the Beach's waves: the closest
+  pair in the distinctness report, 1.14); its level kept and its swell quick enough to
+  sound at once after a locate.
+- Space: the ghost ship drifts in fog that rings (1.6x sends), the storm tears echoes away.
 
