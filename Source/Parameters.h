@@ -3,6 +3,7 @@
 // IDs are stable once released (hosts store automation by them). JUCE derives the
 // AU parameter ID from a hash of the string ID, so new parameters can be added in
 // later milestones without disturbing existing ones.
+#include "FxDefaults.h"
 #include <array>
 #include <cstddef>
 
@@ -48,8 +49,10 @@ enum PlaceParam {
     PlTone, PlSize, PlVariation, PlSeed,
     PlElement,                     // six element (instrument) levels
     PlElementOn = PlElement + 6,   // six element switches
-    PlaceParamCount = PlElementOn + 6
+    PlFx = PlElementOn + 6,        // each element's effects (FxFieldCount each, see FxDefaults.h)
+    PlaceParamCount = PlFx + 6 * FxFieldCount
 };
+inline constexpr int fxField(int element, int field) { return PlFx + element * FxFieldCount + field; }
 inline constexpr int placeSlotCount = 4;
 
 // Indices into `specs`.
@@ -99,6 +102,16 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { id "_e1" suffix, name " Element 1" label, kind, 0, 1, def }, { id "_e2" suffix, name " Element 2" label, kind, 0, 1, def }, \
     { id "_e3" suffix, name " Element 3" label, kind, 0, 1, def }, { id "_e4" suffix, name " Element 4" label, kind, 0, 1, def }, \
     { id "_e5" suffix, name " Element 5" label, kind, 0, 1, def }, { id "_e6" suffix, name " Element 6" label, kind, 0, 1, def }
+// An element's effects; the defaults are those of the slot's default Place.
+#define WB_FX(id, name, type, e, label, k) \
+    { id e "_rev", name label " Reverb", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxReverb) }, \
+    { id e "_revtype", name label " Reverb Type", Kind::Choice, 0, ReverbTypeCount - 1, instrumentFxDefault(type, k, FxReverbType), reverbChoices }, \
+    { id e "_dly", name label " Delay", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxDelay) }, \
+    { id e "_dlytype", name label " Delay Type", Kind::Choice, 0, DelayTypeCount - 1, instrumentFxDefault(type, k, FxDelayType), delayChoices }, \
+    { id e "_char", name label " Character", Kind::Choice, 0, CharacterTypeCount - 1, instrumentFxDefault(type, k, FxCharacter), characterFxChoices }, \
+    { id e "_charamt", name label " Character Amount", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxAmount) }, \
+    { id e "_tone", name label " Tone", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxTone) }, \
+    { id e "_width", name label " Width", Kind::Float, 0, 2, instrumentFxDefault(type, k, FxWidth) }
 #define WB_PLACE(id, name, type, pan, seed) \
     { id "_type", name " Place", Kind::Choice, 0, 20, type, placeChoices }, \
     { id "_level", name " Level", Kind::Decibels, -60, 6, 0 }, \
@@ -117,10 +130,14 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { id "_variation", name " Variation", Kind::Float, 0, 1, 0.35f }, \
     { id "_seed", name " Seed", Kind::Int, 1, 9999, seed }, \
     WB_ELEMENTS(id, name, Kind::Float, 0.8f, "", ""), \
-    WB_ELEMENTS(id, name, Kind::Bool, 1, "_on", " On")
+    WB_ELEMENTS(id, name, Kind::Bool, 1, "_on", " On"), \
+    WB_FX(id, name, type, "_e1", " Element 1", 0), WB_FX(id, name, type, "_e2", " Element 2", 1), \
+    WB_FX(id, name, type, "_e3", " Element 3", 2), WB_FX(id, name, type, "_e4", " Element 4", 3), \
+    WB_FX(id, name, type, "_e5", " Element 5", 4), WB_FX(id, name, type, "_e6", " Element 6", 5)
     WB_PLACE("p1", "Place 1", 1, -0.25f, 11), WB_PLACE("p2", "Place 2", 0, 0.35f, 22),
     WB_PLACE("p3", "Place 3", 0, -0.55f, 33), WB_PLACE("p4", "Place 4", 0, 0.55f, 44),
 #undef WB_PLACE
+#undef WB_FX
 #undef WB_ELEMENTS
     // Free: the world plays all the time. Transport: only while the host plays, from
     // silence and locked to the song position (so bounces always contain it).

@@ -98,6 +98,14 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> levelAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAttachment;
     juce::Rectangle<int> elementArea;
+    // The instrument's own effects: reverb and delay sends (shared buses), a character
+    // effect, tone and width.
+    juce::ComboBox reverbType, delayType, characterType;
+    juce::Slider reverbSend, delaySend, characterAmount, fxTone, fxWidth;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> fxCombos;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> fxSliders;
+    juce::Rectangle<int> fxArea;
+    void attachEffects(int element);
     void setMuteSolo(bool mute, bool solo);
     juce::TextButton back { "BACK" }, draw { "DRAW" }, select { "SELECT" }, undoButton { "UNDO" }, redoButton { "REDO" };
     juce::TextButton copy { "COPY" }, pasteButton { "PASTE" }, clear { "CLEAR" }, generateButton { "GENERATE" };

@@ -300,6 +300,8 @@ void DesertPlace::configure(const PlaceContext& c) {
     }
     // Tension: the wind rises and the drums press in, the oud and ney grow sparse and
     // distant; Life brings the chimes and the ney's breath; Machinery the drummers.
+    // The open dunes echo far; the oasis is close and sheltered; the storm swallows echoes.
+    sendScale.fill(dunes ? 1.7f : (storm ? 0.8f : 0.6f));
     level = { 1.2f * (1.0f - 0.3f * tension), 0.5f * (0.7f + 0.6f * tension) * (0.7f + 0.6f * s.machinery) * (dunes ? 0.8f : 1.0f),
               0.1f * lerp(0.8f, 1.2f, s.life) * (1.0f - 0.3f * tension), 0.04f, 1.6f * (storm ? 1.25f : 1.0f) * (0.4f + 1.6f * tension),
               0.14f * lerp(0.6f, 1.4f, s.life) };

@@ -126,6 +126,8 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             l[i] *= g;
             r[i] *= g;
         }
+        // Population (the effect depth) deepens the sends, as it does the Place's own effects.
+        if (c.fx != nullptr) c.fx->process(e, l, r, n, sendScale[k] * dsp::lerp(0.5f, 1.5f, c.s.fxDepth));
     }
     mix(c, left, right, n);
 }

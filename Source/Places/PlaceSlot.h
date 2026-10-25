@@ -15,6 +15,8 @@ struct PlaceSlotControls {
     uint32_t seed = 1;
     std::array<float, placeElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
     std::array<bool, placeElements> elementOn { true, true, true, true, true, true };
+    // Each instrument's effects.
+    std::array<dsp::ElementFxControls, placeElements> fx {};
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -43,6 +45,12 @@ public:
     const pat::Pattern& generatedPattern(int e) const { return generated[std::size_t(std::clamp(e, 0, placeElements - 1))]; }
     // World Space send for the last rendered chunk.
     float spaceSend() const { return send; }
+    // The instruments' sends to the shared reverbs and delays for the last rendered
+    // chunk, before the slot's gain; sendGainL/R are that gain per sample (level, fade,
+    // distance and pan).
+    const dsp::SendBuses& sends() const { return fx.sends; }
+    const float* sendGainL() const { return sendGain[0].data(); }
+    const float* sendGainR() const { return sendGain[1].data(); }
     int playingType() const { return currentType; }
     // The Place playing in this slot (nullptr when empty), for the tests.
     const Place* place() const { return current; }
@@ -73,6 +81,12 @@ private:
     std::array<dsp::OnePole, 2> dcBlock;
     float send = 0;
     bool fresh = true;
+    dsp::InstrumentFx fx;
+    // The Place's Tone on what its instruments send (the Place's own tone filters only
+    // reach its dry sound): a tilt per shared bus.
+    std::array<std::array<dsp::OnePole, 2>, ReverbTypeCount + DelayTypeCount> sendTilt;
+    void tiltSends(float tone, int n);
+    std::array<std::array<float, dsp::chunk>, 2> sendGain {};
 
     void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns);
     std::array<pat::Pattern, placeElements> generated {};

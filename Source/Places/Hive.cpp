@@ -308,6 +308,8 @@ void HivePlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 3, 4, 4);
         p.gain = 1.0f;
     }
+    // Dormant, the hive is a vast echoing cavity; the swarm fills it and deadens it.
+    sendScale.fill(dormant ? 1.6f : (swarming ? 0.6f : 1.0f));
     level = { 0.12f * (0.8f + 0.6f * tension), 0.13f * lerp(0.7f, 1.3f, s.life), 2.2f, 0.16f, 0.28f * (0.5f + 1.2f * tension), (0.03f + 0.12f * stir) * (0.6f + 0.8f * tension) * lerp(0.7f, 1.3f, s.life) };
 
     // A shimmer whose tail is ring-modulated (a fluttering, metallic halo), and a warped

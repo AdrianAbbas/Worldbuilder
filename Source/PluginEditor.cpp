@@ -61,7 +61,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 5D PREVIEW";
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 6 PREVIEW";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -302,9 +302,11 @@ int WorldbuilderEditor::addPlace(int type) {
     if (type <= NoPlace || type >= PlaceTypeCount || !placeImplemented[std::size_t(type)]) return -1;
     for (int slot = 0; slot < placeSlotCount; ++slot) {
         if (placeType(slot) != NoPlace) continue;
-        // A fresh Place: every control at its default, a new seed.
+        // A fresh Place: every control at its default (each instrument's effects at
+        // that instrument's own), a new seed.
         for (int field = 0; field < PlaceParamCount; ++field)
-            if (field != PlType && field != PlPan) setParam(placeParam(slot, field), specs[std::size_t(placeParam(slot, field))].def);
+            if (field >= PlFx) setParam(placeParam(slot, field), instrumentFxDefault(type, (field - PlFx) / FxFieldCount, (field - PlFx) % FxFieldCount));
+            else if (field != PlType && field != PlPan) setParam(placeParam(slot, field), specs[std::size_t(placeParam(slot, field))].def);
         setParam(placeParam(slot, PlSeed), float(juce::Random::getSystemRandom().nextInt({ 1, 10000 })));
         setParam(placeParam(slot, PlType), float(type));
         refreshPlaceStrips();

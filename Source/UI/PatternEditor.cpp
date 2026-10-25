@@ -497,6 +497,30 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     elementLevel.setDoubleClickReturnValue(true, 0.8);
     elementLevel.setTooltip("This instrument's level");
     addAndMakeVisible(elementLevel);
+    {
+        // The instrument's effects row.
+        const auto combo = [this](juce::ComboBox& box, const char* choices, const char* tip) {
+            box.addItemList(juce::StringArray::fromTokens(choices, "|", ""), 1);
+            box.setTooltip(tip);
+            addAndMakeVisible(box);
+        };
+        combo(reverbType, reverbChoices, "Which shared reverb this instrument sends to: Room, Hall, Cathedral, Plate or Cave");
+        combo(delayType, delayChoices, "Which shared delay this instrument sends to (times follow the host tempo): Tape (a quarter note, warm and "
+                                       "wobbling), Ping-Pong (eighths bouncing left and right), Dotted (a dotted eighth), Reverse (each beat backwards)");
+        combo(characterType, characterFxChoices, "Character: Off, Saturation, Chorus, Phaser, Filter (a resonant low-pass) or Lo-Fi");
+        const auto knob = [this](juce::Slider& k, const char* tip) {
+            k.setSliderStyle(juce::Slider::LinearHorizontal);
+            k.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+            k.setTooltip(tip);
+            k.onValueChange = [this] { repaint(fxArea); };
+            addAndMakeVisible(k);
+        };
+        knob(reverbSend, "Reverb send");
+        knob(delaySend, "Delay send");
+        knob(characterAmount, "How much of the character effect");
+        knob(fxTone, "Tone: dark to bright (the middle leaves it as it is)");
+        knob(fxWidth, "Width: mono to extra wide (the middle leaves it as it is)");
+    }
     elementOn.setColour(juce::TextButton::buttonOnColourId, colours::brass);
     elementOn.setTooltip("Switch this instrument on or off (automatable)");
     addAndMakeVisible(elementOn);
@@ -698,6 +722,7 @@ void PatternEditor::selectElement(int element) {
         onAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             processor.parameters, specs[std::size_t(placeParam(slotIndex, PlElementOn + element))].id, elementOn);
     }
+    attachEffects(element);
     refreshFromStore();
     // Fit the pattern, and show the rows around its notes.
     const int count = working.pattern.lengthSteps;
@@ -713,6 +738,24 @@ void PatternEditor::selectElement(int element) {
     }
     vScroll.setCurrentRangeStart(std::min(top, std::max(0, int(rows.size()) - gridView->visibleRows())));
     repaint();
+}
+
+void PatternEditor::attachEffects(int element) {
+    fxCombos.clear();
+    fxSliders.clear();
+    if (slotIndex < 0 || element < 0) return;
+    const auto id = [&](int field) { return specs[std::size_t(placeParam(slotIndex, fxField(element, field)))].id; };
+    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    for (auto [box, field] : { std::pair<juce::ComboBox*, int> { &reverbType, FxReverbType }, { &delayType, FxDelayType }, { &characterType, FxCharacter } })
+        fxCombos.push_back(std::make_unique<ComboAttachment>(processor.parameters, id(field), *box));
+    const int t = type();
+    for (auto [slider, field] : { std::pair<juce::Slider*, int> { &reverbSend, FxReverb }, { &delaySend, FxDelay }, { &characterAmount, FxAmount },
+                                  { &fxTone, FxTone }, { &fxWidth, FxWidth } }) {
+        fxSliders.push_back(std::make_unique<SliderAttachment>(processor.parameters, id(field), *slider));
+        // Double-click: this instrument's own default.
+        slider->setDoubleClickReturnValue(true, instrumentFxDefault(t, element, field));
+    }
 }
 
 void PatternEditor::layoutTabs() {
@@ -1146,6 +1189,27 @@ void PatternEditor::resized() {
         t.removeFromLeft(44);   // "LEVEL"
         elementLevel.setBounds(t.reduced(0, 4));
     }
+    r.removeFromTop(2);
+    fxArea = r.removeFromTop(36);
+    {
+        // EFFECTS | REVERB [type][send] | DELAY [type][send] | CHARACTER [type][amount] | TONE | WIDTH,
+        // labels above (as in the settings rows).
+        auto t = fxArea.withTrimmedLeft(64).withTrimmedTop(13);
+        const int slider = std::clamp((t.getWidth() - 3 * 92 - 4 * 14) / 5, 50, 96);
+        const auto place = [&t](juce::Component& c, int w) { c.setBounds(t.removeFromLeft(w).reduced(2, 1)); };
+        place(reverbType, 92);
+        place(reverbSend, slider);
+        t.removeFromLeft(14);
+        place(delayType, 92);
+        place(delaySend, slider);
+        t.removeFromLeft(14);
+        place(characterType, 92);
+        place(characterAmount, slider);
+        t.removeFromLeft(14);
+        place(fxTone, slider);
+        t.removeFromLeft(14);
+        place(fxWidth, slider);
+    }
     r.removeFromTop(4);
     toolbarArea = r.removeFromTop(28);
     {
@@ -1270,6 +1334,27 @@ void PatternEditor::paint(juce::Graphics& g) {
         g.drawText("LEVEL", elementLevel.getBounds().withX(elementLevel.getX() - 44).withWidth(40), juce::Justification::centredLeft, false);
     }
     label(snapButton, "MIDI FILES");
+    {
+        // The effects row's labels, above each control (sliders with their values).
+        g.setColour(colours::brass.withAlpha(0.85f));
+        g.setFont(font(9.5f, true).withExtraKerningFactor(0.12f));
+        g.drawText("EFFECTS", fxArea.withWidth(60).withTrimmedTop(13), juce::Justification::centredLeft, false);
+        const auto above = [&](juce::Component& c, const juce::String& text) {
+            g.drawText(text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + 30), juce::Justification::centredLeft, false);
+        };
+        const auto percent = [](const juce::Slider& k) { return juce::String(juce::roundToInt(k.getValue() * 100.0)) + "%"; };
+        above(reverbType, "REVERB");
+        above(reverbSend, "SEND " + percent(reverbSend));
+        above(delayType, "DELAY");
+        above(delaySend, "SEND " + percent(delaySend));
+        above(characterType, "CHARACTER");
+        above(characterAmount, "AMOUNT " + percent(characterAmount));
+        const int tone = juce::roundToInt((fxTone.getValue() - 0.5) * 200.0);
+        above(fxTone, "TONE " + juce::String(tone == 0 ? "FLAT" : (tone < 0 ? "DARK " : "BRIGHT ") + juce::String(std::abs(tone))));
+        above(fxWidth, "WIDTH " + percent(fxWidth));
+        g.setColour(colours::panelEdge.withAlpha(0.5f));
+        g.drawHorizontalLine(fxArea.getBottom() + 1, float(fxArea.getX()), float(fxArea.getRight()));
+    }
 
     // Status: generated or edited, and what the rows mean.
     g.setFont(font(10.5f));

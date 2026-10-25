@@ -955,6 +955,10 @@ protected:
     std::array<Part*, placeElements> parts {};
     // Each element's output level, set in configure() (the slot's element level is applied on top).
     std::array<float, placeElements> level {};
+    // How much of each element reaches its reverb and delay sends (1: as the instrument's
+    // effect controls say), set in configure() when a Character or setting wants more
+    // space or less.
+    std::array<float, placeElements> sendScale { 1, 1, 1, 1, 1, 1 };
     std::array<std::array<float, dsp::chunk>, placeElements> busL {}, busR {};
     float rate = 48000;
     PartFrame frame;

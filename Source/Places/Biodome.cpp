@@ -265,6 +265,8 @@ void BiodomePlace::configure(const PlaceContext& c) {
     // Tension: the systems strain (vents and shaker up) while the birds go quiet; Life
     // fills the dome with birds; Machinery runs the vents harder.
     const float hush = 1.0f - 0.6f * tension;
+    // At night the dome rings long; failing, its air is dead and close.
+    sendScale.fill(night ? 1.5f : (failing ? 0.5f : 1.0f));
     level = { 0.07f * (thriving ? 1.2f : (night ? 0.8f : 1.0f)), 0.12f * (night ? 0.7f : 1.0f), 0.1f * lerp(0.5f, 1.5f, s.life) * hush * (night ? 0.7f : 1.0f),
               0.2f, 0.18f * (failing ? 1.5f : (night ? 0.7f : 1.0f)) * (0.6f + 1.0f * tension) * (0.7f + 0.8f * s.machinery),
               1.0f * (night ? 0.8f : 1.0f) * (0.6f + 1.0f * tension) };

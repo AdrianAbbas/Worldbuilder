@@ -9,7 +9,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout WorldbuilderProcessor::makeL
         const juce::ParameterID id { s.id, 1 };
         switch (s.kind) {
             case Kind::Float: {
-                const bool percent = s.max == 1.0f || juce::String(s.id) == "width";
+                const bool percent = s.max == 1.0f || juce::String(s.id).endsWith("width");
                 auto attributes = juce::AudioParameterFloatAttributes()
                     .withLabel(percent ? "%" : "")
                     .withStringFromValueFunction([](float v, int) { return juce::String(juce::roundToInt(v * 100.0f)); })
@@ -99,6 +99,15 @@ EngineControls WorldbuilderProcessor::readControls() const noexcept {
         for (int e = 0; e < placeElements; ++e) {
             pc.element[std::size_t(e)] = field(PlElement + e);
             pc.elementOn[std::size_t(e)] = field(PlElementOn + e) > 0.5f;
+            auto& fx = pc.fx[std::size_t(e)];
+            fx.reverb = field(fxField(e, FxReverb));
+            fx.reverbType = juce::roundToInt(field(fxField(e, FxReverbType)));
+            fx.delay = field(fxField(e, FxDelay));
+            fx.delayType = juce::roundToInt(field(fxField(e, FxDelayType)));
+            fx.character = juce::roundToInt(field(fxField(e, FxCharacter)));
+            fx.amount = field(fxField(e, FxAmount));
+            fx.tone = field(fxField(e, FxTone));
+            fx.width = field(fxField(e, FxWidth));
         }
     }
     c.hostBpm = hostBpm;
@@ -199,6 +208,19 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
 }
 
+namespace {
+// The default of parameter p in a project saved without it: an instrument effect takes
+// the default for the Place stored in its slot.
+float legacyDefault(const juce::ValueTree& state, int p, float fallback) {
+    if (p < PPlaceFirst || p >= PPlaceFirst + placeSlotCount * PlaceParamCount) return fallback;
+    const int slot = (p - PPlaceFirst) / PlaceParamCount, field = (p - PPlaceFirst) % PlaceParamCount;
+    if (field < PlFx) return fallback;
+    const auto typeChild = state.getChildWithProperty("id", juce::String(specs[std::size_t(placeParam(slot, PlType))].id));
+    const int type = typeChild.isValid() ? juce::jlimit(0, PlaceTypeCount - 1, juce::roundToInt(float(typeChild.getProperty("value")))) : 0;
+    return instrumentFxDefault(type, (field - PlFx) / FxFieldCount, (field - PlFx) % FxFieldCount);
+}
+} // namespace
+
 void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInBytes) {
     if (data == nullptr || sizeInBytes <= 0 || sizeInBytes > 4 * 1024 * 1024) return;
     const auto xml = getXmlFromBinary(data, sizeInBytes);
@@ -212,6 +234,9 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         const auto child = state.getChildWithProperty("id", juce::String(s.id));
         // Projects from before Play Mode keep playing as they did (Free).
         if (!child.isValid() && juce::String(s.id) == "playmode") value = float(PlayFree);
+        // Projects from before the instrument effects: each instrument starts from its
+        // Place's own effect defaults.
+        if (!child.isValid()) value = legacyDefault(state, int(&s - specs.data()), value);
         if (child.isValid() && child.hasProperty("value")) {
             const float stored = float(child.getProperty("value"));
             if (std::isfinite(stored)) value = juce::jlimit(s.min, s.max, stored);

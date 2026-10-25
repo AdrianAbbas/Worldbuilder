@@ -56,6 +56,7 @@ public:
     // For the tests: the strike log of the thunder layer (audio thread state).
     const ThunderLayer& thunderLayer() const { return thunder; }
     const PlaceSlot& placeSlot(int i) const { return slots[std::size_t(std::clamp(i, 0, placeSlots - 1))]; }
+    const dsp::SharedFx& shared() const { return sharedFx; }
 
     // Patterns, lock-free both ways: the editor publishes each slot's patterns into
     // patternsIn (the audio thread picks up the newest at the next chunk); the slots
@@ -86,6 +87,8 @@ private:
     std::array<dsp::Smoother, LayerCount> layerGain;
     std::array<float, LayerCount> layerPeak {};
     WorldSpace space;
+    // The shared reverbs and delays every instrument sends to.
+    dsp::SharedFx sharedFx;
     std::array<dsp::OnePole, 2> distance;
     dsp::Glue glue;
     dsp::SafetyLimiter limiter;

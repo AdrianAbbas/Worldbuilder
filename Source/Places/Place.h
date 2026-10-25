@@ -12,6 +12,7 @@
 #include "../DSP/Generator.h"
 #include "../DSP/Music.h"
 #include "../DSP/PlaceFx.h"
+#include "../DSP/SendFx.h"
 #include "../Patterns/Pattern.h"
 
 namespace wb {
@@ -248,6 +249,9 @@ struct PlaceContext {
     PlaceSettings s;
     // How each element plays its pattern (pattern == nullptr: the element has none).
     std::array<pat::Playback, placeElements> play {};
+    // The slot's per-instrument effects: each element's bus passes through them (and
+    // feeds the shared reverbs and delays) before the Place mixes it.
+    dsp::InstrumentFx* fx = nullptr;
 };
 
 // A deterministic random value per (salt, position), for the pattern generators.

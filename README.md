@@ -66,13 +66,16 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Next: MIDI control from the host's piano roll (6), Locations and Journeys (7), the visual overhaul (8), presets and release (9). See
+Now: Milestone 6, the sound overhaul and each instrument's own effects. Next: MIDI control
+from the host's piano roll (7), Locations and Journeys (8), the visual overhaul (9), presets and release (10). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md),
-[docs/DIRECTION_UPDATE_2.md](docs/DIRECTION_UPDATE_2.md) and
-[docs/DIRECTION_UPDATE_3.md](docs/DIRECTION_UPDATE_3.md); later files override earlier
-ones.
+[docs/DIRECTION_UPDATE_2.md](docs/DIRECTION_UPDATE_2.md),
+[docs/DIRECTION_UPDATE_3.md](docs/DIRECTION_UPDATE_3.md) and
+[docs/DIRECTION_UPDATE_4.md](docs/DIRECTION_UPDATE_4.md); later files override earlier
+ones. How the instruments are modelled, and the acoustics data behind them:
+[docs/INSTRUMENT_NOTES.md](docs/INSTRUMENT_NOTES.md).
 
 **GarageBand and exports:** in Play Mode Free, GarageBand exports a song only up to
 its last region, so use Transport mode (the default) or put a region over the whole

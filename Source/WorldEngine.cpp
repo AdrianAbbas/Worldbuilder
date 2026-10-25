@@ -23,6 +23,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
         slots[std::size_t(i)].setFeedback(&patternsOut[std::size_t(i)]);
     }
     space.prepare(rate);
+    sharedFx.prepare(r);
     glue.prepare(r);
     limiter.prepare(r);
     for (auto& s : worldSmooth) s.setTime(0.25f, controlRate);
@@ -41,6 +42,7 @@ void WorldEngine::reset(const EngineControls& initial) {
         if (layer != nullptr) layer->reset();
     for (auto& slot : slots) slot.reset();
     space.reset();
+    sharedFx.clear();
     for (auto& f : distance) f.reset();
     glue.reset();
     limiter.reset();
@@ -174,7 +176,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         layerPeak[li] = peak;
     }
 
-    // Places: each slot renders its Place with level, distance and pan applied.
+    // Places: each slot renders its Place with level, distance and pan applied, and
+    // its instruments feed the shared reverbs and delays.
+    sharedFx.begin(n);
     for (std::size_t si = 0; si < slots.size(); ++si) {
         const auto& pc = controls.places[si];
         const bool audible = !pc.mute && (!anySolo || pc.solo);
@@ -182,6 +186,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         const bool sounding = slots[si].render(world, pc, patternsIn[si].read(), audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         slotBeat[si].store(slots[si].beat(), std::memory_order_relaxed);
         if (!sounding) continue;
+        sharedFx.add(slots[si].sends(), slots[si].sendGainL(), slots[si].sendGainR(), n);
         const float send = slots[si].spaceSend() * distanceSend;
         float peak = placePeak[si];
         for (int i = 0; i < n; ++i) {
@@ -199,6 +204,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     space.update(world);
     std::array<float, chunk> wetL {}, wetR {};
     space.process(sendL.data(), sendR.data(), wetL.data(), wetR.data(), n);
+    std::array<float, chunk> fxL {}, fxR {};
+    sharedFx.process(fxL.data(), fxR.data(), n, bpm);
 
     const float masterTarget = dbToGain(std::clamp(controls.masterDb, -60.0f, 6.0f));
     const float widthTarget = std::clamp(controls.width, 0.0f, 2.0f);
@@ -208,8 +215,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);
-        float l = distance[0].lp(dryL[k]) * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f;
-        float r = distance[1].lp(dryR[k]) * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f;
+        float l = distance[0].lp(dryL[k]) * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f + fxL[k];
+        float r = distance[1].lp(dryR[k]) * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f + fxR[k];
 
         const float w = width.next(widthTarget);
         const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * w;

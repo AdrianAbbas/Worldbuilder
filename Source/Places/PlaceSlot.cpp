@@ -21,6 +21,9 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     pan.setTime(0.2f, controlRate);
     fadeStep = 1.0f / (0.3f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
+    fx.prepare(rate);
+    for (auto& bus : sendTilt)
+        for (auto& f : bus) f.setCutoff(900.0f, rate);
     reset();
 }
 
@@ -33,6 +36,9 @@ void PlaceSlot::reset() {
     gain.snap(0);
     for (auto& f : distanceLp) f.reset();
     for (auto& f : dcBlock) f.reset();
+    fx.reset();
+    for (auto& bus : sendTilt)
+        for (auto& f : bus) f.reset();
     fresh = true;
     generatedValid.fill(false);
     playing.fill(nullptr);
@@ -63,6 +69,25 @@ std::unique_ptr<Place> makePlace(int type) {
         case Tavern: return std::make_unique<TavernPlace>();
         default: return nullptr;
     }
+}
+
+void PlaceSlot::tiltSends(float tone, int n) {
+    // Dark to bright, as the Places' own Tone filters go (unity at the middle).
+    const float t = tone - 0.5f;
+    if (std::abs(t) < 1.0e-3f) return;
+    const float low = dbToGain(-8.0f * t), high = dbToGain(28.0f * t);
+    const auto tilt = [&](std::array<float, chunk>& l, std::array<float, chunk>& r, std::array<OnePole, 2>& f) {
+        for (int i = 0; i < n; ++i) {
+            const float a = f[0].lp(l[std::size_t(i)]), b = f[1].lp(r[std::size_t(i)]);
+            l[std::size_t(i)] = a * low + (l[std::size_t(i)] - a) * high;
+            r[std::size_t(i)] = b * low + (r[std::size_t(i)] - b) * high;
+        }
+    };
+    auto& s = fx.sends;
+    for (int b = 0; b < ReverbTypeCount; ++b)
+        if (s.revFed[std::size_t(b)]) tilt(s.revL[std::size_t(b)], s.revR[std::size_t(b)], sendTilt[std::size_t(b)]);
+    for (int b = 0; b < DelayTypeCount; ++b)
+        if (s.dlyFed[std::size_t(b)]) tilt(s.dlyL[std::size_t(b)], s.dlyR[std::size_t(b)], sendTilt[std::size_t(ReverbTypeCount + b)]);
 }
 
 Place* PlaceSlot::engineFor(int type) { return type > NoPlace && type < PlaceTypeCount ? engines[std::size_t(type)].get() : nullptr; }
@@ -156,6 +181,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         fresh = true;
         generatedValid.fill(false);
         playing.fill(nullptr);
+        fx.reset();
     }
     const bool switching = wanted != currentType;
     if (current == nullptr || (!audible && gain.value < 1.0e-5f && !switching)) {
@@ -234,7 +260,10 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
     }
     lastBeat = context.beat;
+    fx.begin(c.fx, n);
+    context.fx = &fx;
     current->render(context, left, right, n);
+    tiltSends(settings.tone, n);
 
     // Distance and pan.
     const float d = distance.next(effectiveDistance(world, c.distance));
@@ -244,9 +273,14 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = current->spaceSend() * lerp(0.4f, 1.6f, d);
     const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f)) * near : 0.0f;
+    // The sends follow the slot's gain and pan; far away, more of each instrument
+    // reaches its reverb and delay.
+    const float sendDistance = 1.0f + 0.5f * d;
     for (int i = 0; i < n; ++i) {
         fade = switching ? std::max(0.0f, fade - fadeStep) : std::min(1.0f, fade + fadeStep);
         const float g = gain.next(target_) * fade * fade;
+        sendGain[0][std::size_t(i)] = g * sendDistance * (1.0f - 0.6f * right_);
+        sendGain[1][std::size_t(i)] = g * sendDistance * (1.0f - 0.6f * left_);
         float l = finiteOr(left[i]), r = finiteOr(right[i]);
         const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * width;
         // Two poles: far away, bright instruments (bells, shakers, flutes) fade first.
