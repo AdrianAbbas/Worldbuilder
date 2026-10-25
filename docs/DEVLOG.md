@@ -1799,7 +1799,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] formant choir (glottal source, five sung formants)
   - [x] keys (tine electric piano; harpsichord via the plucked string)
 - [x] 3. Weight pass across all 20 Places
-- [ ] 4. Per-Place uniqueness and realism pass
+- [x] 4. Per-Place uniqueness and realism pass
   - [x] Tavern
   - [x] Castle
   - [x] Village
@@ -1820,7 +1820,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Spaceship Interior
   - [x] Biodome
   - [x] Alien Hive
-- [ ] 5. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
+- [x] 5. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
 
 ### Working conditions
 
@@ -2201,4 +2201,67 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   Swarm: reviewed; already apart from each other and from the other Places in the
   distinctness report. Its space per Character came in step 1 (dormant: a vast cavity;
   the swarm deadens it). No further change.
+
+### Tests (Linux, GCC)
+
+**2714 checks pass, 0 fail** (the whole suite, in four shards with
+`scripts/run-tests-parallel.sh`, about 14 minutes here; one process takes about 30).
+New in this milestone: `effects` (27), `models` (52), `distinct` (report only), and
+the editor's check that a Place card applies its instruments' effects. CPU: four busy
+Places 11-14.6 % of one core here (budget 15 %), the effects alone 5-7 %.
+
+Distinctness (report only, below 3 sounds alike): the closest pair rose from 1.14 (Sea
+Ship and Beach waves, near duplicates) to 3.63. The closest pairs now, to listen to
+side by side: City Traffic Hum / Sea Ship Waves (3.63), Castle Harp / Sea Ship Rope
+Swells (3.69), Biodome Pads / Beach Guitar (3.99), Beach Breeze Pad / Desert Tanpura
+(4.14), Ruins Wind / Desert Wind (4.29). Mean distance 27.3. (The measure is crude: 24
+spectral bands and three envelope figures; trust ears over it.)
+
+### Milestone 6 handoff
+
+**Done:** all five steps of Direction Update 4.
+1. Per-instrument effects: five shared reverbs, four tempo delays, six character
+   effects with amounts, tone and width on every instrument of every slot (192
+   parameters), defaults per instrument, UI in the Pattern Editor, state and old
+   projects, tests.
+2. The shared instrument library rebuilt from published acoustics data
+   ([INSTRUMENT_NOTES.md](INSTRUMENT_NOTES.md)): plucked and bowed strings with
+   bodies, brass, free reeds, woodwinds, modal bells and bars, membranes and timpani,
+   a glottal choir, a tine piano; model tests.
+3. The weight pass: calmer defaults, longer rings and releases, legato winds, a fuller
+   low end, human velocity.
+4. Every Place reviewed: instruments moved to the right models, near-duplicates split
+   (the waves, the music boxes, the electric pianos, the mallets), effect defaults,
+   and each Character given its own space.
+5. Full suite, this handoff, the listening checklist in
+   [MANUAL_TEST.md](MANUAL_TEST.md) (Milestone 6 check).
+
+**What to listen for first** (the full list is in MANUAL_TEST.md):
+- Does the acoustic-first group (Tavern, Castle, Village, Palace, Temple, Forest,
+  Desert, Sea Ship, Military Camp, Ruins, Cavern) now sound played rather than
+  synthesised? The strings (lute strum, oud, harpsichord, fiddle, sections), the brass
+  and the choirs are the biggest changes.
+- Is the weight right, or now too heavy and washy in places (long rings plus each
+  instrument's reverb plus each Place's own room)? The levers: `weight::` in
+  `Ensemble.h`, the sends in `FxDefaults.h`, `sendScale` per Place.
+- The five effect types in each family, by ear; the Reverse delay especially.
+- The closest pairs above.
+
+**Next:** Milestone 7, MIDI control (Update 2 Section 1B), then Locations and Journeys
+(8), the visual overhaul (9), presets and release (10).
+
+**Known issues / limits:**
+- Nothing has been heard. Levels were matched by measurement against the old voices
+  (the new string was 17 dB louder, the choir 5-8 dB), so expect a level pass by ear.
+- The Desert's tanpura is still the buzzing synth drone (a plucked tanpura needs
+  re-plucked held notes); the Cavern's sub drone and the City's synth bass stay
+  synthetic by design.
+- Two World Control checks (Machinery, Danger) need 0.5 dB instead of 1 dB since
+  step 1 (see there).
+- Village and Palace, and the later Places in fours, were each tested together in one
+  full suite and pushed as separate commits; every pushed state from the Tavern on
+  contains only tested code, but the intermediate single-Place commits were not each
+  run alone.
+- The branch `push-access-check` (one empty commit from the start of this session) is
+  still on GitHub; the session could not delete it. Safe to delete.
 

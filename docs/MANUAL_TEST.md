@@ -408,3 +408,57 @@ to Full or Subtle in the footer to see them.
   candles and the hearth flicker, embers and smoke rise.
 - [ ] Nothing covers a control; they combine with each other and with the others.
 - [ ] Like the 5b and 5c ones they move only small sprites at 15 frames a second.
+
+## Milestone 6 check: the sound overhaul and each instrument's effects
+
+Install the new build as before (CI's package). Nothing in this milestone has been
+heard by a person: these checks are the first listen.
+
+**Effects per instrument** (PATTERNS, the EFFECTS row under each instrument's level):
+- [ ] Each reverb type on one instrument (Room, Hall, Cathedral, Plate, Cave): clearly
+  different spaces; the Cave has slapping early echoes.
+- [ ] Each delay type in time with GarageBand's tempo (Tape a quarter that wobbles and
+  darkens, Ping-Pong eighths left-right, Dotted a dotted eighth, Reverse each beat
+  backwards). Change the tempo: the delays follow.
+- [ ] Each character effect (Saturation, Chorus, Phaser, Filter, Lo-Fi) and its amount;
+  Tone dark to bright; Width mono to extra wide (above 100 % the instrument spreads,
+  in mono nothing changes).
+- [ ] Switch types while playing: no clicks. Double-click a control: back to that
+  instrument's own default.
+- [ ] Add a Place from its card: its instruments start with their own effects (the
+  Temple choir in the Cathedral, the Tavern lute in the Room).
+- [ ] Automate a send in GarageBand; save, reopen the project: everything comes back.
+  Open a project saved before this milestone: it plays, each instrument with its
+  Place's default effects.
+- [ ] Four Places at once with many effects: GarageBand's CPU meter stays comfortable.
+
+**The new instruments** (solo them in PATTERNS; tell me which sound wrong, weak, harsh
+or synthetic where they should be natural):
+- [ ] Plucked strings: the Tavern lute's strum (the stroke crossing the strings), the
+  Village lute, the Desert oud (paired strings, a quill), the Castle harp, the Beach
+  guitar, the Temple zither, the Palace harpsichord (two strings per note, the damper
+  as each note ends).
+- [ ] Bowed strings: the Tavern fiddle, the Military and Palace sections, the Forest
+  violas, the Cavern double basses, the Village hurdy-gurdy (a wheel, nasal, grinding).
+- [ ] Brass: the Castle brass drone and French horns, the Palace trumpets, the Military
+  bugle: louder notes brighter, the lip "scoop" into each note.
+- [ ] Reeds: the Sea Ship concertina and the Tavern squeezebox (beating reed pairs, the
+  squeezebox's bass).
+- [ ] Winds: the Village recorder (a clear chiff), the Forest flute (airy), the Desert
+  ney (breathy, wandering).
+- [ ] Bells and bars: the Castle church bells (long, beating), the Temple bells and
+  gongs (the gong's pitch sags, its shimmer blooms), the Palace glockenspiel, the
+  Village marimba, the Mall vibraphone, the Tavern glasses, the Ruins' worn music box
+  against the Suburbs' clean one, the Forest kalimba.
+- [ ] Skins: the Castle and Palace timpani, the frame drums (Village, Desert, Tavern),
+  the Military snare (wires) and bass drum, the Ruins toms, the Mall's brushed snare.
+- [ ] Voices: the choirs (Castle, Temple, Palace) and the Temple monks' chant.
+- [ ] Keys: the City's tine piano (barking when played hard) against the Suburbs'
+  mellow one and the Mall's FM piano.
+
+**Weight**:
+- [ ] The Places feel heavier, slower and more sustained than in 5d: longer rings and
+  releases, less bounce (Swing 8 % by default), fuller low end. Too heavy anywhere?
+  The weights are one table in `Source/Places/Ensemble.h` (`weight::`).
+- [ ] The Characters sound like different spaces now (e.g. the Desert's open dunes
+  against the dry oasis, the dead Mall's atrium, the forsaken Temple).
