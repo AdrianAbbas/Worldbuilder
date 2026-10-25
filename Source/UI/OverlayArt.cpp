@@ -811,6 +811,540 @@ OverlayArt cavern(const Layout& L) {
     for (auto g : glows) move(a, PlaceOverlays::MovePulse, g, glow, between(r, 3.0f, 5.0f), r.nextFloat(), 0.8f);
     return a;
 }
+
+//==============================================================================
+// Ruins: cracks running along the frames, moss over the corners and the broken
+// stonework along the bottom, a broken colonnade in the open space; dust drifts,
+// pebbles fall from the cracks, pale wisps glow and fade.
+OverlayArt ruins(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1010);
+    juce::Path stone, stoneDark, cracks, moss, mossLight, ivy;
+    std::vector<Point> crumbs, wisps;
+    // A crack: a jagged line wandering along `u` from `start`, with a branch or two.
+    const auto crack = [&](Point start, Point u, float length) {
+        const Point n { -u.y, u.x };
+        juce::Path c;
+        c.startNewSubPath(start);
+        Point p = start;
+        for (float s = 0.0f; s < length; s += between(r, 4.0f, 8.0f)) {
+            p = start + u * s + n * between(r, -2.2f, 2.2f);
+            c.lineTo(p);
+            if (r.nextFloat() < 0.12f) {
+                juce::Path b;
+                b.startNewSubPath(p);
+                b.lineTo(p + u * between(r, 3.0f, 7.0f) + n * between(r, -6.0f, 6.0f));
+                juce::PathStrokeType(0.8f).createStrokedPath(b, b);
+                cracks.addPath(b);
+            }
+        }
+        juce::PathStrokeType(1.1f).createStrokedPath(c, c);
+        cracks.addPath(c);
+        crumbs.push_back(p);
+    };
+    // Moss: a cushion of small round tufts.
+    const auto cushion = [&](Point at, float w, float h) {
+        for (int k = 0; k < int(w * 0.6f); ++k) {
+            const float x = at.x + between(r, -w * 0.5f, w * 0.5f), y = at.y + between(r, -h * 0.5f, h * 0.5f), d = between(r, 2.0f, 4.5f);
+            (r.nextFloat() < 0.35f ? mossLight : moss).addEllipse(x - d * 0.5f, y - d * 0.5f, d, d);
+        }
+    };
+    for (auto p : L.panels) {
+        // Cracks along the top and down one side.
+        crack({ p.getX() + between(r, 20.0f, 80.0f), p.getY() + 0.5f }, { 1.0f, 0.0f }, between(r, 60.0f, 140.0f));
+        if (r.nextBool()) crack({ p.getRight() - between(r, 30.0f, 90.0f), p.getBottom() - 0.5f }, { -1.0f, 0.0f }, between(r, 40.0f, 100.0f));
+        crack({ r.nextBool() ? p.getX() + 0.5f : p.getRight() - 0.5f, p.getY() + between(r, 10.0f, 30.0f) }, { 0.0f, 1.0f }, between(r, 30.0f, std::max(31.0f, p.getHeight() * 0.5f)));
+        // Moss over the corners and in tufts along the bottom edge; ivy hanging from the top.
+        cushion({ p.getX() + 6.0f, p.getY() + 1.0f }, 20.0f, 6.0f);
+        cushion({ p.getRight() - 6.0f, p.getBottom() - 1.0f }, 22.0f, 6.0f);
+        for (float x = p.getX() + between(r, 40.0f, 90.0f); x < p.getRight() - 30.0f; x += between(r, 80.0f, 160.0f)) cushion({ x, p.getBottom() + 0.5f }, between(r, 10.0f, 22.0f), 4.0f);
+        juce::Path leavesB;
+        vine(ivy, moss, leavesB, { p.getX() + between(r, 30.0f, 60.0f), p.getY() }, { p.getX() + between(r, 30.0f, 60.0f), p.getY() + between(r, 18.0f, 30.0f) }, r, 0.7f);
+        mossLight.addPath(leavesB);
+    }
+    // Broken stonework along the bottom: blocks of uneven height, some fallen.
+    const float bottom = L.bounds.getBottom();
+    for (float x = -6.0f, w = 0.0f; x < L.bounds.getRight(); x += w + between(r, 1.0f, 3.0f)) {
+        w = between(r, 18.0f, 34.0f);
+        const float h = between(r, 4.0f, 9.0f);
+        stone.addRectangle(x, bottom - h, w, h);
+        stoneDark.addRectangle(x, bottom - h, w, 1.2f);
+        if (r.nextFloat() < 0.3f) cushion({ x + w * 0.5f, bottom - h }, w * 0.6f, 3.0f);
+    }
+    // In the gaps: a crumbling pillar, broken off at different heights.
+    for (auto gap : L.gutters) {
+        const float w = std::min(9.0f, gap.getWidth() - 3.0f), cx = gap.getCentreX(), top = gap.getY() + gap.getHeight() * between(r, 0.25f, 0.55f);
+        juce::Path shaft;
+        shaft.startNewSubPath(cx - w * 0.5f, gap.getBottom() - 6.0f);
+        shaft.lineTo(cx - w * 0.5f, top + 3.0f);
+        shaft.lineTo(cx - w * 0.1f, top);
+        shaft.lineTo(cx + w * 0.2f, top + 4.0f);
+        shaft.lineTo(cx + w * 0.5f, top + 1.0f);
+        shaft.lineTo(cx + w * 0.5f, gap.getBottom() - 6.0f);
+        shaft.closeSubPath();
+        stone.addPath(shaft);
+        stoneDark.addRectangle(cx - w * 0.5f - 1.5f, gap.getBottom() - 8.0f, w + 3.0f, 3.0f);
+        cushion({ cx, top + 2.0f }, w, 3.0f);
+        crumbs.push_back({ cx, top + 2.0f });
+        wisps.push_back({ cx, top - 14.0f });
+    }
+    // The open space: a broken colonnade under an arch that has fallen in.
+    for (auto o : L.open) {
+        const float base = o.getBottom(), h = o.getHeight() - 4.0f;
+        const int columns = std::max(3, int(o.getWidth() / 60.0f));
+        for (int c = 0; c < columns; ++c) {
+            const float x = o.getX() + 20.0f + (o.getWidth() - 40.0f) * float(c) / float(columns - 1);
+            const float height = h * (c % 3 == 1 ? between(r, 0.3f, 0.5f) : between(r, 0.6f, 0.95f));
+            stone.addRectangle(x - 3.0f, base - height, 6.0f, height);
+            stoneDark.addRectangle(x - 4.5f, base - 3.0f, 9.0f, 3.0f);
+            stoneDark.addRectangle(x - 0.4f, base - height + 2.0f, 0.8f, height - 5.0f);
+            cushion({ x, base - height }, 8.0f, 3.0f);
+            if (c % 2 == 0) wisps.push_back({ x + between(r, 10.0f, 25.0f), base - h * 0.6f });
+        }
+        // A fallen lintel at the foot of the colonnade.
+        juce::Path lintel;
+        lintel.addRectangle(0.0f, 0.0f, 34.0f, 6.0f);
+        stone.addPath(lintel, juce::AffineTransform::rotation(0.12f).translated(o.getX() + o.getWidth() * 0.45f, base - 7.0f));
+    }
+    a.shapes.push_back({ stone, juce::Colour(0xff7c7a70) });
+    a.shapes.push_back({ stoneDark, juce::Colour(0xff4e4c46) });
+    a.shapes.push_back({ cracks, juce::Colour(0xff2a2826) });
+    a.shapes.push_back({ ivy, juce::Colour(0xff3c5a2c), 1.2f });
+    a.shapes.push_back({ moss, juce::Colour(0xff4a7a34) });
+    a.shapes.push_back({ mossLight, juce::Colour(0xff86b450) });
+
+    const int pebble = int(a.sprites.size());
+    {
+        juce::Path p;
+        p.addEllipse(-1.5f, -1.2f, 3.0f, 2.4f);
+        a.sprites.push_back(pathSprite(p, juce::Colour(0xff9a968a)));
+    }
+    const int dust = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.2f, juce::Colour(0x70d8d0b8), juce::Colour(0xb0f0e8d0), 0.7f));
+    const int wisp = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(9.0f, juce::Colour(0x40c8e0ff), juce::Colour(0x60e8f4ff), 2.0f));
+    for (int k = 0; k < 10 && !crumbs.empty(); ++k)
+        move(a, PlaceOverlays::MoveFall, crumbs[std::size_t(r.nextInt(int(crumbs.size())))], pebble, between(r, 3.5f, 7.0f), r.nextFloat(), 1.0f, between(r, 8.0f, 22.0f), 1.0f);
+    for (auto w : wisps) move(a, PlaceOverlays::MovePulse, w, wisp, between(r, 4.0f, 7.0f), r.nextFloat(), 0.9f);
+    juce::RectangleList<int> air;
+    for (auto o : L.open) air.add(o.toNearestInt());
+    for (auto l : L.ledges) air.add(l.toNearestInt());
+    for (auto gap : L.gutters) air.add(gap.toNearestInt());
+    for (auto at : spotsIn(air, 12, 1011)) move(a, PlaceOverlays::MoveDrift, at, dust, between(r, 7.0f, 11.0f), r.nextFloat(), 0.9f, between(r, -24.0f, 24.0f), 5.0f);
+    return a;
+}
+
+//==============================================================================
+// Spaceship Interior: riveted hull plating with seams on the frames, conduits down
+// the gaps, a deck grating along the bottom, consoles with screens in the open space;
+// status lights blink, data pulses run down the conduits, warning lamps glow.
+OverlayArt spaceship(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1111);
+    juce::Path plate, plateLight, seams, rivets, conduit, conduitLight, grating, console, screen, stripe;
+    std::vector<Point> leds, lamps;
+    std::vector<std::pair<Point, float>> runs;   // conduit tops and lengths
+    for (auto p : L.panels) {
+        plate.addRectangle(p.getX() + 6.0f, p.getY() - 2.5f, p.getWidth() - 12.0f, 5.0f);
+        plateLight.addRectangle(p.getX() + 6.0f, p.getY() - 2.5f, p.getWidth() - 12.0f, 1.0f);
+        for (float x = p.getX() + 30.0f; x < p.getRight() - 20.0f; x += between(r, 50.0f, 90.0f)) seams.addRectangle(x, p.getY() - 2.5f, 1.0f, 5.0f);
+        for (float x = p.getX() + 10.0f; x < p.getRight() - 8.0f; x += 12.0f) rivets.addEllipse(x - 0.8f, p.getY() - 0.8f, 1.6f, 1.6f);
+        // Bracket plates on the corners, a status light on each.
+        for (auto corner : { p.getTopLeft(), p.getTopRight(), p.getBottomLeft(), p.getBottomRight() }) {
+            const float dx = corner.x < p.getCentreX() ? 1.0f : -1.0f, dy = corner.y < p.getCentreY() ? 1.0f : -1.0f;
+            juce::Path b;
+            b.startNewSubPath(corner.x - dx * 2.0f, corner.y + dy * 16.0f);
+            b.lineTo(corner.x - dx * 2.0f, corner.y - dy * 2.0f);
+            b.lineTo(corner.x + dx * 16.0f, corner.y - dy * 2.0f);
+            juce::PathStrokeType(3.0f).createStrokedPath(b, b);
+            plate.addPath(b);
+            if (dy > 0) leds.push_back({ corner.x + dx * 9.0f, corner.y - 1.0f });
+        }
+        stripe.addRectangle(p.getX() + p.getWidth() * 0.4f, p.getBottom() - 1.5f, p.getWidth() * 0.2f, 3.0f);
+    }
+    // Conduits down the gaps, with clamps; data runs down them.
+    for (auto gap : L.gutters) {
+        const float cx = gap.getCentreX();
+        for (float off : { -2.5f, 2.5f }) {
+            conduit.addRectangle(cx + off - 1.5f, gap.getY() + 8.0f, 3.0f, gap.getHeight() - 16.0f);
+            conduitLight.addRectangle(cx + off - 1.0f, gap.getY() + 8.0f, 0.8f, gap.getHeight() - 16.0f);
+        }
+        for (float y = gap.getY() + 24.0f; y < gap.getBottom() - 16.0f; y += between(r, 50.0f, 80.0f)) plate.addRectangle(cx - 5.0f, y, 10.0f, 3.0f);
+        runs.push_back({ { cx - 2.5f, gap.getY() + 10.0f }, gap.getHeight() - 24.0f });
+        lamps.push_back({ cx, gap.getY() + 4.0f });
+    }
+    // Hazard stripes on the ledges.
+    for (auto ledge : L.ledges) {
+        const auto band = ledge.withSizeKeepingCentre(ledge.getWidth() - 20.0f, std::min(4.0f, ledge.getHeight() - 2.0f));
+        for (float x = band.getX(); x < band.getRight() - 6.0f; x += 10.0f) {
+            juce::Path s;
+            s.addQuadrilateral(x, band.getBottom(), x + 5.0f, band.getBottom(), x + 5.0f + band.getHeight(), band.getY(), x + band.getHeight(), band.getY());
+            stripe.addPath(s);
+        }
+    }
+    // A deck grating along the bottom.
+    const float bottom = L.bounds.getBottom();
+    grating.addRectangle(0.0f, bottom - 6.0f, L.bounds.getWidth(), 6.0f);
+    for (float x = 2.0f; x < L.bounds.getRight(); x += 6.0f) seams.addRectangle(x, bottom - 5.0f, 1.2f, 4.0f);
+    // Consoles in the open space: a desk with a screen and a row of lights.
+    for (auto o : L.open) {
+        const int count = std::max(2, int(o.getWidth() / 120.0f));
+        for (int c = 0; c < count; ++c) {
+            const float cx = o.getX() + o.getWidth() * (float(c) + 0.5f) / float(count), base = o.getBottom();
+            const float w = std::min(56.0f, o.getWidth() / float(count) - 12.0f), h = std::min(o.getHeight() - 6.0f, 26.0f);
+            console.addRectangle(cx - w * 0.5f, base - h * 0.45f, w, h * 0.45f);
+            console.addRectangle(cx - w * 0.35f, base - h, w * 0.7f, h * 0.5f);
+            screen.addRectangle(cx - w * 0.3f, base - h + 2.0f, w * 0.6f, h * 0.5f - 4.0f);
+            for (int k = 0; k < 4; ++k) leds.push_back({ cx - w * 0.3f + w * 0.2f * float(k), base - h * 0.25f });
+        }
+    }
+    a.shapes.push_back({ plate, juce::Colour(0xff5a6470) });
+    a.shapes.push_back({ plateLight, juce::Colour(0xff9aa8b8) });
+    a.shapes.push_back({ seams, juce::Colour(0xff2c323a) });
+    a.shapes.push_back({ rivets, juce::Colour(0xffb0bccc) });
+    a.shapes.push_back({ conduit, juce::Colour(0xff3a4450) });
+    a.shapes.push_back({ conduitLight, juce::Colour(0xff7a90a8) });
+    a.shapes.push_back({ grating, juce::Colour(0xff3c444e) });
+    a.shapes.push_back({ console, juce::Colour(0xff46505c) });
+    a.shapes.push_back({ screen, juce::Colour(0xff0e3a44) });
+    a.shapes.push_back({ stripe, juce::Colour(0xffd0a030) });
+
+    const int green = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, juce::Colour(0x8060ffa0), juce::Colour(0xffc0ffd8), 1.0f));
+    const int amber = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, juce::Colour(0x80ffb040), juce::Colour(0xffffe0b0), 1.0f));
+    const int red = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(7.0f, juce::Colour(0x70ff4040), juce::Colour(0xffffb0a0), 2.0f));
+    const int data = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.0f, juce::Colour(0x9060e0ff), juce::Colour(0xffd0f8ff), 1.0f));
+    for (std::size_t i = 0; i < leds.size(); ++i)
+        move(a, i % 3 == 0 ? PlaceOverlays::MoveBlink : PlaceOverlays::MovePulse, leds[i], i % 4 == 1 ? amber : green, between(r, 0.8f, 2.6f), r.nextFloat());
+    for (auto l : lamps) move(a, PlaceOverlays::MovePulse, l, red, 2.0f, r.nextFloat(), 0.9f);
+    for (const auto& [top, length] : runs)
+        for (int k = 0; k < 2; ++k) move(a, PlaceOverlays::MoveFall, top.translated(k == 0 ? 0.0f : 5.0f, 0.0f), data, between(r, 2.0f, 3.5f), r.nextFloat(), 1.0f, length, 0.0f);
+    return a;
+}
+
+//==============================================================================
+// Biodome: a geodesic lattice in the open space, ferns and broad leaves along the
+// bottom and up the corners, irrigation pipes on the frames; pollen rises, water
+// drops fall from the pipes, grow lights glow.
+OverlayArt biodome(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1212);
+    juce::Path lattice, frond, frondLight, stems, pipe, pipeLight, soil;
+    std::vector<Point> drops, lights;
+    const auto fern = [&](Point base, float up, float length) {
+        // A frond: a curved stem with leaflets on both sides.
+        const int steps = 9;
+        juce::Path stem;
+        stem.startNewSubPath(base);
+        float angle = up;
+        Point p = base;
+        for (int i = 1; i <= steps; ++i) {
+            angle += 0.06f * (up < -1.5708f ? -1.0f : 1.0f);
+            p += Point { std::cos(angle), std::sin(angle) } * (length / float(steps));
+            stem.lineTo(p);
+            const float size = length * 0.28f * (1.0f - float(i) / float(steps + 2));
+            leaf(r.nextBool() ? frond : frondLight, p, size, angle - 0.9f);
+            leaf(r.nextBool() ? frond : frondLight, p, size, angle + 0.9f);
+        }
+        stems.addPath(stem);
+    };
+    // The dome's lattice: triangles under an arc in each open space.
+    for (auto o : L.open) {
+        const float cx = o.getCentreX(), base = o.getBottom(), rx = std::min(o.getWidth() * 0.45f, 160.0f), ry = o.getHeight() - 3.0f;
+        juce::Path arc;
+        arc.addCentredArc(cx, base, rx, ry, 0.0f, -1.5708f, 1.5708f, true);
+        lattice.addPath(arc);
+        const int ribs = 9;
+        for (int k = 1; k < ribs; ++k) {
+            const float t = -1.5708f + 3.1416f * float(k) / float(ribs);
+            lattice.startNewSubPath(cx, base);
+            lattice.lineTo(cx + rx * std::sin(t), base - ry * std::cos(t));
+        }
+        for (float f : { 0.45f, 0.75f }) {
+            juce::Path ring;
+            ring.addCentredArc(cx, base, rx * f, ry * f, 0.0f, -1.5708f, 1.5708f, true);
+            lattice.addPath(ring);
+        }
+        lights.push_back({ cx, base - ry * 0.85f });
+        fern({ o.getX() + 14.0f, base }, -1.2f, std::min(o.getHeight() * 0.8f, 28.0f));
+        fern({ o.getRight() - 14.0f, base }, -1.9f, std::min(o.getHeight() * 0.8f, 28.0f));
+    }
+    juce::PathStrokeType(1.0f).createStrokedPath(lattice, lattice);
+    // Irrigation pipes along the top frames, dripping; ferns from the bottom corners.
+    for (auto p : L.panels) {
+        pipe.addRoundedRectangle(p.getX() + 10.0f, p.getY() - 2.0f, p.getWidth() - 20.0f, 4.0f, 2.0f);
+        pipeLight.addRectangle(p.getX() + 10.0f, p.getY() - 1.5f, p.getWidth() - 20.0f, 0.9f);
+        for (float x = p.getX() + between(r, 30.0f, 70.0f); x < p.getRight() - 20.0f; x += between(r, 70.0f, 140.0f)) {
+            pipe.addRectangle(x - 2.0f, p.getY() - 3.0f, 4.0f, 6.0f);
+            drops.push_back({ x, p.getY() + 3.0f });
+        }
+        fern({ p.getX() + 2.0f, p.getBottom() + 1.0f }, -1.25f, between(r, 16.0f, 24.0f));
+        fern({ p.getRight() - 2.0f, p.getBottom() + 1.0f }, -1.9f, between(r, 16.0f, 24.0f));
+    }
+    // Planters along the bottom, full of leaves.
+    const float bottom = L.bounds.getBottom();
+    soil.addRectangle(0.0f, bottom - 5.0f, L.bounds.getWidth(), 5.0f);
+    for (float x = between(r, 4.0f, 12.0f); x < L.bounds.getRight(); x += between(r, 8.0f, 16.0f))
+        leaf(r.nextBool() ? frond : frondLight, { x, bottom - 4.0f }, between(r, 7.0f, 13.0f), -1.5708f + between(r, -0.8f, 0.8f));
+    // Vines up the gaps.
+    for (auto gap : L.gutters) {
+        vine(stems, frond, frondLight, { gap.getCentreX(), gap.getBottom() - 4.0f }, { gap.getCentreX(), gap.getY() + gap.getHeight() * between(r, 0.3f, 0.6f) }, r, 0.8f);
+        lights.push_back({ gap.getCentreX(), gap.getY() + 5.0f });
+    }
+    a.shapes.push_back({ lattice, juce::Colour(0x90b8e8f0) });
+    a.shapes.push_back({ soil, juce::Colour(0xff3a2c20) });
+    a.shapes.push_back({ pipe, juce::Colour(0xffa8b8c0) });
+    a.shapes.push_back({ pipeLight, juce::Colour(0xffe8f4f8) });
+    a.shapes.push_back({ stems, juce::Colour(0xff2e6a30), 1.2f });
+    a.shapes.push_back({ frond, juce::Colour(0xff38a048) });
+    a.shapes.push_back({ frondLight, juce::Colour(0xff8ade6a) });
+
+    const int drop = int(a.sprites.size());
+    {
+        juce::Path d;
+        d.startNewSubPath(0.0f, -2.5f);
+        d.quadraticTo(1.6f, 0.5f, 0.0f, 1.6f);
+        d.quadraticTo(-1.6f, 0.5f, 0.0f, -2.5f);
+        d.closeSubPath();
+        a.sprites.push_back(pathSprite(d, juce::Colour(0xffc8f0ff), 1.2f, juce::Colour(0xff70d0ff)));
+    }
+    const int pollen = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.4f, juce::Colour(0x90f8f080), juce::Colour(0xfffffff0), 0.8f));
+    const int grow = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(9.0f, juce::Colour(0x50ff80f0), juce::Colour(0x80ffe0ff), 2.0f));
+    for (auto d : drops) move(a, PlaceOverlays::MoveFall, d, drop, between(r, 2.5f, 4.5f), r.nextFloat(), 1.0f, between(r, 14.0f, 30.0f), 0.0f);
+    for (auto l : lights) move(a, PlaceOverlays::MovePulse, l, grow, between(r, 3.0f, 5.0f), r.nextFloat(), 0.9f);
+    juce::RectangleList<int> air;
+    for (auto o : L.open) air.add(o.toNearestInt());
+    for (auto l : L.ledges) air.add(l.toNearestInt());
+    for (auto gap : L.gutters) air.add(gap.toNearestInt());
+    for (auto at : spotsIn(air, 12, 1213)) move(a, PlaceOverlays::MoveRise, at, pollen, between(r, 6.0f, 10.0f), r.nextFloat(), 0.9f, between(r, 14.0f, 30.0f), 5.0f);
+    return a;
+}
+
+//==============================================================================
+// Sea Ship: twisted rope along the frames with knots in the corners, planking and
+// waves along the bottom, portholes, a ship's wheel and rigging in the open space;
+// light glints on the water, gulls drift past, the portholes shimmer.
+OverlayArt seaship(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1313);
+    juce::Path rope, ropeDark, planks, plankLines, water, foam, brass, glass, rigging, wood;
+    std::vector<Point> glints, shimmer, knots;
+    // Rope: a thick line with diagonal twists.
+    const auto ropeAlong = [&](Point from, Point to) {
+        const auto d = to - from;
+        const float length = d.getDistanceFromOrigin();
+        if (length < 6.0f) return;
+        const Point u { d.x / length, d.y / length }, n { -u.y, u.x };
+        juce::Path line;
+        line.startNewSubPath(from);
+        line.lineTo(to);
+        juce::PathStrokeType(3.6f).createStrokedPath(line, line);
+        rope.addPath(line);
+        for (float s = 2.0f; s < length - 2.0f; s += 3.2f) {
+            const Point c = from + u * s;
+            ropeDark.startNewSubPath(c - n * 1.6f - u * 1.0f);
+            ropeDark.lineTo(c + n * 1.6f + u * 1.0f);
+        }
+    };
+    for (auto p : L.panels) {
+        ropeAlong({ p.getX() + 10.0f, p.getY() }, { p.getRight() - 10.0f, p.getY() });
+        ropeAlong({ p.getX(), p.getY() + 10.0f }, { p.getX(), p.getY() + std::min(60.0f, p.getHeight() * 0.4f) });
+        ropeAlong({ p.getRight(), p.getY() + 10.0f }, { p.getRight(), p.getY() + std::min(60.0f, p.getHeight() * 0.4f) });
+        for (auto corner : { p.getTopLeft(), p.getTopRight() }) knots.push_back(corner);
+    }
+    juce::PathStrokeType(0.9f).createStrokedPath(ropeDark, ropeDark);
+    for (auto k : knots) {
+        rope.addEllipse(juce::Rectangle<float>(9.0f, 9.0f).withCentre(k));
+        ropeDark.addEllipse(juce::Rectangle<float>(3.0f, 3.0f).withCentre(k));
+    }
+    // Masts down the gaps, with rigging.
+    for (auto gap : L.gutters) {
+        const float cx = gap.getCentreX(), w = std::min(6.0f, gap.getWidth() - 4.0f);
+        wood.addRectangle(cx - w * 0.5f, gap.getY() + 6.0f, w, gap.getHeight() - 12.0f);
+        for (float y = gap.getY() + 30.0f; y < gap.getBottom() - 20.0f; y += between(r, 60.0f, 100.0f)) {
+            brass.addRectangle(cx - w * 0.5f - 1.0f, y, w + 2.0f, 2.5f);
+            shimmer.push_back({ cx, y + 1.0f });
+        }
+    }
+    // The deck and the sea along the bottom: planks over a band of waves.
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    planks.addRectangle(0.0f, bottom - 11.0f, width, 5.0f);
+    for (float x = between(r, 10.0f, 40.0f); x < width; x += between(r, 40.0f, 70.0f)) plankLines.addRectangle(x, bottom - 11.0f, 1.0f, 5.0f);
+    water.startNewSubPath(0.0f, bottom);
+    for (float x = 0.0f; x <= width; x += 4.0f) water.lineTo(x, bottom - 4.5f + 1.5f * std::sin(x * 0.09f));
+    water.lineTo(width, bottom);
+    water.closeSubPath();
+    for (float x = between(r, 10.0f, 30.0f); x < width; x += between(r, 30.0f, 60.0f)) {
+        foam.addRectangle(x, bottom - 5.0f + 1.5f * std::sin(x * 0.09f), between(r, 4.0f, 10.0f), 1.0f);
+        if (glints.size() < 14) glints.push_back({ x + 3.0f, bottom - 3.0f });
+    }
+    // The open space: portholes, a ship's wheel, rigging lines.
+    for (auto o : L.open) {
+        const float cy = o.getCentreY(), radius = std::min(o.getHeight() * 0.32f, 11.0f);
+        const int holes = std::max(2, int(o.getWidth() / 110.0f));
+        for (int h = 0; h < holes; ++h) {
+            const float cx = o.getX() + o.getWidth() * (float(h) + 0.5f) / float(holes);
+            if (h == holes / 2) {
+                // The wheel: a rim, spokes and handles.
+                juce::Path wheel;
+                wheel.addEllipse(juce::Rectangle<float>(radius * 2.0f, radius * 2.0f).withCentre({ cx, cy }));
+                for (int s = 0; s < 8; ++s) {
+                    const float angle = 0.3927f * float(2 * s);
+                    wheel.startNewSubPath(cx, cy);
+                    wheel.lineTo(cx + std::cos(angle) * radius * 1.35f, cy + std::sin(angle) * radius * 1.35f);
+                }
+                juce::PathStrokeType(2.0f).createStrokedPath(wheel, wheel);
+                wood.addPath(wheel);
+                brass.addEllipse(juce::Rectangle<float>(4.0f, 4.0f).withCentre({ cx, cy }));
+                continue;
+            }
+            brass.addEllipse(juce::Rectangle<float>(radius * 2.0f + 4.0f, radius * 2.0f + 4.0f).withCentre({ cx, cy }));
+            glass.addEllipse(juce::Rectangle<float>(radius * 2.0f, radius * 2.0f).withCentre({ cx, cy }));
+            shimmer.push_back({ cx - radius * 0.3f, cy - radius * 0.3f });
+        }
+        rigging.startNewSubPath(o.getX() + 4.0f, o.getBottom());
+        rigging.lineTo(o.getX() + o.getWidth() * 0.3f, o.getY() + 2.0f);
+        rigging.startNewSubPath(o.getRight() - 4.0f, o.getBottom());
+        rigging.lineTo(o.getRight() - o.getWidth() * 0.3f, o.getY() + 2.0f);
+    }
+    juce::PathStrokeType(1.0f).createStrokedPath(rigging, rigging);
+    a.shapes.push_back({ water, juce::Colour(0xff1e4a6a) });
+    a.shapes.push_back({ foam, juce::Colour(0xffc8e4f0) });
+    a.shapes.push_back({ planks, juce::Colour(0xff7a5434) });
+    a.shapes.push_back({ plankLines, juce::Colour(0xff4a3020) });
+    a.shapes.push_back({ wood, juce::Colour(0xff8a5e38) });
+    a.shapes.push_back({ rigging, juce::Colour(0xffb8a078) });
+    a.shapes.push_back({ brass, juce::Colour(0xffc89a48) });
+    a.shapes.push_back({ glass, juce::Colour(0xff2a6a8a) });
+    a.shapes.push_back({ rope, juce::Colour(0xffc8a870) });
+    a.shapes.push_back({ ropeDark, juce::Colour(0xff8a6a40) });
+
+    const int glint = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(4.0f, juce::Colour(0xffc8f0ff)));
+    const int sheen = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(5.0f, juce::Colour(0x60a8e8ff), juce::Colour(0xa0e8f8ff), 1.2f));
+    const int gull = int(a.sprites.size());
+    {
+        juce::Path g;
+        g.startNewSubPath(-5.0f, 0.0f);
+        g.quadraticTo(-2.5f, -2.5f, 0.0f, 0.0f);
+        g.quadraticTo(2.5f, -2.5f, 5.0f, 0.0f);
+        juce::PathStrokeType(1.3f).createStrokedPath(g, g);
+        a.sprites.push_back(pathSprite(g, juce::Colour(0xfff0f0e8)));
+    }
+    for (auto g : glints) move(a, PlaceOverlays::MovePulse, g, glint, between(r, 1.5f, 3.0f), r.nextFloat());
+    for (auto s : shimmer) move(a, PlaceOverlays::MovePulse, s, sheen, between(r, 2.5f, 4.0f), r.nextFloat(), 0.9f);
+    juce::RectangleList<int> air;
+    for (auto o : L.open) air.add(o.toNearestInt());
+    for (auto l : L.ledges) air.add(l.toNearestInt());
+    for (auto at : spotsIn(air, 6, 1314)) move(a, PlaceOverlays::MoveDrift, at, gull, between(r, 8.0f, 12.0f), r.nextFloat(), 0.9f, between(r, -40.0f, 40.0f), 4.0f);
+    return a;
+}
+
+//==============================================================================
+// Suburbs: a picket fence and lawn along the bottom, hedges in the corners, rooftops
+// with lit windows and a power line in the open space, a rain gutter on the frames;
+// sprinkler drops fall, butterflies drift, windows glow.
+OverlayArt suburbs(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1414);
+    juce::Path fence, fenceShade, grassDark, grassLight, hedge, hedgeLight, roofs, walls, windows, wire, gutter;
+    std::vector<Point> windowSpots, sprays;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // The fence: pickets with pointed tops on two rails.
+    for (float x = 2.0f; x < width; x += 9.0f) {
+        juce::Path picket;
+        picket.startNewSubPath(x, bottom);
+        picket.lineTo(x, bottom - 12.0f);
+        picket.lineTo(x + 2.5f, bottom - 15.0f);
+        picket.lineTo(x + 5.0f, bottom - 12.0f);
+        picket.lineTo(x + 5.0f, bottom);
+        picket.closeSubPath();
+        fence.addPath(picket);
+        fenceShade.addRectangle(x + 4.0f, bottom - 12.0f, 1.0f, 12.0f);
+    }
+    fence.addRectangle(0.0f, bottom - 10.0f, width, 2.0f);
+    fence.addRectangle(0.0f, bottom - 5.0f, width, 2.0f);
+    // Lawn in front of it.
+    for (float x = 0.0f; x < width; x += between(r, 2.0f, 3.5f)) blade(r.nextBool() ? grassDark : grassLight, x, bottom + 1.0f, between(r, 3.0f, 6.5f), between(r, -2.0f, 2.0f), 2.0f);
+    for (float x = between(r, 60.0f, 140.0f); x < width; x += between(r, 160.0f, 260.0f)) sprays.push_back({ x, bottom - 6.0f });
+    // Hedges on the bottom corners of the panels, a gutter along their tops.
+    const auto shrub = [&](Point at, float w) {
+        for (int k = 0; k < int(w * 0.5f); ++k) {
+            const float d = between(r, 4.0f, 7.0f);
+            (r.nextFloat() < 0.3f ? hedgeLight : hedge).addEllipse(at.x + between(r, -w * 0.5f, w * 0.5f) - d * 0.5f, at.y - between(r, 0.0f, 6.0f) - d * 0.5f, d, d);
+        }
+    };
+    for (auto p : L.panels) {
+        shrub({ p.getX() + 8.0f, p.getBottom() + 1.0f }, 18.0f);
+        shrub({ p.getRight() - 8.0f, p.getBottom() + 1.0f }, 18.0f);
+        gutter.addRoundedRectangle(p.getX() + 12.0f, p.getY() - 2.0f, p.getWidth() - 24.0f, 3.5f, 1.5f);
+    }
+    // Lamp posts in the gaps.
+    for (auto gap : L.gutters) {
+        const float cx = gap.getCentreX();
+        walls.addRectangle(cx - 1.2f, gap.getY() + 14.0f, 2.4f, gap.getHeight() - 20.0f);
+        roofs.addRectangle(cx - 4.0f, gap.getY() + 10.0f, 8.0f, 4.0f);
+        windowSpots.push_back({ cx, gap.getY() + 16.0f });
+    }
+    // Houses in the open space: walls, pitched roofs, windows, a power line over them.
+    for (auto o : L.open) {
+        const float base = o.getBottom();
+        float x = o.getX() + 10.0f;
+        while (x < o.getRight() - 40.0f) {
+            const float w = between(r, 34.0f, 50.0f), h = std::min(o.getHeight() * 0.5f, between(r, 11.0f, 16.0f));
+            walls.addRectangle(x, base - h, w, h);
+            roofs.addTriangle(x - 3.0f, base - h, x + w + 3.0f, base - h, x + w * 0.5f, base - h - std::min(o.getHeight() * 0.35f, 12.0f));
+            for (float wx = x + 5.0f; wx < x + w - 7.0f; wx += 11.0f) {
+                windows.addRectangle(wx, base - h * 0.7f, 5.0f, 4.0f);
+                if (r.nextFloat() < 0.5f) windowSpots.push_back({ wx + 2.5f, base - h * 0.7f + 2.0f });
+            }
+            x += w + between(r, 14.0f, 30.0f);
+        }
+        wire.startNewSubPath(o.getX(), o.getY() + 4.0f);
+        wire.quadraticTo(o.getCentreX(), o.getY() + 12.0f, o.getRight(), o.getY() + 4.0f);
+    }
+    juce::PathStrokeType(0.8f).createStrokedPath(wire, wire);
+    a.shapes.push_back({ walls, juce::Colour(0xffd8c8b0) });
+    a.shapes.push_back({ roofs, juce::Colour(0xff8a4a3a) });
+    a.shapes.push_back({ windows, juce::Colour(0xff3a4a5a) });
+    a.shapes.push_back({ wire, juce::Colour(0xff2a2a2a) });
+    a.shapes.push_back({ gutter, juce::Colour(0xffe8e4dc) });
+    a.shapes.push_back({ hedge, juce::Colour(0xff3c7a3a) });
+    a.shapes.push_back({ hedgeLight, juce::Colour(0xff6aaa50) });
+    a.shapes.push_back({ fence, juce::Colour(0xfff4f0e8) });
+    a.shapes.push_back({ fenceShade, juce::Colour(0xffb8b4ac) });
+    a.shapes.push_back({ grassDark, juce::Colour(0xff4a8a38) });
+    a.shapes.push_back({ grassLight, juce::Colour(0xff86c058) });
+
+    const int glow = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(6.0f, juce::Colour(0x60ffd080), juce::Colour(0xc0fff0c0), 1.6f));
+    const int drop = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.0f, juce::Colour(0x8090d8ff), juce::Colour(0xffe0f8ff), 0.8f));
+    const int butterfly = int(a.sprites.size());
+    for (float open : { 1.0f, 0.4f }) {
+        juce::Path b;
+        b.addEllipse(-3.2f * open - 0.3f, -2.4f, 3.2f * open, 3.2f);
+        b.addEllipse(0.3f, -2.4f, 3.2f * open, 3.2f);
+        b.addEllipse(-2.4f * open - 0.3f, 0.2f, 2.4f * open, 2.2f);
+        b.addEllipse(0.3f, 0.2f, 2.4f * open, 2.2f);
+        a.sprites.push_back(pathSprite(b, juce::Colour(0xfff8c040)));
+    }
+    for (auto w : windowSpots) move(a, PlaceOverlays::MovePulse, w, glow, between(r, 3.5f, 6.0f), r.nextFloat(), 0.8f);
+    for (auto s : sprays)
+        for (int k = 0; k < 4; ++k) move(a, PlaceOverlays::MoveRise, s.translated(between(r, -6.0f, 6.0f), 0.0f), drop, between(r, 1.5f, 2.5f), float(k) / 4.0f, 1.0f, between(r, 10.0f, 18.0f), 5.0f);
+    juce::RectangleList<int> air;
+    for (auto o : L.open) air.add(o.toNearestInt());
+    for (auto l : L.ledges) air.add(l.toNearestInt());
+    for (auto gap : L.gutters) air.add(gap.toNearestInt());
+    for (auto at : spotsIn(air, 6, 1415)) move(a, PlaceOverlays::MoveFall, at, butterfly, between(r, 6.0f, 9.0f), r.nextFloat(), 1.0f, between(r, 6.0f, 14.0f), 8.0f, 2);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -910,7 +1444,10 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
     return image;
 }
 
-bool hasArt(int type) { return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern; }
+bool hasArt(int type) {
+    return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
+           || type == Biodome || type == SeaShip || type == Suburbs;
+}
 
 OverlayArt build(int type, const Layout& layout) {
     switch (type) {
@@ -920,6 +1457,11 @@ OverlayArt build(int type, const Layout& layout) {
         case Hive: return hive(layout);
         case Temple: return temple(layout);
         case Cavern: return cavern(layout);
+        case Ruins: return ruins(layout);
+        case Spaceship: return spaceship(layout);
+        case Biodome: return biodome(layout);
+        case SeaShip: return seaship(layout);
+        case Suburbs: return suburbs(layout);
         default: return {};
     }
 }

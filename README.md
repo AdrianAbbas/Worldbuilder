@@ -7,12 +7,13 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 5b (nine Places of six instruments, 20-Place selector, world
+**Status: Milestone 5c (fourteen Places of six instruments, 20-Place selector, world
 theme and Place overlays).**
 These work now:
-- **Places**, the centrepiece. Up to four play at once. Nine are built: Castle,
-  Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple and Cavern /
-  Mine (the selector already lists all 20; the other 11 arrive in Milestones 5c-5d).
+- **Places**, the centrepiece. Up to four play at once. Fourteen are built: Castle,
+  Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
+  Ruins, Spaceship Interior, Biodome, Sea Ship and Suburbs (the selector already lists
+  all 20; the other 6 arrive in Milestone 5d).
   - Each is an ensemble of **six instruments**, for example the Castle's brass drone,
     tuned bells, horn calls, timpani, harp and wordless choir, or the Factory's tuned
     anvil, pistons, steam, bowed metal, gear clicks and furnace bass.
@@ -62,7 +63,7 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Next: the other 11 Places (Milestones 5c-5d), MIDI control from the host's piano roll
+Next: the other 6 Places (Milestone 5d), MIDI control from the host's piano roll
 (6), Locations and Journeys (7), the visual overhaul (8), presets and release (9). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),

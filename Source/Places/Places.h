@@ -322,6 +322,168 @@ private:
     float caveSend = 0, slapSend = 0, murkiness = 0;
 };
 
+// Ruins: reversed piano-like fragments, a lo-fi music box, broken bells, cold wind
+// harmonics, a ghostly pad and sparse low toms, through a lo-fi decay and reverse
+// echoes in a roofless hall. Overgrown: warm and worn, the music box still turning, a
+// soft heartbeat. Haunted: a ghostly choir, long reverse swells, a slow uneven march.
+// Desolate: wind whistling through the stones, tolling cracked bells, a lone tom.
+class RuinsPlace final : public EnsemblePlace {
+public:
+    RuinsPlace();
+    float freeTempo() const override { return 70.0f; }
+    float spaceSend() const override { return 0.4f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { PianoShards, MusicBox, BrokenBells, Wind, GhostPad, LowToms };
+    enum Character { Overgrown, Haunted, Desolate };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    FmPart shards;
+    ModalPart box, bells;
+    WindPart wind;
+    ChoirPart ghost;
+    DrumPart toms;
+    dsp::LoFi lofi;
+    dsp::ReverseEcho reverse;
+    dsp::SmallSpace hall;
+    std::array<dsp::OnePole, 4> tilt;
+    float reverseSend = 0, hallSend = 0;
+};
+
+// Spaceship Interior: an engine drone, a life-support pulse, computer tone arpeggios,
+// airlock swells, hull resonances and a soft alarm motif, in a confined metallic room
+// with a filtered delay. Cruising: a calm hum, gentle arpeggios, the pumps breathing.
+// Red Alert: a throbbing engine, racing computers, a two-tone alarm every bar. Derelict:
+// a sputtering engine, groaning hull, a stuttering computer and a dying alarm.
+class SpaceshipPlace final : public EnsemblePlace {
+public:
+    SpaceshipPlace();
+    float freeTempo() const override { return 100.0f; }
+    float spaceSend() const override { return 0.25f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Engine, LifeSupport, Computer, Airlock, Hull, Alarm };
+    enum Character { Cruising, RedAlert, Derelict };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    SynthPart engine;
+    DrumPart life;
+    FmPart computer, alarm;
+    NoisePart airlock;
+    BowedPart hull;
+    dsp::SmallSpace room;
+    dsp::CombResonance ring;
+    dsp::FilteredDelay delay;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, ringSend = 0, delaySend = 0, presence = 0, dry = 1;
+};
+
+// Biodome: lush pads, bright mallet arpeggios, synthetic birdsong, water-like plucks,
+// a ventilation hum and a gentle shaker, in a bright airy reverb with a gentle chorus.
+// Thriving: running mallets, birds everywhere, a busy shaker. Night Cycle: dim pads,
+// slow mallets, a few birds and crickets. Failing: the power sags, the pads waver, the
+// vents sputter and the birds fall quiet.
+class BiodomePlace final : public EnsemblePlace {
+public:
+    BiodomePlace();
+    float freeTempo() const override { return 88.0f; }
+    float spaceSend() const override { return 0.35f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Pads, Mallets, Birdsong, WaterPlucks, Vents, Shaker };
+    enum Character { Thriving, NightCycle, Failing };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    SynthPart pads;
+    ModalPart mallets;
+    WindPart birds, vents;
+    DripPart water;
+    DrumPart shaker;
+    dsp::SmallSpace dome;
+    dsp::Chorus chorus;
+    std::array<dsp::OnePole, 4> tilt;
+    float domeSend = 0;
+};
+
+// Sea Ship: creaking wood, concertina chords, rope-pull swells, a ship's bell, a wave
+// drone and gull calls, rolling with the sea in a wide, wet reverb. Calm Seas: a
+// sailors' oom-pah, the bell telling the time, gulls overhead. Storm: the ship thrown
+// about, ropes straining, the bell clanging, a heaving sea. Ghost Ship: a slow lament
+// in the fog, a tolling bell, the timbers groaning.
+class SeaShipPlace final : public EnsemblePlace {
+public:
+    SeaShipPlace();
+    float freeTempo() const override { return 84.0f; }
+    float spaceSend() const override { return 0.35f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Creaks, Concertina, RopeSwells, ShipBell, Waves, Gulls };
+    enum Character { CalmSeas, Storm, GhostShip };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    DrumPart creaks;
+    SynthPart concertina;
+    NoisePart ropes;
+    ModalPart bell;
+    WindPart waves, gulls;
+    dsp::Roll roll;
+    dsp::SmallSpace sea;
+    std::array<dsp::OnePole, 4> tilt;
+    float seaSend = 0;
+};
+
+// Suburbs: warm electric-piano chords, a soft pop pulse, wind chimes, a sprinkler-like
+// hi-hat, a music-box motif and a mellow bass, through warm tape in a short room.
+// Sunny Afternoon: an easy off-beat comp, the sprinkler ticking round. Evening: long
+// soft sevenths, chimes on the porch. Uncanny: the same chord held too long, a slowed
+// music box, everything wavering like stretched tape.
+class SuburbsPlace final : public EnsemblePlace {
+public:
+    SuburbsPlace();
+    float freeTempo() const override { return 96.0f; }
+    float spaceSend() const override { return 0.25f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { EPiano, PopPulse, WindChimes, Sprinkler, MusicBox, Bass };
+    enum Character { SunnyAfternoon, Evening, Uncanny };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    FmPart piano;
+    SynthPart pulse, bass;
+    ModalPart chimes, box;
+    DrumPart sprinkler;
+    dsp::Warmth tape;
+    dsp::SmallSpace room;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, presence = 0;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

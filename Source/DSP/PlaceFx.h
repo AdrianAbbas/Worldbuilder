@@ -340,4 +340,169 @@ struct Diffuser {
     }
 };
 
+// Lo-fi decay: a worn recording. The signal is held at a lower sample rate (gently,
+// with a high cut after, so little aliasing), rounded to fewer levels, and its top end
+// fades in and out slowly as if the tape were wearing through. Ruins.
+struct LoFi {
+    std::array<OnePole, 4> tone;   // two poles each side
+    Stream wear;
+    float rate = 48000, hold = 1, count = 0, heldL = 0, heldR = 0, levels = 4096, mix = 0, toneHz = 6000;
+    double clock = 0;
+    void prepare(float sampleRate, uint32_t seed) {
+        rate = sampleRate;
+        wear.setKey(seed, 91);
+        clear();
+    }
+    void clear() {
+        for (auto& f : tone) f.reset();
+        count = 0;
+        heldL = heldR = 0;
+        clock = 0;
+    }
+    // Once per chunk: the held rate (Hz), bits, the top end (Hz) and the amount (0..1).
+    void set(float holdHz, float bits, float topHz, float amount) {
+        hold = std::max(1.0f, rate / std::max(holdHz, 1000.0f));
+        levels = std::exp2(std::clamp(bits, 4.0f, 16.0f) - 1.0f);
+        mix = clamp01(amount);
+        clock += double(chunk) / double(rate);
+        // The worn top end comes and goes.
+        const float worn = 1.0f - 0.45f * mix * clamp01(0.5f + 0.9f * wear.smooth(clock, 0.15));
+        for (auto& f : tone) f.setCutoff(topHz * worn, rate);
+    }
+    void process(float& l, float& r) {
+        if (mix <= 0.0f) return;
+        count += 1.0f;
+        if (count >= hold) {
+            count -= hold;
+            heldL = std::round(l * levels) / levels;
+            heldR = std::round(r * levels) / levels;
+        }
+        const float wl = tone[2].lp(tone[0].lp(heldL)), wr = tone[3].lp(tone[1].lp(heldR));
+        l = lerp(l, wl, mix);
+        r = lerp(r, wr, mix);
+    }
+};
+
+// Reverse echoes: each grain of the recent past played backwards (two overlapping
+// grains, so the swells flow on), softly fed back, crossing left and right. A sound
+// echoes as a swell that rises into it. Ruins.
+struct ReverseEcho {
+    std::array<DelayLine, 2> line;
+    std::array<OnePole, 2> tone;
+    float rate = 48000, grain = 12000, phase = 0, feedback = 0.3f, maxGrain = 1;
+    void prepare(float sampleRate, float maxSeconds) {
+        rate = sampleRate;
+        maxGrain = maxSeconds * rate;
+        for (auto& l : line) l.prepare(std::size_t(2.0f * maxGrain) + 64);
+        clear();
+    }
+    void clear() {
+        for (auto& l : line) l.clear();
+        for (auto& f : tone) f.reset();
+        phase = 0;
+    }
+    // Once per chunk: the grain length (seconds), feedback and tone.
+    void set(float seconds, float feedbackAmount, float toneHz) {
+        grain = std::clamp(seconds * rate, 256.0f, maxGrain);
+        feedback = std::clamp(feedbackAmount, 0.0f, 0.7f);
+        for (auto& f : tone) f.setCutoff(toneHz, rate);
+    }
+    void process(float inL, float inR, float& outL, float& outR) {
+        phase += 1.0f / grain;
+        if (phase >= 1.0f) phase -= 1.0f;
+        float yl = 0, yr = 0;
+        for (int k = 0; k < 2; ++k) {
+            float p = phase + 0.5f * float(k);
+            if (p >= 1.0f) p -= 1.0f;
+            // The read point falls back twice as fast as time moves on: backwards.
+            const float d = 8.0f + 2.0f * p * grain, s = std::sin(pi * p), w = s * s;
+            yl += line[0].read(d) * w;
+            yr += line[1].read(d * 1.01f) * w;
+        }
+        line[0].push(inL + tone[0].lp(yr) * feedback);
+        line[1].push(inR + tone[1].lp(yl) * feedback);
+        outL = yl;
+        outR = yr;
+    }
+};
+
+// A filtered delay: repeats through a band that sweeps slowly up and down, so each
+// one comes back thinner and in another colour, crossing left and right. Spaceship.
+struct FilteredDelay {
+    std::array<DelayLine, 2> line;
+    std::array<Svf, 2> band;
+    Smoother time;
+    float rate = 48000, feedback = 0.4f, targetSamples = 1000, maxSamples = 1, q = 1.2f, lowHz = 500, highHz = 3000, sweepHz = 0.07f, sweep = 0;
+    void prepare(float sampleRate, float maxSeconds) {
+        rate = sampleRate;
+        maxSamples = maxSeconds * rate;
+        for (auto& l : line) l.prepare(std::size_t(maxSamples) + 64);
+        time.setTime(0.3f, rate);
+        clear();
+    }
+    void clear() {
+        for (auto& l : line) l.clear();
+        for (auto& f : band) f.reset();
+        time.snap(0.3f * rate);
+        targetSamples = 0.3f * rate;
+        sweep = 0;
+    }
+    // Once per chunk: seconds, feedback, the band's range (Hz) and how fast it sweeps.
+    void set(float seconds, float feedbackAmount, float fromHz, float toHz, float hz, float resonance) {
+        targetSamples = std::clamp(seconds * rate, 8.0f, maxSamples - 8.0f);
+        feedback = std::clamp(feedbackAmount, 0.0f, 0.85f);
+        sweep += hz * float(chunk) / rate;
+        if (sweep > 1.0f) sweep -= 1.0f;
+        const float x = 0.5f - 0.5f * std::cos(twoPi * sweep);
+        band[0].set(lerpExp(fromHz, toHz, x), resonance, rate);
+        band[1].set(lerpExp(fromHz, toHz, 1.0f - x), resonance, rate);
+    }
+    void process(float inL, float inR, float& outL, float& outR) {
+        const float t = time.next(targetSamples);
+        const float yl = line[0].read(t), yr = line[1].read(t * 0.93f);
+        line[0].push(inL + softClip(band[0].bandpass(yr) * feedback));
+        line[1].push(inR + softClip(band[1].bandpass(yl) * feedback));
+        outL = yl;
+        outR = yr;
+    }
+};
+
+// Rolling modulation: a ship's slow roll. The image sways from side to side, the
+// level heaves, and a short modulated delay bends the pitch a few cents with the
+// swell. Sea Ship.
+struct Roll {
+    std::array<DelayLine, 2> line;
+    float rate = 48000, phase = 0, hz = 0.12f, depth = 0.5f;
+    float pan = 0, heave = 1;
+    void prepare(float sampleRate) {
+        rate = sampleRate;
+        for (auto& l : line) l.prepare(std::size_t(0.03f * rate));
+        clear();
+    }
+    void clear() {
+        for (auto& l : line) l.clear();
+        phase = 0;
+    }
+    // Once per chunk: the roll's speed (Hz) and depth (0..1).
+    void set(float rollHz, float amount) {
+        hz = rollHz;
+        depth = clamp01(amount);
+    }
+    void process(float& l, float& r) {
+        phase += hz / rate;
+        if (phase > 1.0f) phase -= 1.0f;
+        const float s = std::sin(twoPi * phase), c = std::cos(twoPi * phase);
+        line[0].push(l);
+        line[1].push(r);
+        const float d = (0.008f + 0.004f * depth * s) * rate;
+        const float wl = line[0].read(d), wr = line[1].read(d);
+        // Sway: one side swells as the other ebbs; heave: the whole lifts and falls.
+        const float sway = 0.35f * depth * s, lift = 1.0f + 0.18f * depth * c;
+        pan = sway;
+        heave = lift;
+        l = wl * (1.0f - sway) * lift;
+        r = wr * (1.0f + sway) * lift;
+    }
+};
+
 } // namespace wb::dsp

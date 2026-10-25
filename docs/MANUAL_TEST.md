@@ -280,3 +280,63 @@ old default); switch OVERLAYS to Full or Subtle in the footer to see them.
   GarageBand's CPU meter with one of them on Full against the Castle or Spaceport on
   Full: they should cost clearly less. (Making the first three as light is part of the
   visual polish milestone.)
+
+## Milestone 5c check: five new Places
+
+Install the new build the same way. The header should read **MILESTONE 5C PREVIEW**.
+Overlays still start Off; switch OVERLAYS to Full or Subtle in the footer to see them.
+
+**The new Places** (add each one alone first):
+- [ ] **Ruins**: Piano Shards, Music Box, Broken Bells, Wind, Ghost Pad, Low Toms.
+  Overgrown (worn and warm, the music box still turning, a soft heartbeat), Haunted
+  (a ghostly choir, long reverse swells, a slow uneven march), Desolate (wind
+  whistling through the stones, tolling cracked bells, a lone tom). The piano notes
+  swell in and stop, as if played backwards; the old instruments sound like a worn
+  recording (lo-fi decay) and echo backwards.
+- [ ] **Spaceship Interior**: Engine, Life Support, Computer, Airlock, Hull, Alarm.
+  Cruising (a calm hum, gentle arpeggios, the pumps breathing, a soft notification),
+  Red Alert (a throbbing engine, racing computers, a two-tone alarm every bar),
+  Derelict (a sputtering engine, a groaning hull, a stuttering computer, a dying
+  alarm). A small metal room that rings on the chord, and a delay whose repeats sweep
+  through a band.
+- [ ] **Biodome** (USE LYDIAN): Pads, Mallets, Birdsong, Water Plucks, Vents, Shaker.
+  Thriving (running mallets, birds everywhere), Night Cycle (dim and slow, crickets),
+  Failing (the power sags, the pads waver, the vents sputter). A bright airy space and
+  a gentle chorus.
+- [ ] **Sea Ship** (USE DORIAN): Creaks, Concertina, Rope Swells, Ship Bell, Waves,
+  Gulls. Calm Seas (a sailors' oom-pah, the bell telling the time in pairs, gulls),
+  Storm (thrown about, ropes straining, the bell clanging), Ghost Ship (a slow lament
+  in the fog, a tolling bell, groaning timbers). Everything but the gulls sways with
+  the ship's roll (a slow side-to-side sway and a slight pitch bend) in a wide, wet
+  space.
+- [ ] **Suburbs** (USE MAJOR): E-Piano, Pop Pulse, Wind Chimes, Sprinkler, Music Box,
+  Bass. Sunny Afternoon (an easy off-beat comp, the sprinkler ticking round), Evening
+  (long soft sevenths, chimes on the porch), Uncanny (the same chord held too long, a
+  slowed music box, everything wavering like stretched tape). Warm tape in a short
+  room.
+- [ ] Listen to each instrument alone (SOLO in PATTERNS) in each Character. The new
+  voices to judge: the reversed piano, the music boxes, the cracked bells, the wind,
+  the airlock and rope swells, the hull, the concertina, the creaks, the waves, the
+  gulls, the sprinkler. Tell me which sound weak, harsh, too loud or not like their
+  name.
+- [ ] Root, Mood and the host tempo: every instrument follows them.
+- [ ] Four of the new Places at once (for example Ruins, Spaceship, Sea Ship,
+  Suburbs): does GarageBand's CPU meter stay comfortable?
+
+**Their overlays** (OVERLAYS: Full):
+- [ ] Ruins: cracks along the frames, moss and ivy, broken stonework along the bottom,
+  crumbling pillars in the gaps, a broken colonnade in the header; dust drifts,
+  pebbles fall, pale wisps glow.
+- [ ] Spaceship: riveted plating and corner brackets, conduits down the gaps, hazard
+  stripes, a deck grating, consoles in the header; status lights blink, data pulses
+  run down the conduits, red lamps glow.
+- [ ] Biodome: a geodesic dome in the header, ferns and leaves, irrigation pipes on
+  the frames; water drips, pollen rises, grow lights glow.
+- [ ] Sea Ship: rope along the frames with knots, masts in the gaps, planks and waves
+  along the bottom, portholes and a ship's wheel in the header; light glints on the
+  water, portholes shimmer, gulls drift past.
+- [ ] Suburbs: a picket fence and lawn, hedges, lamp posts in the gaps, houses with a
+  power line in the header; windows glow, a sprinkler sprays, butterflies flutter.
+- [ ] Nothing covers a control; they combine with each other and with the others.
+- [ ] Like the 5b ones they move only small sprites at 15 frames a second: compare
+  GarageBand's CPU meter with one of them on Full against a 5b overlay.

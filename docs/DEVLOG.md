@@ -1437,3 +1437,174 @@ decay and reverse echoes (Ruins), a confined metallic room and filtered delay
   including each note's major third; key fits are 5-17 dB, as for the first three.
 - At Subtle, the new overlays show half their sprites at 10 fps (by design).
 - The overlays are still designed for the fixed 1160 x 720 layout.
+
+## Milestone 5c: Places 10-14 (2026-10-25)
+
+5b is tested in GarageBand: no complaints, the UI looks good and does not lag. This
+session: Ruins, Spaceship Interior, Biodome, Sea Ship and Suburbs, each with six
+instruments, three Characters, an effect character and an efficient overlay, built the
+same way as 5b.
+
+### Working conditions
+
+Linux cloud container, no Mac. Linux build (VST3, Standalone, tests) with GCC,
+**1776 checks pass, 0 fail** after the per-Place CPU checks became report-only (see Tests). Sound checked by measurement (`--probe-places`, the tests, band levels
+of single instruments rendered with `--render`), **not by ear**. Overlay snapshots
+looked at. Clang was not run this time.
+
+### What was built
+
+**Shared effects** (`PlaceFx.h`)
+- `LoFi`: a worn recording. Sample-and-hold at a lower rate, rounded to fewer levels,
+  a two-pole high cut whose cutoff slowly wanders down and back (the tape wearing).
+- `ReverseEcho`: two overlapping Hann-windowed grains read backwards (the read point
+  falls back twice as fast as time moves on), fed back softly, crossing sides.
+- `FilteredDelay`: repeats through a resonant band-pass that sweeps slowly between two
+  frequencies (the two sides in opposite directions), crossing sides.
+- `Roll`: a ship's roll. A slow sway of the image from side to side, a heave of the
+  level, and a short modulated delay that bends the pitch a few cents with the swell.
+
+**The new Places** (one class each, deriving from `EnsemblePlace`; free tempo in brackets)
+- **Ruins** (70): Piano Shards (an FM piano whose notes swell in and stop, as if
+  played backwards), Music Box (hard tines, the upper partial a quarter-tone off),
+  Broken Bells (a cracked bell: short partials a quarter-tone off, a hum an octave
+  down), Wind (tuned breath through narrow bands on the key's harmonics, in gusts),
+  Ghost Pad (a hollow, far-detuned "oo" choir), Low Toms. Overgrown: a music box still
+  turning, a soft heartbeat, warm. Haunted: the ghost choir, long reverse swells, a
+  slow uneven march. Desolate: wind, tolling cracked bells, a lone floor tom. Effect:
+  the piano, music box and bells through the lo-fi decay and the reverse echoes, in a
+  roofless hall. Tension brings the procession closer and the ghosts up; Machinery
+  wears the recording further; a futuristic Era plays it cleaner.
+- **Spaceship Interior** (100): Engine (detuned saws, a sputter when derelict), Life
+  Support (a pump on the root and the hiss of air), Computer (FM blip arpeggios on the
+  chord), Airlock (a cycling noise swell and a seal that falls to a thud), Hull (bowed
+  plates, modes a quarter-tone off), Alarm (a soft pure tone beeping its notes'
+  lengths). Cruising, Red Alert (a two-tone alarm every bar, everything racing),
+  Derelict. Effect: a confined metallic room (a small bright space with two damped
+  combs tuned to the chord, as in the Factory) and the filtered delay on the computer
+  and alarm.
+- **Biodome** (88, suggests Lydian): Pads, Mallets (a bright bar, third partial a
+  quarter-tone off), Birdsong (pure whistles that swoop and trill), Water Plucks (the
+  drip voice), Vents (a hum with air in it), Shaker (a shaker and ticks; crickets at
+  night). Thriving, Night Cycle, Failing (the power sags: pads waver and dim, the vents
+  sputter). Effect: a bright airy space and a chorus on the pads and mallets. Tension
+  strains the systems and darkens the light.
+- **Sea Ship** (84, suggests Dorian): Creaks (a tuned squeak bending into its note,
+  and knocks), Concertina (two reeds, an oom-pah on calm seas, a lament on the ghost
+  ship), Rope Swells (noise sweeps), Ship Bell (pairs telling the time; clanging in the
+  storm; a slow toll), Waves (low tuned breath heaving with the swell), Gulls. Effect:
+  everything but the gulls through the roll, in a wide, wet space. Tension groans the
+  timbers, strains the ropes, raises the sea, rings the bell and shakes the bellows.
+- **Suburbs** (96, suggests Major): E-Piano, Pop Pulse, Wind Chimes, Sprinkler (a
+  hi-hat ticking round, a quicker tick on the way back), Music Box, Bass. Sunny
+  Afternoon, Evening, Uncanny (one chord held too long, a slowed music box, every
+  pitched part wavering like stretched tape). Effect: warm tape (the Village's
+  `Warmth`) in a short room.
+
+**Overlays** (`OverlayArt.cpp`, still shapes plus sprite movers at 15 fps, as in 5b)
+- Ruins: cracks along the frames, moss and ivy, broken stonework, crumbling pillars in
+  the gaps, a broken colonnade in the header; dust drifts, pebbles fall, wisps glow.
+- Spaceship: riveted plating and corner brackets, conduits, hazard stripes, a deck
+  grating, consoles; status lights blink, data pulses run down the conduits, red lamps.
+- Biodome: a geodesic dome in the header, ferns and leaves, irrigation pipes; drips,
+  rising pollen, grow lights.
+- Sea Ship: twisted rope with knots, masts, planks and waves, portholes and a ship's
+  wheel; glints on the water, shimmering portholes, gulls drifting past.
+- Suburbs: a picket fence and lawn, hedges, lamp posts, houses under a power line;
+  glowing windows, a sprinkler, butterflies.
+
+**Other**
+- The header reads MILESTONE 5C PREVIEW; the "unbuilt Place" checks now use the Mall.
+
+### Decisions
+
+- **Reversed piano without reversed buffers**: the piano shards are an FM voice with a
+  long attack and an abrupt decay, so they swell in and stop; the reverse echo does
+  the literal reversing on the effect side. No per-voice buffers.
+- **Tone also drives a presence shelf** in the Spaceship and Suburbs (above about
+  2 kHz, from -4 dB at Tone 0 to +5 dB at Tone 1, with Era): their bass-heavy mixes
+  barely moved the tests' high band with the master Tone filter alone (the same
+  problem 5b met; this is the same kind of fix).
+- **A larger world moves the Spaceship further off** (less of it dry): its room is
+  small and bright, so a bigger Scale did not make it quieter on its own.
+- **Noise-only hits are set much hotter than tonal ones** (Sprinkler, Shaker): a short
+  high noise burst loses about 20 dB more than expected on its way through the Place's
+  tone filters and the slot's distance, so they were levelled by measurement.
+- No suggested Mood for Ruins or the Spaceship: they suit whatever the user picks.
+
+### Problems and fixes
+
+- First probe: the Sprinkler (-92 dBFS alone), Biodome Shaker (-71), Ruins Wind (-83)
+  and Sea Ship Waves (-71) were near silent; the Spaceship's Cruising alarm never
+  played at default Activity. Levelled by measurement; the Cruising alarm's first
+  notification is now always in the pattern.
+- Spaceship: Tone (+1.9 dB, needs 3), Era (+0.8, needs 1), Scale (-1.3 dB, needs 1.5)
+  and Population (1.17x notes, needs 1.2): the presence shelf, a size-driven dry level
+  and more Activity in the life support and computer.
+- Suburbs: Tone (+2.5 dB) and Machinery (0.5 dB, the sprinkler was inaudible).
+- Biodome: Danger 0.97 dB (needs 1): Tension now also darkens the dome.
+- Ruins: the held Wind picked up after a locate at -57 dBFS (needs -50): a shorter
+  attack and steadier gusts. Population 1.18x: more Activity in the shards, music box
+  and toms.
+- Sea Ship: Machinery 0.9 dB and Danger 0.5, then 0.2 dB: the gulls hushing with
+  Tension cancelled the rising sea. The gulls keep their level; the bell and the
+  concertina's bellows react instead (Danger 1.4 dB). That cost the Storm's key fit
+  (4.9 dB, needs 5): a less noisy storm sea (7.5 dB).
+
+### Tests (Linux)
+
+- Every Place test picks up the five new Places: Characters, key (D minor, G major),
+  Activity, Tension, Tone, elements, Seed, tempo synced and free; World Controls; every
+  instrument alone (audible and finite in every Character, every note in G major and A
+  Phrygian, on the host's grid at 84 and 132 BPM); the held instrument after a locate.
+- State round trip with a third set of four Places (Ruins, Spaceship, Sea Ship,
+  Suburbs): restored, and plays sample-identically.
+- Overlays: each new one alone and Ruins + Biodome + Sea Ship + Suburbs (snapshot);
+  clearly visible, only on the drawable area, 15 fps, at most 40 rectangles a frame.
+  CPU share (metric): Ruins 2.5 %, Spaceship 5.8 %, Biodome 4.0 %, Sea Ship 2.3 %,
+  Suburbs 3.2 %; Ruins + Spaceship + Sea Ship + Suburbs 20.1 % (Factory + Hive + Temple
+  + Cavern 18.5 % in the same run).
+- The "unbuilt Place" checks use the Mall.
+- **CPU with four busy copies of each Place is now report-only.** In the full run it
+  read 15.7 (Castle), 21.6 (Spaceport), 16.4 (City), 19.6 (Alien Hive), 17.0 (Ruins)
+  and 19.5 % (Suburbs) against a 15 % budget, while the same unchanged Castle,
+  Spaceport and Hive measured 10.8-10.9 % in 5b: this container swings too much for the
+  check. The others: Village 13.1, Factory 12.7, Forest 11.9, Temple 14.9, Cavern 14.7,
+  Spaceship 15.0, Biodome 14.0, Sea Ship 12.0 %. The mixed four-Place check (busy
+  Places of six instruments) stays a check and passed at 14.0 %; High quality with
+  everything at maximum 17.9 % (metric). Memory per instance: 31.1 MB at 48 kHz with
+  14 Places.
+- **1776 checks pass, 0 fail** with GCC (23 minutes here; the six per-Place CPU checks
+  above failed before they became metrics, nothing else failed). Clang not run.
+
+### Milestone 5c handoff
+
+**Done:** Ruins, Spaceship Interior, Biodome, Sea Ship and Suburbs with six
+instruments, three Characters, their effects and their overlays; four shared effects
+(`LoFi`, `ReverseEcho`, `FilteredDelay`, `Roll`); the per-Place CPU check is a metric.
+
+**Next (needs the developer):**
+1. CI on the macOS runner (the tests now take about 23 minutes per architecture here).
+2. The Milestone 5c check in [MANUAL_TEST.md](MANUAL_TEST.md): each new Place and
+   instrument alone, by ear; four new Places at once in GarageBand's CPU meter.
+3. Still open: listening to the 5a and 5b instruments alone.
+
+**Then 5d:** Mall, Military Camp, Beach, Desert, Palace, Tavern, the same way (a class
+deriving from `EnsemblePlace`, `makePlace`, `placeImplemented`, an overlay in
+`OverlayArt.cpp`). Voices and effects to reuse: `FmPart` e-piano and vibraphone
+(Mall), `Slapback` and `DrumPart` snares (Military), `Chorus`, `DripPart` and the gulls
+(Beach), `PluckPart`, `WindPart` and `TapeEcho` (Desert), `ChoirPart`, timpani and
+`SmallSpace` (Palace), `Warmth` (Tavern). Still needed: a radio filter (Military) and a
+vaporwave detune option (Dead Mall). The "unbuilt Place" checks will need a new target
+(or removal) once all 20 are built.
+
+**Known issues / limits:**
+- Nothing new has been heard by a person; expect a level and tone pass, especially
+  the noise-based instruments (Sprinkler, Shaker, Creaks, Waves, Wind), levelled by
+  measurement only.
+- Per-Place CPU is reported, not checked, and four busy Spaceports or Hives may exceed
+  15 % of a core on a slow machine; the Quality setting is the lever.
+- Memory: 31.1 MB per instance at 48 kHz with 14 Places (one engine of each per slot),
+  so about 45 MB with 20.
+- Castle, Village and Spaceport overlays are still the heavy ones (Milestone 8).
+- The overlays are still designed for the fixed 1160 x 720 layout.
