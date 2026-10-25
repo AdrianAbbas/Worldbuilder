@@ -177,7 +177,10 @@ void BiodomePlace::configure(const PlaceContext& c) {
     // Mallets: a bright marimba-like bar, its third partial a quarter-tone off any note.
     {
         auto& p = mallets.patch;
-        p.set({ 1.0f, 4.0f, 9.88f }, { 1.0f, 0.4f, 0.15f }, { 1.0f, 0.25f * (0.4f + tone), 0.1f * tone });
+        // Synthetic glass mallets: a hollow series no real bar has (1, 3, 6, 9: the fifth
+        // and its octaves, so it stays in key) with a fast digital shimmer.
+        p.set({ 1.0f, 3.0f, 6.0f, 9.0f }, { 1.0f, 0.5f, 0.3f, 0.2f }, { 1.0f, 0.3f * (0.4f + tone), 0.15f * tone, 0.07f * tone });
+        p.extras.beatHz = 6.0f;
         p.decay = night ? 1.2f : 0.7f;
         p.hardness = 0.45f + 0.4f * tone;
         p.toneHz = lerpExp(3000.0f, 12000.0f, tone);

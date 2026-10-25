@@ -1818,7 +1818,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Beach
   - [x] Spaceport
   - [x] Spaceship Interior
-  - [ ] Biodome
+  - [x] Biodome
   - [ ] Alien Hive
 - [ ] 5. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
 
@@ -2190,4 +2190,9 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 **Spaceship Interior** (sci-fi)
 - Engine, Life Support, Computer, Airlock, Hull (the bowed resonator), Alarm.
 - Space: the derelict's dead corridors ring, red alert slams the bulkheads shut.
+
+**Biodome** (sci-fi)
+- Pads, Mallets (now synthetic glass: partials 1, 3, 6, 9, a fast digital shimmer: they
+  were close to the Beach's steel drum), Birdsong, Water Plucks, Vents, Shaker.
+- Space: night rings long, failing is dead and dry (step 2).
 
