@@ -859,7 +859,8 @@ private:
     dsp::ReverseEcho reverse;
     std::array<dsp::OnePole, 4> tilt;
     std::array<dsp::OnePole, 2> shelf;   // presence
-    float vastSend = 0, warpSend = 0, reverseSend = 0, presence = 0, dry = 1;
+    dsp::Smoother whisper;   // the whispers' syllables
+    float vastSend = 0, warpSend = 0, reverseSend = 0, presence = 0, dry = 1, whisperTarget = 1;
 };
 
 // Nebula / Deep Space: vast evolving pads, a cosmic-wind texture, slow star-pulse
@@ -892,6 +893,7 @@ private:
     dsp::SmallSpace space;
     std::array<dsp::OnePole, 4> tilt;
     std::array<dsp::OnePole, 2> shelf;   // presence
+    std::array<dsp::Svf, 2> windSweep;   // the cosmic wind's slowly sweeping resonance
     float infiniteSend = 0, spaceSend_ = 0, presence = 0, dry = 1, wet = 1;
 };
 

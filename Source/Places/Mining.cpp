@@ -274,15 +274,18 @@ void MiningPlace::configure(const PlaceContext& c) {
     dry = lerp(1.15f, 0.75f, s.size);
 }
 
-void MiningPlace::mix(const PlaceContext&, float* left, float* right, int n) {
+void MiningPlace::mix(const PlaceContext& c, float* left, float* right, int n) {
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float bl = softClip(busL[GrindBass][k] * drive) / std::sqrt(drive), br = softClip(busR[GrindBass][k] * drive) / std::sqrt(drive);
         // The machines through the grit.
         float ml = busL[Drill][k] + bl + busL[Clanks][k], mr = busR[Drill][k] + br + busR[Clanks][k];
         grit.process(ml, mr);
-        float l = ml + busL[Dust][k] + busL[Hymn][k] + busL[Beacon][k];
-        float r = mr + busR[Dust][k] + busR[Hymn][k] + busR[Beacon][k];
+        // Dust: grains of grit ticking through the hiss (sparse bursts, a few ms each).
+        const uint64_t at = (c.clock + uint64_t(i)) >> 7;
+        const float grain = noise.unit(at) < 0.3f ? 2.2f : 0.25f;
+        float l = ml + busL[Dust][k] * grain + busL[Hymn][k] + busL[Beacon][k];
+        float r = mr + busR[Dust][k] * (noise.unit(at + 977) < 0.3f ? 2.2f : 0.25f) + busR[Hymn][k] + busR[Beacon][k];
         float sl = 0, sr = 0, wl = 0, wr = 0;
         slap.process((busL[Drill][k] + busL[Clanks][k] + busL[Beacon][k]) * slapSend, (busR[Drill][k] + busR[Clanks][k] + busR[Beacon][k]) * slapSend, sl, sr);
         l += sl;

@@ -10,12 +10,14 @@ void AlienRuinsPlace::prepareFx() {
     vast.prepare(rate);
     warp.prepare(rate, 1.6f, 3101);
     reverse.prepare(rate, 0.9f);
+    whisper.setTime(0.03f, rate);
 }
 
 void AlienRuinsPlace::resetFx() {
     vast.clear();
     warp.clear();
     reverse.clear();
+    whisper.snap(1.0f);
     for (auto& f : tilt) f.reset();
     for (auto& f : shelf) f.reset();
 }
@@ -281,6 +283,9 @@ void AlienRuinsPlace::configure(const PlaceContext& c) {
     warpSend = (guardian ? 0.3f : 0.45f) * (0.6f + 0.6f * s.fxDepth);
     reverse.set(guardian ? 0.5f : 0.75f, 0.35f + 0.25f * s.fxDepth, lerpExp(1500.0f, 5000.0f, tone));
     reverseSend = 0.9f;
+    // The whispers breathe in syllables, three or four a second, never words.
+    const double t = double(c.clock) / rate;
+    whisperTarget = 2.2f * clamp01(drift.smooth(t, 3.5) + 0.1f);
     for (auto& f : tilt) f.setCutoff(lerpExp(700.0f, 18000.0f, tone) * (0.8f + 0.5f * s.era), rate);
     presence = 1.6f * (tone - 0.3f) + 0.6f * (s.era - 0.3f);
     for (auto& f : shelf) f.setCutoff(2000.0f, rate);
@@ -294,10 +299,13 @@ void AlienRuinsPlace::mix(const PlaceContext&, float* left, float* right, int n)
         float rl = 0, rr = 0;
         reverse.process(busL[Choir][k] * reverseSend, busR[Choir][k] * reverseSend, rl, rr);
         float l = 0.5f * busL[Choir][k] + rl, r = 0.5f * busR[Choir][k] + rr;
-        for (int e : { Crystals, Pulses, SubDrone, Ritual, Whispers }) {
+        for (int e : { Crystals, Pulses, SubDrone, Ritual }) {
             l += busL[std::size_t(e)][k];
             r += busR[std::size_t(e)][k];
         }
+        const float g = whisper.next(whisperTarget);
+        l += busL[Whispers][k] * g;
+        r += busR[Whispers][k] * g;
         float dl = 0, dr = 0, wl = 0, wr = 0;
         warp.process((busL[Crystals][k] + busL[Pulses][k]) * warpSend, (busR[Crystals][k] + busR[Pulses][k]) * warpSend, dl, dr);
         l += dl;

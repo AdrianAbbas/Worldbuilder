@@ -35,6 +35,9 @@ public:
     void settle(float seconds);
     wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
     void setOverlayMode(int mode);
+    // Lists one category of Place cards (-1: all), as its chip does; how many are listed.
+    void showCategory(int c);
+    int listedPlaces() const { return listedCount; }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;

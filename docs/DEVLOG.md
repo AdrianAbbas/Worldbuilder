@@ -2288,7 +2288,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 5. Alien Ruins
 - [x] 6. Nebula / Deep Space
 - [x] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
-- [ ] 8. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
+- [x] 8. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
 
 ### Decisions
 
@@ -2432,3 +2432,66 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - The environment layers (Air, Water, Fire, Earth, Thunder, Tonal Bed) are not part of
   Score Intensity (the brief says it drives the Places); in a default world they are
   loud enough to dilute it, so the tests solo the Places.
+
+### Distinctness fix (after the full suite)
+
+The distinctness report put three of the new breath textures next to the Beach's waves
+(Nebula Cosmic Wind 1.29, Mining Dust Hiss 1.58, Alien Ruins Whispers 2.64; below 3
+sounds alike). All three were tuned breath (the wind part with no tone), so each now
+moves in its own way:
+- Cosmic Wind: a resonance sweeping slowly through four octaves, each side its own way
+  (a whooshing, phasing gale);
+- Dust Hiss: grains of grit, sparse bursts a few milliseconds long ticking through it;
+- Whispers: syllable-like breathing, three or four swells a second (never words).
+The closest pair is back to 3.63 (City Traffic Hum / Sea Ship Waves, as at the end of
+Milestone 6). The next closest involving new instruments: Beach Waves / Alien Ruins
+Whispers 3.67, Sea Ship Rope Swells / Nebula Solar Flares 3.92, Spaceship Hull /
+Megacity Megastructure 3.97, Tavern Stomps / Megacity Drum Machine 4.16.
+
+### Tests (Linux, GCC)
+
+**3254 checks pass, 0 fail** in the full suite (`scripts/run-tests-parallel.sh`, which
+now also runs the six new Places and the `intensity` group). After it, the three Places
+changed by the distinctness fix were re-run (places, placeworld, instruments: 219
+checks) with the editor and intensity groups (88 checks, including the new check that
+the SCI-FI chip lists ten Places): all pass. CPU, four busy Places: 6-9 % of one core
+here (budget 15 %); every new Place passes the same per-Place suite as the first 20
+(characters, key, tempo, activity, tension, tone, elements, seed, World Controls, every
+instrument alone in key and on the grid, the overlay drawing only where it may).
+
+### Milestone 7 handoff
+
+**Done:** all of Milestone 7 (Direction Update 5).
+1. Six sci-fi Places, each with six instruments, three Characters, its own effect
+   chain, per-instrument effect defaults, a card illustration, a theme and an overlay:
+   Space Station, Cyberpunk Megacity, Starship Bridge, Asteroid Mining Colony, Alien
+   Ruins, Nebula / Deep Space. They are in the SCI-FI category (ten Places now).
+2. Score Intensity: the header knob, per-Place response curves, smoothing, tests.
+
+**What to listen for first** (the full list: [MANUAL_TEST.md](MANUAL_TEST.md),
+Milestone 7 check):
+- Each new Place alone and in its three Characters: rich and cinematic, never thin?
+  The Station's hull turning around you, the Bridge's warp build, the Alien Ruins'
+  backwards choir, the Nebula's endless shimmer.
+- Levels were set by measurement against the existing Places (each lands around
+  -26 to -28 dBFS soloed at defaults, like the others); expect a level pass by ear.
+- Score Intensity swept and automated over two to four Places: is 0 % calm enough
+  and 100 % a climax? Is the climax too loud or not loud enough? The curves are one
+  table in `Source/Places/Intensity.h`.
+
+**Next:** Milestone 8, capture and export (render audio offline, export scene MIDI,
+deterministic host sync, automation-first workflow, README section), then 9 Locations
+and Journeys, 10 visual revamp and planet types, 11 pro features, presets and release.
+
+**Known issues / limits:**
+- Nothing has been heard; everything is checked by measurement.
+- Score Intensity drives the Places only, not the environment layers (Air, Water...).
+  In the default world those layers are loud, so with only one quiet Place the change
+  in overall level is small; the Places themselves move 9.6-14.4 dB from 0 % to 100 %.
+- The Place choice parameter grew from 21 to 27 entries; host automation of a slot's
+  Place written by an older version would now select other Places (saved projects
+  load correctly).
+- Intensity changes Activity, so in Free play mode with Sync off a Place's own tempo
+  speeds up a little with Intensity (as Activity always did).
+- Carried over from Milestone 6: the Machinery and Danger checks at 0.5 dB; the
+  `push-access-check` branch on GitHub can be deleted.

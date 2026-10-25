@@ -14,6 +14,7 @@ void NebulaPlace::prepareFx() {
 void NebulaPlace::resetFx() {
     infinite.clear();
     space.clear();
+    for (auto& f : windSweep) f.reset();
     for (auto& f : tilt) f.reset();
     for (auto& f : shelf) f.reset();
 }
@@ -204,6 +205,10 @@ void NebulaPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 4, 6, 8);
         p.gain = 1.0f;
     }
+    // The wind's resonance sweeps slowly through four octaves, each side its own way: a
+    // whooshing, phasing gale (not a surf or a hiss).
+    for (int k = 0; k < 2; ++k)
+        windSweep[std::size_t(k)].set(lerpExp(250.0f, 4500.0f, clamp01(0.5f + 0.6f * drift.smooth(t + 40.0 * k, 0.12))), 4.0f, rate);
     // Solar flares: a slow noise swell and a build that ignites.
     flares.patch.rows[0] = { SweepSwell, 0.0f, 36.0f, 3.0f, 1.0f, false, true };
     flares.patch.rows[1] = { SweepBuild, -12.0f, 48.0f, 2.5f, 1.0f, false, true };
@@ -231,8 +236,8 @@ void NebulaPlace::configure(const PlaceContext& c) {
 void NebulaPlace::mix(const PlaceContext&, float* left, float* right, int n) {
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
-        float l = 0, r = 0;
-        for (int e = 0; e < placeElements; ++e) {
+        float l = 0.3f * busL[Wind][k] + 1.6f * windSweep[0].bandpass(busL[Wind][k]), r = 0.3f * busR[Wind][k] + 1.6f * windSweep[1].bandpass(busR[Wind][k]);
+        for (int e : { Pads, StarBells, SubDrone, Stardust, Flares }) {
             l += busL[std::size_t(e)][k];
             r += busR[std::size_t(e)][k];
         }

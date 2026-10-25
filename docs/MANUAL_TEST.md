@@ -462,3 +462,41 @@ or synthetic where they should be natural):
   The weights are one table in `Source/Places/Ensemble.h` (`weight::`).
 - [ ] The Characters sound like different spaces now (e.g. the Desert's open dunes
   against the dry oasis, the dead Mall's atrium, the forsaken Temple).
+
+## Milestone 7 check: six sci-fi Places and Score Intensity
+
+Load the CI build in GarageBand (Transport mode, press Play). Turn Overlays to Full to
+see each new overlay.
+
+**The SCI-FI category** lists ten Places now; the six new cards are at the end (Space
+Station, Cyberpunk Megacity, Starship Bridge, Asteroid Mining Colony, Alien Ruins,
+Nebula). For each, add it alone, then try its three Characters:
+- [ ] Space Station: the hull drone slowly turning left and right around you (one turn
+  every 16 beats), clamps, comms beeps, the vent air, the reactor bass, the gliding
+  lead. Emergency: clamps slamming, the reactor racing. Abandoned: a breach hissing.
+- [ ] Cyberpunk Megacity: the driven bass, the neon FM arp bouncing left and right,
+  the rain pad (a faint hiss on it), the drum machine (half-time, four on the floor,
+  a breakbeat in a Riot), crushed glitch stabs, the far megastructure.
+- [ ] Starship Bridge: console arps, the warp core throbbing, the crew murmuring over
+  the intercom (no words), sensor pings echoing. Warp Jump: an eight-bar build, the
+  core spinning up under a riser, the brass swelling to the jump.
+- [ ] Asteroid Mining Colony: the whining drill, the grinding bass, ringing clanks,
+  the dust hiss, the low hymn, the lonely beacon call with its slapback.
+- [ ] Alien Ruins: beating crystals, the deep machine throb, the choir swelling in
+  backwards, the sub drone, ritual drums for the Guardian, the whispers.
+- [ ] Nebula: slow pads opening and closing, the cosmic wind, star bells and stardust
+  rising into an endless shimmer, solar flares.
+- [ ] Each one sounds rich and cinematic rather than thin; each instrument stands
+  apart (solo them in the Pattern Editor).
+- [ ] Overlays: hull panels with status lights; neon tubes, signs and rain; a heads-up
+  display with brackets and a radar; rubble and drill-light beams; glowing glyphs on
+  cracked stone; gas clouds and stars. None covers a control.
+
+**Score Intensity** (the knob in the header, left of POWER):
+- [ ] With two to four Places, sweep it from 0 % to 100 %: a quiet, sparse bed at 0 %,
+  the Places as before at 50 %, busier, tenser, brighter and louder at 100 %.
+- [ ] Jump it from 0 % to 100 % (or draw a step in its automation lane): the climax
+  arrives over about a second, with no jump or click.
+- [ ] Automate it in GarageBand over a few bars; the cue builds smoothly, and a
+  bounce matches playback.
+- [ ] Double-click resets it to 50 %. An older project opens at 50 % and sounds as it did.

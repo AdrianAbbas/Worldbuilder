@@ -1289,6 +1289,13 @@ int WorldbuilderEditor::cardAt(juce::Point<int> p) const {
     return -1;
 }
 
+void WorldbuilderEditor::showCategory(int c) {
+    category = juce::jlimit(-1, PlaceCategoryCount - 1, c);
+    cardScroll = 0;
+    listCards();
+    repaint(cardsPanel);
+}
+
 void WorldbuilderEditor::mouseDown(const juce::MouseEvent& e) {
     if (detail.slot >= 0 || patterns->isVisible()) return;
     if (const int chip = categoryAt(e.getPosition()); chip >= 0) {

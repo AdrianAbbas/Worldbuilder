@@ -7,13 +7,14 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 5 complete (all 20 Places of six instruments, 20-Place selector,
-world theme and Place overlays).**
+**Status: Milestone 7 (26 Places of six instruments, each with its own instrument
+effects; Score Intensity).**
 These work now:
-- **Places**, the centrepiece. Up to four play at once. All 20 are built: Castle,
+- **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
   Ruins, Spaceship Interior, Biodome, Sea Ship, Suburbs, Mall, Military Camp, Beach,
-  Desert, Palace and Tavern.
+  Desert, Palace and Tavern, and six more sci-fi Places: Space Station, Cyberpunk
+  Megacity, Starship Bridge, Asteroid Mining Colony, Alien Ruins and Nebula / Deep Space.
   - Each is an ensemble of **six instruments**, for example the Castle's brass drone,
     tuned bells, horn calls, timpani, harp and wordless choir, or the Factory's tuned
     anvil, pistons, steam, bowed metal, gear clicks and furnace bass.
@@ -45,6 +46,10 @@ These work now:
     pattern and can return to it every N bars;
   - MIDI files: drop one on the editor to import it, drag a pattern out to the host,
     or save it as a .mid file.
+- **Score Intensity**, the large knob in the header: every active Place at once, from
+  a calm bed (0 %) through the Places as set (50 %) to a climax (100 %): busier,
+  tenser, brighter and louder, each Place on its own curve. It glides rather than
+  jumps; automate it to shape a cue over time.
 - **Play Mode.** Transport (the default) plays only while the host plays, from silence
   and locked to the song position, so exports and bounces always contain it. Free
   plays all the time.
@@ -58,7 +63,7 @@ These work now:
   Machinery makes them straighter and more metallic, Life more human, and Danger
   darker.
 - the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
-- **The interface**: a Place selector of 20 illustrated cards (all, or by category:
+- **The interface**: a Place selector of 26 illustrated cards (all, or by category:
   Fantasy, Modern, Sci-Fi, Nature) that come alive on hover; Place strips; a detail
   panel with header art and an icon per instrument; the Pattern Editor with a tab per
   instrument; landmarks on the globe that you can drag to move a Place. The colours,
@@ -66,8 +71,9 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Now: Milestone 6, the sound overhaul and each instrument's own effects. Next: MIDI control
-from the host's piano roll (7), Locations and Journeys (8), the visual overhaul (9), presets and release (10). See
+Now: Milestone 7, the sci-fi Places and Score Intensity. Next (Direction Update 5):
+capture and export, rendering audio and scene MIDI (8), Locations and Journeys (9), the
+visual revamp and planet types (10), pro features, presets and release (11). See
 [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md),
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md),

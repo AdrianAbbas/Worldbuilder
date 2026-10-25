@@ -1639,6 +1639,16 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
     s.check(image.isValid(), "editor paints");
     save(image, snapshotPath);
+    // The sci-fi category: the four earlier sci-fi Places and the six of Milestone 7.
+    world->showCategory(SciFi);
+    {
+        int scifi = 0;
+        for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) scifi += placeInfo(type).category == SciFi ? 1 : 0;
+        s.check(world->listedPlaces() == scifi && scifi == 10, "the SCI-FI chip lists the ten sci-fi Places", std::to_string(world->listedPlaces()));
+        const auto scifiImage = editor->createComponentSnapshot(editor->getLocalBounds());
+        save(scifiImage, snapshotPath.isEmpty() ? juce::String() : snapshotPath.upToLastOccurrenceOf(".", false, false) + "-scifi.png");
+    }
+    world->showCategory(-1);
     world->openDetail(1);
     const auto detailImage = editor->createComponentSnapshot(editor->getLocalBounds());
     s.check(detailImage.isValid(), "detail panel paints");
