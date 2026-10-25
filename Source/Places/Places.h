@@ -827,6 +827,41 @@ private:
     float roomSend = 0, slapSend = 0, presence = 0, dry = 1, drive = 1;
 };
 
+// Alien Ruins: eroded crystal tones, ancient-machine pulses, a reversed alien choir, a
+// sub-harmonic drone, ritual percussion and a whispering texture, in a vast, strange
+// reverb with a warped delay. Dormant: the machines asleep, a crystal now and then,
+// the drone breathing. Reawakening: the pulses stirring and quickening, glyphs
+// chiming in answer. Guardian: something wakes: a ritual rhythm, the choir rising, the
+// drone pressing down.
+class AlienRuinsPlace final : public EnsemblePlace {
+public:
+    AlienRuinsPlace();
+    float freeTempo() const override { return 76.0f; }
+    float spaceSend() const override { return 0.4f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Crystals, Pulses, Choir, SubDrone, Ritual, Whispers };
+    enum Character { Dormant, Reawakening, Guardian };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    ModalPart crystals;
+    FmPart pulses;
+    ChoirPart choir;
+    SynthPart drone;
+    DrumPart ritual;
+    WindPart whispers;
+    dsp::Shimmer vast;
+    dsp::WarpDelay warp;
+    dsp::ReverseEcho reverse;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float vastSend = 0, warpSend = 0, reverseSend = 0, presence = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

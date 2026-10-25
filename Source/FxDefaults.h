@@ -162,6 +162,9 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
     // Asteroid Mining Colony: Drill, Grind Bass, Metal Clanks, Dust Hiss, Worker Hymn, Beacon.
     t[24] = { room(0.15f).with(ChSaturation, 0.25f), room(0.05f).with(ChSaturation, 0.3f).toned(0.4f).wide(0.6f), cave(0.3f).echo(DlyTape, 0.15f),
               room(0.15f).wide(1.6f), hall(0.35f).with(ChChorus, 0.25f).wide(1.4f), cave(0.35f).echo(DlyDotted, 0.2f) };
+    // Alien Ruins: Crystals, Machine Pulses, Alien Choir, Sub Drone, Ritual Drums, Whispers.
+    t[25] = { cathedral(0.35f).echo(DlyReverse, 0.2f).wide(1.5f), cave(0.25f).with(ChPhaser, 0.25f), cathedral(0.4f).with(ChChorus, 0.3f).wide(1.6f),
+              cave(0.1f).toned(0.4f).wide(0.7f), cave(0.3f).echo(DlyTape, 0.1f), cave(0.25f).echo(DlyReverse, 0.15f).wide(1.7f) };
     return t;
 }();
 

@@ -2285,7 +2285,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 2. Cyberpunk Megacity
 - [x] 3. Starship Bridge
 - [x] 4. Asteroid Mining Colony
-- [ ] 5. Alien Ruins
+- [x] 5. Alien Ruins
 - [ ] 6. Nebula / Deep Space
 - [ ] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
 - [ ] 8. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
@@ -2365,3 +2365,22 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - Overlay: rubble heaped along the bottom and on the panels' corners, braced girders
   across the frame tops, drill rigs in the header throwing amber light beams, warning
   lamps in the gaps; fragments drift in low gravity, dust rises, lamps blink.
+
+**Alien Ruins** (sci-fi)
+- Crystals: eroded glass-like bars (1 : 2.76 : 5.40 : 8.93), the lowest pair split so
+  they beat slowly (faster with Tension), highs blooming after the strike, each strike different.
+- Machine Pulses: a deep FM throb (sub-octave modulator), every two beats when dormant,
+  quickening to eighths for the Guardian.
+- Alien Choir: dark, wide formant voices, half heard forwards and the rest through the
+  reverse echo, so the chords swell backwards into themselves.
+- Sub Drone: a nearly pure drone an octave below the bass (its fifth joins for the Guardian).
+- Ritual Drums: a deep skin, struck stone, a seed rattle; a 3+3+2 ritual for the Guardian.
+- Whispers: narrow tuned breath, drifting in pitch (formant-like), never words.
+- Space: a vast shimmer reverb whose tail keeps rising, a warped delay on the crystals
+  and pulses.
+- Tests: the Tone check needed the drone's filter fixed (it followed Tone and raised the
+  RMS with the highs) and wider tone partials on the crystals; the choir's attack was
+  shortened (0.8 s) so it sounds at once after a locate.
+- Overlay: cracked stone lintels on the frames and a stone floor, broken pillars in the
+  gaps, carved monoliths in the header; glyphs carved into the stone glow and fade in
+  turn, motes of light rise from the cracks.

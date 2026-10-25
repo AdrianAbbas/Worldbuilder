@@ -2396,6 +2396,118 @@ OverlayArt mining(const Layout& L) {
     for (auto p : drifts) move(a, PlaceOverlays::MoveDrift, p, fragment, between(r, 14.0f, 24.0f), r.nextFloat(), 0.9f, between(r, 80.0f, 160.0f), 2.0f);
     return a;
 }
+
+//==============================================================================
+// Alien Ruins: cracked stone lintels along the frames and a stone floor along the
+// bottom, broken pillars in the gaps, monoliths in the open space; alien glyphs carved
+// into the stone glow and fade in turn, motes of light drift up from the cracks.
+juce::Path glyphShape(float size, int kind) {
+    juce::Path p;
+    const float h = size * 0.5f;
+    switch (kind % 5) {
+        case 0: p.addEllipse(-h, -h, size, size); p.addRectangle(-0.6f, -h - 2.0f, 1.2f, size + 4.0f); break;
+        case 1: p.addTriangle(-h, h, h, h, 0.0f, -h); p.addEllipse(-1.2f, -0.2f, 2.4f, 2.4f); break;
+        case 2: p.addRectangle(-h, -h, size, 1.2f); p.addRectangle(-0.6f, -h, 1.2f, size); p.addEllipse(-h, h - 2.0f, 3.0f, 3.0f); break;
+        case 3: p.addCentredArc(0.0f, 0.0f, h, h, 0.0f, 0.5f, 5.5f, true); p.addEllipse(-1.0f, -1.0f, 2.0f, 2.0f); break;
+        default: p.addStar({ 0.0f, 0.0f }, 3, h * 0.35f, h, 0.0f); break;
+    }
+    juce::PathStrokeType(0.9f).createStrokedPath(p, p);
+    return p;
+}
+
+OverlayArt alienRuins(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(2525);
+    const juce::Colour glow(0xff5fffc0);
+    juce::Path stone, stoneLight, cracks, pillars, monoliths, carved;
+    std::vector<std::pair<Point, int>> glyphs;
+    std::vector<Point> motes;
+    const auto crack = [&](Point from, float length, float angle) {
+        juce::Path c;
+        c.startNewSubPath(from);
+        Point at = from;
+        for (float d = 0.0f; d < length; d += 4.0f) {
+            angle += between(r, -0.6f, 0.6f);
+            at += { 4.0f * std::cos(angle), 4.0f * std::sin(angle) };
+            c.lineTo(at);
+        }
+        juce::PathStrokeType(0.7f).createStrokedPath(c, c);
+        cracks.addPath(c);
+    };
+    for (auto p : L.panels) {
+        for (float y : { p.getY() - 3.0f, p.getBottom() - 2.0f }) {
+            for (float x = p.getX() + 8.0f; x < p.getRight() - 12.0f;) {
+                const float w = between(r, 24.0f, 50.0f);
+                stone.addRectangle(x, y, std::min(w, p.getRight() - 8.0f - x) - 1.5f, 5.0f);
+                stoneLight.addRectangle(x, y, std::min(w, p.getRight() - 8.0f - x) - 1.5f, 0.8f);
+                if (r.nextFloat() < 0.35f) crack({ x + w * 0.5f, y }, 8.0f, juce::MathConstants<float>::halfPi + between(r, -0.5f, 0.5f));
+                x += w;
+            }
+            for (float x = p.getX() + 30.0f; x < p.getRight() - 30.0f; x += between(r, 70.0f, 130.0f)) glyphs.push_back({ { x, y + 2.5f }, r.nextInt(5) });
+        }
+    }
+    // Broken pillars in the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 40.0f) continue;
+        const float w = std::min(8.0f, gap.getWidth() - 2.0f), cx = gap.getCentreX();
+        const float top = gap.getY() + gap.getHeight() * between(r, 0.3f, 0.6f);
+        juce::Path pillar;
+        pillar.startNewSubPath(cx - w * 0.5f, gap.getBottom() - 4.0f);
+        pillar.lineTo(cx - w * 0.5f, top + 3.0f);
+        pillar.lineTo(cx - 1.0f, top);
+        pillar.lineTo(cx + 1.5f, top + 4.0f);
+        pillar.lineTo(cx + w * 0.5f, top + 1.0f);
+        pillar.lineTo(cx + w * 0.5f, gap.getBottom() - 4.0f);
+        pillar.closeSubPath();
+        pillars.addPath(pillar);
+        crack({ cx, top + 8.0f }, 20.0f, juce::MathConstants<float>::halfPi);
+        glyphs.push_back({ { cx, top + 30.0f }, r.nextInt(5) });
+        motes.push_back({ cx, top });
+    }
+    // A stone floor along the bottom.
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    for (float x = 0.0f; x < width;) {
+        const float w = between(r, 30.0f, 70.0f);
+        stone.addRectangle(x, bottom - 6.0f, w - 1.5f, 6.0f);
+        if (r.nextFloat() < 0.3f) crack({ x + w * 0.4f, bottom - 6.0f }, 10.0f, between(r, 0.3f, 1.2f));
+        if (r.nextFloat() < 0.25f) motes.push_back({ x + w * 0.5f, bottom - 6.0f });
+        x += w;
+    }
+    // Monoliths in the open space, carved.
+    for (auto o : L.open) {
+        const int count = std::max(1, int(o.getWidth() / 200.0f));
+        for (int c = 0; c < count; ++c) {
+            const float cx = o.getX() + o.getWidth() * (float(c) + 0.5f) / float(count), h = std::min(o.getHeight() - 2.0f, 34.0f);
+            juce::Path m;
+            m.startNewSubPath(cx - 7.0f, o.getBottom());
+            m.lineTo(cx - 5.0f, o.getBottom() - h);
+            m.lineTo(cx + 6.0f, o.getBottom() - h + 3.0f);
+            m.lineTo(cx + 7.0f, o.getBottom());
+            m.closeSubPath();
+            monoliths.addPath(m);
+            for (float y = o.getBottom() - h + 8.0f; y < o.getBottom() - 4.0f; y += 9.0f) glyphs.push_back({ { cx, y }, r.nextInt(5) });
+        }
+    }
+    a.shapes.push_back({ stone, juce::Colour(0xff4a5450) });
+    a.shapes.push_back({ stoneLight, juce::Colour(0xff7a8680) });
+    a.shapes.push_back({ pillars, juce::Colour(0xff525c58) });
+    a.shapes.push_back({ monoliths, juce::Colour(0xff2a3432) });
+    a.shapes.push_back({ cracks, juce::Colour(0xff1a2220) });
+    // The glyphs carved dark into the stone (they glow over it as sprites).
+    for (const auto& [at, kind] : glyphs) carved.addPath(glyphShape(6.0f, kind), juce::AffineTransform::translation(at));
+    a.shapes.push_back({ carved, juce::Colour(0xff1e3a32) });
+
+    std::array<int, 5> glyphSprite {};
+    for (int k = 0; k < 5; ++k) {
+        glyphSprite[std::size_t(k)] = int(a.sprites.size());
+        a.sprites.push_back(pathSprite(glyphShape(6.0f, k), glow.interpolatedWith(juce::Colours::white, 0.3f), 1.5f, glow));
+    }
+    const int mote = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.0f, glow.withAlpha(0.6f), juce::Colour(0xffe0fff4), 0.8f));
+    for (const auto& [at, kind] : glyphs) move(a, PlaceOverlays::MovePulse, at, glyphSprite[std::size_t(kind)], between(r, 3.0f, 7.0f), r.nextFloat(), 1.0f);
+    for (auto p : motes) move(a, PlaceOverlays::MoveRise, p, mote, between(r, 3.0f, 6.0f), r.nextFloat(), 0.8f, 30.0f, 4.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2498,7 +2610,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
            || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern
-           || type == SpaceStation || type == Megacity || type == Bridge || type == Mining;
+           || type == SpaceStation || type == Megacity || type == Bridge || type == Mining || type == AlienRuins;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2524,6 +2636,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Megacity: return megacity(layout);
         case Bridge: return bridge(layout);
         case Mining: return mining(layout);
+        case AlienRuins: return alienRuins(layout);
         default: return {};
     }
 }

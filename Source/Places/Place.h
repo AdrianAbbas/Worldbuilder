@@ -41,7 +41,7 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
 // silent, and its card could not be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
                                                                      true, true, true, true, true, true, true, true, true, true,
-                                                                     true, true, true, true, false, false };
+                                                                     true, true, true, true, true, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
                                                                         "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D",
@@ -250,6 +250,11 @@ inline const PlaceInfo& placeInfo(int type) {
                held("Worker Hymn", IconChoir), mel("Beacon", IconFlute, VaryVelocity | VarySkip) },
              "A drilling ostinato, a low rock-grind bass, tuned metal clanks, a dust-hiss texture, a worker-hymn pad and a lonely beacon lead.",
              "A gritty industrial room and a slapback", SciFi, 0),
+        info({ "Dormant", "Reawakening", "Guardian" },
+             { mel("Crystals", IconCrystal), mel("Machine Pulses", IconPulse), held("Alien Choir", IconChoir), held("Sub Drone", IconDrone),
+               kit("Ritual Drums", IconHandDrum, { "Skin", "Stone", "Rattle", nullptr }), held("Whispers", IconWind) },
+             "Eroded crystal tones, ancient-machine pulses, a reversed alien choir, a sub-harmonic drone, ritual percussion and whispers.",
+             "A vast, strange reverb and a warped delay", SciFi, 3),
     } };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }
