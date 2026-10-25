@@ -1811,7 +1811,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Military Camp
   - [x] Ruins
   - [x] Cavern
-  - [ ] City
+  - [x] City
   - [ ] Suburbs
   - [ ] Mall
   - [ ] Factory
@@ -2153,4 +2153,11 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   Crystals (glass-like modes), Rumble. Effects: everything in the Cave reverb.
 - Space: the crystal cave rings, the deep mine is close and dry, flooded water carries
   sound far.
+
+**City** (modern: hybrid)
+- Chimes, Synth Bass, E-Piano (a tine electric piano with a barking pickup and a phaser,
+  apart from the Suburbs' mellow tine and the Mall's FM piano), Crowd (the babbling
+  choir), Sirens, Traffic Hum.
+- Space: Tension echoes the streets; the night city is wider and wetter, rush hour
+  close and dense.
 

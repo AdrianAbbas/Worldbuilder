@@ -306,8 +306,9 @@ void CityPlace::configure(const PlaceContext& c) {
     }
     // Tension: the crowd grows agitated and the sirens come closer.
     const float crowdLevel = (rush ? 0.6f : (night ? 0.4f : 0.3f)) * lerp(0.5f, 1.4f, s.life) * (0.6f + 1.0f * tension);
-    // Tension: sirens and footsteps echo down the streets (more in the reverbs and echoes).
-    sendScale.fill(lerp(0.7f, 1.5f, tension));
+    // Tension: sirens and footsteps echo down the streets (more in the reverbs and
+    // echoes); the night city is wider and wetter, rush hour close and dense.
+    sendScale.fill(lerp(0.7f, 1.5f, tension) * (night ? 1.3f : (rush ? 0.8f : 1.0f)));
     level = { 0.65f, 0.2f, 0.22f, crowdLevel, (wet ? 0.1f : 0.13f) * (0.5f + 1.5f * tension), 0.07f * (0.7f + 0.6f * s.machinery) };
     trafficLevel = level[Traffic] * s.element[Traffic] * (0.5f + swell);
 
