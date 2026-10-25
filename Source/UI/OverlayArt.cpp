@@ -1452,6 +1452,131 @@ OverlayArt mall(const Layout& L) {
     for (int c = 0; c < 2; ++c) move(a, PlaceOverlays::MoveDrift, { -10.0f, bottom - 4.0f }, sweep, between(r, 9.0f, 12.0f), float(c) / 2.0f, 0.8f, width + 20.0f, 0.0f);
     return a;
 }
+//==============================================================================
+// Military Camp: sandbags along the bottom, barbed wire along the panel tops, camouflage
+// netting over the corners, a row of tents with a flag pole and a radio mast in the open
+// space, ammunition crates in the gaps; campfire embers rise, the flag flutters, lamps
+// and the mast blink, a searchlight sweeps the sandbags.
+OverlayArt military(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1616);
+    juce::Path bags, bagShade, wire, barbs, netDark, netLight, tents, tentShade, poles, crates, crateEdge;
+    std::vector<Point> fires, lamps, masts, flags;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // Sandbags in two staggered rows along the bottom.
+    for (int row = 0; row < 2; ++row)
+        for (float x = row == 0 ? 0.0f : 7.0f; x < width; x += 14.0f) {
+            const float y = bottom - 6.0f - float(row) * 5.0f;
+            bags.addRoundedRectangle(x, y, 13.0f, 6.0f, 2.8f);
+            bagShade.addRectangle(x + 2.0f, y + 4.2f, 9.0f, 1.0f);
+        }
+    for (float x = between(r, 80.0f, 160.0f); x < width; x += between(r, 220.0f, 340.0f)) fires.push_back({ x, bottom - 12.0f });
+    // Barbed wire: a twisted strand along each panel's top, barbs every few pixels;
+    // camouflage netting over the corners.
+    for (auto p : L.panels) {
+        juce::Path strand;
+        strand.startNewSubPath(p.getX() + 14.0f, p.getY() - 1.0f);
+        for (float x = p.getX() + 14.0f; x < p.getRight() - 14.0f; x += 6.0f) strand.lineTo(x + 3.0f, p.getY() - 1.0f + ((int(x) / 6) % 2 == 0 ? 1.2f : -1.2f));
+        juce::PathStrokeType(0.9f).createStrokedPath(strand, strand);
+        wire.addPath(strand);
+        for (float x = p.getX() + 18.0f; x < p.getRight() - 16.0f; x += 11.0f) {
+            juce::Path barb;
+            barb.startNewSubPath(x - 2.0f, p.getY() - 3.0f);
+            barb.lineTo(x + 2.0f, p.getY() + 1.0f);
+            barb.startNewSubPath(x + 2.0f, p.getY() - 3.0f);
+            barb.lineTo(x - 2.0f, p.getY() + 1.0f);
+            juce::PathStrokeType(0.8f).createStrokedPath(barb, barb);
+            barbs.addPath(barb);
+        }
+        for (auto corner : { Point { p.getX(), p.getY() }, Point { p.getRight(), p.getBottom() } })
+            for (int k = 0; k < 16; ++k) {
+                const float d = between(r, 4.0f, 8.0f), ang = between(r, 0.0f, twoPi), rad = between(r, 0.0f, 12.0f);
+                (r.nextFloat() < 0.4f ? netLight : netDark).addEllipse(corner.x + std::cos(ang) * rad - d * 0.5f, corner.y + std::sin(ang) * rad - d * 0.5f, d, d * 0.7f);
+            }
+    }
+    // Ammunition crates stacked in the gaps, a lamp above them.
+    for (auto gap : L.gutters) {
+        const float cx = gap.getCentreX(), w = std::min(12.0f, gap.getWidth() - 2.0f), base = gap.getBottom() - 14.0f;
+        if (gap.getHeight() < 50.0f) continue;
+        for (int k = 0; k < 2; ++k) {
+            const Rect crate { cx - w * 0.5f, base - float(k + 1) * 8.0f, w, 7.5f };
+            crates.addRectangle(crate);
+            crateEdge.addRectangle(crate.getX(), crate.getCentreY() - 0.4f, crate.getWidth(), 0.8f);
+        }
+        lamps.push_back({ cx, gap.getY() + 10.0f });
+    }
+    // Tents in the open space, a flag pole and a radio mast.
+    for (auto o : L.open) {
+        const float base = o.getBottom();
+        float x = o.getX() + 10.0f;
+        const float tall = std::min(o.getHeight() - 4.0f, 20.0f);
+        poles.addRectangle(x, base - tall - 6.0f, 1.4f, tall + 6.0f);
+        flags.push_back({ x + 7.0f, base - tall - 3.0f });
+        x += 22.0f;
+        while (x < o.getRight() - 50.0f) {
+            const float w = between(r, 28.0f, 38.0f), h = std::min(o.getHeight() - 4.0f, between(r, 12.0f, 16.0f));
+            tents.addTriangle(x, base, x + w, base, x + w * 0.5f, base - h);
+            tentShade.addTriangle(x + w * 0.5f, base, x + w, base, x + w * 0.5f, base - h);
+            tentShade.addTriangle(x + w * 0.42f, base, x + w * 0.58f, base, x + w * 0.5f, base - h * 0.45f);
+            x += w + between(r, 6.0f, 16.0f);
+        }
+        const float mx = o.getRight() - 24.0f, mastTop = base - std::min(o.getHeight() - 2.0f, 30.0f);
+        juce::Path mast;
+        mast.startNewSubPath(mx - 6.0f, base);
+        mast.lineTo(mx, mastTop);
+        mast.lineTo(mx + 6.0f, base);
+        for (float y = base - 6.0f; y > mastTop + 4.0f; y -= 6.0f) {
+            const float half = 6.0f * (y - mastTop) / (base - mastTop);
+            mast.startNewSubPath(mx - half, y);
+            mast.lineTo(mx + half, y - 3.0f);
+        }
+        juce::PathStrokeType(1.0f).createStrokedPath(mast, mast);
+        poles.addPath(mast);
+        masts.push_back({ mx, mastTop });
+    }
+    a.shapes.push_back({ tents, juce::Colour(0xff5e6a3e) });
+    a.shapes.push_back({ tentShade, juce::Colour(0xff3c4628) });
+    a.shapes.push_back({ poles, juce::Colour(0xff3a3a36) });
+    a.shapes.push_back({ crates, juce::Colour(0xff4e5a34) });
+    a.shapes.push_back({ crateEdge, juce::Colour(0xffc8b060) });
+    a.shapes.push_back({ netDark, juce::Colour(0xd0384628) });
+    a.shapes.push_back({ netLight, juce::Colour(0xd0788a4a) });
+    a.shapes.push_back({ wire, juce::Colour(0xff9a9a96) });
+    a.shapes.push_back({ barbs, juce::Colour(0xffb8b8b0) });
+    a.shapes.push_back({ bags, juce::Colour(0xffb09a6c) });
+    a.shapes.push_back({ bagShade, juce::Colour(0xff7a6a48) });
+
+    const int ember = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, juce::Colour(0xb0ff6a2c), juce::Colour(0xffffd090), 0.9f));
+    const int smoke = puffSprites(a, juce::Colour(0x60b09088));
+    const int red = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(4.5f, juce::Colour(0xb0ff3030), juce::Colour(0xffffa0a0), 1.2f));
+    const int lamp = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(6.0f, juce::Colour(0x90ffc060), juce::Colour(0xffffe8b0), 1.6f));
+    const int beam = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(12.0f, juce::Colour(0x38fff8d8), juce::Colour(0x60ffffff), 4.0f));
+    const int flag = int(a.sprites.size());
+    for (int f = 0; f < 4; ++f) {
+        juce::Path cloth;
+        const float wave = std::sin(float(f) * twoPi / 4.0f) * 1.5f;
+        cloth.startNewSubPath(-6.0f, -3.5f);
+        cloth.quadraticTo(-1.0f, -3.5f + wave, 5.0f, -3.0f);
+        cloth.lineTo(5.0f, 2.5f);
+        cloth.quadraticTo(-1.0f, 3.0f + wave, -6.0f, 3.0f);
+        cloth.closeSubPath();
+        a.sprites.push_back(pathSprite(cloth, juce::Colour(0xffb03a30)));
+    }
+    for (auto f : fires) {
+        for (int k = 0; k < 3; ++k) move(a, PlaceOverlays::MoveRise, f.translated(between(r, -4.0f, 4.0f), 4.0f), ember, between(r, 1.4f, 2.2f), float(k) / 3.0f, 1.0f, 14.0f, 3.0f);
+        move(a, PlaceOverlays::MoveRise, f, smoke, 3.2f, r.nextFloat(), 0.7f, 18.0f, 3.0f, 8);
+    }
+    for (auto l : lamps) move(a, PlaceOverlays::MovePulse, l, lamp, between(r, 3.0f, 5.0f), r.nextFloat(), 0.9f);
+    for (auto m : masts) move(a, PlaceOverlays::MoveBlink, m, red, 1.8f, 0.0f);
+    for (auto f : flags) move(a, PlaceOverlays::MoveSpin, f, flag, 0.8f, 0.0f, 1.0f, 0, 0, 4);
+    move(a, PlaceOverlays::MoveDrift, { -12.0f, bottom - 9.0f }, beam, 11.0f, 0.0f, 0.8f, width + 24.0f, 0.0f);
+    move(a, PlaceOverlays::MoveDrift, { width + 12.0f, bottom - 9.0f }, beam, 13.0f, 0.5f, 0.6f, -(width + 24.0f), 0.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -1553,7 +1678,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -1570,6 +1695,7 @@ OverlayArt build(int type, const Layout& layout) {
         case SeaShip: return seaship(layout);
         case Suburbs: return suburbs(layout);
         case Mall: return mall(layout);
+        case Military: return military(layout);
         default: return {};
     }
 }

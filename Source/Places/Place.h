@@ -35,7 +35,7 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
 // Which Places sound yet. The others are listed (cards, names, instruments) and arrive
 // in Milestone 5d; until then they are silent and their cards cannot be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
-                                                                     true, true, true, true, true, false, false, false, false, false };
+                                                                     true, true, true, true, true, true, false, false, false, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
                                                                         "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D" };

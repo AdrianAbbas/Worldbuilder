@@ -505,6 +505,42 @@ struct Roll {
     }
 };
 
+// A gritty radio filter: the band of a field radio (a resonant high-pass and low-pass),
+// driven into soft clipping, with a faint flutter of the signal fading in and out.
+// Mixed with the dry signal. Military Camp.
+struct Radio {
+    std::array<Svf, 2> low, high;
+    float rate = 48000, drive = 2, mix = 1, phase = 0, flutter = 0;
+    void prepare(float sampleRate) {
+        rate = sampleRate;
+        clear();
+    }
+    void clear() {
+        for (auto& f : low) f.reset();
+        for (auto& f : high) f.reset();
+        phase = 0;
+    }
+    // Once per chunk: the band (Hz), the drive (1: clean), the wet mix and the flutter (0..1).
+    void set(float lowHz, float highHz, float driveAmount, float mixAmount, float flutterAmount) {
+        for (auto& f : low) f.set(lowHz, 0.9f, rate);
+        for (auto& f : high) f.set(highHz, 1.4f, rate);
+        drive = std::max(driveAmount, 1.0f);
+        mix = clamp01(mixAmount);
+        flutter = clamp01(flutterAmount);
+    }
+    void process(float& l, float& r) {
+        phase += 7.3f / rate;
+        if (phase > 1.0f) phase -= 1.0f;
+        const float fade = 1.0f - flutter * (0.5f + 0.5f * std::sin(twoPi * phase)) * 0.6f;
+        float* io[2] { &l, &r };
+        for (std::size_t c = 0; c < 2; ++c) {
+            const float band = high[c].tick(low[c].tick(*io[c]).hp).lp;
+            const float y = softClip(band * drive) / std::sqrt(drive) * 1.6f * fade;
+            *io[c] = lerp(*io[c], y, mix);
+        }
+    }
+};
+
 // Detune: a gentle pitch shifter (two crossfaded read heads gliding through a short
 // delay), each side shifted by its own few cents and mixed with the dry signal, with
 // an optional slow wow that bends the shift. A glossy, slightly detuned sheen; turned

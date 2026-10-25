@@ -518,6 +518,40 @@ private:
     float hallSend = 0, presence = 0, motorPhase = 0, motorHz = 5, motorDepth = 0, dry = 1;
 };
 
+// Military Camp: snare march patterns, bugle calls on the notes of the harmonic
+// series, a low drum pulse, tuned radio blips, metallic clanks and a tense string
+// ostinato, in a tight room with a slapback off the barracks and a gritty radio
+// filter. Morning Drill: a brisk march, reveille, the camp at work. On Alert: a
+// driving ostinato, urgent radio traffic, drum rolls, a call to arms. Night Watch:
+// a slow pulse, a distant taps over the radio, sparse clanks in the dark.
+class MilitaryPlace final : public EnsemblePlace {
+public:
+    MilitaryPlace();
+    float freeTempo() const override { return 112.0f; }
+    float spaceSend() const override { return 0.25f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { SnareMarch, Bugle, LowDrums, RadioBlips, Clanks, Strings };
+    enum Character { MorningDrill, OnAlert, NightWatch };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    DrumPart snare, drums, clanks;
+    SynthPart bugle;
+    FmPart radio;
+    BowedPart strings;
+    dsp::SmallSpace room;
+    dsp::Slapback slap;
+    dsp::Radio band;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, presence = 0, bugleRadio = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 
