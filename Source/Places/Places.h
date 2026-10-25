@@ -618,6 +618,39 @@ private:
     float roomSend = 0, echoSend = 0, presence = 0, dry = 1;
 };
 
+// Palace: harpsichord arpeggios, a string-ensemble pad, fanfare brass, a glockenspiel,
+// courtly timpani and choir swells, in a grand hall. Grand Ball: a waltz (three beats
+// over the 4/4 grid, four waltz bars to three of the song's), Alberti figures, a
+// sparkling glockenspiel. Throne Room: stately rolled chords, fanfares with timpani
+// rolls, a full choir. Fallen Palace: a broken, slow harpsichord, thin detuned strings,
+// a lone distant call, a ghostly choir in an empty hall.
+class PalacePlace final : public EnsemblePlace {
+public:
+    PalacePlace();
+    float freeTempo() const override { return 96.0f; }
+    float spaceSend() const override { return 0.35f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Harpsichord, Strings, Fanfare, Glockenspiel, Timpani, Choir };
+    enum Character { GrandBall, ThroneRoom, FallenPalace };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    PluckPart harpsichord;
+    SynthPart strings, brass;
+    ModalPart glock;
+    DrumPart timpani;
+    ChoirPart choir;
+    dsp::SmallSpace hall;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float hallSend = 0, hallWet = 0, presence = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

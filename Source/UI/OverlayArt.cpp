@@ -1820,6 +1820,113 @@ OverlayArt desert(const Layout& L) {
     for (auto s : suns) move(a, PlaceOverlays::MovePulse, s, halo, 7.0f, 0.0f, 0.8f);
     return a;
 }
+//==============================================================================
+// Palace: gilded moulding along the frames with scrolls at the corners, red velvet drapes
+// tied back at the panels' top corners, marble columns in the gaps, a chequered marble
+// floor along the bottom, crystal chandeliers with candles in the open space; candles
+// flicker, crystals glint, gold motes drift down.
+OverlayArt palace(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1919);
+    juce::Path gold, goldDark, scrolls, drape, drapeShade, tassels, columns, columnLines, floorLight, floorDark, chandelier, candles;
+    std::vector<Point> flames, crystals;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // The marble floor: a chequer of light and dark tiles.
+    for (float x = 0.0f; x < width; x += 10.0f)
+        for (int row = 0; row < 2; ++row) ((int(x / 10.0f) + row) % 2 == 0 ? floorLight : floorDark).addRectangle(x, bottom - 8.0f + float(row) * 4.0f, 10.0f, 4.0f);
+    // Gilded moulding on every frame, with a scroll at each corner.
+    for (auto p : L.panels) {
+        gold.addRectangle(p.getX() + 8.0f, p.getY() - 2.0f, p.getWidth() - 16.0f, 3.5f);
+        gold.addRectangle(p.getX() + 8.0f, p.getBottom() - 1.5f, p.getWidth() - 16.0f, 3.5f);
+        goldDark.addRectangle(p.getX() + 8.0f, p.getY() + 0.6f, p.getWidth() - 16.0f, 0.8f);
+        for (float x = p.getX() + 16.0f; x < p.getRight() - 16.0f; x += 14.0f) goldDark.addEllipse(x - 1.0f, p.getY() - 1.3f, 2.0f, 2.0f);
+        for (auto corner : { Point { p.getX(), p.getY() }, Point { p.getRight(), p.getY() }, Point { p.getX(), p.getBottom() }, Point { p.getRight(), p.getBottom() } }) {
+            const float dx = corner.x < p.getCentreX() ? 1.0f : -1.0f, dy = corner.y < p.getCentreY() ? 1.0f : -1.0f;
+            juce::Path curl;
+            curl.startNewSubPath(corner.x + dx * 12.0f, corner.y);
+            curl.cubicTo(corner.x + dx * 2.0f, corner.y - dy * 3.0f, corner.x - dx * 3.0f, corner.y + dy * 4.0f, corner.x + dx * 2.0f, corner.y + dy * 8.0f);
+            curl.cubicTo(corner.x + dx * 6.0f, corner.y + dy * 11.0f, corner.x + dx * 8.0f, corner.y + dy * 5.0f, corner.x + dx * 4.0f, corner.y + dy * 4.5f);
+            juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createStrokedPath(curl, curl);
+            scrolls.addPath(curl);
+        }
+        // Velvet drapes swagged from the top corners.
+        for (auto [cx, dx] : { std::pair<float, float> { p.getX(), 1.0f }, { p.getRight(), -1.0f } }) {
+            juce::Path d;
+            const float reach = std::min(42.0f, p.getWidth() * 0.18f);
+            d.startNewSubPath(cx - dx * 2.0f, p.getY() - 2.0f);
+            d.lineTo(cx + dx * reach, p.getY() - 2.0f);
+            d.quadraticTo(cx + dx * reach * 0.5f, p.getY() + 9.0f, cx + dx * 4.0f, p.getY() + 22.0f);
+            d.lineTo(cx - dx * 2.0f, p.getY() + 30.0f);
+            d.closeSubPath();
+            drape.addPath(d);
+            juce::Path fold;
+            fold.startNewSubPath(cx + dx * reach * 0.6f, p.getY() - 1.0f);
+            fold.quadraticTo(cx + dx * reach * 0.3f, p.getY() + 6.0f, cx + dx * 2.0f, p.getY() + 20.0f);
+            juce::PathStrokeType(1.2f).createStrokedPath(fold, fold);
+            drapeShade.addPath(fold);
+            tassels.addEllipse(cx - 1.5f, p.getY() + 29.0f, 3.0f, 5.0f);
+        }
+    }
+    // Marble columns with fluting in the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 50.0f) continue;
+        const float cx = gap.getCentreX(), w = std::min(10.0f, gap.getWidth() - 2.0f);
+        columns.addRectangle(cx - w * 0.5f, gap.getY() + 8.0f, w, gap.getHeight() - 16.0f);
+        gold.addRectangle(cx - w * 0.5f - 1.5f, gap.getY() + 6.0f, w + 3.0f, 3.0f);
+        gold.addRectangle(cx - w * 0.5f - 1.5f, gap.getBottom() - 9.0f, w + 3.0f, 3.0f);
+        for (float fx = cx - w * 0.5f + 2.0f; fx < cx + w * 0.5f - 1.0f; fx += 2.5f) columnLines.addRectangle(fx, gap.getY() + 10.0f, 0.6f, gap.getHeight() - 20.0f);
+    }
+    // Chandeliers in the open space.
+    for (auto o : L.open) {
+        const int count = std::max(1, int(o.getWidth() / 140.0f));
+        for (int k = 0; k < count; ++k) {
+            const float cx = o.getX() + o.getWidth() * (float(k) + 0.5f) / float(count), top = o.getY();
+            const float h = std::min(o.getHeight() - 2.0f, 26.0f);
+            chandelier.addRectangle(cx - 0.5f, top, 1.0f, h * 0.35f);
+            juce::Path arms;
+            arms.startNewSubPath(cx - 14.0f, top + h * 0.5f);
+            arms.quadraticTo(cx, top + h * 0.95f, cx + 14.0f, top + h * 0.5f);
+            arms.startNewSubPath(cx - 8.0f, top + h * 0.45f);
+            arms.quadraticTo(cx, top + h * 0.75f, cx + 8.0f, top + h * 0.45f);
+            juce::PathStrokeType(1.2f).createStrokedPath(arms, arms);
+            chandelier.addPath(arms);
+            chandelier.addEllipse(cx - 2.5f, top + h * 0.35f, 5.0f, 5.0f);
+            for (float dx : { -14.0f, -8.0f, 8.0f, 14.0f }) {
+                const float y = top + h * (std::abs(dx) > 10.0f ? 0.5f : 0.45f);
+                candles.addRectangle(cx + dx - 0.8f, y - 4.0f, 1.6f, 4.0f);
+                flames.push_back({ cx + dx, y - 5.5f });
+            }
+            for (int d = 0; d < 5; ++d) crystals.push_back({ cx + between(r, -12.0f, 12.0f), top + h * between(r, 0.55f, 0.85f) });
+        }
+    }
+    a.shapes.push_back({ floorLight, juce::Colour(0xfff2ece4) });
+    a.shapes.push_back({ floorDark, juce::Colour(0xff3a3036) });
+    a.shapes.push_back({ columns, juce::Colour(0xffe8e2da) });
+    a.shapes.push_back({ columnLines, juce::Colour(0xffb8b0a8) });
+    a.shapes.push_back({ drape, juce::Colour(0xff8a1a2a) });
+    a.shapes.push_back({ drapeShade, juce::Colour(0xff5a0e1a) });
+    a.shapes.push_back({ gold, juce::Colour(0xffd8b050) });
+    a.shapes.push_back({ goldDark, juce::Colour(0xff9a7a30) });
+    a.shapes.push_back({ scrolls, juce::Colour(0xffe8c060) });
+    a.shapes.push_back({ tassels, juce::Colour(0xffe8c060) });
+    a.shapes.push_back({ chandelier, juce::Colour(0xffd8b050) });
+    a.shapes.push_back({ candles, juce::Colour(0xfff8f0e0) });
+
+    const int flame = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(4.5f, juce::Colour(0xb0ffb040), juce::Colour(0xfffff0c0), 1.2f));
+    const int glint = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(3.5f, juce::Colour(0xffe8f0ff)));
+    const int mote = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.0f, juce::Colour(0x90ffd870), juce::Colour(0xfffff0b0), 0.7f));
+    for (auto f : flames) move(a, PlaceOverlays::MoveFlicker, f, flame, between(r, 0.8f, 1.6f), r.nextFloat(), 0.95f);
+    for (auto c : crystals) move(a, PlaceOverlays::MovePulse, c, glint, between(r, 1.5f, 3.0f), r.nextFloat(), 0.9f);
+    juce::RectangleList<int> air;
+    for (auto o : L.open) air.add(o.toNearestInt());
+    for (auto l : L.ledges) air.add(l.toNearestInt());
+    for (auto gap : L.gutters) air.add(gap.toNearestInt());
+    for (auto at : spotsIn(air, 8, 1920)) move(a, PlaceOverlays::MoveFall, at, mote, between(r, 5.0f, 8.0f), r.nextFloat(), 0.9f, between(r, 14.0f, 26.0f), 5.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -1921,7 +2028,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -1941,6 +2048,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Military: return military(layout);
         case Beach: return beach(layout);
         case Desert: return desert(layout);
+        case Palace: return palace(layout);
         default: return {};
     }
 }

@@ -51,7 +51,7 @@ target_sources(WORLDBUILDER PRIVATE
     Source/Places/PlaceSlot.cpp Source/Places/Ensemble.cpp Source/Places/Castle.cpp Source/Places/Village.cpp Source/Places/Spaceport.cpp
     Source/Places/Factory.cpp Source/Places/City.cpp Source/Places/Forest.cpp Source/Places/Hive.cpp Source/Places/Temple.cpp Source/Places/Cavern.cpp
     Source/Places/Ruins.cpp Source/Places/Spaceship.cpp Source/Places/Biodome.cpp Source/Places/SeaShip.cpp Source/Places/Suburbs.cpp
-    Source/Places/Mall.cpp Source/Places/Military.cpp Source/Places/Beach.cpp Source/Places/Desert.cpp
+    Source/Places/Mall.cpp Source/Places/Military.cpp Source/Places/Beach.cpp Source/Places/Desert.cpp Source/Places/Palace.cpp
     Source/Patterns/PatternStore.cpp Source/Patterns/PatternMidi.cpp
     Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/OverlayArt.cpp Source/UI/PatternEditor.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
