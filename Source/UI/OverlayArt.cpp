@@ -1700,6 +1700,126 @@ OverlayArt beach(const Layout& L) {
     for (auto at : spotsIn(sky, 6, 1718)) move(a, PlaceOverlays::MoveDrift, at, gull, between(r, 8.0f, 12.0f), r.nextFloat(), 0.9f, between(r, -40.0f, 40.0f), 4.0f);
     return a;
 }
+//==============================================================================
+// Desert: dunes along the bottom with sand blown over the frames' lower edges, carved
+// sandstone trim with a zigzag band along the panel tops, brass lanterns hanging in the
+// gaps, a caravan of camels by an oasis under a pale sun in the open space; sand drifts
+// across the bottom, the lanterns flicker, heat glints, the sun glows.
+OverlayArt desert(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(1818);
+    juce::Path dunesBack, dunesFront, ripples, trim, zigzag, chains, lanterns, lanternGlass, camels, palms, sun, drifts;
+    std::vector<Point> lamps, glints, suns;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // Two rows of dunes with ripples.
+    for (auto* row : { &dunesBack, &dunesFront }) {
+        const bool front = row == &dunesFront;
+        juce::Path d;
+        d.startNewSubPath(0.0f, bottom);
+        d.lineTo(0.0f, bottom - (front ? 5.0f : 9.0f));
+        for (float x = 0.0f; x < width; x += front ? 70.0f : 110.0f) {
+            const float peak = front ? between(r, 7.0f, 10.0f) : between(r, 11.0f, 15.0f);
+            d.quadraticTo(x + (front ? 35.0f : 55.0f), bottom - peak, x + (front ? 70.0f : 110.0f), bottom - (front ? 5.0f : 9.0f));
+        }
+        d.lineTo(width, bottom);
+        d.closeSubPath();
+        row->addPath(d);
+    }
+    for (float x = 6.0f; x < width; x += between(r, 10.0f, 18.0f)) {
+        juce::Path rp;
+        rp.startNewSubPath(x, bottom - 2.5f);
+        rp.quadraticTo(x + 3.0f, bottom - 3.6f, x + 6.0f, bottom - 2.5f);
+        juce::PathStrokeType(0.7f).createStrokedPath(rp, rp);
+        ripples.addPath(rp);
+        if (r.nextFloat() < 0.15f) glints.push_back({ x, bottom - between(r, 3.0f, 8.0f) });
+    }
+    // Carved sandstone along the panel tops, a zigzag band on it; sand heaped at the bottom corners.
+    for (auto p : L.panels) {
+        trim.addRectangle(p.getX() + 10.0f, p.getY() - 2.5f, p.getWidth() - 20.0f, 5.0f);
+        for (float x = p.getX() + 12.0f; x < p.getRight() - 16.0f; x += 6.0f) zigzag.addTriangle(x, p.getY() + 1.5f, x + 3.0f, p.getY() - 1.5f, x + 6.0f, p.getY() + 1.5f);
+        for (auto [cx, dx] : { std::pair<float, float> { p.getX(), 1.0f }, { p.getRight(), -1.0f } }) {
+            juce::Path heap;
+            heap.startNewSubPath(cx - dx * 4.0f, p.getBottom() + 2.0f);
+            heap.quadraticTo(cx + dx * 6.0f, p.getBottom() - 12.0f, cx + dx * 26.0f, p.getBottom() + 2.0f);
+            heap.closeSubPath();
+            drifts.addPath(heap);
+        }
+    }
+    // Brass lanterns on chains in the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 60.0f) continue;
+        const float cx = gap.getCentreX(), y = gap.getY() + std::min(60.0f, gap.getHeight() * 0.3f);
+        chains.addRectangle(cx - 0.4f, gap.getY() + 4.0f, 0.8f, y - gap.getY() - 4.0f);
+        juce::Path lantern;
+        lantern.addTriangle(cx - 5.0f, y + 2.0f, cx + 5.0f, y + 2.0f, cx, y - 3.0f);
+        lantern.addRectangle(cx - 4.0f, y + 2.0f, 8.0f, 8.0f);
+        lantern.addTriangle(cx - 4.0f, y + 10.0f, cx + 4.0f, y + 10.0f, cx, y + 14.0f);
+        lanterns.addPath(lantern);
+        lanternGlass.addRectangle(cx - 2.5f, y + 3.5f, 5.0f, 5.0f);
+        lamps.push_back({ cx, y + 6.0f });
+    }
+    // A caravan by an oasis under a pale sun, in the open space.
+    for (auto o : L.open) {
+        const float base = o.getBottom() - 1.0f, scale = std::min(1.0f, o.getHeight() / 26.0f);
+        const float radius = std::min(o.getHeight() * 0.35f, 11.0f);
+        const Point sunAt { o.getX() + o.getWidth() * 0.18f, o.getY() + radius + 1.0f };
+        sun.addEllipse(sunAt.x - radius, sunAt.y - radius, radius * 2.0f, radius * 2.0f);
+        suns.push_back(sunAt);
+        // Distant dunes in the header.
+        juce::Path far;
+        far.startNewSubPath(o.getX(), base);
+        for (float x = o.getX(); x < o.getRight(); x += 60.0f) far.quadraticTo(x + 30.0f, base - 7.0f * scale, x + 60.0f, base);
+        far.closeSubPath();
+        dunesBack.addPath(far);
+        // Camels walking in a line.
+        for (int k = 0; k < 3; ++k) {
+            const float x = o.getX() + o.getWidth() * 0.45f + float(k) * 22.0f * scale, y = base - 3.0f * scale;
+            juce::Path camel;
+            camel.addEllipse(x - 7.0f * scale, y - 11.0f * scale, 12.0f * scale, 6.0f * scale);       // body
+            camel.addEllipse(x - 3.5f * scale, y - 14.0f * scale, 5.0f * scale, 5.0f * scale);       // hump
+            camel.addRectangle(x + 3.5f * scale, y - 16.0f * scale, 1.6f * scale, 8.0f * scale);     // neck
+            camel.addEllipse(x + 3.5f * scale, y - 17.5f * scale, 4.0f * scale, 2.6f * scale);       // head
+            for (float leg : { -5.5f, -3.0f, 1.5f, 3.5f }) camel.addRectangle(x + leg * scale, y - 6.0f * scale, 1.1f * scale, 6.0f * scale);
+            camels.addPath(camel);
+        }
+        // An oasis palm at the right.
+        const float px = o.getRight() - 30.0f, top = base - std::min(o.getHeight() - 3.0f, 22.0f);
+        juce::Path trunk;
+        trunk.startNewSubPath(px, base);
+        trunk.quadraticTo(px + 4.0f, (base + top) * 0.5f, px + 1.0f, top);
+        juce::PathStrokeType(1.6f).createStrokedPath(trunk, trunk);
+        palms.addPath(trunk);
+        for (int f = 0; f < 5; ++f) leaf(palms, { px + 1.0f, top }, 7.0f, -2.8f + float(f) * 0.6f);
+    }
+    a.shapes.push_back({ sun, juce::Colour(0xfffff0c8) });
+    a.shapes.push_back({ dunesBack, juce::Colour(0xffc89a58) });
+    a.shapes.push_back({ camels, juce::Colour(0xff5a3e26) });
+    a.shapes.push_back({ palms, juce::Colour(0xff3a6a34) });
+    a.shapes.push_back({ dunesFront, juce::Colour(0xffe8c07a) });
+    a.shapes.push_back({ ripples, juce::Colour(0xffb08850) });
+    a.shapes.push_back({ drifts, juce::Colour(0xe0e2b878) });
+    a.shapes.push_back({ trim, juce::Colour(0xffc8a46a) });
+    a.shapes.push_back({ zigzag, juce::Colour(0xff8a5a30) });
+    a.shapes.push_back({ chains, juce::Colour(0xff8a7040) });
+    a.shapes.push_back({ lanterns, juce::Colour(0xffb08838) });
+    a.shapes.push_back({ lanternGlass, juce::Colour(0xffffc860) });
+
+    const int grain = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(1.8f, juce::Colour(0x90f0d090), juce::Colour(0xfff8e8c0), 0.7f));
+    const int lamp = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(8.0f, juce::Colour(0x90ffb040), juce::Colour(0xffffe0a0), 2.0f));
+    const int glint = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(3.5f, juce::Colour(0xfffff0c0)));
+    const int halo = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(16.0f, juce::Colour(0x40fff0c0), juce::Colour(0x00ffffff), 0.0f));
+    for (int k = 0; k < 14; ++k)
+        move(a, PlaceOverlays::MoveDrift, { between(r, -20.0f, width * 0.6f), bottom - between(r, 3.0f, 11.0f) }, grain, between(r, 4.0f, 7.0f), r.nextFloat(), 0.9f,
+             between(r, 120.0f, 260.0f), 2.0f);
+    for (auto l : lamps) move(a, PlaceOverlays::MoveFlicker, l, lamp, between(r, 1.0f, 2.0f), r.nextFloat(), 0.9f);
+    for (std::size_t i = 0; i < glints.size() && i < 10; ++i) move(a, PlaceOverlays::MovePulse, glints[i], glint, between(r, 2.0f, 4.0f), r.nextFloat(), 0.8f);
+    for (auto s : suns) move(a, PlaceOverlays::MovePulse, s, halo, 7.0f, 0.0f, 0.8f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -1801,7 +1921,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -1820,6 +1940,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Mall: return mall(layout);
         case Military: return military(layout);
         case Beach: return beach(layout);
+        case Desert: return desert(layout);
         default: return {};
     }
 }

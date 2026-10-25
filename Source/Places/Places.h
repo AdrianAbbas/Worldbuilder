@@ -585,6 +585,39 @@ private:
     float airSend = 0, presence = 0, dry = 1;
 };
 
+// Desert: oud plucks, frame drums (doum, tek and a riq's jingles), a breathy ney, a
+// tanpura-like drone, wind whistles and sparse metal chimes, in a wide, dry space with a
+// long, sparse echo. Oasis: a lilting maqsum, ornamented oud phrases, the ney singing.
+// Endless Dunes: a slow, spacious taqsim over the drone, far-off drums, long echoes.
+// Sandstorm: a driving rhythm, tremolo oud, the wind howling, the chimes thrashing.
+class DesertPlace final : public EnsemblePlace {
+public:
+    DesertPlace();
+    float freeTempo() const override { return 88.0f; }
+    float spaceSend() const override { return 0.3f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Oud, FrameDrums, Ney, Tanpura, Wind, Chimes };
+    enum Character { Oasis, EndlessDunes, Sandstorm };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    PluckPart oud;
+    DrumPart drums;
+    WindPart ney, wind;
+    SynthPart tanpura;
+    ModalPart chimes;
+    dsp::SmallSpace space;
+    dsp::TapeEcho echo;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, echoSend = 0, presence = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 
