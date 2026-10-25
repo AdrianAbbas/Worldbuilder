@@ -291,6 +291,9 @@ void SpaceportPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 2, 3, 4);
         p.gain = 1.0f;
     }
+    // The abandoned dock is a vast empty hangar; the hub is full of people and soft
+    // surfaces; the launch is everything at once.
+    sendScale.fill(dock ? 1.5f : (hub ? 0.85f : 1.1f));
     level = { 0.2f, 0.05f, 1.0f, launch ? 0.5f : 0.25f, 0.085f, 0.12f };
 
     // Murmur: two formants that jump per "syllable" and glide, never words.

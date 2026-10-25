@@ -1816,7 +1816,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Mall
   - [x] Factory
   - [x] Beach
-  - [ ] Spaceport
+  - [x] Spaceport
   - [ ] Spaceship Interior
   - [ ] Biodome
   - [ ] Alien Hive
@@ -2181,4 +2181,9 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Guitar (nylon, a classical body), Steel Drum (a pan's tuned 1 : 2 : 3 : 4.02), Waves
   (tuned surf, step 3), Shaker and clave, Breeze Pad, Gulls.
 - Space: Tension tears the echoes away, a still sunset carries sound over the water.
+
+**Spaceport** (sci-fi: synthetic)
+- Pulses, Pads, Risers, PA Tones, Engine, Data Blips: rich synthesis, each with its own
+  effect (filter on the pulses, chorus on the pads, ping-pong and lo-fi on the blips).
+- Space: the abandoned dock is a vast empty hangar, the hub full of soft surfaces.
 
