@@ -257,6 +257,12 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.spread = 0.25f;
         p.pan = 0.15f;
         p.voices = 1;
+        // The ney: an end-blown reed flute, more breath than tone at the edges, a soft
+        // attack (no fipple chiff) and a pitch that leans and wanders.
+        p.chiff = 0.12f;
+        p.chiffSeconds = 0.06f;
+        p.air = 0.3f;
+        p.wander = 6.0f;
         p.gain = 1.0f;
     }
     // The tanpura: a buzzing drone whose bright jawari shimmers as the strings are plucked round.

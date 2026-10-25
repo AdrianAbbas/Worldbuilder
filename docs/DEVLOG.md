@@ -1806,7 +1806,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Palace
   - [x] Temple
   - [x] Forest
-  - [ ] Desert
+  - [x] Desert
   - [ ] Sea Ship
   - [ ] Military Camp
   - [ ] Ruins
@@ -2115,4 +2115,12 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   Strings (moved from the saw synth to a bowed section of violas and cellos over the
   fingerboard, tremolo with Tension), Rustle (tuned breath).
 - Space: an enchanted wood rings (1.35x sends), the dark woods swallow sound (0.7x).
+
+**Desert** (fantasy/nature)
+- Oud (paired courses struck with a risha, a deep bowl body, sympathetic strings),
+  Frame Drums (doum at the centre, tek at the edge: skins), Ney (an end-blown reed flute:
+  more breath than tone at the edges, a soft attack, a leaning, wandering pitch), Tanpura
+  (still the buzzing synth drone with its jawari sweep: a plucked tanpura would need
+  re-plucked held notes; noted for later), Wind, Chimes.
+- Space: the open dunes echo far, the oasis is dry, the storm swallows echoes (step 1).
 
