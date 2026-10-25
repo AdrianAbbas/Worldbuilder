@@ -395,6 +395,8 @@ void MilitaryPlace::configure(const PlaceContext& c) {
     }
     // Tension: the strings and the snare press on, the drums grow; Machinery brings the
     // clanking gear; Life the bugler's breath and the camp's bustle.
+    // The night watch rings over open ground; on alert the camp is tight and close.
+    sendScale.fill(night ? 1.4f : (alert ? 0.7f : 1.0f));
     level = { 1.3f * (night ? 1.4f : 1.0f) * (0.7f + 0.6f * tension), 0.2f * (night ? 0.45f : 1.0f), 0.3f * (0.7f + 0.6f * tension),
               0.04f * (alert ? 1.1f : 1.0f), 1.1f * (0.5f + 1.2f * s.machinery) * lerp(0.7f, 1.3f, s.life) * (night ? 1.4f : 1.0f), 0.26f * (0.6f + 0.9f * tension) };
 

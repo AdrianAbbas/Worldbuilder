@@ -1808,7 +1808,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Forest
   - [x] Desert
   - [ ] Sea Ship
-  - [ ] Military Camp
+  - [x] Military Camp
   - [ ] Ruins
   - [ ] Cavern
   - [ ] City
@@ -2123,4 +2123,11 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   (still the buzzing synth drone with its jawari sweep: a plucked tanpura would need
   re-plucked held notes; noted for later), Wind, Chimes.
 - Space: the open dunes echo far, the oasis is dry, the storm swallows echoes (step 1).
+
+**Military Camp** (historical; the Places' table lists it as acoustic-first)
+- Snare March (a snare drum's skin and wires, a rim), Bugle (one bugler, brass model),
+  Low Drums (bass drum and tom skins), Radio Blips (FM over the radio filter: the one
+  electronic sound, heard through a radio), Clanks (struck steel, two-tone), Strings (a
+  bowed section, ponticello on alert).
+- Space: the night watch rings over open ground, on alert the camp is close.
 
