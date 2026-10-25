@@ -651,6 +651,39 @@ private:
     float hallSend = 0, hallWet = 0, presence = 0, dry = 1;
 };
 
+// Tavern: lute strumming, a frame-drum pulse, a fiddle playing tunes over its open
+// string, tuned glass clinks, squeezebox chords and stomps and claps, in a warm wooden
+// room with tape warmth. Lively Night: a reel, everyone stamping along. Quiet Corner:
+// slow arpeggios, a lone fiddle air, a few glasses by the fire. Brawl: everything at
+// once and too fast, the fiddler sawing, glasses flying, the drum and stomps chaotic.
+class TavernPlace final : public EnsemblePlace {
+public:
+    TavernPlace();
+    float freeTempo() const override { return 116.0f; }
+    float spaceSend() const override { return 0.25f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { LuteStrum, FrameDrum, Fiddle, GlassClinks, Squeezebox, Stomps };
+    enum Character { LivelyNight, QuietCorner, Brawl };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    PluckPart lute;
+    DrumPart drum, stomps;
+    BowedPart fiddle;
+    ModalPart glasses;
+    SynthPart squeezebox;
+    dsp::SmallSpace room;
+    dsp::Warmth warmth;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, presence = 0, dry = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

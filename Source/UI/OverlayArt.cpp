@@ -1927,6 +1927,118 @@ OverlayArt palace(const Layout& L) {
     for (auto at : spotsIn(air, 8, 1920)) move(a, PlaceOverlays::MoveFall, at, mote, between(r, 5.0f, 8.0f), r.nextFloat(), 0.9f, between(r, 14.0f, 26.0f), 5.0f);
     return a;
 }
+//==============================================================================
+// Tavern: dark oak beams with iron nails along the frames, barrels stacked in the gaps,
+// floorboards along the bottom with a hearth, a shelf of tankards and bottles and a
+// hanging inn sign in the open space, candles in iron holders at the panels' top
+// corners; candles flicker, embers rise from the hearth, smoke curls up.
+OverlayArt tavern(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(2020);
+    juce::Path beams, beamLight, nails, boards, boardLines, barrels, hoops, hearth, logs, shelf, mugs, foam, bottles, sign, signText, holders, candles;
+    std::vector<Point> flames, hearths;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // Floorboards, and a stone hearth here and there.
+    boards.addRectangle(0.0f, bottom - 7.0f, width, 7.0f);
+    for (float x = 0.0f; x < width; x += between(r, 30.0f, 60.0f)) boardLines.addRectangle(x, bottom - 7.0f, 0.8f, 7.0f);
+    boardLines.addRectangle(0.0f, bottom - 3.5f, width, 0.6f);
+    for (float x = between(r, 120.0f, 220.0f); x < width - 40.0f; x += between(r, 360.0f, 480.0f)) {
+        hearth.addRoundedRectangle(x - 18.0f, bottom - 15.0f, 36.0f, 10.0f, 3.0f);
+        logs.addRoundedRectangle(x - 10.0f, bottom - 11.0f, 20.0f, 3.0f, 1.5f);
+        logs.addRoundedRectangle(x - 8.0f, bottom - 13.0f, 16.0f, 2.5f, 1.2f);
+        hearths.push_back({ x, bottom - 14.0f });
+    }
+    // Oak beams across the panel tops and bottoms, nailed; candles at the top corners.
+    for (auto p : L.panels) {
+        for (float y : { p.getY() - 3.0f, p.getBottom() - 2.0f }) {
+            beams.addRectangle(p.getX() + 6.0f, y, p.getWidth() - 12.0f, 5.0f);
+            beamLight.addRectangle(p.getX() + 6.0f, y, p.getWidth() - 12.0f, 1.0f);
+            for (float x = p.getX() + 14.0f; x < p.getRight() - 10.0f; x += between(r, 40.0f, 70.0f)) nails.addEllipse(x - 1.0f, y + 1.5f, 2.0f, 2.0f);
+        }
+        for (float cx : { p.getX() + 3.0f, p.getRight() - 3.0f }) {
+            holders.addRectangle(cx - 3.0f, p.getY() + 12.0f, 6.0f, 1.5f);
+            holders.addRectangle(cx - 0.6f, p.getY() + 12.0f, 1.2f, 6.0f);
+            candles.addRectangle(cx - 1.3f, p.getY() + 6.0f, 2.6f, 6.0f);
+            flames.push_back({ cx, p.getY() + 4.5f });
+        }
+    }
+    // Barrels stacked in the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 50.0f) continue;
+        const float cx = gap.getCentreX(), w = std::min(12.0f, gap.getWidth() - 2.0f);
+        for (int k = 0; k < 2; ++k) {
+            const Rect barrel { cx - w * 0.5f, gap.getBottom() - 10.0f - float(k + 1) * 15.0f, w, 14.0f };
+            barrels.addRoundedRectangle(barrel, w * 0.35f);
+            hoops.addRectangle(barrel.getX() + 0.5f, barrel.getY() + 3.0f, barrel.getWidth() - 1.0f, 1.0f);
+            hoops.addRectangle(barrel.getX() + 0.5f, barrel.getBottom() - 4.0f, barrel.getWidth() - 1.0f, 1.0f);
+        }
+    }
+    // A shelf of tankards and bottles, and a hanging inn sign, in the open space.
+    for (auto o : L.open) {
+        const float base = o.getBottom() - 2.0f;
+        shelf.addRectangle(o.getX() + 6.0f, base, o.getWidth() * 0.6f, 2.5f);
+        for (float x = o.getX() + 12.0f; x < o.getX() + o.getWidth() * 0.6f - 6.0f; x += between(r, 12.0f, 18.0f)) {
+            if (r.nextFloat() < 0.55f) {
+                mugs.addRoundedRectangle(x, base - 9.0f, 7.0f, 9.0f, 1.2f);
+                juce::Path handle;
+                handle.addArc(x + 5.5f, base - 7.5f, 4.0f, 5.0f, 0.0f, juce::MathConstants<float>::pi);
+                juce::PathStrokeType(1.0f).createStrokedPath(handle, handle);
+                mugs.addPath(handle);
+                foam.addRoundedRectangle(x - 0.5f, base - 10.5f, 8.0f, 2.5f, 1.2f);
+            } else {
+                const float h = std::min(o.getHeight() - 6.0f, between(r, 12.0f, 16.0f));
+                bottles.addRoundedRectangle(x + 1.0f, base - h * 0.65f, 5.0f, h * 0.65f, 1.5f);
+                bottles.addRectangle(x + 2.5f, base - h, 2.0f, h * 0.4f);
+            }
+        }
+        const float sx = o.getRight() - 50.0f, sy = o.getY() + 2.0f;
+        const float sh = std::min(o.getHeight() - 8.0f, 18.0f);
+        sign.addRectangle(sx - 26.0f, sy, 52.0f, 1.5f);
+        sign.addRectangle(sx - 18.0f, sy, 1.0f, 4.0f);
+        sign.addRectangle(sx + 17.0f, sy, 1.0f, 4.0f);
+        const Rect board { sx - 22.0f, sy + 4.0f, 44.0f, sh };
+        sign.addRoundedRectangle(board, 2.0f);
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(juce::Font(juce::FontOptions(std::min(10.0f, sh - 4.0f), juce::Font::bold)), "INN", 0.0f, 0.0f);
+        juce::Path text;
+        glyphs.createPath(text);
+        const auto tb = text.getBounds();
+        text.applyTransform(juce::AffineTransform::translation(board.getCentreX() - tb.getCentreX(), board.getCentreY() - tb.getCentreY()));
+        signText.addPath(text);
+    }
+    a.shapes.push_back({ boards, juce::Colour(0xff5a3a22) });
+    a.shapes.push_back({ boardLines, juce::Colour(0xff3a2414) });
+    a.shapes.push_back({ hearth, juce::Colour(0xff6a6260) });
+    a.shapes.push_back({ logs, juce::Colour(0xff4a2c18) });
+    a.shapes.push_back({ barrels, juce::Colour(0xff8a5a30) });
+    a.shapes.push_back({ hoops, juce::Colour(0xff3a3634) });
+    a.shapes.push_back({ beams, juce::Colour(0xff4e321e) });
+    a.shapes.push_back({ beamLight, juce::Colour(0xff7a5434) });
+    a.shapes.push_back({ nails, juce::Colour(0xff2a2624) });
+    a.shapes.push_back({ holders, juce::Colour(0xff2e2a28) });
+    a.shapes.push_back({ candles, juce::Colour(0xfff0e4c8) });
+    a.shapes.push_back({ shelf, juce::Colour(0xff5a3a22) });
+    a.shapes.push_back({ mugs, juce::Colour(0xffa08060) });
+    a.shapes.push_back({ foam, juce::Colour(0xfff8f0dc) });
+    a.shapes.push_back({ bottles, juce::Colour(0xff2a5a3a) });
+    a.shapes.push_back({ sign, juce::Colour(0xff6a4428) });
+    a.shapes.push_back({ signText, juce::Colour(0xffe8c070) });
+
+    const int flame = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(5.0f, juce::Colour(0xb0ffa040), juce::Colour(0xfffff0c0), 1.3f));
+    const int ember = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.0f, juce::Colour(0xb0ff7030), juce::Colour(0xffffd090), 0.8f));
+    const int fire = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(10.0f, juce::Colour(0x80ff8030), juce::Colour(0xc0ffd080), 2.5f));
+    const int smoke = puffSprites(a, juce::Colour(0x50a09080));
+    for (auto f : flames) move(a, PlaceOverlays::MoveFlicker, f, flame, between(r, 0.8f, 1.6f), r.nextFloat(), 0.95f);
+    for (auto h : hearths) {
+        move(a, PlaceOverlays::MoveFlicker, h, fire, 1.2f, r.nextFloat(), 0.9f);
+        for (int k = 0; k < 4; ++k) move(a, PlaceOverlays::MoveRise, h.translated(between(r, -8.0f, 8.0f), 0.0f), ember, between(r, 1.5f, 2.5f), float(k) / 4.0f, 1.0f, 16.0f, 4.0f);
+        move(a, PlaceOverlays::MoveRise, h.translated(0.0f, -4.0f), smoke, 3.5f, r.nextFloat(), 0.6f, 20.0f, 3.0f, 8);
+    }
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2028,7 +2140,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2049,6 +2161,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Beach: return beach(layout);
         case Desert: return desert(layout);
         case Palace: return palace(layout);
+        case Tavern: return tavern(layout);
         default: return {};
     }
 }
