@@ -276,6 +276,9 @@ void CavernPlace::configure(const PlaceContext& c) {
         p.gain = 1.0f;
     }
     // Tension: the rumble and the drone press in; Machinery: the mine works harder.
+    // The crystal cave rings; the deep mine is close, dry rock and timber; flooded, the
+    // water carries every sound far.
+    sendScale.fill(crystal ? 1.4f : (mine ? 0.7f : 1.2f));
     level = { 0.22f * lerp(0.8f, 1.2f, s.life), 0.05f * (0.7f + 0.6f * tension), 0.3f * (1.0f + 1.5f * s.machinery), crystal ? 0.3f : 0.2f, 0.12f,
               0.5f * (0.5f + 1.5f * tension) * (1.0f + 1.0f * s.machinery) };
 

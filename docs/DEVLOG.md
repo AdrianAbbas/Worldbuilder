@@ -1810,7 +1810,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Sea Ship
   - [x] Military Camp
   - [x] Ruins
-  - [ ] Cavern
+  - [x] Cavern
   - [ ] City
   - [ ] Suburbs
   - [ ] Mall
@@ -2147,4 +2147,10 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   pair in the distinctness report, 1.14); its level kept and its swell quick enough to
   sound at once after a locate.
 - Space: the ghost ship drifts in fog that rings (1.6x sends), the storm tears echoes away.
+
+**Cavern** (fantasy/nature)
+- Drips, Sub Drone, Metal Taps, Bowed Bass (double basses, two players, step 2),
+  Crystals (glass-like modes), Rumble. Effects: everything in the Cave reverb.
+- Space: the crystal cave rings, the deep mine is close and dry, flooded water carries
+  sound far.
 
