@@ -2216,6 +2216,85 @@ OverlayArt megacity(const Layout& L) {
             move(a, PlaceOverlays::MoveFall, rainTops[i].translated(float(k) * 6.0f - 3.0f, 0.0f), drop, between(r, 0.5f, 0.9f), r.nextFloat(), 0.8f, rainLengths[i], 0.0f);
     return a;
 }
+
+//==============================================================================
+// Starship Bridge: a heads-up display. Thin cyan frame lines with range ticks along
+// the panels, targeting brackets on every corner, data bars down the gaps, and in the
+// open space a radar scope and a heading tape. Scan dots run along the frames,
+// brackets pulse, contacts blink on the scope.
+OverlayArt bridge(const Layout& L) {
+    OverlayArt a;
+    a.light = true;
+    juce::Random r(2323);
+    const juce::Colour hud(0xff5fd0ff), warn(0xffffb040);
+    juce::Path lines, ticks, brackets, bars, scope, tape;
+    std::vector<Point> contacts, cornerLights;
+    std::vector<std::pair<Point, float>> scans;
+    for (auto p : L.panels) {
+        lines.addRectangle(p.getX() + 24.0f, p.getY() - 2.5f, p.getWidth() - 48.0f, 0.8f);
+        lines.addRectangle(p.getX() + 24.0f, p.getBottom() + 1.7f, p.getWidth() - 48.0f, 0.8f);
+        for (float x = p.getX() + 30.0f; x < p.getRight() - 28.0f; x += 10.0f) {
+            const bool major = int((x - p.getX()) / 10.0f) % 5 == 0;
+            ticks.addRectangle(x, p.getY() - (major ? 5.5f : 4.0f), 0.8f, major ? 3.0f : 1.5f);
+        }
+        // Target brackets on the corners, outside the frame.
+        for (auto corner : { p.getTopLeft(), p.getTopRight(), p.getBottomLeft(), p.getBottomRight() }) {
+            const float dx = corner.x < p.getCentreX() ? -1.0f : 1.0f, dy = corner.y < p.getCentreY() ? -1.0f : 1.0f;
+            juce::Path b;
+            b.startNewSubPath(corner.x + dx * 3.0f, corner.y - dy * 14.0f);
+            b.lineTo(corner.x + dx * 3.0f, corner.y + dy * 3.0f);
+            b.lineTo(corner.x - dx * 14.0f, corner.y + dy * 3.0f);
+            juce::PathStrokeType(1.4f).createStrokedPath(b, b);
+            brackets.addPath(b);
+            cornerLights.push_back({ corner.x + dx * 3.0f, corner.y + dy * 3.0f });
+        }
+        scans.push_back({ { p.getX() + 26.0f, p.getY() - 2.1f }, p.getWidth() - 52.0f });
+    }
+    // Data bars down the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 40.0f) continue;
+        const float cx = gap.getCentreX(), w = std::min(6.0f, gap.getWidth() - 2.0f);
+        for (float y = gap.getY() + 12.0f; y < gap.getBottom() - 12.0f; y += 6.0f) bars.addRectangle(cx - w * 0.5f, y, w * between(r, 0.3f, 1.0f), 2.0f);
+    }
+    // A radar scope and a heading tape in the open space.
+    for (auto o : L.open) {
+        const float rr = std::min(o.getHeight() * 0.42f, 22.0f), cx = o.getX() + o.getWidth() * 0.82f, cy = o.getCentreY();
+        for (float k : { 1.0f, 0.6f, 0.25f }) {
+            juce::Path ring;
+            ring.addEllipse(cx - rr * k, cy - rr * k, 2.0f * rr * k, 2.0f * rr * k);
+            juce::PathStrokeType(0.8f).createStrokedPath(ring, ring);
+            scope.addPath(ring);
+        }
+        scope.addRectangle(cx - rr, cy - 0.4f, 2.0f * rr, 0.8f);
+        scope.addRectangle(cx - 0.4f, cy - rr, 0.8f, 2.0f * rr);
+        for (int k = 0; k < 4; ++k) contacts.push_back({ cx + between(r, -0.8f, 0.8f) * rr, cy + between(r, -0.8f, 0.8f) * rr });
+        const float tx = o.getX() + 20.0f, tw = o.getWidth() * 0.5f, ty = o.getBottom() - 6.0f;
+        tape.addRectangle(tx, ty, tw, 0.8f);
+        for (float x = tx; x < tx + tw; x += 8.0f) tape.addRectangle(x, ty - (int((x - tx) / 8.0f) % 4 == 0 ? 6.0f : 3.0f), 0.8f, int((x - tx) / 8.0f) % 4 == 0 ? 6.0f : 3.0f);
+        juce::Path caret;
+        caret.addTriangle(tx + tw * 0.5f - 3.0f, ty + 5.0f, tx + tw * 0.5f + 3.0f, ty + 5.0f, tx + tw * 0.5f, ty + 1.5f);
+        tape.addPath(caret);
+    }
+    a.shapes.push_back({ lines, hud.withAlpha(0.18f), 4.0f });
+    a.shapes.push_back({ lines, hud.withAlpha(0.85f) });
+    a.shapes.push_back({ ticks, hud.withAlpha(0.7f) });
+    a.shapes.push_back({ brackets, hud.withAlpha(0.2f), 3.0f });
+    a.shapes.push_back({ brackets, hud.interpolatedWith(juce::Colours::white, 0.3f) });
+    a.shapes.push_back({ bars, hud.withAlpha(0.55f) });
+    a.shapes.push_back({ scope, hud.withAlpha(0.7f) });
+    a.shapes.push_back({ tape, hud.withAlpha(0.75f) });
+
+    const int corner = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(4.0f, hud.withAlpha(0.6f), juce::Colour(0xffe0f8ff), 1.2f));
+    const int contact = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, warn.withAlpha(0.7f), juce::Colour(0xfffff0d0), 1.0f));
+    const int scan = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(5.0f, hud.withAlpha(0.7f), juce::Colour(0xffffffff), 1.4f));
+    for (auto p : cornerLights) move(a, PlaceOverlays::MovePulse, p, corner, between(r, 1.5f, 3.0f), r.nextFloat(), 0.9f);
+    for (auto p : contacts) move(a, PlaceOverlays::MoveBlink, p, contact, between(r, 1.2f, 2.5f), r.nextFloat());
+    for (const auto& [at, length] : scans) move(a, PlaceOverlays::MoveDrift, at, scan, between(r, 3.0f, 5.0f), r.nextFloat(), 1.0f, length, 0.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2318,7 +2397,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
            || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern
-           || type == SpaceStation || type == Megacity;
+           || type == SpaceStation || type == Megacity || type == Bridge;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2342,6 +2421,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Tavern: return tavern(layout);
         case SpaceStation: return station(layout);
         case Megacity: return megacity(layout);
+        case Bridge: return bridge(layout);
         default: return {};
     }
 }

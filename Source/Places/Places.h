@@ -756,6 +756,43 @@ private:
     float neonSend = 0, crushMix = 0, pingSend = 0, presence = 0, dry = 1, drive = 1, rainLevel = 0;
 };
 
+// Starship Bridge: command-console arpeggios, a warp-core drone, a tactical pulse,
+// alert brass swells, abstract crew chatter over the intercom and sensor pings, in a
+// wide cinematic hall with risers. Cruising: calm consoles, a slow core, pings far
+// out. Battle Stations: a driving tactical pulse, brass alerts every two bars, busy
+// comms. Warp Jump: an eight-bar build, the core spinning up under a riser, the
+// brass swelling to the jump on the downbeat.
+class BridgePlace final : public EnsemblePlace {
+public:
+    BridgePlace();
+    float freeTempo() const override { return 108.0f; }
+    float spaceSend() const override { return 0.35f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Consoles, WarpCore, Tactical, Alerts, Chatter, Pings };
+    enum Character { Cruising, BattleStations, WarpJump };
+    static constexpr double buildBars = 8;   // Warp Jump: one build cycle
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    FmPart consoles;
+    SynthPart core, brass;
+    DrumPart tactical;
+    ChoirPart chatter;
+    ModalPart pings;
+    dsp::SmallSpace hall;
+    dsp::Radio intercom;
+    dsp::PingPong echo;
+    std::array<dsp::Svf, 2> riser;
+    dsp::Smoother riserGain;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float hallSend = 0, echoSend = 0, presence = 0, dry = 1, riserTarget = 0, width = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

@@ -41,7 +41,7 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
 // silent, and its card could not be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
                                                                      true, true, true, true, true, true, true, true, true, true,
-                                                                     true, true, false, false, false, false };
+                                                                     true, true, true, false, false, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
                                                                         "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D",
@@ -240,6 +240,11 @@ inline const PlaceInfo& placeInfo(int type) {
                kit("Drum Machine", IconSnare, { "Kick", "Snare", "Hat", "Clap" }), mel("Glitch Stabs", IconBlip, VaryVelocity | VarySkip | VaryExtra), held("Megastructure", IconEngine) },
              "A gritty synth bass, a neon arpeggio, a rain-soaked pad, a distorted drum machine, glitch stabs and a distant megastructure hum.",
              "A wet neon reverb, a bitcrusher and a ping-pong delay", SciFi, 0),
+        info({ "Cruising", "Battle Stations", "Warp Jump" },
+             { mel("Consoles", IconBlip), held("Warp Core", IconEngine), kit("Tactical Pulse", IconPulse, { "Pulse", "Tick", "Sub", nullptr }),
+               held("Alert Brass", IconHorn), held("Crew Chatter", IconCrowd), mel("Sensor Pings", IconRadio, VaryVelocity | VarySkip) },
+             "Command-console arpeggios, a warp-core drone, a tactical pulse, alert brass swells, abstract crew chatter and sensor pings.",
+             "A wide cinematic hall with risers", SciFi),
     } };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }

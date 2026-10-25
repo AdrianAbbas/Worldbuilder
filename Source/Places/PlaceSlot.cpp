@@ -71,6 +71,7 @@ std::unique_ptr<Place> makePlace(int type) {
         case Tavern: return std::make_unique<TavernPlace>();
         case SpaceStation: return std::make_unique<StationPlace>();
         case Megacity: return std::make_unique<MegacityPlace>();
+        case Bridge: return std::make_unique<BridgePlace>();
         default: return nullptr;
     }
 }

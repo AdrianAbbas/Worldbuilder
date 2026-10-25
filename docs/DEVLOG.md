@@ -2283,7 +2283,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 0. Registration for six new Place types (types 21-26, appended so saved projects keep their numbers), sci-fi category, card art, themes
 - [x] 1. Space Station
 - [x] 2. Cyberpunk Megacity
-- [ ] 3. Starship Bridge
+- [x] 3. Starship Bridge
 - [ ] 4. Asteroid Mining Colony
 - [ ] 5. Alien Ruins
 - [ ] 6. Nebula / Deep Space
@@ -2334,3 +2334,19 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - Overlay: magenta and cyan neon tubes on the frames, vertical glyph signs in the gaps,
   a wet street with neon reflections, a lit skyline in the header; rain falls, signs
   flicker, windows blink.
+
+**Starship Bridge** (sci-fi)
+- Consoles: glassy FM tones (ratio 4) in patterned arpeggios.
+- Warp Core: a deep throbbing saw drone; in a Warp Jump its filter opens and its throb
+  speeds up from one to eight pulses a beat over the eight-bar build.
+- Tactical Pulse: a tuned electronic pulse, a tick and a sub hit; a 3-3-2 figure at
+  battle stations, doubling through the warp build.
+- Alert Brass: a synth-brass section (the brass model) swelling in; one long swell to the jump.
+- Crew Chatter: a babbling formant group (no words) through an intercom band-pass with drive.
+- Sensor Pings: a pure ringing tone with a faint fifth, into a long ping-pong echo.
+- Space: a wide cinematic hall (its tail spread wider than the dry sound) and a noise
+  riser: across the whole build in a Warp Jump, otherwise a short one closing every
+  eight bars, deeper with Tension.
+- Overlay: a heads-up display: cyan frame lines with range ticks, targeting brackets on
+  every corner, data bars down the gaps, a radar scope and heading tape in the header;
+  scan dots run along the frames, brackets pulse, contacts blink.
