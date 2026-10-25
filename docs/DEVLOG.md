@@ -1814,7 +1814,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] City
   - [x] Suburbs
   - [x] Mall
-  - [ ] Factory
+  - [x] Factory
   - [ ] Beach
   - [ ] Spaceport
   - [ ] Spaceship Interior
@@ -2171,4 +2171,9 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   tremolo), PA Chimes, Escalator, Fountain, Drums (a kick and a brushed snare on
   skins, hats). Busy Weekend's hats follow Activity more (step 3).
 - Space: the dead mall's empty atrium hangs on to everything.
+
+**Factory** (modern)
+- Anvil, Pistons, Steam, Bowed Metal (the bowed resonator), Gears, Furnace Bass. Life
+  brings the anvil and gears forward (step 2).
+- Space: the forge's iron hall rings, the assembly line is a tight shed.
 
