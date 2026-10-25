@@ -1812,7 +1812,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Ruins
   - [x] Cavern
   - [x] City
-  - [ ] Suburbs
+  - [x] Suburbs
   - [ ] Mall
   - [ ] Factory
   - [ ] Beach
@@ -2160,4 +2160,9 @@ effect defaults set. Measurements only, as everywhere in this milestone.
   choir), Sirens, Traffic Hum.
 - Space: Tension echoes the streets; the night city is wider and wetter, rush hour
   close and dense.
+
+**Suburbs** (modern)
+- E-Piano (a mellow tine piano), Pop Pulse, Wind Chimes, Sprinkler, Music Box (a new,
+  clean steel comb: tine modes, little variation; apart from the Ruins' worn one), Bass.
+- Space: the uncanny suburb is too quiet, every sound hangs in the air.
 

@@ -277,7 +277,9 @@ void SuburbsPlace::configure(const PlaceContext& c) {
     // Music box: small hard tines, the upper partial a quarter-tone off any note.
     {
         auto& p = box.patch;
-        p.set({ 1.0f, 2.0f, 5.19f }, { 1.0f, 0.4f, 0.2f }, { 1.0f, 0.2f, 0.25f * (0.4f + tone) });
+        // A new music box: clean steel teeth (a tine's modes, 1 : 6.27 : 17.6), a bright ping.
+        p.set({ 1.0f, 6.27f, 17.55f }, { 1.0f, 0.25f, 0.08f }, { 1.0f, 0.45f * (0.4f + tone), 0.15f * tone });
+        p.extras.variation = 0.1f;
         p.decay = uncanny ? 2.2f : 1.4f;
         p.hardness = 0.75f + 0.2f * tone;
         p.toneHz = lerpExp(3000.0f, 11000.0f, tone);
@@ -311,6 +313,8 @@ void SuburbsPlace::configure(const PlaceContext& c) {
     }
     // Tension: the music box and the sprinkler come forward, something is off; Life brings
     // the breeze; Machinery runs the sprinklers.
+    // The uncanny suburb is too quiet: every sound hangs in the air.
+    sendScale.fill(uncanny ? 1.6f : (evening ? 1.15f : 0.9f));
     level = { 0.2f * (uncanny ? 0.8f : 1.0f), 0.12f * (sunny ? 1.2f : (evening ? 0.8f : 0.6f)), 0.12f * lerp(0.5f, 1.4f, s.life),
               2.2f * (0.5f + 1.0f * tension) * (0.6f + 1.0f * s.machinery) * (evening ? 0.7f : 1.0f),
               0.12f * (uncanny ? 1.6f : (sunny ? 0.8f : 1.0f)) * (0.6f + 1.0f * tension), 0.22f };
