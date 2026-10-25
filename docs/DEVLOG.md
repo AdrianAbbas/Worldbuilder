@@ -1800,7 +1800,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] keys (tine electric piano; harpsichord via the plucked string)
 - [x] 3. Weight pass across all 20 Places
 - [ ] 4. Per-Place uniqueness and realism pass
-  - [ ] Tavern
+  - [x] Tavern
   - [ ] Castle
   - [ ] Village
   - [ ] Palace
@@ -2046,4 +2046,25 @@ Problems and fixes in the weight pass:
   breath noise five semitones wide (Q 1.5-3), and it now lasted longer. The surf is
   tuned narrower (Q 4-7) and the storm raises it less (1.2x, was 1.5x); the steel
   drum's top partial is the pan's tuned double octave (4.02, was a quarter-tone-off 4.36).
+
+### Step 4: per-Place passes
+
+Each Place: every instrument checked against the sound philosophy, the six kept apart
+from each other and from other Places' (the distinctness report's closest pairs), its
+effect defaults set. Measurements only, as everywhere in this milestone.
+
+**Tavern** (fantasy: acoustic-first)
+- Lute Strum: a real strum (new in `PluckPart`: notes struck together cross the
+  strings 9 ms apart, low to high on the down-strokes on and between the beats, high to
+  low on the up-strokes, each a little softer; 5 ms in a brawl, plucked arpeggios in
+  the quiet corner); lute courses and body from step 2; rings longer.
+- Frame Drum: a membrane (step 2) and a wooden rim.
+- Fiddle: a violin bowed near the bridge in a brawl, over its open-string drone.
+- Glass Clinks: a wine glass's measured modes (1 : 2.32 : 4.25 : 6.63), beating, each
+  clink a little different.
+- Squeezebox: free reeds in beating pairs, now with the left hand's bass under the chords.
+- Stomps: floorboards and claps (wood, not a skin).
+- Space: the quiet corner has the room to itself (more in the reverb), a brawl's crowd
+  soaks up the echoes (0.55x). Every instrument starts in the Room; the fiddle has a
+  touch of tape echo, the glasses are wide.
 

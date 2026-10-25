@@ -357,6 +357,8 @@ struct Pluck {
         dampIn = -1;
     }
     float level() const { return active ? peak + (excite > 0 ? amp : 0.0f) : 0.0f; }
+    // Samples to wait before the pluck (a strum reaching this string a moment later).
+    int wait = 0;
     // brightness 0..1 (finger to plectrum), velocity 0..1, length: samples until the note
     // ends (for the damper; < 0 rings out).
     void start(float noteHz, float decaySeconds, float brightness, float velocity, float panPosition, float sampleRate, uint64_t noiseAt,
@@ -391,6 +393,7 @@ struct Pluck {
             for (int k = 0; k <= courseDelay + 1; ++k) courseIn[std::size_t((courseAt - k) & 4095)] = 0.0f;
         dampIn = lengthSamples;
         dampSamples = 0;
+        wait = 0;
         lowCutZ = 0;
         noiseIndex = noiseAt;
         pan = panGains(panPosition);
@@ -398,6 +401,10 @@ struct Pluck {
         peak = amp;
     }
     float tick(const Stream& noise) {
+        if (wait > 0) {
+            --wait;
+            return 0.0f;
+        }
         float in = 0;
         if (excite > 0) {
             const int at = exciteLength - excite;

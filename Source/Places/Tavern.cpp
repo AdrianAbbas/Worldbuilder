@@ -210,7 +210,9 @@ void TavernPlace::configure(const PlaceContext& c) {
     // The lute: bright gut strings, short when strummed hard.
     {
         auto& p = lute.patch;
-        p.decay = (quiet ? 2.4f : 1.2f) * lerp(1.0f, 0.5f, tension);
+        p.decay = (quiet ? 2.8f : 1.7f) * lerp(1.0f, 0.55f, tension);
+        // A strum, not a block chord: the stroke crosses the strings (quicker in a brawl).
+        p.strumMs = brawl ? 5.0f : (quiet ? 0.0f : 9.0f);
         p.brightness = 0.3f + 0.5f * tone;
         p.spread = 0.4f;
         p.pan = -0.25f;
@@ -280,7 +282,9 @@ void TavernPlace::configure(const PlaceContext& c) {
     // Glass clinks: thin glass, its overtones a quarter-tone off any note.
     {
         auto& p = glasses.patch;
-        p.set({ 1.0f, 2.32f, 4.4f }, { 1.0f, 0.5f, 0.3f }, { 1.0f, 0.4f, 0.2f * (0.4f + tone) });
+        p.set({ 1.0f, 2.32f, 4.25f, 6.63f }, { 1.0f, 0.55f, 0.35f, 0.25f }, { 1.0f, 0.45f, 0.25f * (0.4f + tone), 0.12f * tone });
+        p.extras.beatHz = 2.5f;
+        p.extras.variation = 0.45f;
         p.decay = quiet ? 1.6f : 0.9f;
         p.hardness = 0.85f;
         p.toneHz = lerpExp(5000.0f, 13000.0f, tone);
@@ -316,6 +320,9 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.formantHz = 2000.0f;
         p.formantLevel = 0.6f;
         p.breath = 0.035f;
+        // The left hand: a bass note under the chords.
+        p.pedal = quiet ? 0.25f : 0.35f;
+        p.pedalSemis = -12;
         p.gain = 1.0f;
     }
     // Stomps on the floorboards (tuned low, woody) and claps.
@@ -349,6 +356,8 @@ void TavernPlace::configure(const PlaceContext& c) {
     }
     // Tension: drums, stomps and the squeezebox's bellows drive on, the lute shortens;
     // Life brings the glasses and the crowd's stamping; Machinery a busier drummer.
+    // The quiet corner has the room to itself; a brawl's crowd soaks up the echoes.
+    sendScale.fill(quiet ? 1.3f : (brawl ? 0.55f : 1.0f));
     level = { 0.55f * (1.0f - 0.25f * tension), 0.8f * (0.7f + 0.6f * tension) * (0.7f + 0.6f * s.machinery), 0.18f * (quiet ? 1.1f : 1.0f),
               0.14f * lerp(0.6f, 1.4f, s.life), 0.2f * (quiet ? 1.1f : 1.0f), 0.6f * (0.6f + 0.8f * tension) * lerp(0.8f, 1.2f, s.life) * (brawl ? 1.1f : 1.0f) };
 

@@ -253,6 +253,10 @@ struct PluckPatch {
     float bodyAmount = 1;        // 0: the bare strings
     float sympathetic = 0;       // open strings ringing along (root and fifth)
     float transpose = 0;
+    // Strummed: notes starting together are spread across the strings, low to high on a
+    // down-stroke (on the beat and its eighths), high to low on an up-stroke (between),
+    // this many ms per string, each a little softer.
+    float strumMs = 0;
 };
 
 class PluckPart final : public Part {
@@ -276,12 +280,34 @@ public:
         for (auto& f : openDamp) f.reset();
         noiseAt = 0;
         bodyType = -1;
+        strumBeat = -1.0e9;
+        strumCount = 0;
     }
     void start(const PartFrame& f, const NoteOn& n) override {
         auto& v = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Pluck& p) { return p.level(); })];
         const int length = patch.shape.dampSeconds > 0.0f ? std::max(1, int(n.seconds * rate)) : -1;
-        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::ring * n.decay * (n.extra ? 0.5f : 1.0f), patch.brightness, n.velocity,
+        float velocity = n.velocity;
+        int wait = 0;
+        if (patch.strumMs > 0.0f) {
+            // The strings of one stroke: the first note sets where the chord starts.
+            if (std::abs(n.beat - strumBeat) > 1.0e-6) {
+                strumBeat = n.beat;
+                strumFirst = n.semis;
+                strumCount = 0;
+            }
+            // Down on the beat and on its eighths; up on the eighths between and anything
+            // off that grid (the sixteenths between, swung off-beats).
+            const double eighth = n.beat * 2.0;
+            const bool onEighth = std::abs(eighth - std::round(eighth)) < 1.0e-4;
+            const bool up = !onEighth || (int64_t(std::llround(eighth)) & 1) != 0;
+            const float place = up ? std::max(0.0f, strumFirst + 12.0f - n.semis) : std::max(0.0f, n.semis - strumFirst);
+            wait = int(patch.strumMs * 0.001f * rate * place / 4.0f);
+            velocity *= 1.0f - 0.06f * float(std::min(strumCount, 5));
+            ++strumCount;
+        }
+        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::ring * n.decay * (n.extra ? 0.5f : 1.0f), patch.brightness, velocity,
                 n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, noiseAt, patch.shape, length);
+        v.wait = wait;
         noiseAt += 1ull << 24;
     }
     void update(const PartFrame& f) override {
@@ -349,6 +375,9 @@ private:
     std::array<dsp::DelayLine, 2> open;
     std::array<dsp::OnePole, 2> openDamp;
     std::array<float, 2> openPeriod { 400, 300 };
+    double strumBeat = -1.0e9;
+    float strumFirst = 0;
+    int strumCount = 0;
 };
 
 //==============================================================================
