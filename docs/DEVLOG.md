@@ -1803,7 +1803,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Tavern
   - [x] Castle
   - [x] Village
-  - [ ] Palace
+  - [x] Palace
   - [ ] Temple
   - [ ] Forest
   - [ ] Desert
@@ -2091,4 +2091,13 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Effects: the Room for most, the recorder in a Hall with a little tape echo.
 - The Village's brighter presence made it less dark when far: the furthest distance
   filter now reaches 1.1 kHz (was 1.4 kHz; the default distance is unchanged).
+
+**Palace** (fantasy)
+- Harpsichord (two 8' choirs, quills, jack dampers, soundboard), Strings (moved from
+  the saw synth to a bowed violin section of three players), Fanfare (natural
+  trumpets), Glockenspiel (steel bars free at both ends: 1 : 2.756 : 5.404 : 8.933, ring
+  longer), Timpani (air-loaded skins), Choir.
+- Tension widens the hall (more of everything in its reverbs).
+- Village and Palace were tested together (one full suite on both) and pushed as two
+  commits; the Places after them are paired the same way to save suite time.
 

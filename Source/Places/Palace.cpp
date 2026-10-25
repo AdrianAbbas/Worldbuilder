@@ -269,8 +269,9 @@ void PalacePlace::configure(const PlaceContext& c) {
     // Glockenspiel: hard steel bars, the second partial a quarter-tone off any note.
     {
         auto& p = glock.patch;
-        p.set({ 1.0f, 2.76f, 5.4f }, { 1.0f, 0.4f, 0.2f }, { 1.0f, 0.3f * (0.4f + tone), 0.12f * tone });
-        p.decay = fallen ? 2.6f : 1.6f;
+        // Steel bars free at both ends: 1 : 2.756 : 5.404 : 8.933.
+        p.set({ 1.0f, 2.756f, 5.404f, 8.933f }, { 1.0f, 0.45f, 0.25f, 0.15f }, { 1.0f, 0.3f * (0.4f + tone), 0.12f * tone, 0.05f * tone });
+        p.decay = fallen ? 3.2f : 2.2f;
         p.hardness = 0.8f + 0.15f * tone;
         p.toneHz = lerpExp(5000.0f, 14000.0f, tone);
         p.transpose = 24.0f;
