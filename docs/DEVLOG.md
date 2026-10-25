@@ -1813,7 +1813,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Cavern
   - [x] City
   - [x] Suburbs
-  - [ ] Mall
+  - [x] Mall
   - [ ] Factory
   - [ ] Beach
   - [ ] Spaceport
@@ -2165,4 +2165,10 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - E-Piano (a mellow tine piano), Pop Pulse, Wind Chimes, Sprinkler, Music Box (a new,
   clean steel comb: tine modes, little variation; apart from the Ruins' worn one), Bass.
 - Space: the uncanny suburb is too quiet, every sound hangs in the air.
+
+**Mall** (modern)
+- E-Piano (FM, glossy), Vibraphone (the measured tuning 1 : 3.98 : 10.6, its motor
+  tremolo), PA Chimes, Escalator, Fountain, Drums (a kick and a brushed snare on
+  skins, hats). Busy Weekend's hats follow Activity more (step 3).
+- Space: the dead mall's empty atrium hangs on to everything.
 

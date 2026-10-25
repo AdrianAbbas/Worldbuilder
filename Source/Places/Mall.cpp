@@ -201,7 +201,8 @@ void MallPlace::configure(const PlaceContext& c) {
     // Vibraphone: a metal bar (its fourth partial, the bar's hard ring), long sustain.
     {
         auto& p = vibes.patch;
-        p.set({ 1.0f, 3.99f, 10.1f }, { 1.0f, 0.4f, 0.12f }, { 1.0f, 0.3f * (0.4f + tone), 0.08f * tone });
+        // Aluminium bars tuned to two octaves (and ~10.6), long sustain.
+        p.set({ 1.0f, 3.98f, 10.6f }, { 1.0f, 0.4f, 0.12f }, { 1.0f, 0.3f * (0.4f + tone), 0.08f * tone });
         p.decay = dead ? 3.5f : 2.4f;
         p.hardness = 0.4f + 0.35f * tone;
         p.toneHz = lerpExp(3000.0f, 11000.0f, tone);
@@ -310,6 +311,8 @@ void MallPlace::configure(const PlaceContext& c) {
     }
     // Tension: the escalator grinds louder, the drums push and the piano retreats; Life
     // fills the fountain and the vibraphone; Machinery runs the escalators.
+    // The dead mall's empty atrium hangs on to everything.
+    sendScale.fill(dead ? 1.6f : (empty ? 1.25f : 1.0f));
     level = { 0.2f * (1.0f - 0.35f * tension), 0.28f * lerp(0.7f, 1.3f, s.life) * (empty ? 1.2f : 1.0f), 0.3f * (busyWeekend ? 1.1f : 1.0f),
               0.1f * (0.5f + 1.3f * s.machinery) * (0.7f + 0.9f * tension) * (empty ? 1.3f : 1.0f), 1.0f * lerp(0.6f, 1.4f, s.life) * (empty ? 1.3f : (dead ? 1.5f : 1.0f)),
               0.45f * (busyWeekend ? 1.0f : (empty ? 1.1f : 0.75f)) * (0.7f + 0.7f * tension) };
