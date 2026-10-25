@@ -3371,6 +3371,46 @@ void testIntensity(Suite& s) {
     }
 }
 
+// A short subset for a second architecture (x86_64 under Rosetta in macOS CI): the
+// default world, one Place from each category, and a state round trip. The Linux job
+// runs everything.
+void testSmoke(Suite& s) {
+    s.section("smoke: default world, one Place per category, state round trip");
+    {
+        Host h;
+        const auto st = measure(h.render(4.0), 2.5);
+        s.check(st.finite && st.rmsDb > -40.0 && st.rmsDb < -10.0 && st.peak < 0.9, "the default world is audible, finite and below the ceiling",
+                fmt(st.rmsDb) + " dBFS, peak " + fmt(st.peak));
+    }
+    for (int type : { Castle, City, Spaceport, Forest }) {
+        auto h = placeHost(type, 0);
+        const auto st = measure(h.render(4.0), 1.5);
+        s.check(st.finite && st.rmsDb > -60.0 && st.peak < 0.9, std::string(placeNames[std::size_t(type)]) + " (" + categoryNames[std::size_t(placeInfo(type).category)]
+                + ") alone is audible and finite", fmt(st.rmsDb) + " dBFS");
+    }
+    {
+        Host a;
+        a.set("temperature", 0.2f);
+        a.set("seed", 99);
+        a.set("intensity", 0.7f);
+        a.set("p2_type", float(Megacity));
+        a.set("p2_character", 1);
+        a.p->patterns.syncTypes(a.p->slotTypes());
+        a.p->patterns.setElement(1, Megacity, 2, editedElement({ makeNote(0, 0, 4), makeNote(6, 3, 2, 80, true) }, 0.1f));
+        juce::MemoryBlock state;
+        a.p->getStateInformation(state);
+        Host b;
+        b.p->setStateInformation(state.getData(), int(state.getSize()));
+        int mismatches = 0;
+        for (const auto& spec : specs) mismatches += std::abs(a.get(spec.id) - b.get(spec.id)) > 1.0e-4f ? 1 : 0;
+        const auto pa = a.p->patterns.element(1, Megacity, 2), pb = b.p->patterns.element(1, Megacity, 2);
+        s.check(mismatches == 0 && pa.controls == pb.controls && pa.pattern.sameNotes(pb.pattern), "state round trip: parameters and an edited pattern",
+                std::to_string(mismatches) + " parameters differ");
+        const auto x = a.render(2.0), y = b.render(2.0);
+        s.check(x.l == y.l && x.r == y.r, "the restored world plays exactly the same");
+    }
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -3421,6 +3461,7 @@ int main(int argc, char** argv) {
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);
     if (run("overlays")) testOverlays(s, snapshot);
+    if (run("smoke")) testSmoke(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

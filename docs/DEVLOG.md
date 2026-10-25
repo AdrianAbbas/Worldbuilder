@@ -5,8 +5,8 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Current work: Milestone 8** (capture and export, Direction Update 5). Its progress
-checklist is at the top of the [Milestone 8 section](#milestone-8-capture-and-export-2026-10-25)
+**Current work: Milestone 9** (Locations and Journeys, Direction Update 5). Its progress
+checklist is at the top of the [Milestone 9 section](#milestone-9-locations-and-journeys-2026-10-25)
 at the end of this file; a resumed session continues from the first unticked item.
 
 ---
@@ -2680,3 +2680,43 @@ Location and Planet parameters to the automation test's list when they exist.
 - Carried over: the Place choice parameter grew to 27 entries in Milestone 7 (older
   automation of a slot's Place maps differently); the `push-access-check` branch on
   GitHub can be deleted.
+
+---
+
+## Milestone 9: Locations and Journeys (2026-10-25)
+
+Direction Update 5, Milestone 9: brief Section 4 (Locations and Journeys) with the
+Places, Characters, patterns, instrument effects, Score Intensity and World Controls.
+Milestones 7 and 8 are being tested by the developer in GarageBand while this runs
+(their CI was still running). Unattended: decisions are recorded here.
+
+### Progress checklist
+
+Ticked when committed and pushed. A resumed session starts at the first unticked item.
+
+- [x] 0. CI speed-up: full suite only on Linux (sharded), macOS runs the universal build, a smoke group on arm64 and under Rosetta, auval, the AU harness and packaging; JUCE source cache and ccache in both jobs
+- [ ] 1. Location core: 8 slots (name, colour, snapshot of the world and its patterns), host parameters (Destination, Travel Time and Sync, Journey Mode, From, To, Journey), state; tests
+- [ ] 2. Travel: audio-thread travel and Journey morph (Places recede and approach, continuous parts morph, root, mood and seeds change at the far point), arrival written back to the parameters, Transport restarts; tests (no clicks, jumps or silence; arrival exact; deterministic; no allocation)
+- [ ] 3. Interface: the Location bar (save, rename, colour, travel), Travel Time and Sync, Journey controls; Location markers on the globe and the travel animation
+- [ ] 4. `.world` export and import
+- [ ] 5. Automation list, README and MANUAL_TEST, handoff, final push without `[skip ci]`
+- [ ] 6. (Stretch) Journey Path
+
+### CI speed-up
+
+CI took over an hour, mostly the macOS job running the whole processor suite twice
+(arm64, then x86_64 under Rosetta, which is several times slower) on top of a
+universal build from scratch.
+- **Linux** runs the full suite, as the four shards of `scripts/run-tests-parallel.sh`
+  plus the CPU groups alone (instead of one `ctest` process), and uploads the shard
+  logs. It is the hard gate for the processor tests.
+- **macOS** builds the universal binary, runs the new `smoke` group (default world,
+  one Place from each category, a state round trip with an edited pattern; about 2 s)
+  on arm64 and under Rosetta, then the bundle gate, packaging, the quarantined install,
+  auval and the AU harness on both architectures, as before.
+- **Caching:** JUCE 8.0.16 is fetched once (one commit, no history, by
+  `scripts/ci-fetch-juce.sh`) into a cached folder and passed as `JUCE_PATH` (the
+  configure step used to clone its whole history every run); both jobs compile through
+  ccache (`hendrikmuhs/ccache-action`, keyed per job; `CCACHE_BASEDIR` and
+  `time_macros` sloppiness so hits survive across runs).
+- Not measured yet: the first run fills the caches; the gain shows from the second.

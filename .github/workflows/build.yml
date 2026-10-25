@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  JUCE_COMMIT: ea77444750de45e036e0279bb0291144bf8e3688 # JUCE 8.0.16, as in CMakeLists.txt
 jobs:
   macos:
     runs-on: macos-14
@@ -12,6 +14,8 @@ jobs:
     env:
       # The optional Developer ID path runs only when these secrets exist.
       HAS_DEVELOPER_ID: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain and Rosetta
@@ -20,16 +24,38 @@ jobs:
           xcodebuild -version
           cmake --version
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
+      # JUCE is fetched once and kept (the configure step otherwise clones its whole history).
+      - name: JUCE source cache
+        id: juce
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/juce
+          key: juce-${{ env.JUCE_COMMIT }}
+      - name: Fetch JUCE 8.0.16
+        if: steps.juce.outputs.cache-hit != 'true'
+        run: bash scripts/ci-fetch-juce.sh "${{ runner.temp }}/juce" "$JUCE_COMMIT"
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-universal
+          max-size: 2G
       - name: Configure (universal arm64 + x86_64, macOS 10.15+)
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+          -DJUCE_PATH="${{ runner.temp }}/juce"
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
-        run: cmake --build build --parallel 4
-      - name: Processor tests (arm64)
-        run: ctest --test-dir build --output-on-failure
-      - name: Processor tests (x86_64 under Rosetta)
-        run: /usr/bin/arch -x86_64 build/WorldbuilderTests_artefacts/Release/WorldbuilderTests
+        run: |
+          cmake --build build --parallel 4
+          ccache --show-stats
+      # The full processor suite runs in the Linux job. Here a short smoke group checks
+      # each slice of the universal binary: the default world, one Place per category
+      # and a state round trip.
+      - name: Smoke test (arm64)
+        run: /usr/bin/arch -arm64 build/WorldbuilderTests_artefacts/Release/WorldbuilderTests --only smoke
+      - name: Smoke test (x86_64 under Rosetta)
+        run: /usr/bin/arch -x86_64 build/WorldbuilderTests_artefacts/Release/WorldbuilderTests --only smoke
       - name: Universal binary and Info.plist gate
         run: bash scripts/ci-check-bundles.sh build/WORLDBUILDER_artefacts/Release
       - name: Developer ID signing and notarisation (optional, untested)
@@ -72,17 +98,50 @@ jobs:
           name: WORLDBUILDER-macOS-diagnostics
           path: |
             build/ci-logs/
-            build/Testing/Temporary/LastTest.log
           if-no-files-found: warn
   linux:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime
     steps:
       - uses: actions/checkout@v4
       - name: Dependencies
         run: sudo apt-get update && sudo apt-get install -y ninja-build libasound2-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libgl1-mesa-dev
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build build --parallel 3
-      - run: ctest --test-dir build --output-on-failure
+      - name: JUCE source cache
+        id: juce
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/juce
+          key: juce-${{ env.JUCE_COMMIT }}
+      - name: Fetch JUCE 8.0.16
+        if: steps.juce.outputs.cache-hit != 'true'
+        run: bash scripts/ci-fetch-juce.sh "${{ runner.temp }}/juce" "$JUCE_COMMIT"
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux
+          max-size: 1G
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DJUCE_PATH="${{ runner.temp }}/juce"
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: |
+          cmake --build build --parallel 4
+          ccache --show-stats
+      # The full processor suite (every group and Place), as four shards in parallel,
+      # then the CPU-measuring groups alone.
+      - name: Processor tests (full suite)
+        run: bash scripts/run-tests-parallel.sh build/WorldbuilderTests_artefacts/Release/WorldbuilderTests build/test-logs
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WORLDBUILDER-linux-test-logs
+          path: build/test-logs/
+          if-no-files-found: warn
   release:
     # Tagged commits (v*) publish the same package as a GitHub Release.
     if: startsWith(github.ref, 'refs/tags/v')
