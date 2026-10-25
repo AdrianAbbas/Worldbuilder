@@ -2511,7 +2511,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 1. Capture core (`Source/Capture`): scene snapshot, offline render (mix or stems) to WAV, scene MIDI; tests
 - [x] 2. CAPTURE section in the footer: bars, Mix/Stems, MIDI (drag or save), RENDER (background, cancel), WAV (drag or save)
 - [x] 3. Host sync and automation audit: every important control automatable and smooth; tests; fixes
-- [ ] 4. README "Getting WORLDBUILDER into your song", MANUAL_TEST check, handoff, final push without `[skip ci]`
+- [x] 4. README "Getting WORLDBUILDER into your song", MANUAL_TEST check, handoff, final push without `[skip ci]`
 
 ### Decisions
 
@@ -2622,3 +2622,61 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   The first detector (the sharpest sample step against either steady world) could not
   see an unsmoothed 6 dB step (the music's own transients are sharper) and was
   replaced before it was relied on.
+
+### Tests (Linux, GCC)
+
+Full suite (`scripts/run-tests-parallel.sh`, now with the `capture` and `automation`
+groups): **3276 checks pass, 2 fail**. The two failures are the CPU budgets (four busy
+Places 21.7-22.7 % of one core, budget 15 %; the effects 9.2 %, budget 8 %), and they
+are this container, not the code: this session's machine (Xeon at 2.8 GHz, 4 cores) is
+about three times slower than the last one. The untouched Milestone 7 commit, built
+and measured here, gives 23.8 % on the same check (Milestone 7 measured 6-9 % on its
+machine). Milestone 8 changes nothing on the audio thread except reading the host
+tempo through an atomic. CI's runners are the reference. The groups touched since
+(capture, automation, editor, patterns, Play Mode, state: 104 checks) pass on the
+final build.
+
+### Milestone 8 handoff
+
+**Done:** all of Milestone 8 (Direction Update 5).
+1. RENDER: the current world offline to WAV, mix or stems, 4-64 bars from bar 1 at the
+   host's tempo and rate, sample for sample what Transport playback from bar 1 gives;
+   background thread, progress, cancel; drag out or save.
+2. MIDI: every active instrument's pattern as a multi-track MIDI file ("Place -
+   Instrument" tracks, tempo track, aligned to bar 1); drag out or save; it
+   round-trips into the Pattern Editor.
+3. Host sync confirmed (Transport playback repeatable; render = playback) and an
+   automation audit: every important control is a host parameter and a step in any of
+   29 of them is smooth (no fixes were needed).
+4. README "Getting WORLDBUILDER into your song" (GarageBand, Logic, automation) and the
+   Milestone 8 check in [MANUAL_TEST.md](MANUAL_TEST.md).
+
+**What to test first** (Milestone 8 check in MANUAL_TEST.md):
+- whether GarageBand and Logic accept the WAV and MIDI pills dragged out of the
+  plugin window (untested anywhere; clicking them to save is the fallback), and the
+  save dialogs inside sandboxed GarageBand;
+- a rendered WAV dropped at bar 1 next to the muted plugin track: the same sound, in
+  time, ending at the last bar;
+- stems against the mix by ear; the scene MIDI regions in GarageBand.
+
+**Next:** Milestone 9, Locations and Journeys (brief Section 4 with the Places,
+Characters, patterns, instrument effects, Score Intensity and World Controls), then 10
+visual revamp and planet types, 11 pro features, presets and release. Add the
+Location and Planet parameters to the automation test's list when they exist.
+
+**Known issues / limits:**
+- Nothing has been heard or seen on a Mac yet; drag-out and file dialogs in hosts are
+  untested.
+- A render holds every parameter at its current value (no host automation, constant
+  tempo, 4/4 bars) and stops exactly at the last bar (no reverb tail). For automation
+  or tempo changes, bounce in the host in Transport mode.
+- Stems each go through the master section alone, so they add up to about the mix
+  (+0.9 dB summed power in the test), not exactly.
+- Scene MIDI writes the patterns as written: no randomness, Evolve or swing, and a
+  Place with Sync off (its own tempo) will not line up. Instruments with no pattern
+  (none at present) would be left out.
+- Large renders on a slow Mac: the test machine renders three Places at about 4.5x
+  real time; 64 bars of four Places as stems is five renders.
+- Carried over: the Place choice parameter grew to 27 entries in Milestone 7 (older
+  automation of a slot's Place maps differently); the `push-access-check` branch on
+  GitHub can be deleted.
