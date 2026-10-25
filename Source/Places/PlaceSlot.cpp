@@ -74,6 +74,7 @@ std::unique_ptr<Place> makePlace(int type) {
         case Bridge: return std::make_unique<BridgePlace>();
         case Mining: return std::make_unique<MiningPlace>();
         case AlienRuins: return std::make_unique<AlienRuinsPlace>();
+        case Nebula: return std::make_unique<NebulaPlace>();
         default: return nullptr;
     }
 }

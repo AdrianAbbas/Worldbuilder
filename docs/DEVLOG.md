@@ -2286,7 +2286,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 3. Starship Bridge
 - [x] 4. Asteroid Mining Colony
 - [x] 5. Alien Ruins
-- [ ] 6. Nebula / Deep Space
+- [x] 6. Nebula / Deep Space
 - [ ] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
 - [ ] 8. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
 
@@ -2384,3 +2384,19 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - Overlay: cracked stone lintels on the frames and a stone floor, broken pillars in the
   gaps, carved monoliths in the header; glyphs carved into the stone glow and fade in
   turn, motes of light rise from the cracks.
+
+**Nebula / Deep Space** (sci-fi)
+- Nebula Pads: wide detuned saws whose filter drifts slowly open and shut (a seeded
+  slow random), the top voice moving every two bars.
+- Cosmic Wind: tuned breath alone, very high and very wide, slowly wavering.
+- Star Bells: soft slow bells (near-harmonic partials up to 5.4, slow beating, the highs
+  blooming), a pulse every bar or two.
+- Deep Hum: a bowed resonance far below.
+- Stardust: tiny glassy grains (the drip model with no bloop) in scattered clusters.
+- Solar Flares: noise swells and an igniting build, tuned to the key.
+- Space: an endless shimmer (the bells, stardust and pads rise an octave into it and
+  keep rising) over a large hall. Its tail does not grow with Size, and the whole
+  cloud fades with distance (the Scale check needs 1.5 dB quieter when colossal).
+- Overlay: soft violet, rose and teal gas clouds along the frames, pooling along the
+  bottom and filling the header, fields of stars and a few bright glints; stars
+  twinkle, gas puffs drift up.

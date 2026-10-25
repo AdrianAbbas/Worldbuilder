@@ -165,6 +165,9 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
     // Alien Ruins: Crystals, Machine Pulses, Alien Choir, Sub Drone, Ritual Drums, Whispers.
     t[25] = { cathedral(0.35f).echo(DlyReverse, 0.2f).wide(1.5f), cave(0.25f).with(ChPhaser, 0.25f), cathedral(0.4f).with(ChChorus, 0.3f).wide(1.6f),
               cave(0.1f).toned(0.4f).wide(0.7f), cave(0.3f).echo(DlyTape, 0.1f), cave(0.25f).echo(DlyReverse, 0.15f).wide(1.7f) };
+    // Nebula: Nebula Pads, Cosmic Wind, Star Bells, Deep Hum, Stardust, Solar Flares.
+    t[26] = { cathedral(0.35f).with(ChChorus, 0.35f).wide(1.7f), hall(0.25f).wide(1.8f), cathedral(0.4f).echo(DlyPingPong, 0.2f).wide(1.5f),
+              hall(0.15f).toned(0.4f).wide(0.8f), plate(0.35f).echo(DlyDotted, 0.25f).wide(1.8f), cathedral(0.3f).with(ChPhaser, 0.3f).wide(1.6f) };
     return t;
 }();
 

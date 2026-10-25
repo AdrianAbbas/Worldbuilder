@@ -2508,6 +2508,69 @@ OverlayArt alienRuins(const Layout& L) {
     for (auto p : motes) move(a, PlaceOverlays::MoveRise, p, mote, between(r, 3.0f, 6.0f), r.nextFloat(), 0.8f, 30.0f, 4.0f);
     return a;
 }
+
+//==============================================================================
+// Nebula: soft clouds of violet, rose and teal gas drifting along the frames, pooling
+// along the bottom and filling the open space, with fields of stars; a few bright
+// stars with cross-shaped glints. Clouds drift slowly, stars twinkle, a comet now and then.
+OverlayArt nebula(const Layout& L) {
+    OverlayArt a;
+    a.light = true;
+    juce::Random r(2626);
+    const std::array<juce::Colour, 3> gas { juce::Colour(0xffa060ff), juce::Colour(0xffff70b0), juce::Colour(0xff40d0d0) };
+    std::array<juce::Path, 3> clouds;
+    juce::Path dust;
+    std::vector<Point> stars, bright, puffs;
+    const auto cloud = [&](Point at, float size) {
+        auto& p = clouds[std::size_t(r.nextInt(3))];
+        for (int k = 0; k < 4; ++k) {
+            const float w = size * between(r, 0.6f, 1.2f), h = w * between(r, 0.35f, 0.6f);
+            p.addEllipse(at.x + between(r, -size, size) * 0.6f - w * 0.5f, at.y + between(r, -size, size) * 0.2f - h * 0.5f, w, h);
+        }
+    };
+    for (auto p : L.panels) {
+        for (float x = p.getX() + 10.0f; x < p.getRight() - 10.0f; x += between(r, 40.0f, 80.0f)) {
+            cloud({ x, p.getY() }, between(r, 12.0f, 22.0f));
+            if (r.nextFloat() < 0.5f) cloud({ x + 20.0f, p.getBottom() }, between(r, 10.0f, 18.0f));
+            stars.push_back({ x + between(r, -10.0f, 10.0f), p.getY() + between(r, -3.0f, 3.0f) });
+        }
+        bright.push_back({ p.getRight() - 4.0f, p.getY() + 4.0f });
+    }
+    for (auto gap : L.gutters)
+        for (float y = gap.getY() + 10.0f; y < gap.getBottom() - 10.0f; y += between(r, 30.0f, 60.0f)) {
+            cloud({ gap.getCentreX(), y }, between(r, 6.0f, 10.0f));
+            stars.push_back({ gap.getCentreX() + between(r, -3.0f, 3.0f), y + 12.0f });
+        }
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    for (float x = 0.0f; x < width; x += between(r, 30.0f, 60.0f)) {
+        cloud({ x, bottom - 3.0f }, between(r, 14.0f, 24.0f));
+        if (r.nextFloat() < 0.3f) puffs.push_back({ x, bottom - 4.0f });
+    }
+    for (auto o : L.open) {
+        for (float x = o.getX() + 20.0f; x < o.getRight() - 20.0f; x += between(r, 50.0f, 90.0f)) cloud({ x, o.getCentreY() + between(r, -4.0f, 4.0f) }, between(r, 14.0f, 24.0f));
+        for (int k = 0; k < int(o.getWidth() / 14.0f); ++k) {
+            const Point at { o.getX() + r.nextFloat() * o.getWidth(), o.getY() + r.nextFloat() * o.getHeight() };
+            if (k % 3 == 0) stars.push_back(at);
+            else dust.addEllipse(at.x - 0.6f, at.y - 0.6f, 1.2f, 1.2f);
+        }
+        bright.push_back({ o.getX() + o.getWidth() * 0.3f, o.getY() + o.getHeight() * 0.3f });
+    }
+    for (std::size_t k = 0; k < clouds.size(); ++k) {
+        a.shapes.push_back({ clouds[k], gas[k].withAlpha(0.10f) });
+        a.shapes.push_back({ clouds[k], gas[k].withAlpha(0.10f), 6.0f });
+    }
+    a.shapes.push_back({ dust, juce::Colour(0xc0e8e0ff) });
+
+    const int star = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(3.0f, juce::Colour(0xfff0e8ff)));
+    const int big = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(7.0f, juce::Colour(0xffffd8f0)));
+    const int puff = puffSprites(a, juce::Colour(0x30c080ff), 3.0f);
+    for (auto p : stars) move(a, PlaceOverlays::MovePulse, p, star, between(r, 1.5f, 4.5f), r.nextFloat(), 0.9f);
+    for (auto p : bright) move(a, PlaceOverlays::MovePulse, p, big, between(r, 3.0f, 6.0f), r.nextFloat());
+    for (auto p : puffs) move(a, PlaceOverlays::MoveRise, p, puff, between(r, 6.0f, 10.0f), r.nextFloat(), 0.8f, 16.0f, 6.0f, 8);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2610,7 +2673,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
            || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern
-           || type == SpaceStation || type == Megacity || type == Bridge || type == Mining || type == AlienRuins;
+           || type == SpaceStation || type == Megacity || type == Bridge || type == Mining || type == AlienRuins || type == Nebula;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2637,6 +2700,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Bridge: return bridge(layout);
         case Mining: return mining(layout);
         case AlienRuins: return alienRuins(layout);
+        case Nebula: return nebula(layout);
         default: return {};
     }
 }

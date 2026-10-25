@@ -862,6 +862,39 @@ private:
     float vastSend = 0, warpSend = 0, reverseSend = 0, presence = 0, dry = 1;
 };
 
+// Nebula / Deep Space: vast evolving pads, a cosmic-wind texture, slow star-pulse
+// bells, a sub drone, granular stardust and solar-flare swells, in an endless shimmer
+// reverb. Drift: slow and weightless, the pads turning. Stellar Nursery: bright and
+// glittering, stardust everywhere, flares igniting. Void: almost nothing, a dark drone,
+// a bell in the distance, the wind between the stars.
+class NebulaPlace final : public EnsemblePlace {
+public:
+    NebulaPlace();
+    float freeTempo() const override { return 66.0f; }
+    float spaceSend() const override { return 0.45f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Pads, Wind, StarBells, SubDrone, Stardust, Flares };
+    enum Character { Drift, StellarNursery, Void };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    SynthPart pads;
+    WindPart wind;
+    ModalPart bells;
+    BowedPart drone;
+    DripPart dust;
+    NoisePart flares;
+    dsp::Shimmer infinite;
+    dsp::SmallSpace space;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float infiniteSend = 0, spaceSend_ = 0, presence = 0, dry = 1, wet = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 
