@@ -41,7 +41,7 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
 // silent, and its card could not be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
                                                                      true, true, true, true, true, true, true, true, true, true,
-                                                                     true, true, true, false, false, false };
+                                                                     true, true, true, true, false, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
                                                                         "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D",
@@ -245,6 +245,11 @@ inline const PlaceInfo& placeInfo(int type) {
                held("Alert Brass", IconHorn), held("Crew Chatter", IconCrowd), mel("Sensor Pings", IconRadio, VaryVelocity | VarySkip) },
              "Command-console arpeggios, a warp-core drone, a tactical pulse, alert brass swells, abstract crew chatter and sensor pings.",
              "A wide cinematic hall with risers", SciFi),
+        info({ "Shift Change", "Cave-in", "Night Shift" },
+             { mel("Drill", IconGear), mel("Grind Bass", IconBass), mel("Metal Clanks", IconAnvil), held("Dust Hiss", IconWind),
+               held("Worker Hymn", IconChoir), mel("Beacon", IconFlute, VaryVelocity | VarySkip) },
+             "A drilling ostinato, a low rock-grind bass, tuned metal clanks, a dust-hiss texture, a worker-hymn pad and a lonely beacon lead.",
+             "A gritty industrial room and a slapback", SciFi, 0),
     } };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }

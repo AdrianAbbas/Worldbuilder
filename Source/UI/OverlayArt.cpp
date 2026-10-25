@@ -2295,6 +2295,107 @@ OverlayArt bridge(const Layout& L) {
     for (const auto& [at, length] : scans) move(a, PlaceOverlays::MoveDrift, at, scan, between(r, 3.0f, 5.0f), r.nextFloat(), 1.0f, length, 0.0f);
     return a;
 }
+
+//==============================================================================
+// Asteroid Mining Colony: rock fragments heaped along the bottom and on the panels'
+// corners, braced girders across the frame tops, drill rigs in the open space
+// throwing amber light beams, warning lamps down the gaps. Rock fragments drift in
+// the low gravity, dust rises, lamps blink.
+juce::Path rock(Point at, float size, juce::Random& r) {
+    juce::Path p;
+    const int corners = 5 + r.nextInt(3);
+    for (int k = 0; k < corners; ++k) {
+        const float a = twoPi * (float(k) + between(r, -0.2f, 0.2f)) / float(corners), d = size * between(r, 0.6f, 1.0f);
+        const Point q { at.x + d * std::cos(a), at.y + d * std::sin(a) * 0.75f };
+        if (k == 0) p.startNewSubPath(q);
+        else p.lineTo(q);
+    }
+    p.closeSubPath();
+    return p;
+}
+
+OverlayArt mining(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(2424);
+    const juce::Colour amber(0xffffb040);
+    juce::Path rocks, rockLight, girders, braces, rigs, beams, lamps;
+    std::vector<Point> warnings, dusts, drifts;
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    // Rubble along the bottom.
+    for (float x = 0.0f; x < width; x += between(r, 6.0f, 14.0f)) {
+        const float size = between(r, 3.0f, 7.0f);
+        rocks.addPath(rock({ x, bottom - size * 0.5f }, size, r));
+        if (r.nextFloat() < 0.4f) rockLight.addPath(rock({ x - size * 0.2f, bottom - size * 0.75f }, size * 0.35f, r));
+        if (r.nextFloat() < 0.08f) dusts.push_back({ x, bottom - 8.0f });
+    }
+    for (auto p : L.panels) {
+        // Girders across the frame tops, cross-braced.
+        girders.addRectangle(p.getX() + 8.0f, p.getY() - 3.0f, p.getWidth() - 16.0f, 1.2f);
+        girders.addRectangle(p.getX() + 8.0f, p.getY() + 1.0f, p.getWidth() - 16.0f, 1.2f);
+        for (float x = p.getX() + 8.0f; x < p.getRight() - 14.0f; x += 8.0f) {
+            juce::Path b;
+            b.startNewSubPath(x, p.getY() - 2.0f);
+            b.lineTo(x + 4.0f, p.getY() + 1.6f);
+            b.lineTo(x + 8.0f, p.getY() - 2.0f);
+            juce::PathStrokeType(0.7f).createStrokedPath(b, b);
+            braces.addPath(b);
+        }
+        // Rocks heaped on the bottom corners.
+        for (float cx : { p.getX() + 6.0f, p.getRight() - 6.0f })
+            for (int k = 0; k < 4; ++k) rocks.addPath(rock({ cx + between(r, -6.0f, 6.0f), p.getBottom() - between(r, 0.0f, 6.0f) }, between(r, 2.5f, 5.0f), r));
+        drifts.push_back({ p.getX() + p.getWidth() * between(r, 0.1f, 0.3f), p.getY() - between(r, 4.0f, 6.0f) });
+    }
+    // Warning lamps down the gaps.
+    for (auto gap : L.gutters)
+        for (float y = gap.getY() + 30.0f; y < gap.getBottom() - 20.0f; y += between(r, 120.0f, 180.0f)) {
+            lamps.addRoundedRectangle(gap.getCentreX() - 3.0f, y - 2.0f, 6.0f, 6.0f, 1.0f);
+            warnings.push_back({ gap.getCentreX(), y + 1.0f });
+        }
+    // Drill rigs in the open space, their lights throwing beams down and across.
+    for (auto o : L.open) {
+        const int count = std::max(1, int(o.getWidth() / 220.0f));
+        for (int c = 0; c < count; ++c) {
+            const float cx = o.getX() + o.getWidth() * (float(c) + 0.5f) / float(count), base = o.getBottom();
+            const float h = std::min(o.getHeight() - 4.0f, 30.0f);
+            rigs.addTriangle(cx - 9.0f, base, cx + 9.0f, base, cx, base - h);
+            rigs.addRectangle(cx - 1.0f, base - h - 4.0f, 2.0f, 6.0f);
+            juce::Path beam;
+            beam.startNewSubPath(cx + 1.0f, base - h + 2.0f);
+            beam.lineTo(cx + 70.0f, base - 2.0f);
+            beam.lineTo(cx + 40.0f, base - 1.0f);
+            beam.closeSubPath();
+            beams.addPath(beam);
+            juce::Path beam2;
+            beam2.startNewSubPath(cx - 1.0f, base - h + 2.0f);
+            beam2.lineTo(cx - 60.0f, o.getY() + 2.0f);
+            beam2.lineTo(cx - 40.0f, o.getY() + 2.0f);
+            beam2.closeSubPath();
+            beams.addPath(beam2);
+            warnings.push_back({ cx, base - h - 4.0f });
+            for (int k = 0; k < 3; ++k) rocks.addPath(rock({ cx + between(r, -16.0f, 16.0f), base - 2.0f }, between(r, 3.0f, 5.0f), r));
+        }
+    }
+    a.shapes.push_back({ beams, amber.withAlpha(0.13f) });
+    a.shapes.push_back({ rocks, juce::Colour(0xff5a4a3e) });
+    a.shapes.push_back({ rockLight, juce::Colour(0xff8a7460) });
+    a.shapes.push_back({ girders, juce::Colour(0xffb09468) });
+    a.shapes.push_back({ braces, juce::Colour(0xff94785a) });
+    a.shapes.push_back({ rigs, juce::Colour(0xff4a4440) });
+    a.shapes.push_back({ lamps, juce::Colour(0xff3a3430) });
+
+    const int warning = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(6.0f, juce::Colour(0x90ff9020), juce::Colour(0xffffe0a0), 1.6f));
+    const int dust = puffSprites(a, juce::Colour(0x40b09070), 1.5f);
+    const int fragment = int(a.sprites.size());
+    {
+        juce::Random rr(77);
+        a.sprites.push_back(pathSprite(rock({ 0.0f, 0.0f }, 3.0f, rr), juce::Colour(0xff9a8470)));
+    }
+    for (auto p : warnings) move(a, PlaceOverlays::MoveBlink, p, warning, between(r, 1.2f, 2.0f), r.nextFloat());
+    for (auto p : dusts) move(a, PlaceOverlays::MoveRise, p, dust, between(r, 3.0f, 5.0f), r.nextFloat(), 0.7f, 22.0f, 4.0f, 8);
+    for (auto p : drifts) move(a, PlaceOverlays::MoveDrift, p, fragment, between(r, 14.0f, 24.0f), r.nextFloat(), 0.9f, between(r, 80.0f, 160.0f), 2.0f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2397,7 +2498,7 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
            || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern
-           || type == SpaceStation || type == Megacity || type == Bridge;
+           || type == SpaceStation || type == Megacity || type == Bridge || type == Mining;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2422,6 +2523,7 @@ OverlayArt build(int type, const Layout& layout) {
         case SpaceStation: return station(layout);
         case Megacity: return megacity(layout);
         case Bridge: return bridge(layout);
+        case Mining: return mining(layout);
         default: return {};
     }
 }

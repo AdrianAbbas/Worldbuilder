@@ -2284,7 +2284,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 1. Space Station
 - [x] 2. Cyberpunk Megacity
 - [x] 3. Starship Bridge
-- [ ] 4. Asteroid Mining Colony
+- [x] 4. Asteroid Mining Colony
 - [ ] 5. Alien Ruins
 - [ ] 6. Nebula / Deep Space
 - [ ] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
@@ -2350,3 +2350,18 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - Overlay: a heads-up display: cyan frame lines with range ticks, targeting brackets on
   every corner, data bars down the gaps, a radar scope and heading tape in the header;
   scan dots run along the frames, brackets pulse, contacts blink.
+
+**Asteroid Mining Colony** (sci-fi)
+- Drill: FM with heavy feedback and a fast vibrato, a whining, buzzing ostinato in
+  bursts of sixteenths that climb a step when the bit bites.
+- Grind Bass: a buzzing reed (the free-reed model) low and heavy, driven into soft clipping.
+- Metal Clanks: struck steel (1 : 2.32 : 4.25 : 6.63, hard), tuned to the chord; in a
+  cave-in, quick falling runs.
+- Dust Hiss: tuned breath alone, high, held.
+- Worker Hymn: a low male choir on "oo" holding the chord, a slow line on top.
+- Beacon: a pure ocarina-like lead with a slow wide vibrato, a lonely falling call.
+- Space: the machines (drill, bass, clanks) through a gritty tape drive, a slapback off
+  the rock on the drill, clanks and beacon, a small hard room.
+- Overlay: rubble heaped along the bottom and on the panels' corners, braced girders
+  across the frame tops, drill rigs in the header throwing amber light beams, warning
+  lamps in the gaps; fragments drift in low gravity, dust rises, lamps blink.

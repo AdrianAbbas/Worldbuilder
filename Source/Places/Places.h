@@ -793,6 +793,40 @@ private:
     float hallSend = 0, echoSend = 0, presence = 0, dry = 1, riserTarget = 0, width = 1;
 };
 
+// Asteroid Mining Colony: a drilling ostinato, a low rock-grind bass, tuned metal
+// clanks, a dust-hiss texture, a worker-hymn pad and a lonely beacon lead, in a
+// gritty industrial room with a slapback off the rock. Shift Change: the drills
+// winding down, the hymn rising, clanks of tools put away. Cave-in: the drills
+// stalling and racing, the bass grinding, metal falling. Night Shift: one drill far
+// off, dust hissing, the beacon calling over the hymn.
+class MiningPlace final : public EnsemblePlace {
+public:
+    MiningPlace();
+    float freeTempo() const override { return 96.0f; }
+    float spaceSend() const override { return 0.3f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { Drill, GrindBass, Clanks, Dust, Hymn, Beacon };
+    enum Character { ShiftChange, CaveIn, NightShift };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    FmPart drill;
+    SynthPart bass;
+    ModalPart clanks;
+    WindPart dust, beacon;
+    ChoirPart hymn;
+    dsp::SmallSpace room;
+    dsp::Slapback slap;
+    dsp::Warmth grit;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, slapSend = 0, presence = 0, dry = 1, drive = 1;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

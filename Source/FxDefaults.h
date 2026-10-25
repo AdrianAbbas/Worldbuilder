@@ -159,6 +159,9 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
     // Starship Bridge: Consoles, Warp Core, Tactical Pulse, Alert Brass, Crew Chatter, Sensor Pings.
     t[23] = { plate(0.2f).echo(DlyPingPong, 0.2f).wide(1.4f), hall(0.2f).with(ChFilter, 0.2f).wide(1.2f), room(0.15f).with(ChSaturation, 0.15f),
               hall(0.35f).wide(1.5f), room(0.2f).with(ChLoFi, 0.15f).wide(1.3f), hall(0.35f).echo(DlyDotted, 0.25f).wide(1.6f) };
+    // Asteroid Mining Colony: Drill, Grind Bass, Metal Clanks, Dust Hiss, Worker Hymn, Beacon.
+    t[24] = { room(0.15f).with(ChSaturation, 0.25f), room(0.05f).with(ChSaturation, 0.3f).toned(0.4f).wide(0.6f), cave(0.3f).echo(DlyTape, 0.15f),
+              room(0.15f).wide(1.6f), hall(0.35f).with(ChChorus, 0.25f).wide(1.4f), cave(0.35f).echo(DlyDotted, 0.2f) };
     return t;
 }();
 
