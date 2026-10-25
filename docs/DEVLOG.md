@@ -1801,7 +1801,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 3. Weight pass across all 20 Places
 - [ ] 4. Per-Place uniqueness and realism pass
   - [x] Tavern
-  - [ ] Castle
+  - [x] Castle
   - [ ] Village
   - [ ] Palace
   - [ ] Temple
@@ -2067,4 +2067,16 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Space: the quiet corner has the room to itself (more in the reverb), a brawl's crowd
   soaks up the echoes (0.55x). Every instrument starts in the Room; the fiddle has a
   touch of tape echo, the glasses are wide.
+
+**Castle** (fantasy)
+- Brass Drone: low horns and trombones (step 2's brass) holding the chord over a tonic
+  pedal; Horns: French horns, melodic calls (darker formant, articulated): the two brass
+  parts differ in register, role and articulation.
+- Bells: a cast church bell's eight partials (hum, prime, tierce, quint, nominal and the
+  upper three), the tierce and quint taken from the key so they stay in it, the hum
+  ringing longest, slow beating; they ring 2.2-4 s (were 0.7-1.3 s).
+- Timpani (air-loaded skin modes), Harp (gut strings, soundboard, sympathetic strings;
+  rings longer), Choir (step 2's choir).
+- Effects: the bells and choir in the Cathedral, the rest in the Hall, a tape echo on
+  bells and horns.
 

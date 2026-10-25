@@ -248,7 +248,7 @@ void CastlePlace::configure(const PlaceContext& c) {
     const double t = double(c.clock) / rate;
     const float breath = drift.smooth(t, 0.05);
 
-    // Brass drone: three detuned saws per note on the chord, a tonic pedal below.
+    // Brass drone: low horns and trombones holding the chord, a tonic pedal below.
     {
         auto& p = drone.patch;
         p.attack = 2.5f;
@@ -282,9 +282,12 @@ void CastlePlace::configure(const PlaceContext& c) {
     {
         auto& p = bells.patch;
         const float third = std::exp2(float(music::degree(mood, 2)) / 12.0f), fifth = std::exp2(float(music::degree(mood, 4)) / 12.0f);
-        p.set({ 0.5f, 1.0f, third, fifth, 2.0f, 2.0f * fifth }, { 1.4f, 1.0f, 0.7f, 0.55f, 0.45f, 0.3f },
-              { 0.35f, 1.0f, 0.5f, 0.35f, 0.55f * (0.5f + tone), 0.25f * tone });
-        p.decay = lerp(0.7f, 1.3f, s.size);
+        // A cast church bell: hum, prime, tierce, quint, nominal and the upper partials
+        // (the tierce and quint taken from the key, so the bells stay in it), the hum
+        // ringing longest.
+        p.set({ 0.5f, 1.0f, third, fifth, 2.0f, 2.0f * third, 2.0f * fifth, 4.0f }, { 1.6f, 1.1f, 0.8f, 0.5f, 0.6f, 0.35f, 0.3f, 0.2f },
+              { 0.4f, 0.9f, 0.55f, 0.25f, 0.6f * (0.5f + tone), 0.3f * tone, 0.25f * tone, 0.12f * tone });
+        p.decay = lerp(2.2f, 4.0f, s.size);
         p.hardness = 0.35f + 0.5f * tone;
         p.toneHz = lerpExp(1800.0f, 7000.0f, tone);
         p.voices = byQuality(q, 3, 4, 6);
@@ -376,7 +379,7 @@ void CastlePlace::configure(const PlaceContext& c) {
     // Harp: bright, ringing strings; shorter under Tension.
     {
         auto& p = harp.patch;
-        p.decay = lerp(2.6f, 1.1f, tension) * (s.character == 1 ? 1.2f : 1.0f);
+        p.decay = lerp(3.4f, 1.6f, tension) * (s.character == 1 ? 1.2f : 1.0f);
         p.brightness = 0.3f + 0.5f * tone;
         p.spread = 0.6f;
         p.voices = byQuality(q, 4, 6, 8);
