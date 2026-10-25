@@ -687,6 +687,75 @@ private:
     float roomSend = 0, presence = 0, dry = 1;
 };
 
+// Space Station: a rotating-hull drone that turns slowly around the listener,
+// docking-clamp hits, comms-beep motifs, an airflow pad, a reactor pulse bass and a
+// zero-g shimmer lead that glides, in a sealed metallic room with a filtered delay.
+// Routine Orbit: calm and steady, the reactor ticking over, beeps now and then.
+// Emergency: the clamps slamming, a racing reactor, urgent two-note calls. Abandoned:
+// the hull groaning alone, air hissing through a breach, a lead lost in the dark.
+class StationPlace final : public EnsemblePlace {
+public:
+    StationPlace();
+    float freeTempo() const override { return 94.0f; }
+    float spaceSend() const override { return 0.3f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { HullDrone, Clamps, Comms, Airflow, Reactor, Shimmer };
+    enum Character { RoutineOrbit, Emergency, Abandoned };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    SynthPart hull, reactor;
+    DrumPart clamps;
+    ModalPart comms;
+    WindPart air;
+    FmPart lead;
+    dsp::SmallSpace room;
+    dsp::CombResonance seal;
+    dsp::FilteredDelay delay;
+    dsp::Phasor rotation;   // the hull's slow turn
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    float roomSend = 0, sealSend = 0, delaySend = 0, presence = 0, dry = 1, turn = 0.5f;
+};
+
+// Cyberpunk Megacity: a gritty synth bass, a neon FM arpeggio, a rain-soaked pad, a
+// distorted drum machine, glitch stabs and the hum of a distant megastructure, in a
+// wet neon reverb with a bitcrusher and a ping-pong delay. Night Market: a lazy
+// half-time groove, the arp glinting, stabs answering. Corporate Tower: cold and
+// clean, a steady four-on-the-floor pulse, glassy arps far up. Riot: a breakbeat, the
+// bass snarling in sixteenths, crushed stabs everywhere.
+class MegacityPlace final : public EnsemblePlace {
+public:
+    MegacityPlace();
+    float freeTempo() const override { return 100.0f; }
+    float spaceSend() const override { return 0.3f; }
+    void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
+    enum Element { GritBass, NeonArp, RainPad, Drums, Stabs, Hum };
+    enum Character { NightMarket, CorporateTower, Riot };
+
+private:
+    void prepareFx() override;
+    void resetFx() override;
+    void configure(const PlaceContext& c) override;
+    void mix(const PlaceContext& c, float* left, float* right, int n) override;
+
+    SynthPart bass, pad, stabs;
+    FmPart arp;
+    DrumPart drums;
+    BowedPart hum;
+    dsp::SmallSpace neon;
+    dsp::LoFi crush;
+    dsp::PingPong pingpong;
+    std::array<dsp::OnePole, 4> tilt;
+    std::array<dsp::OnePole, 2> shelf;   // presence
+    std::array<dsp::Svf, 2> rain;        // the rain on the pad: a bright hiss
+    float neonSend = 0, crushMix = 0, pingSend = 0, presence = 0, dry = 1, drive = 1, rainLevel = 0;
+};
+
 // A new engine for a built Place (nullptr for the others).
 std::unique_ptr<Place> makePlace(int type);
 

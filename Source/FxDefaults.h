@@ -81,9 +81,9 @@ constexpr auto cave(float s) { return verb(RevCave, s); }
 // Indexed by Place type (the PlaceType order in Places/Place.h) and instrument.
 // Every Place keeps its own effect character on top of these: the sends add each
 // instrument's own space, so they stay moderate.
-inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 21> instrumentFxTable = [] {
+inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentFxTable = [] {
     using namespace fxdetail;
-    std::array<std::array<InstrumentFxDefaults, 6>, 21> t {};
+    std::array<std::array<InstrumentFxDefaults, 6>, 27> t {};
     for (auto& place : t)
         for (auto& e : place) e = InstrumentFxDefaults {};
     // Castle: Brass Drone, Bells, Horns, Timpani, Harp, Choir.
@@ -149,11 +149,14 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 21> instrumentF
               cathedral(0.4f).wide(1.4f) };
     // Tavern: Lute Strum, Frame Drum, Fiddle, Glass Clinks, Squeezebox, Stomps.
     t[20] = { room(0.25f), room(0.25f), room(0.25f).echo(DlyTape, 0.08f), room(0.3f).wide(1.3f), room(0.2f).with(ChSaturation, 0.1f), room(0.3f) };
+    // Space Station: Hull Drone, Docking Clamps, Comms Beeps, Airflow, Reactor Pulse, Zero-G Lead.
+    t[21] = { room(0.15f).with(ChFilter, 0.2f).wide(1.3f), plate(0.2f).echo(DlyTape, 0.1f), plate(0.2f).echo(DlyPingPong, 0.25f),
+              room(0.15f).wide(1.6f), room(0.05f).with(ChSaturation, 0.2f).toned(0.45f).wide(0.6f), hall(0.35f).echo(DlyDotted, 0.2f).with(ChChorus, 0.3f).wide(1.5f) };
     return t;
 }();
 
 inline constexpr const InstrumentFxDefaults& instrumentFx(int type, int element) {
-    return instrumentFxTable[std::size_t(type < 0 || type > 20 ? 0 : type)][std::size_t(element < 0 || element > 5 ? 0 : element)];
+    return instrumentFxTable[std::size_t(type < 0 || type > 26 ? 0 : type)][std::size_t(element < 0 || element > 5 ? 0 : element)];
 }
 inline constexpr float instrumentFxDefault(int type, int element, int field) { return instrumentFx(type, element).field(field); }
 

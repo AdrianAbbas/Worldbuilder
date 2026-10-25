@@ -2039,6 +2039,97 @@ OverlayArt tavern(const Layout& L) {
     }
     return a;
 }
+
+//==============================================================================
+// Space Station: pale modular hull panels along the frames, their seams carrying
+// blinking status lights; lattice trusses down the gaps; a solar array along the
+// bottom; in the open space a strip of stars over a planet's limb with a ring station
+// far off. Status lights blink, stars twinkle, a satellite drifts across.
+OverlayArt station(const Layout& L) {
+    OverlayArt a;
+    juce::Random r(2121);
+    juce::Path hull, hullLight, seams, truss, solar, solarLines, limb, ring, window;
+    std::vector<Point> lights, stars;
+    std::vector<std::pair<Point, float>> drifts;   // start, length
+    for (auto p : L.panels) {
+        for (float y : { p.getY() - 3.0f, p.getBottom() - 2.0f }) {
+            hull.addRectangle(p.getX() + 4.0f, y, p.getWidth() - 8.0f, 5.0f);
+            hullLight.addRectangle(p.getX() + 4.0f, y, p.getWidth() - 8.0f, 0.8f);
+            for (float x = p.getX() + 20.0f; x < p.getRight() - 14.0f; x += between(r, 26.0f, 44.0f)) {
+                seams.addRectangle(x, y, 1.0f, 5.0f);
+                if (r.nextFloat() < 0.35f) lights.push_back({ x + 4.0f, y + 2.5f });
+            }
+        }
+        // Docking collars on the top corners.
+        for (float cx : { p.getX() + 2.0f, p.getRight() - 2.0f }) {
+            hull.addEllipse(cx - 5.0f, p.getY() - 5.0f, 10.0f, 10.0f);
+            window.addEllipse(cx - 2.5f, p.getY() - 2.5f, 5.0f, 5.0f);
+            lights.push_back({ cx, p.getY() + 8.0f });
+        }
+    }
+    // Lattice trusses down the gaps.
+    for (auto gap : L.gutters) {
+        if (gap.getHeight() < 30.0f) continue;
+        const float cx = gap.getCentreX(), w = std::min(8.0f, gap.getWidth() - 2.0f);
+        truss.addRectangle(cx - w * 0.5f, gap.getY() + 6.0f, 1.0f, gap.getHeight() - 12.0f);
+        truss.addRectangle(cx + w * 0.5f - 1.0f, gap.getY() + 6.0f, 1.0f, gap.getHeight() - 12.0f);
+        juce::Path zig;
+        bool left = true;
+        zig.startNewSubPath(cx - w * 0.5f, gap.getY() + 6.0f);
+        for (float y = gap.getY() + 6.0f + w; y < gap.getBottom() - 6.0f; y += w) {
+            zig.lineTo(left ? cx + w * 0.5f : cx - w * 0.5f, y);
+            left = !left;
+        }
+        juce::PathStrokeType(0.8f).createStrokedPath(zig, zig);
+        truss.addPath(zig);
+        lights.push_back({ cx, gap.getY() + 4.0f });
+    }
+    // A solar array along the bottom: blue cells in a frame.
+    const float bottom = L.bounds.getBottom(), width = L.bounds.getWidth();
+    solar.addRectangle(0.0f, bottom - 6.0f, width, 6.0f);
+    for (float x = 0.0f; x < width; x += 7.0f) solarLines.addRectangle(x, bottom - 6.0f, 0.7f, 6.0f);
+    solarLines.addRectangle(0.0f, bottom - 3.2f, width, 0.5f);
+    // Stars over a planet's limb, a ring station far off.
+    for (auto o : L.open) {
+        for (int k = 0; k < int(o.getWidth() / 24.0f); ++k) stars.push_back({ o.getX() + r.nextFloat() * o.getWidth(), o.getY() + 2.0f + r.nextFloat() * (o.getHeight() - 8.0f) });
+        juce::Path arc;
+        arc.addCentredArc(o.getCentreX(), o.getBottom() + o.getWidth() * 0.9f, o.getWidth() * 0.7f, o.getWidth() * 0.9f + 3.0f, 0.0f, -0.5f, 0.5f, true);
+        juce::PathStrokeType(1.6f).createStrokedPath(arc, arc);
+        limb.addPath(arc);
+        const float rx = o.getX() + o.getWidth() * 0.78f, ry = o.getY() + o.getHeight() * 0.4f, rr = std::min(7.0f, o.getHeight() * 0.3f);
+        juce::Path wheel;
+        wheel.addEllipse(rx - rr, ry - rr * 0.45f, rr * 2.0f, rr * 0.9f);
+        juce::PathStrokeType(1.0f).createStrokedPath(wheel, wheel);
+        ring.addPath(wheel);
+        ring.addRectangle(rx - 0.5f, ry - rr * 0.6f, 1.0f, rr * 1.2f);
+        drifts.push_back({ { o.getX() + 10.0f, o.getY() + o.getHeight() * 0.25f }, o.getWidth() - 20.0f });
+    }
+    a.shapes.push_back({ solar, juce::Colour(0xff1a2c5a) });
+    a.shapes.push_back({ solarLines, juce::Colour(0xff8aa0c8) });
+    a.shapes.push_back({ truss, juce::Colour(0xff8a96a8) });
+    a.shapes.push_back({ hull, juce::Colour(0xffc8ccd4) });
+    a.shapes.push_back({ hullLight, juce::Colour(0xfff4f6fa) });
+    a.shapes.push_back({ seams, juce::Colour(0xff6a7280) });
+    a.shapes.push_back({ window, juce::Colour(0xff2a4a7a) });
+    a.shapes.push_back({ limb, juce::Colour(0xff6ab0ff) });
+    a.shapes.push_back({ ring, juce::Colour(0xffb8c4d8) });
+
+    const int green = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, juce::Colour(0x8060ff90), juce::Colour(0xffd0ffe0), 1.0f));
+    const int red = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, juce::Colour(0x80ff4a4a), juce::Colour(0xffffd0d0), 1.0f));
+    const int blue = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(3.5f, juce::Colour(0x8060a8ff), juce::Colour(0xffd8eaff), 1.0f));
+    const int star = int(a.sprites.size());
+    a.sprites.push_back(sparkleSprite(3.0f, juce::Colour(0xffe8f0ff)));
+    const int satellite = int(a.sprites.size());
+    a.sprites.push_back(glowSprite(2.5f, juce::Colour(0x90ffffff), juce::Colour(0xffffffff), 0.8f));
+    for (std::size_t i = 0; i < lights.size(); ++i)
+        move(a, i % 2 == 0 ? PlaceOverlays::MoveBlink : PlaceOverlays::MovePulse, lights[i], i % 3 == 0 ? red : (i % 3 == 1 ? green : blue), between(r, 0.9f, 2.8f), r.nextFloat());
+    for (auto p : stars) move(a, PlaceOverlays::MovePulse, p, star, between(r, 1.5f, 4.0f), r.nextFloat(), 0.8f);
+    for (const auto& [at, length] : drifts) move(a, PlaceOverlays::MoveDrift, at, satellite, 24.0f, r.nextFloat(), 0.9f, length, 1.5f);
+    return a;
+}
 } // namespace
 
 //==============================================================================
@@ -2140,7 +2231,8 @@ juce::Image pathSprite(const juce::Path& path, juce::Colour colour, float glow, 
 
 bool hasArt(int type) {
     return type == Factory || type == City || type == Forest || type == Hive || type == Temple || type == Cavern || type == Ruins || type == Spaceship
-           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern;
+           || type == Biodome || type == SeaShip || type == Suburbs || type == Mall || type == Military || type == Beach || type == Desert || type == Palace || type == Tavern
+           || type == SpaceStation;
 }
 
 OverlayArt build(int type, const Layout& layout) {
@@ -2162,6 +2254,7 @@ OverlayArt build(int type, const Layout& layout) {
         case Desert: return desert(layout);
         case Palace: return palace(layout);
         case Tavern: return tavern(layout);
+        case SpaceStation: return station(layout);
         default: return {};
     }
 }

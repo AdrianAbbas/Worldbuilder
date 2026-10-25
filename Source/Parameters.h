@@ -37,8 +37,9 @@ inline constexpr const char* rootChoices = "C|C#|D|D#|E|F|F#|G|G#|A|A#|B";
 inline constexpr const char* moodChoices = "Minor|Major|Dorian|Phrygian|Lydian|Mixolydian|Whole-tone|Pentatonic|Chromatic";
 inline constexpr const char* qualityChoices = "Eco|Standard|High";
 inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Factory|City|Forest|Alien Hive|Temple|Cavern|Ruins|Spaceship|Biodome|"
-                                            "Sea Ship|Suburbs|Mall|Military Camp|Beach|Desert|Palace|Tavern";
-inline constexpr int placeChoiceCount = 21;
+                                            "Sea Ship|Suburbs|Mall|Military Camp|Beach|Desert|Palace|Tavern|"
+                                            "Space Station|Cyberpunk Megacity|Starship Bridge|Asteroid Mining Colony|Alien Ruins|Nebula";
+inline constexpr int placeChoiceCount = 27;
 inline constexpr const char* characterChoices = "1|2|3";
 inline constexpr const char* playModeChoices = "Free|Transport";
 enum PlayMode { PlayFree, PlayTransport };
@@ -113,7 +114,7 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { id e "_tone", name label " Tone", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxTone) }, \
     { id e "_width", name label " Width", Kind::Float, 0, 2, instrumentFxDefault(type, k, FxWidth) }
 #define WB_PLACE(id, name, type, pan, seed) \
-    { id "_type", name " Place", Kind::Choice, 0, 20, type, placeChoices }, \
+    { id "_type", name " Place", Kind::Choice, 0, placeChoiceCount - 1, type, placeChoices }, \
     { id "_level", name " Level", Kind::Decibels, -60, 6, 0 }, \
     { id "_distance", name " Distance", Kind::Float, 0, 1, 0.35f }, \
     { id "_pan", name " Pan", Kind::Float, -1, 1, pan }, \

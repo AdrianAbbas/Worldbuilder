@@ -455,6 +455,176 @@ juce::Path tavernDetail() {
     return p;
 }
 
+// Milestone 7: the sci-fi Places.
+juce::Path station() {
+    juce::Path p;
+    // A ring station: the wheel, its hub and spokes, solar wings.
+    p.addEllipse(20, 22, 60, 60);
+    rect(p, 4, 49, 16, 6);
+    rect(p, 80, 49, 16, 6);
+    return p;
+}
+juce::Path stationDetail() {
+    juce::Path p;
+    p.addEllipse(28, 30, 44, 44);
+    p.addEllipse(42, 44, 16, 16);
+    for (int i = 0; i < 4; ++i) {
+        const float a = juce::MathConstants<float>::halfPi * float(i) + 0.4f;
+        p.startNewSubPath(50 + 8 * std::cos(a), 52 + 8 * std::sin(a));
+        p.lineTo(50 + 22 * std::cos(a), 52 + 22 * std::sin(a));
+    }
+    for (int i = 0; i < 3; ++i) {
+        p.startNewSubPath(8.0f + 4.0f * float(i), 49);
+        p.lineTo(8.0f + 4.0f * float(i), 55);
+        p.startNewSubPath(84.0f + 4.0f * float(i), 49);
+        p.lineTo(84.0f + 4.0f * float(i), 55);
+    }
+    return p;
+}
+
+juce::Path megacity() {
+    juce::Path p;
+    // Stacked towers, one megastructure spire in the middle.
+    rect(p, 6, 46, 14, 42);
+    rect(p, 20, 34, 12, 54);
+    triangle(p, 40, 88, 50, 6, 60, 88);
+    rect(p, 62, 28, 14, 60);
+    rect(p, 76, 50, 18, 38);
+    return p;
+}
+juce::Path megacityDetail() {
+    juce::Path p;
+    for (float y = 40; y < 84; y += 8) {
+        p.startNewSubPath(64, y);
+        p.lineTo(74, y);
+    }
+    for (float y = 52; y < 84; y += 7) {
+        p.startNewSubPath(8, y);
+        p.lineTo(18, y);
+    }
+    p.addRoundedRectangle(78, 56, 14, 6, 2);   // a neon sign
+    p.startNewSubPath(50, 6);
+    p.lineTo(50, 0);
+    for (int i = 0; i < 5; ++i) {   // rain
+        p.startNewSubPath(12.0f + 18.0f * float(i), 10);
+        p.lineTo(9.0f + 18.0f * float(i), 22);
+    }
+    return p;
+}
+
+juce::Path bridge() {
+    juce::Path p;
+    // The bridge seen from behind the captain's chair: a wide viewport over consoles.
+    p.startNewSubPath(6, 64);
+    p.quadraticTo(50, 8, 94, 64);
+    p.lineTo(94, 70);
+    p.lineTo(6, 70);
+    p.closeSubPath();
+    rect(p, 10, 72, 28, 10);
+    rect(p, 62, 72, 28, 10);
+    rect(p, 42, 66, 16, 22);
+    return p;
+}
+juce::Path bridgeDetail() {
+    juce::Path p;
+    // Target brackets and stars in the viewport.
+    for (auto [x, y] : { std::pair { 30.0f, 46.0f }, std::pair { 66.0f, 40.0f }, std::pair { 50.0f, 30.0f } }) p.addEllipse(x, y, 2.0f, 2.0f);
+    p.startNewSubPath(56, 34);
+    p.lineTo(56, 30);
+    p.lineTo(60, 30);
+    p.startNewSubPath(76, 34);
+    p.lineTo(76, 30);
+    p.lineTo(72, 30);
+    p.startNewSubPath(56, 46);
+    p.lineTo(56, 50);
+    p.lineTo(60, 50);
+    p.startNewSubPath(76, 46);
+    p.lineTo(76, 50);
+    p.lineTo(72, 50);
+    return p;
+}
+
+juce::Path mining() {
+    juce::Path p;
+    // An asteroid with a drilling rig on top.
+    p.startNewSubPath(8, 88);
+    p.quadraticTo(10, 56, 34, 52);
+    p.quadraticTo(56, 40, 76, 54);
+    p.quadraticTo(96, 64, 92, 88);
+    p.closeSubPath();
+    rect(p, 46, 18, 6, 36);
+    triangle(p, 36, 54, 49, 14, 62, 54);
+    return p;
+}
+juce::Path miningDetail() {
+    juce::Path p;
+    p.addEllipse(22, 66, 10, 7);
+    p.addEllipse(66, 70, 12, 8);
+    p.startNewSubPath(40, 40);
+    p.lineTo(58, 40);
+    p.startNewSubPath(42, 30);
+    p.lineTo(56, 30);
+    p.startNewSubPath(54, 16);   // the drill light
+    p.lineTo(80, 4);
+    p.startNewSubPath(54, 18);
+    p.lineTo(84, 14);
+    return p;
+}
+
+juce::Path alienRuins() {
+    juce::Path p;
+    // A broken alien arch and a leaning monolith.
+    p.startNewSubPath(10, 88);
+    p.lineTo(14, 40);
+    p.quadraticTo(36, 10, 58, 40);
+    p.lineTo(60, 88);
+    p.lineTo(50, 88);
+    p.lineTo(48, 46);
+    p.quadraticTo(36, 28, 24, 46);
+    p.lineTo(20, 88);
+    p.closeSubPath();
+    p.startNewSubPath(70, 88);
+    p.lineTo(74, 30);
+    p.lineTo(88, 34);
+    p.lineTo(90, 88);
+    p.closeSubPath();
+    return p;
+}
+juce::Path alienRuinsDetail() {
+    juce::Path p;
+    // Glyphs and a crack.
+    p.addEllipse(77, 44, 6, 6);
+    p.startNewSubPath(76, 58);
+    p.lineTo(86, 58);
+    p.startNewSubPath(80, 62);
+    p.lineTo(80, 72);
+    p.startNewSubPath(32, 22);
+    p.lineTo(36, 30);
+    p.lineTo(33, 36);
+    p.addEllipse(14, 56, 4, 4);
+    p.addEllipse(52, 60, 4, 4);
+    return p;
+}
+
+juce::Path nebula() {
+    juce::Path p;
+    // Billowing gas clouds.
+    p.addEllipse(8, 40, 44, 30);
+    p.addEllipse(30, 22, 44, 36);
+    p.addEllipse(50, 44, 42, 30);
+    p.addEllipse(26, 56, 40, 24);
+    return p;
+}
+juce::Path nebulaDetail() {
+    juce::Path p;
+    for (auto [x, y, r] : { std::tuple { 20.0f, 14.0f, 2.0f }, std::tuple { 84.0f, 20.0f, 2.5f }, std::tuple { 52.0f, 40.0f, 4.0f },
+                            std::tuple { 12.0f, 82.0f, 1.5f }, std::tuple { 88.0f, 84.0f, 2.0f } })
+        p.addStar({ x, y }, 4, r * 0.3f, r * 1.6f, 0.0f);
+    p.startNewSubPath(30, 48);
+    p.quadraticTo(50, 56, 72, 46);
+    return p;
+}
+
 // Instrument glyphs, in a 20 x 20 box.
 juce::Path glyph(int icon) {
     juce::Path p;
@@ -727,6 +897,12 @@ void drawPlaceIcon(juce::Graphics& g, int type, juce::Rectangle<float> area, juc
         case Desert: shape = desert(); detail = desertDetail(); break;
         case Palace: shape = palace(); detail = palaceDetail(); break;
         case Tavern: shape = tavern(); detail = tavernDetail(); break;
+        case SpaceStation: shape = station(); detail = stationDetail(); break;
+        case Megacity: shape = megacity(); detail = megacityDetail(); break;
+        case Bridge: shape = bridge(); detail = bridgeDetail(); break;
+        case Mining: shape = mining(); detail = miningDetail(); break;
+        case AlienRuins: shape = alienRuins(); detail = alienRuinsDetail(); break;
+        case Nebula: shape = nebula(); detail = nebulaDetail(); break;
         default: return;
     }
     const float side = std::min(area.getWidth(), area.getHeight());
@@ -753,7 +929,8 @@ namespace wb::ui {
 juce::Colour placeAccent(int type) {
     static constexpr std::array<uint32_t, PlaceTypeCount> table { 0xff6c7a8f, 0xffc9a45c, 0xffd08a4e, 0xff5fd4e6, 0xffb36a4a, 0xff8fa6c9, 0xff6fb37a,
                                                                   0xffb78cff, 0xffd8c27a, 0xff7a8fb3, 0xff9a8f86, 0xff7fc8f0, 0xff7ad8a8, 0xff5f9ad8,
-                                                                  0xffe0a87a, 0xffe07ab8, 0xffc0584a, 0xff6fd0c8, 0xffe0b060, 0xfff0d890, 0xffd8843e };
+                                                                  0xffe0a87a, 0xffe07ab8, 0xffc0584a, 0xff6fd0c8, 0xffe0b060, 0xfff0d890, 0xffd8843e,
+                                                                  0xffa8c8e8, 0xffff4fa8, 0xff4f9fff, 0xffd09a50, 0xff5fe8b0, 0xffc890ff };
     return juce::Colour(table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))]);
 }
 
@@ -784,6 +961,12 @@ const PlaceTheme& placeTheme(int type) {
         t(0xff3a2414, 0xffe8b060, 0xffb08040, 0xffffd27a, 0xff3e2c16, 0xff2c1c0c, ParticleDust, GlobeDunes),            // desert: sandy gold
         t(0xff241a34, 0xffe8c890, 0xff2c2438, 0xfffff0c0, 0xff32244a, 0xff201436, ParticleSparks, GlobeGlow),           // palace
         t(0xff2a1a12, 0xffc8783a, 0xff33241a, 0xffffa040, 0xff3e2410, 0xff2a1608, ParticleEmbers, GlobeFields),         // tavern: warm amber
+        t(0xff060c18, 0xff3a5a80, 0xff101a28, 0xffa8d8ff, 0xff0e2238, 0xff050e1c, ParticleSparks, GlobeOrbit),          // space station: steel blue
+        t(0xff120820, 0xffb02a80, 0xff1a1028, 0xffff3fa0, 0xff2a0c38, 0xff12061e, ParticleMist, GlobeCityLights),       // megacity: neon magenta rain
+        t(0xff040814, 0xff1f4a9a, 0xff0a1428, 0xff5fb0ff, 0xff0a1e44, 0xff030a20, ParticleSparks, GlobeOrbit),          // starship bridge: command blue
+        t(0xff141010, 0xff8a6030, 0xff221a14, 0xffffb040, 0xff2e2014, 0xff1a120a, ParticleDust, GlobeCrystals),         // mining colony: drill-light amber
+        t(0xff081414, 0xff2a8a70, 0xff10201c, 0xff5fffc0, 0xff0c2e28, 0xff061a16, ParticleSpores, GlobeRuins),          // alien ruins: glyph green
+        t(0xff0c0618, 0xff6a3aa0, 0xff140c24, 0xffe0a0ff, 0xff241040, 0xff0e0620, ParticleMotes, GlobeGlow),            // nebula: violet gas
     };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }

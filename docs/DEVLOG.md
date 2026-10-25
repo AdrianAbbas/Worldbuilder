@@ -5,8 +5,8 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Current work: Milestone 6** (sound overhaul and per-instrument effects). Its
-progress checklist is at the top of the [Milestone 6 section](#milestone-6-sound-overhaul-and-per-instrument-effects-2026-10-25)
+**Current work: Milestone 7** (six sci-fi Places and Score Intensity, Direction
+Update 5). Its progress checklist is at the top of the [Milestone 7 section](#milestone-7-sci-fi-places-and-score-intensity-2026-10-25)
 at the end of this file; a resumed session continues from the first unticked item.
 
 ---
@@ -2265,3 +2265,56 @@ spectral bands and three envelope figures; trust ears over it.)
 - The branch `push-access-check` (one empty commit from the start of this session) is
   still on GitHub; the session could not delete it. Safe to delete.
 
+
+---
+
+## Milestone 7: sci-fi Places and Score Intensity (2026-10-25)
+
+Direction Update 5 ([DIRECTION_UPDATE_5.md](DIRECTION_UPDATE_5.md)) replaces the
+milestone list: 7 sci-fi Places and Score Intensity, 8 capture and export (render,
+scene MIDI), 9 Locations and Journeys, 10 visual revamp and planet types, 11 pro
+features, presets and release. MIDI control (host keyboard zones) is cancelled.
+Unattended: decisions are recorded here instead of asked.
+
+### Progress checklist
+
+Ticked when committed and pushed. A resumed session starts at the first unticked item.
+
+- [x] 0. Registration for six new Place types (types 21-26, appended so saved projects keep their numbers), sci-fi category, card art, themes
+- [x] 1. Space Station
+- [ ] 2. Cyberpunk Megacity
+- [ ] 3. Starship Bridge
+- [ ] 4. Asteroid Mining Colony
+- [ ] 5. Alien Ruins
+- [ ] 6. Nebula / Deep Space
+- [ ] 7. Score Intensity (parameter, per-Place response curves, top-bar knob, tests)
+- [ ] 8. Final: full suite, handoff, what to listen for, final push without `[skip ci]`
+
+### Decisions
+
+- The new Places are appended to the Place enum (Space Station 21 ... Nebula 26), so
+  every saved project keeps its Place numbers. The slots' Place choice parameter grows
+  from 21 to 27 entries. The plugin state stores the Place as its value (not
+  normalised), so old projects load unchanged; host automation of the Place choice
+  (rare) written by an older version would map to other Places, since a choice
+  parameter's normalised range now covers 27 entries.
+- Each new Place follows the Milestone 6 standard: six instruments built from the
+  shared parts, three Characters that change patches, patterns and space, its own
+  effect chain, per-instrument effect defaults (`FxDefaults.h`), a card illustration,
+  a theme and an overlay.
+
+### Places
+
+**Space Station** (sci-fi: synthetic)
+- Hull Drone: detuned saws on the chord's root and fifth, two octaves down, that turn
+  slowly around the listener (one revolution every 16 beats, 8 in an emergency).
+- Docking Clamps: struck steel (an inharmonic 1 : 2.76 pair), latches and a membrane thud.
+- Comms Beeps: near-pure sine beeps (modal, faint octave), short motifs on the chord.
+- Airflow: tuned breath through the vents; Abandoned: a breach hissing, sagging to the fourth.
+- Reactor Pulse: a filtered pulse bass in eighths (sixteenths in an emergency).
+- Zero-G Lead: a soft FM tone gliding between chord tones.
+- Space: a sealed metallic room whose walls ring on the chord (comb resonance) and a
+  filtered delay sweeping on the beeps and the lead. Abandoned rings longest.
+- Overlay: pale hull panels along the frames with seams and blinking status lights,
+  lattice trusses down the gaps, a solar array along the bottom, stars over a
+  planet's limb with a ring station far off; a satellite drifts across.

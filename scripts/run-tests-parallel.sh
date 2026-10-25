@@ -7,8 +7,8 @@ set -u
 tests="${1:?the WorldbuilderTests binary}"
 logs="${2:-build/test-logs}"
 mkdir -p "$logs"
-first="castle,village,spaceport,factory,city,forest,hive,temple,cavern,ruins"
-second="spaceship,biodome,seaship,suburbs,mall,military,beach,desert,palace,tavern"
+first="castle,village,spaceport,factory,city,forest,hive,temple,cavern,ruins,station,megacity,bridge"
+second="spaceship,biodome,seaship,suburbs,mall,military,beach,desert,palace,tavern,mining,alienruins,nebula"
 rest="parameters,rates,world,layers,climate,music,slots,patterns,playmode,determinism,power,tonal,state,models,distinct,editor,overlays"
 
 "$tests" --only instruments --place "$first" > "$logs/1-instruments-a.txt" 2>&1 &

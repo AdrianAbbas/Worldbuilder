@@ -20,26 +20,32 @@ namespace wb {
 // The Place types, in selector order. The numbering is stable (saved in projects).
 enum PlaceType {
     NoPlace, Castle, Village, Spaceport, Factory, City, Forest, Hive, Temple, Cavern, Ruins, Spaceship, Biodome, SeaShip, Suburbs, Mall,
-    Military, Beach, Desert, Palace, Tavern, PlaceTypeCount
+    Military, Beach, Desert, Palace, Tavern,
+    // Milestone 7: the sci-fi Places.
+    SpaceStation, Megacity, Bridge, Mining, AlienRuins, Nebula, PlaceTypeCount
 };
 static_assert(int(PlaceTypeCount) == placeChoiceCount, "the Place choice parameter lists every Place");
 
 inline constexpr std::array<const char*, PlaceTypeCount> placeNames {
     "Empty", "Castle", "Village", "Spaceport", "Factory", "City", "Forest", "Alien Hive", "Temple", "Cavern", "Ruins", "Spaceship",
-    "Biodome", "Sea Ship", "Suburbs", "Mall", "Military Camp", "Beach", "Desert", "Palace", "Tavern"
+    "Biodome", "Sea Ship", "Suburbs", "Mall", "Military Camp", "Beach", "Desert", "Palace", "Tavern",
+    "Space Station", "Cyberpunk Megacity", "Starship Bridge", "Asteroid Mining Colony", "Alien Ruins", "Nebula"
 };
 // Lower-case keys: artwork folders (assets/places/<key>/) and file names.
 inline constexpr std::array<const char*, PlaceTypeCount> placeKeys {
     "empty", "castle", "village", "spaceport", "factory", "city", "forest", "hive", "temple", "cavern", "ruins", "spaceship",
-    "biodome", "seaship", "suburbs", "mall", "military", "beach", "desert", "palace", "tavern"
+    "biodome", "seaship", "suburbs", "mall", "military", "beach", "desert", "palace", "tavern",
+    "station", "megacity", "bridge", "mining", "alienruins", "nebula"
 };
 // Which Places sound (all 20 since Milestone 5d). An unbuilt Place would be listed but
 // silent, and its card could not be added.
 inline constexpr std::array<bool, PlaceTypeCount> placeImplemented { false, true, true, true, true, true, true, true, true, true, true,
-                                                                     true, true, true, true, true, true, true, true, true, true };
+                                                                     true, true, true, true, true, true, true, true, true, true,
+                                                                     true, false, false, false, false, false };
 // The sub-milestone each Place arrives in (shown on its card).
 inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", "", "", "5B", "5B", "5B", "5B", "5B", "5B", "5C",
-                                                                        "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D" };
+                                                                        "5C", "5C", "5C", "5C", "5D", "5D", "5D", "5D", "5D", "5D",
+                                                                        "7A", "7A", "7A", "7A", "7A", "7A" };
 
 constexpr int placeElements = pat::elementsPerPlace, placeCharacters = 3;
 
@@ -223,6 +229,12 @@ inline const PlaceInfo& placeInfo(int type) {
                mel("Glass Clinks", IconGlass), mel("Squeezebox", IconPiano), kit("Stomps", IconTimpani, { "Stomp", "Clap", nullptr, nullptr }) },
              "Lute-like strumming, a frame-drum pulse, fiddle drones and melodies, tuned glass clinks, squeezebox chords and stomps.",
              "A warm wooden room with tape warmth", MedievalFantasy, 2),
+        // Milestone 7: the sci-fi Places.
+        info({ "Routine Orbit", "Emergency", "Abandoned" },
+             { held("Hull Drone", IconDrone), kit("Docking Clamps", IconAnvil, { "Clamp", "Latch", "Thud", nullptr }), mel("Comms Beeps", IconBlip, VaryVelocity | VarySkip),
+               held("Airflow", IconWind), mel("Reactor Pulse", IconBass), mel("Zero-G Lead", IconCrystal, VaryVelocity | VarySkip | VaryPitch) },
+             "A rotating-hull drone, docking-clamp hits, comms-beep motifs, an airflow pad, a reactor pulse bass and a gliding zero-g lead.",
+             "A sealed metallic room and a filtered delay", SciFi),
     } };
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }
