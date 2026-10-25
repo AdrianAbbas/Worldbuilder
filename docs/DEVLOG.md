@@ -1815,7 +1815,7 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
   - [x] Suburbs
   - [x] Mall
   - [x] Factory
-  - [ ] Beach
+  - [x] Beach
   - [ ] Spaceport
   - [ ] Spaceship Interior
   - [ ] Biodome
@@ -2176,4 +2176,9 @@ effect defaults set. Measurements only, as everywhere in this milestone.
 - Anvil, Pistons, Steam, Bowed Metal (the bowed resonator), Gears, Furnace Bass. Life
   brings the anvil and gears forward (step 2).
 - Space: the forge's iron hall rings, the assembly line is a tight shed.
+
+**Beach** (nature)
+- Guitar (nylon, a classical body), Steel Drum (a pan's tuned 1 : 2 : 3 : 4.02), Waves
+  (tuned surf, step 3), Shaker and clave, Breeze Pad, Gulls.
+- Space: Tension tears the echoes away, a still sunset carries sound over the water.
 

@@ -289,7 +289,8 @@ void BeachPlace::configure(const PlaceContext& c) {
     // Tension: the surf rises and the shaker rattles, the steel drum and pad step back;
     // Life brings the gulls; Machinery a busier rhythm section.
     // Tension: the wind tears the echoes away (less in the reverbs and delays).
-    sendScale.fill(lerp(1.25f, 0.55f, tension));
+    // ... and a still sunset carries every sound over the water.
+    sendScale.fill(lerp(1.25f, 0.55f, tension) * (sunset ? 1.3f : 1.0f));
     level = { 0.5f * (stormy ? 0.8f : 1.0f), 0.24f * (1.0f - 0.6f * tension) * (tropical ? 1.1f : 1.0f),
               1.4f * (stormy ? 1.2f : (sunset ? 0.8f : 1.0f)) * (0.4f + 2.0f * tension), 1.6f * (stormy ? 2.2f : 1.0f) * (0.6f + 0.8f * tension) * (0.6f + 0.9f * s.machinery),
               0.04f * (sunset ? 1.3f : 1.0f) * (1.0f - 0.3f * tension), 0.08f * lerp(0.5f, 1.5f, s.life) };
