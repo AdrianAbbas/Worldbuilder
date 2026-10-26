@@ -1,6 +1,7 @@
 // Offline tests through the real processBlock. Exit code 0 only if every check passes.
 //   WorldbuilderTests                 run everything
 //   WorldbuilderTests --snapshot f.png also write an image of the editor
+//   WorldbuilderTests --snapshots dir [prefix]   images of each part of the interface for review
 //   WorldbuilderTests --probe          print per-layer measurements (tuning aid)
 //   WorldbuilderTests --probe-places   print each Place's level per character and element
 //   WorldbuilderTests --only a,b       run only some groups (patterns, playmode, editor...)
@@ -1081,8 +1082,10 @@ void testEffects(Suite& s) {
             bank.process(outL.data(), outR.data(), dsp::chunk, 96.0f);
         }
         const double effects = 100.0 * juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) / 10.0;
-        s.metric("CPU, the effects alone: 24 instruments (character, tone, width, two sends) and nine busy buses", effects, " %");
-        s.check(effects < 8.0 && std::isfinite(outL[0]), "CPU: every instrument effect in use on 24 instruments, under 8 % of one core", fmt(effects) + " %");
+        // Report only (Milestone 10): cloud and CI machines are not representative; the
+        // developer measures CPU on the Mac.
+        s.metric("CPU, the effects alone: 24 instruments (character, tone, width, two sends) and nine busy buses (report only, budget 8 %)", effects, " %");
+        s.check(std::isfinite(outL[0]), "every instrument effect in use on 24 instruments renders finite");
     }
     {
         // State: every effect parameter round trips, and an old project's instruments take
@@ -1573,8 +1576,9 @@ void testRealtimeSafety(Suite& s) {
         const auto begin = juce::Time::getHighResolutionTicks();
         st.render(10.0);
         const double used = 100.0 * juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) / 10.0;
-        s.metric("CPU, Standard quality, four busy Places of six instruments (one core of this machine)", used, " %");
-        s.check(used < 15.0, "CPU: four busy Places (24 instruments), Standard quality, 48 kHz / 256, under 15 % of one core", fmt(used) + " %");
+        // Report only (Milestone 10): cloud and CI machines are not representative; the
+        // developer measures CPU on the Mac.
+        s.metric("CPU, Standard quality, four busy Places of six instruments (report only, budget 15 % of one core)", used, " %");
     }
     // Each built Place four times at once (its three Characters and a second seed), busy.
     for (int type : builtPlaces()) {
@@ -1592,8 +1596,7 @@ void testRealtimeSafety(Suite& s) {
         st.render(10.0);
         const double used = 100.0 * juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) / 10.0;
         const std::string name = placeNames[std::size_t(type)];
-        // Report only (since 5c): on a shared container these swing by several points
-        // from run to run; the mixed four-Place check above stays a check.
+        // Report only: on a shared container these swing by several points from run to run.
         s.metric("CPU, four busy Places, all " + name + ", Standard quality (report only, budget 15 %)", used, " %");
     }
 }
@@ -3999,6 +4002,86 @@ void testSmoke(Suite& s) {
     }
 }
 
+
+// --snapshots dir [prefix]: images of the interface for review by eye (the globe on
+// each planet, the cards, the strips, the detail panel, the Pattern Editor, the bars),
+// written as dir/prefix-name.png. Crops follow the editor's fixed 1160 x 812 layout.
+int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
+    juce::File folder(dir);
+    folder.createDirectory();
+    const auto save = [&](const juce::Image& image, const juce::String& name) {
+        juce::File file(folder.getChildFile(prefix + "-" + name + ".png"));
+        file.deleteFile();
+        juce::FileOutputStream out(file);
+        juce::PNGImageFormat().writeImageToStream(image, out);
+        std::cout << "  " << file.getFullPathName() << "\n";
+    };
+    const juce::Rectangle<int> header(0, 0, 1160, 58), globe(318, 54, 514, 342), cards(318, 394, 514, 234), left(6, 54, 312, 574),
+        right(832, 54, 322, 574), centre(318, 54, 514, 574), editorArea(6, 54, 826, 574), bottom(6, 624, 1148, 182);
+    struct View {
+        Host h;
+        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        WorldbuilderEditor* view = nullptr;
+        View(std::vector<int> places, std::vector<std::pair<const char*, float>> settings) {
+            for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), float(NoPlace));
+            for (int slot = 0; slot < placeSlotCount && slot < int(places.size()); ++slot) h.set(slotId(slot, PlType), float(places[std::size_t(slot)]));
+            for (auto [id, value] : settings)
+                if (h.p->parameters.getParameter(id) != nullptr) h.set(id, value);
+            h.render(1.0);
+            editor.reset(h.p->createEditor());
+            view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+            view->settle(2.5f);
+        }
+        juce::Image image() { return editor->createComponentSnapshot(editor->getLocalBounds()); }
+    };
+    {
+        View v({ Castle }, {});
+        const auto image = v.image();
+        save(image, "full-default");
+        save(image.getClippedImage(header), "header");
+        save(image.getClippedImage(cards), "cards");
+        save(image.getClippedImage(left), "controls");
+        save(image.getClippedImage(bottom), "bottom");
+        v.view->showCategory(SciFi);
+        save(v.image().getClippedImage(cards), "cards-scifi");
+    }
+    {
+        View v({ Castle, Village, Spaceport, Forest }, {});
+        const auto image = v.image();
+        save(image, "full-world");
+        save(image.getClippedImage(right), "strips");
+        save(image.getClippedImage(globe), "globe-places");
+        v.view->openDetail(1);
+        v.view->settle(0.1f);
+        save(v.image().getClippedImage(centre), "detail");
+        v.view->openPatterns(0);
+        v.view->settle(0.1f);
+        save(v.image().getClippedImage(editorArea), "patterns");
+    }
+    const std::vector<std::pair<const char*, std::vector<std::pair<const char*, float>>>> worlds {
+        { "globe-frozen", { { "temperature", 0.05f }, { "weather", 0.2f } } },
+        { "globe-scorching", { { "temperature", 0.95f }, { "danger", 0.7f } } },
+        { "globe-storm", { { "weather", 0.9f }, { "wetness", 0.9f } } },
+    };
+    for (const auto& [name, settings] : worlds) {
+        View v({ Castle }, settings);
+        save(v.image().getClippedImage(globe), name);
+    }
+    {
+        View v({ City, Suburbs, Megacity }, { { "population", 0.9f } });
+        save(v.image().getClippedImage(globe), "globe-city");
+    }
+    // Each planet type (when the build has them).
+    if (Host probe; probe.p->parameters.getParameter("planet") != nullptr) {
+        const juce::StringArray planets { "rocky", "ocean", "icegiant", "gasgiant", "desert", "lava", "forest" };
+        for (int planet = 0; planet < planets.size(); ++planet) {
+            View v({ Castle, Village }, { { "planet", float(planet) }, { "population", 0.7f } });
+            save(v.image().getClippedImage(globe), "globe-planet-" + planets[planet]);
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -4009,6 +4092,7 @@ int main(int argc, char** argv) {
                     if (key == placeKeys[std::size_t(type)]) placeFilter.push_back(type);
     for (int i = 1; i < argc; ++i)
         if (juce::String(argv[i]) == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
+        else if (juce::String(argv[i]) == "--snapshots" && i + 1 < argc) return writeSnapshots(argv[i + 1], i + 2 < argc ? juce::String(argv[i + 2]) : juce::String("shot"));
         else if (juce::String(argv[i]) == "--probe") return probe();
         else if (juce::String(argv[i]) == "--probe-places") return probePlaces();
         else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {
