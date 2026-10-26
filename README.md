@@ -191,8 +191,10 @@ Copy and in Split.
 
 A **Location** is a complete world: the Places in their four slots with their
 Characters, settings, patterns and instrument effects, the World Controls, Score
-Intensity, the environment levels, Root and Mood. Power, Master Level, Quality,
-Play Mode and the World Seed are not part of a Location.
+Intensity, Root and Mood. Power, Master Level, Quality, Play Mode, the World Seed and
+the environment mix (the layers' levels, mutes and solos and the Environment Level) are
+not part of a Location: they stay as you set them in every journey, arrangement, scene,
+Inspire result and render.
 
 - **Save:** click an empty chip in the LOCATIONS row (or right-click a chip, "Save the
   world here"). Double-click a saved chip to rename it ("Frozen Gate", "Ember

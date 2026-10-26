@@ -66,7 +66,8 @@ uint32_t nextSeed(uint32_t seed);
 
 // The parameter values of a scene's world (its first Location). `session` gives the
 // values that belong to the session, not the world (Power, Master Level, Quality, Play
-// Mode, Place Outputs); everything else starts from its default.
+// Mode, Place Outputs, and the environment mix: the layers' levels, mutes and solos and
+// the Environment master); everything else starts from its default.
 WorldValues worldValues(const Scene& scene, const WorldValues& session);
 // Location i's values (the world with the Location's changes).
 WorldValues locationValues(const Scene& scene, int index, const WorldValues& world);

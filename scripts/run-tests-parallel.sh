@@ -13,7 +13,7 @@ rest="smoke,arrangement,transitions,gameaudio,outputs,locations,parameters,rates
 
 "$tests" --only instruments --place "$first" > "$logs/1-instruments-a.txt" 2>&1 &
 "$tests" --only instruments --place "$second" > "$logs/2-instruments-b.txt" 2>&1 &
-"$tests" --only places,placeworld,scenes > "$logs/3-places.txt" 2>&1 &
+"$tests" --only places,placeworld,scenes,envbalance,envkept > "$logs/3-places.txt" 2>&1 &
 "$tests" --only "$rest" > "$logs/4-rest.txt" 2>&1 &
 wait
 "$tests" --only effects,realtime > "$logs/5-cpu.txt" 2>&1

@@ -1,6 +1,5 @@
 #pragma once
-// Locations: saved snapshots of the whole world (World Controls, environment levels,
-// Root, Mood, seeds, the four Place slots with their Characters, settings, instrument
+// Locations: saved snapshots of the whole world (World Controls, Root, Mood, seeds, the four Place slots with their Characters, settings, instrument
 // effects and patterns, Score Intensity), and the rules for moving between two of them.
 //
 // A world here is a set of parameter values plus each slot's patterns. Moving between
@@ -37,14 +36,17 @@ enum class Move {
     Switch,  // a choice: changes at the far point
 };
 
+// The environment layers' levels, mutes and solos, and the Environment master.
+inline bool isEnvironmentMix(int p) { return (p >= PLayerFirst && p < PPlaceFirst) || p == PEnvironment; }
+
 inline Move moveOf(int p) {
     // The World Seed stays too: reseeding the environment layers cannot glide (their
     // noise and gusts jump to other curves), so a journey would dip them out and back.
     if (p == PPower || p == PMaster || p == PQuality || p == PPlayMode || p == PPlaceOuts || p == PSeed || (p >= PDestination && p <= PPathEnd)) return Move::Live;
-    if (p >= PLayerFirst && p < PPlaceFirst) {
-        const int field = (p - PLayerFirst) % 3;
-        return field == 0 ? Move::Gain : field == 1 ? Move::Paired : Move::Live;
-    }
+    // The environment mix is the composer's, not the world's (the GarageBand fix round):
+    // the layers' levels, mutes and solos and the Environment master always apply as set,
+    // in every journey, arrangement and render.
+    if (isEnvironmentMix(p)) return Move::Live;
     if (p >= PPlaceFirst && p < PPlayMode) {
         const int field = (p - PPlaceFirst) % PlaceParamCount;
         if (field == PlSolo) return Move::Live;

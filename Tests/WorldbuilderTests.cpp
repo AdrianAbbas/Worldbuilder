@@ -3595,15 +3595,16 @@ void testLocations(Suite& s) {
                 "Travel Time runs from 0.5 s to 60 s; a new plugin has no Destination");
         const bool live = moveOf(PPower) == Move::Live && moveOf(PMaster) == Move::Live && moveOf(PQuality) == Move::Live && moveOf(PPlayMode) == Move::Live
                           && moveOf(layerSolo(Air)) == Move::Live && moveOf(placeParam(2, PlSolo)) == Move::Live && moveOf(PDestination) == Move::Live
-                          && moveOf(PJourney) == Move::Live;
-        const bool held = moveOf(PTemperature) == Move::Glide && moveOf(PIntensity) == Move::Glide && moveOf(layerLevel(Water)) == Move::Gain
-                          && moveOf(layerMute(Water)) == Move::Paired && moveOf(PRoot) == Move::Switch && moveOf(PSeed) == Move::Live
+                          && moveOf(PJourney) == Move::Live && moveOf(layerLevel(Water)) == Move::Live && moveOf(layerMute(Water)) == Move::Live
+                          && moveOf(PEnvironment) == Move::Live;
+        const bool held = moveOf(PTemperature) == Move::Glide && moveOf(PIntensity) == Move::Glide
+                          && moveOf(PRoot) == Move::Switch && moveOf(PSeed) == Move::Live
                           && moveOf(placeParam(1, PlType)) == Move::Switch && moveOf(placeParam(1, PlCharacter)) == Move::Switch
                           && moveOf(placeParam(1, PlLevel)) == Move::Gain && moveOf(placeParam(1, PlElement + 3)) == Move::Gain
                           && moveOf(placeParam(1, PlElementOn + 3)) == Move::Paired && moveOf(placeParam(3, fxField(2, FxReverb))) == Move::Glide
                           && moveOf(placeParam(3, fxField(2, FxReverbType))) == Move::Switch;
-        s.check(live, "Power, Master, Quality, Play Mode, the World Seed, solos and the Location controls stay live (not part of a Location)");
-        s.check(held, "a Location holds the World Controls, Score Intensity, levels, Root, Mood, the Places, their seeds, Characters and instrument effects");
+        s.check(live, "Power, Master, Quality, Play Mode, the World Seed, solos, the environment mix and the Location controls stay live (not part of a Location)");
+        s.check(held, "a Location holds the World Controls, Score Intensity, Place levels, Root, Mood, the Places, their seeds, Characters and instrument effects");
     }
 
     // Saving, and arriving: the parameters and patterns become the Location's.
@@ -3814,6 +3815,9 @@ void testLocations(Suite& s) {
         featureEnvironment(*y);
         worldA(*y);
         y->set("seed", 4242);   // the World Seed is not part of a Location: x kept B's
+        // Nor is the environment mix (levels, mutes, solos, Environment): x kept B's.
+        for (int p = 0; p < PCount; ++p)
+            if (isEnvironmentMix(p)) y->set(specs[std::size_t(p)].id, x->get(specs[std::size_t(p)].id));
         y->set("traveltime", 2.0f);
         y->set("destination", 1);
         y->playHead.playing = true;
@@ -6513,6 +6517,91 @@ void testEnvironmentBalance(Suite& s) {
     }
 }
 
+// The environment mix is the composer's: set low, it stays low after Inspire, through
+// the arrangement (played by the host and previewed), its Locations, and in renders.
+void testEnvironmentKept(Suite& s) {
+    s.section("environment mix kept after Inspire, in the arrangement, its Locations and renders");
+    const float layerDb = -30.0f, environmentDb = -10.0f;
+    const auto make = [&](bool low) {
+        auto h = std::make_unique<Host>(48000, 512);
+        h->playHead.bpm = 120;
+        h->set("playmode", float(PlayTransport));
+        h->set("weather", 0.8f);
+        if (low) {
+            for (int l = 0; l < LayerCount; ++l) h->set(specs[std::size_t(layerLevel(l))].id, layerDb);
+            h->set("water_mute", 1);
+            h->set("environment", environmentDb);
+        }
+        h->render(0.2);
+        h->p->inspire();
+        h->p->serviceLocations();
+        return h;
+    };
+    auto quiet = make(true), loud = make(false);
+    {
+        bool kept = std::abs(quiet->get("environment") - environmentDb) < 0.01f && quiet->get("water_mute") > 0.5f;
+        for (int l = 0; l < LayerCount; ++l) kept &= std::abs(quiet->get(specs[std::size_t(layerLevel(l))].id) - layerDb) < 0.01f;
+        s.check(kept, "Inspire keeps the layers' levels and mutes and the Environment master");
+        s.check(quiet->get("playmode") == float(PlayArrangement) && quiet->p->arrangement.get().count > 0 && quiet->p->arrangement.get().usesLocations(),
+                "Inspire made an arrangement that travels between Locations");
+    }
+    // Each layer's loudest moment while the arrangement plays (meters are post-level).
+    const auto peaks = [](Host& h, double seconds) {
+        std::array<float, LayerCount> most {};
+        for (double t = 0; t < seconds; t += 512.0 / 48000.0) {
+            h.processOne(512);
+            for (int l = 0; l < LayerCount; ++l) most[std::size_t(l)] = std::max(most[std::size_t(l)], h.p->engine.layerMeter[std::size_t(l)].load());
+        }
+        return most;
+    };
+    const auto compare = [&](const std::array<float, LayerCount>& q, const std::array<float, LayerCount>& f, const std::string& where) {
+        bool ok = true;
+        std::string text;
+        for (int l = 0; l < LayerCount; ++l) {
+            if (toDb(f[std::size_t(l)]) < -90.0) continue;   // a layer this world does not use
+            const double down = toDb(f[std::size_t(l)]) - toDb(q[std::size_t(l)]);
+            const bool expected = l == Water ? q[std::size_t(l)] < 1.0e-6f : std::abs(down - double(-layerDb - environmentDb)) < 4.0;
+            ok &= expected;
+            text += std::string(layerNames[std::size_t(l)]) + " " + (l == Water ? (q[std::size_t(l)] < 1.0e-6f ? "muted" : "SOUNDS") : fmt(down) + " dB") + "; ";
+        }
+        s.check(ok, "the environment stays at the set level (40 dB down, Water muted): " + where, text);
+    };
+    for (auto* h : { quiet.get(), loud.get() }) {
+        h->playHead.playing = true;
+        h->playHead.position = 0;
+    }
+    // Long enough to cross sections and travel between their Locations.
+    const double length = 40.0;
+    const auto playedQuiet = peaks(*quiet, length), playedLoud = peaks(*loud, length);
+    compare(playedQuiet, playedLoud, "the arrangement played by the host");
+    for (auto* h : { quiet.get(), loud.get() }) {
+        h->playHead.playing = false;
+        h->processOne(512);
+        h->p->previewFrom(8);
+    }
+    compare(peaks(*quiet, 12.0), peaks(*loud, 12.0), "the ARRANGE preview");
+    for (auto* h : { quiet.get(), loud.get() }) h->p->stopPreview();
+    // Renders: the environment stem.
+    const auto environmentStem = [](Host& h) {
+        const auto scene = h.p->captureScene();
+        for (const auto& pass : capture::passes(scene, true))
+            if (pass.name == "Environment") {
+                Audio a;
+                a.rate = scene.sampleRate;
+                capture::render(scene, pass.controls, capture::lengthInSamples(scene, 8), [&](const float* l, const float* r, int n) {
+                    a.l.insert(a.l.end(), l, l + n);
+                    a.r.insert(a.r.end(), r, r + n);
+                    return true;
+                });
+                return measure(a, 1.0).rmsDb;
+            }
+        return -240.0;
+    };
+    const double renderedQuiet = environmentStem(*quiet), renderedLoud = environmentStem(*loud);
+    s.check(std::abs((renderedLoud - renderedQuiet) - double(-layerDb - environmentDb)) < 4.0, "a render's environment stem is at the set level (40 dB down)",
+            fmt(renderedLoud - renderedQuiet) + " dB down");
+}
+
 // The freeze found in GarageBand (3+ Places, overlays Full): the editor's animation
 // must never pile up on the message thread, nor make the audio thread wait.
 long residentKilobytes() {
@@ -6725,6 +6814,7 @@ int main(int argc, char** argv) {
     if (run("scenes")) testScenes(s);
     if (run("pixel")) testPixel(s);
     if (run("envbalance")) testEnvironmentBalance(s);
+    if (run("envkept")) testEnvironmentKept(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

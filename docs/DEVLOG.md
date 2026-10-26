@@ -4194,7 +4194,7 @@ water or a hurdy-gurdy rebuild).
 
 - [x] 1. Freeze with 3+ Places and Overlays Full: frame governor, cheaper overlay frames, 60 s stress test
 - [x] 2. Environment layers 10-15 dB under a typical Place; automatable Environment master; scenes and Inspire re-checked
-- [ ] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
+- [x] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
 - [ ] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
 - [ ] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
 - [ ] 6. Forest planet: lakes, rivers and clearings
@@ -4280,3 +4280,26 @@ the wind, so it hid the wind's movement). A Drop transition returns from true si
 now, so its allowed rise is 45 dB (was 30). **Report-only**: Forest World's colour at
 100 % measures 0.98 dB against the 1 dB target after two attempts; 0.8 dB is still
 required.
+
+### 3. Environment levels ignored after Inspire and in the arrangement
+
+**Cause** (two places): loading a scene (a factory scene or Inspire) set every value
+that is not the session's to its default, so the layers' levels went back to 0 dB and
+their mutes off; and Locations held the layers' levels and mutes, so every journey (the
+arrangement's sections travel between the scene's Locations, played or previewed, and
+in renders) moved them to the Location's values. The developer heard the layers at
+full level.
+
+**Fix**: the environment mix (the six layers' levels, mutes and solos, and the
+Environment master) belongs to the composer, like Master Level: `isEnvironmentMix()` in
+`Locations.h`; such parameters are `Move::Live` (a journey never touches them), and
+`scenes::worldValues` keeps the session's values for them. Renders take the live values
+(their scene is the processor's), so they follow too. Locations saved before this keep
+their stored layer values, which are now ignored. README updated.
+
+**Test** (`--only envkept`): layers at -30 dB, Water muted, Environment -10 dB; Inspire;
+the values are kept; then against the same Inspire at default levels, each layer's
+loudest moment is 40 dB down (Water silent) while the host plays 40 s of the
+arrangement (it travels between its Locations), in the ARRANGE preview, and in an
+8-bar render of the Environment stem. Run against the old code, it fails exactly as
+reported (every layer 0 dB down, Water sounding).

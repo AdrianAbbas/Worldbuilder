@@ -373,6 +373,9 @@ WorldValues worldValues(const Scene& scene, const WorldValues& session) {
     WorldValues v;
     for (int p = 0; p < PCount; ++p) v[std::size_t(p)] = specs[std::size_t(p)].def;
     for (int p : { int(PPower), int(PMaster), int(PQuality), int(PPlayMode), int(PPlaceOuts) }) v[std::size_t(p)] = session[std::size_t(p)];
+    // The environment mix stays the composer's (levels, mutes, solos, Environment master).
+    for (int p = 0; p < PCount; ++p)
+        if (isEnvironmentMix(p)) v[std::size_t(p)] = session[std::size_t(p)];
     v[PSeed] = float(std::clamp<uint32_t>(scene.seed, 1, 9999));
     v[PRoot] = float(std::clamp(scene.root, 0, 11));
     v[PMood] = float(std::clamp(scene.mood, 0, 8));
