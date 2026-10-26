@@ -5,7 +5,7 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 11a is in progress** (the Arrangement, Direction Update 6, which inserts a
+**Milestone 11a is complete** (the Arrangement, Direction Update 6, which inserts a
 new Milestone 11 and moves pro features, presets and release to Milestone 12). Its
 checklist and handoff are in the
 [Milestone 11a section](#milestone-11a-arrangement-timeline-sections-grid-variants-2026-10-26)
@@ -3212,7 +3212,9 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 1. Arrangement core: sections (name, colour, 1-64 bars, plays 1-8 times or endlessly, intensity ramp and curve), instrument grid (on, off, enter halfway, fade in, fade out; variant; Fill), End (stop, loop to a section), evaluation at any song position; store with undo/redo; state; engine (chunks split on beat lines, arranged intensity, gains and variants, end fade); Play Mode Arrangement; the preview; tests
 - [x] 2. Pattern variants A, B, C and Fill: storage, generation (B busier, C sparser, Fill busiest), playback per section, state and Locations, the Pattern Editor's A/B/C/FILL tabs; tests
 - [x] 3. ARRANGE view: header button, timeline (select, reorder by drag, resize by the right edge, rename, colour, plays, menus), inspector, instrument grid, playhead and current section, PREVIEW; snapshots; tests
-- [ ] 4. README, MANUAL_TEST, handoff, final push without `[skip ci]`
+- [x] 4. README, MANUAL_TEST, handoff, final push without `[skip ci]`
+
+Steps 1-3 were finished together and pushed in one commit (1f97de6, `[skip ci]`); step 4 is the final push.
 
 ### Decisions
 
@@ -3313,3 +3315,88 @@ cards, where the Pattern Editor opens (each closes the other):
 Keys: Cmd-Z / Cmd-Shift-Z undo/redo, Cmd-D duplicate, Delete, arrows select, Space preview.
 
 Snapshots: `docs/snapshots/m11a-arrange.png`, `m11a-patterns.png`, `m11a-header.png`.
+
+### Tests (Linux, GCC)
+
+New `arrangement` group (64 checks, in the "rest" shard):
+- the model: sections end to end, a position finds its section and pass, End stop
+  (ended, fading over two bars) and End loop, Fills only before a change (not before a
+  repeat), an endless section holds, off / enter halfway / fade in / fade out, the four
+  intensity curves; the store's add, duplicate, reorder, resize (1-64), delete, and
+  every edit undoing and redoing;
+- state: a six-section arrangement (names, colours, lengths, repeats including endless,
+  curves, ramps, cells with entries, variants and Fills, End loop) round-trips; edited B
+  and Fill and a regenerated C round-trip; a Location keeps the variants; an older
+  project opens without sections; Play Mode has three choices;
+- playback (Castle at 120 bpm): in the Intro only its instruments start notes; at the
+  Build the others enter (the same instruments as the Castle without an arrangement);
+  the first entrance is at the boundary; no click at the boundary (the sharpest sample
+  step there no sharper than elsewhere); an instrument switched off starts no note after
+  the boundary and its tail dies away without a jump; playback from bar 3 is identical
+  whether started there or located there after playing; equal at block sizes 256 and
+  1000; Score Intensity follows a 0.1-0.9 ramp within the glide and automation adds on
+  top; an intensity jump between sections has no level spike; variants as written (one
+  note a bar in A, eight in the Fill's bar, four in B, two in C, switching on the bar);
+  generated B and C differ from A for all six Castle instruments; End stop silent after
+  two bars; the preview plays from a bar, jumps, stops, and ends when the host plays;
+  no heap allocation while the arrangement plays (1000 blocks across changes, a Fill, a
+  fade, two Places);
+- interface: ARRANGE opens from the header; + SECTION adds Intro, Build, Climax with an
+  intensity arc; sections lie on the timeline as wide as their bars; the grid's cells
+  sit under their sections, one row per instrument of each active Place; click and
+  Shift-click change a cell, and undo; DUPLICATE, DELETE; the preview paints its
+  playhead; the Pattern Editor and ARRANGE share the space; the B tab shows the
+  generated B and editing it leaves A alone; closing ARRANGE stops the preview.
+
+The note log shows the beat clock can land a note one sample before its bar line
+(floating-point beat accumulation, as before this milestone); it plays in the right
+section and variant, and the tests count notes per bar with half a millisecond of
+slack.
+
+Full suite (`scripts/run-tests-parallel.sh`) on the build with the engine, variants and
+tests: **3451 checks pass, 0 fail** (CPU metrics report-only: four busy Places at
+Standard quality 20.2 % of one core of this container, 15-22 % per Place type, as in
+Milestone 10's runs on these machines; no CPU check measured the arrangement itself).
+After the interface work the affected groups (editor, overlays, patterns, arrangement,
+state, smoke, Play Mode, capture, automation, Locations, planet: 527 checks) pass on
+the final build.
+
+### Milestone 11a handoff
+
+**Done:** all of Milestone 11a (Direction Update 6).
+1. The Arrangement: sections with lengths, repeats or endless loops, colours, names,
+   Score Intensity ramps and curves, and an instrument grid (on, off, enter halfway,
+   fade in, fade out; variant A/B/C; Fill); End stop or loop to a section.
+2. Play Mode Arrangement: follows the host's song position exactly (deterministic from
+   any bar); the ARRANGE preview while the host is stopped.
+3. Pattern variants A, B, C and Fill for every instrument, generated until edited, with
+   tabs in the Pattern Editor; saved with the project, `.world` files and Locations.
+4. The ARRANGE view (timeline, inspector, grid, playhead, undo/redo).
+
+**What to test first** (the Milestone 11a check in [MANUAL_TEST.md](MANUAL_TEST.md)):
+- entrances, exits and Fills at section boundaries by ear (clicks? a downbeat cut?);
+- starting playback in the middle of a section, and a bounce in Arrangement mode;
+- the ARRANGE view at 100 % on the Mac: readable? dragging and resizing sections;
+- whether the generated B, C and Fill are useful.
+
+**Next:** Milestone 11b: transitions per boundary (cut, crossfade 1-4 bars, riser, drum
+fill, drop, reverse swell, filter sweep, made from the Places' own instruments and
+effects), the six templates and Auto-arrange (World Seed, undoable). Not yet built from
+Direction Update 6 section 1 either: a section's optional **Location** (travel timed to
+arrive at its start) and its **Planet / World Control overrides**; do them with 11b (the
+Journey Path's leg logic in `Travel` is the natural base for timed arrivals). Then 11c:
+render the arrangement, sections separately with seamless loops, stingers, scene MIDI
+following the arrangement. Then Milestone 12 (multi-out, Inspire, presets, release).
+
+**Known issues / limits:**
+- Nothing has been heard on a Mac.
+- Bars are 4/4; patterns run on the song's bar grid, not from each section's start.
+- An endless section makes the sections after it unreachable (shown on the timeline).
+- Host automation of Play Mode maps the old Transport value to Arrangement (the choice
+  grew to three); saved projects keep their mode.
+- CAPTURE (render, scene MIDI) still renders the parameters from bar 1 without the
+  arrangement; that is Milestone 11c.
+- The arrangement drives intensity, the instruments and their variants; the
+  environment layers (wind, rain...) are not in the grid.
+- Carried over: the first-playback difference in the Path test, Places matched by slot,
+  the `push-access-check` branch can be deleted.
