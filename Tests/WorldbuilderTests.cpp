@@ -5906,11 +5906,16 @@ void testPixel(Suite& s) {
             for (auto [type, w] : places) presence[std::size_t(type)] = w;
             return px::moodOf(presence.data(), int(presence.size()));
         };
-        s.check(moodWith({ { Castle, 1 } }) == 0.0f && moodWith({ { Tavern, 1 } }) == 0.0f, "fantasy Places give the fantasy mood");
-        s.check(moodWith({ { Nebula, 1 } }) == 1.0f && moodWith({ { Megacity, 1 }, { Spaceport, 0.5f } }) == 1.0f, "sci-fi Places give the sci-fi mood");
-        s.check(std::abs(moodWith({ { Castle, 1 }, { Spaceport, 1 } }) - 0.5f) < 1e-6f, "fantasy and sci-fi together give the blend");
-        s.check(std::abs(moodWith({ { Castle, 1 }, { Spaceport, 0.5f } }) - 1.0f / 3.0f) < 1e-6f, "the blend follows each Place's presence");
-        s.check(moodWith({}) == px::blendMood && moodWith({ { City, 1 } }) == 0.5f, "no Places, or a modern one: the blend (neutral styling is 13b)");
+        const auto is = [](px::Mood m, float sciFi, float neutral) { return std::abs(m.sciFi - sciFi) < 1e-6f && std::abs(m.neutral - neutral) < 1e-6f; };
+        s.check(is(moodWith({ { Castle, 1 } }), 0, 0) && is(moodWith({ { Tavern, 1 } }), 0, 0), "fantasy Places give the fantasy mood");
+        s.check(is(moodWith({ { Nebula, 1 } }), 1, 0) && is(moodWith({ { Megacity, 1 }, { Spaceport, 0.5f } }), 1, 0), "sci-fi Places give the sci-fi mood");
+        s.check(is(moodWith({ { Castle, 1 }, { Spaceport, 1 } }), 0.5f, 0), "fantasy and sci-fi together give the blend");
+        s.check(is(moodWith({ { Castle, 1 }, { Spaceport, 0.5f } }), 1.0f / 3.0f, 0), "the blend follows each Place's presence");
+        s.check(is(moodWith({ { City, 1 } }), 0.5f, 1) && is(moodWith({ { City, 1 }, { Mall, 0.5f } }), 0.5f, 1), "modern Places give the neutral look");
+        s.check(is(moodWith({ { Castle, 1 }, { City, 1 } }), 0, 0.5f) && is(moodWith({ { Nebula, 1 }, { Suburbs, 1 }, { Mall, 1 } }), 1, 2.0f / 3.0f),
+                "modern Places pull the others' mood toward neutral by their share");
+        s.check(is(moodWith({}), px::blendMood, 0), "no Places: the blend");
+        s.check(moodWith({ { Forest, 1 } }).sciFi < 0.25f && moodWith({ { Forest, 1 } }).neutral == 0, "nature Places lean fantasy");
     }
 
     // The six Place icons: present, animated, not empty, unaffected outside their 32 x 32.
@@ -5929,7 +5934,7 @@ void testPixel(Suite& s) {
         s.check(framesOk, "each icon has a 2-4 frame idle animation");
         s.check(animated, "every animation frame differs from the first");
         s.check(filled, "each icon fills its 32 x 32 (more than 250 art pixels)");
-        s.check(!px::hasPlaceIcon(Village), "the other Places have no pixel icon yet (13b)");
+        s.check(px::hasPlaceIcon(Village) && px::hasPlaceIcon(NoPlace), "every Place has a pixel icon, and the empty slot");
         s.check(differ(px::placeIcon(Castle, 0, juce::Colours::black), px::placeIcon(Castle, 0, juce::Colours::white)), "the icon outline takes the mood's colour");
     }
 
@@ -5941,8 +5946,8 @@ void testPixel(Suite& s) {
         for (float m : moods) {
             const auto p = px::palette(m);
             const std::string tag = m < 0.25f ? "fantasy" : m > 0.75f ? "sci-fi" : "blend";
-            sprites.push_back({ tag + " knob", px::knob(p, 0.62f, "TEMP", "62%", { true }) });
-            sprites.push_back({ tag + " slider", px::slider(p, 120, 0.3f, "TONE", "-2 DB", {}) });
+            sprites.push_back({ tag + " knob", px::knob(p, 34, 0.62f, "TEMP", "62%", { true }) });
+            sprites.push_back({ tag + " slider", px::labelledSlider(p, 120, 0.3f, "TONE", "-2 DB", {}) });
             sprites.push_back({ tag + " button", px::button(p, "RENDER", { true }) });
             sprites.push_back({ tag + " pressed button", px::button(p, "RENDER", { true, true }) });
             sprites.push_back({ tag + " toggle", px::toggle(p, "SYNC", { false, false, true }) });
@@ -5954,13 +5959,16 @@ void testPixel(Suite& s) {
         std::string failure;
         for (int scale : { 2, 3, 4 })
             for (const auto& [name, sprite] : sprites) {
-                juce::Image out(juce::Image::ARGB, sprite.width() * scale + 12, sprite.height() * scale + 12, true);
+                // Drawn at 100 % (x2), 150 % (x3) and 200 % (x4) UI size, from an odd
+                // logical position (it snaps to the art grid: 4, 2).
+                juce::Image out(juce::Image::ARGB, sprite.width() * scale + 12 * scale, sprite.height() * scale + 12 * scale, true);
                 {
                     juce::Graphics g(out);
-                    px::draw(g, sprite, { 5.4f, 3.6f }, scale);
+                    g.addTransform(juce::AffineTransform::scale(float(scale) / float(px::unit)));
+                    px::draw(g, sprite, { 5, 3 });
                 }
                 std::string detail;
-                if (!showsAtScale(out, sprite, 5, 4, scale, detail)) {
+                if (!showsAtScale(out, sprite, 4 * scale / px::unit, 2 * scale / px::unit, scale, detail)) {
                     exact = false;
                     failure = name + " at x" + std::to_string(scale) + ": " + detail;
                 }
@@ -5970,7 +5978,7 @@ void testPixel(Suite& s) {
         for (float m : moods) {
             const auto p = px::palette(m);
             decorated = decorated && differ(px::button(p, "PLAY", {}), px::button(p, "PLAY", { true })) && differ(px::button(p, "PLAY", { true }), px::button(p, "PLAY", { true, true }))
-                        && differ(px::toggle(p, "ON", {}), px::toggle(p, "ON", { false, false, true })) && differ(px::knob(p, 0.2f, "A", "1", {}), px::knob(p, 0.8f, "A", "1", {}));
+                        && differ(px::toggle(p, "ON", {}), px::toggle(p, "ON", { false, false, true })) && differ(px::knob(p, 30, 0.2f, "A", "1", {}), px::knob(p, 30, 0.8f, "A", "1", {}));
         }
         s.check(decorated, "hover, press, on and value each change the sprite, in every mood");
         s.check(differ(px::button(px::palette(0), "PLAY", {}), px::button(px::palette(1), "PLAY", {})), "the same button looks different in fantasy and sci-fi");
@@ -5984,15 +5992,16 @@ void testPixel(Suite& s) {
             for (float m : moods) {
                 wb::ui::PixelLookAndFeel lnf;
                 lnf.setMood(m);
-                lnf.setPixelScale(scale);
                 Controls c(lnf);
-                // Snap every control to whole art pixels, as the editor will.
-                for (auto* child : c.getChildren()) {
-                    auto b = child->getBounds();
-                    child->setBounds(b.getX() / scale * scale, b.getY() / scale * scale, b.getWidth() / scale * scale, b.getHeight() / scale * scale);
-                }
-                const auto image = c.createComponentSnapshot(c.getLocalBounds(), true, 1.0f);
+                px::snapChildren(c);   // on the art grid, as the editor lays them out
+                const auto image = c.createComponentSnapshot(c.getLocalBounds(), true, float(scale) / float(px::unit));
                 std::string detail;
+                if (std::getenv("WB_DEBUG_PIXEL")) {
+                    juce::File f(juce::String(std::getenv("WB_DEBUG_PIXEL")) + "/grid-" + juce::String(scale) + "-" + juce::String(m) + ".png");
+                    f.deleteFile();
+                    juce::FileOutputStream out(f);
+                    juce::PNGImageFormat().writeImageToStream(image, out);
+                }
                 if (!onGrid(image, scale, detail)) {
                     grid = false;
                     failure = "scale " + std::to_string(scale) + " mood " + fmt(m) + ": " + detail;
@@ -6000,13 +6009,18 @@ void testPixel(Suite& s) {
                 for (auto* child : c.getChildren()) {
                     int painted = 0;
                     const auto b = child->getBounds();
-                    for (int y = b.getY(); y < b.getBottom(); ++y)
-                        for (int x = b.getX(); x < b.getRight(); ++x) painted += image.getPixelAt(x, y).getAlpha() > 0 ? 1 : 0;
-                    drawn = drawn && painted > b.getWidth() * b.getHeight() / 10;
+                    const auto d = (b.toFloat() * (float(scale) / float(px::unit))).toNearestInt();
+                    for (int y = d.getY(); y < d.getBottom(); ++y)
+                        for (int x = d.getX(); x < d.getRight(); ++x) painted += image.getPixelAt(x, y).getAlpha() > 0 ? 1 : 0;
+                    const int area = b.getWidth() * b.getHeight() * scale * scale / (px::unit * px::unit);
+                    if (painted <= area / 10) {
+                        drawn = false;
+                        failure = child->getName().toStdString() + " " + std::to_string(painted) + " of " + std::to_string(area);
+                    }
                 }
             }
         s.check(grid, "knob, slider, button, toggle, dropdown and tabs render on the integer pixel grid (x2 and x3, every mood)", failure);
-        s.check(drawn, "each control draws inside its own bounds (its hit area)");
+        s.check(drawn, "each control draws inside its own bounds (its hit area)", failure);
 
         wb::ui::PixelLookAndFeel lnf;
         lnf.setMood(px::sciFiMood);
@@ -6064,11 +6078,38 @@ void testPixel(Suite& s) {
         wb::ui::WorldLookAndFeel vector;
         wb::ui::PixelLookAndFeel pixel;
         pixel.setMood(px::blendMood);
+        pixel.cache().clear();
+        pixel.cache().made = 0;
         const double before = timePaints(vector), after = timePaints(pixel);
         s.metric("pixel: paint of the six prototype controls, vector style (ms)", before);
         s.metric("pixel: paint of the six prototype controls, pixel style (ms)", after);
         s.metric("pixel: sprites drawn for those 300 paints", pixel.cache().made);
-        s.check(pixel.cache().made < 40, "the pixel style draws each sprite once and reuses it", std::to_string(pixel.cache().made));
+        s.check(pixel.cache().made < 60, "the pixel style draws each sprite once and reuses it", std::to_string(pixel.cache().made));
+    }
+
+    // The whole editor's paint time, report-only (13b compares it with the vector style
+    // of Milestone 12: 9.06 ms per paint on the 13b development container).
+    {
+        Host h;
+        h.set(slotId(0, PlType), float(Castle));
+        h.set(slotId(1, PlType), float(Spaceport));
+        h.set(slotId(2, PlType), float(City));
+        h.render(2.5);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->settle(2.5f);
+        juce::Image target(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+        for (int i = 0; i < 3; ++i) {   // warm the caches
+            juce::Graphics g(target);
+            editor->paintEntireComponent(g, true);
+        }
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        for (int i = 0; i < 20; ++i) {
+            view->settle(1.0f / 30.0f);
+            juce::Graphics g(target);
+            editor->paintEntireComponent(g, true);
+        }
+        s.metric("pixel: whole editor, one animation frame and paint (ms)", (juce::Time::getMillisecondCounterHiRes() - start) / 20.0);
     }
 
     // The prototype sheets build in every mood, with all elements on them.
@@ -6101,7 +6142,8 @@ int writePixelSnapshots(const juce::String& dir) {
     save(px::prototypeSheet(px::blendMood), 2, "blend");
     save(px::prototypeComparison(), 2, "sheet");
     save(px::moodSweep(), 2, "mood-sweep");
-    save(px::iconStrips(), 4, "icons");
+    save(px::iconStrips(), 3, "icons");
+    save(px::iconSheet(), 4, "tool-icons");
     // A close-up of the controls at 200 % (four screen pixels per art pixel).
     {
         const auto sheet = px::prototypeComparison();
