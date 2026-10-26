@@ -11,6 +11,7 @@
 #include "UI/PatternEditor.h"
 #include "UI/PlaceArt.h"
 #include "UI/PlaceOverlays.h"
+#include "UI/PixelLookAndFeel.h"
 #include "UI/WorldLookAndFeel.h"
 
 class WorldbuilderEditor final : public juce::AudioProcessorEditor, private juce::Timer {
@@ -48,6 +49,9 @@ public:
     void settle(float seconds);
     wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
     void setOverlayMode(int mode);
+    // UI size: 0 = 100 %, 1 = 150 %, 2 = 200 % (kept with the project).
+    void setUiSize(int index);
+    int uiSizeIndex() const { return uiSize.getSelectedId() - 1; }
     // Lists one category of Place cards (-1: all), as its chip does; how many are listed.
     void showCategory(int c);
     int listedPlaces() const { return listedCount; }
@@ -135,7 +139,7 @@ private:
     void paintLocationMarkers(juce::Graphics&, float alpha);
 
     WorldbuilderProcessor& processor;
-    wb::ui::WorldLookAndFeel lookAndFeel;
+    wb::ui::PixelLookAndFeel lookAndFeel;
     juce::TooltipWindow tooltips { this, 600 };
 
     std::vector<std::unique_ptr<juce::Slider>> knobs;
@@ -165,6 +169,12 @@ private:
     juce::ComboBox playMode;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
     juce::ComboBox overlayChoice;
+    // UI size (Milestone 13): 100, 150 or 200 %, whole art pixels at each.
+    juce::ComboBox uiSize;
+    int pixelFrame = -1;   // the decoration frame last shown
+    // This editor's pixel look (the theme is shared; each paint sets this editor's).
+    wb::ui::pixel::Mood pixelMood;
+    int pixelDelights = 0;
     // Separate outputs (Milestone 12): Copy or Split.
     juce::ComboBox placeOuts;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> placeOutsAttachment;

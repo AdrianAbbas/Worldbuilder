@@ -108,8 +108,13 @@ void scanlines(Canvas& k, int x, int y, int w, int h, float amount, int frame) {
 
 // What a hovered control shows, in proportion to the mood: a glow; sparkles and a star
 // (fantasy), brackets (sci-fi), glowing rune points (blend).
+// The small delights follow the Overlays setting (pixel::theme().delights): Off keeps
+// only the glow.
+bool delights() { return theme().delights > 0; }
+
 void hoverDecor(Canvas& k, const Palette& p, int x, int y, int w, int h, int frame) {
     glowAround(k, x, y, w, h, alpha(p.glow, 0.45f));
+    if (!delights()) return;
     if (p.sparkle > 0.05f) {
         sparkle(k, x + w, y - 1, alpha(p.glow, p.sparkle), frame);
         if (h > 8) star(k, x - 1, y + h - 1, alpha(p.inlay, p.sparkle * 0.9f));
@@ -123,6 +128,10 @@ void hoverDecor(Canvas& k, const Palette& p, int x, int y, int w, int h, int fra
 
 int clampWidth(int w) { return std::max(8, w); }
 Font fontFor(int height) { return height >= 13 ? Font::Large : Font::Small; }
+// Large text when it fits the room and the height, else the Small font.
+Font fontFitting(const juce::String& text, int room, int height) {
+    return height >= 13 && Canvas::textWidth(text, Font::Large) <= room ? Font::Large : Font::Small;
+}
 } // namespace
 
 // ---- Knobs -------------------------------------------------------------------------
@@ -179,6 +188,8 @@ Canvas knob(const Palette& p, int dial, float value, const juce::String& label, 
                 const float d = std::hypot(float(i) + 0.5f - r, float(j) + 0.5f - r);
                 if (d > body + 1.0f && d <= body + 2.0f && k.get(dx + i, dy + j).getAlpha() == 0) k.blend(dx + i, dy + j, alpha(p.glow, 0.35f));
             }
+    }
+    if (s.hover && delights()) {
         if (p.sparkle > 0.05f) {
             sparkle(k, dx + dial - 2, dy + 1, alpha(p.glow, p.sparkle), frame);
             if (big) star(k, dx + 1, dy + dial - 2, alpha(p.inlay, p.sparkle));
@@ -243,7 +254,7 @@ Canvas intensityKnob(const Palette& p, int dial, float value, const State& s, in
         k.outlineBox(cx - 3, cy - 3, 6, 6, alpha(p.accent, p.scanline * (0.5f + 0.5f * value)));
         scanlines(k, dx + 3, dy + 3, dial - 6, dial - 6, p.scanline * 0.5f, frame);
     }
-    if (s.hover) {
+    if (s.hover && delights()) {
         if (p.sparkle > 0.05f) sparkle(k, dx + dial - 1, dy + 1, alpha(p.glow, p.sparkle), frame);
         if (p.scanline > 0.05f) brackets(k, dx, dy, dial, dial, alpha(p.accent, p.scanline), 1);
     }
@@ -252,11 +263,11 @@ Canvas intensityKnob(const Palette& p, int dial, float value, const State& s, in
 
 // ---- Sliders, bars, fields, meters --------------------------------------------------
 
-Canvas slider(const Palette& p, int length, float value, bool vertical, const State& s, int frame, juce::Colour accent) {
+Canvas slider(const Palette& p, int length, float value, bool vertical, const State& s, int frame, juce::Colour accent, int thickness) {
     value = juce::jlimit(0.0f, 1.0f, value);
     length = clampWidth(length);
     const auto lit = or_(accent, p.accent);
-    const int handleLong = 11, handleShort = 7, track = 5;
+    const int handleLong = juce::jlimit(5, 11, thickness), handleShort = handleLong >= 9 ? 7 : 5, track = handleLong >= 9 ? 5 : 3;
     const int across = handleLong + 1;   // with the handle's shadow
     Canvas k(vertical ? across + 2 * margin : length + 2 * margin, vertical ? length + 2 * margin : across + 2 * margin);
     const int travel = length - handleShort;
@@ -265,7 +276,7 @@ Canvas slider(const Palette& p, int length, float value, bool vertical, const St
         const int tx = margin, ty = margin + (handleLong - track) / 2;
         k.box(tx, ty, length, track, p.well, p.outline);
         k.hline(tx + 1, tx + length - 2, ty + 1, p.well.darker(0.4f));
-        for (int i = tx + 4; i < tx + length - 2; i += 6) k.set(i, ty + 2, p.wellLight);
+        for (int i = tx + 4; i < tx + length - 2; i += 6) k.set(i, ty + track / 2, p.wellLight);
         const int end = tx + pos + handleShort / 2;
         if (end > tx + 1 && s.enabled) {
             k.fill(tx + 1, ty + 1, end - tx - 1, track - 2, lit);
@@ -276,14 +287,14 @@ Canvas slider(const Palette& p, int length, float value, bool vertical, const St
         const int hx = tx + pos, hy = margin;
         k.fill(hx + 1, hy + handleLong, handleShort - 1, 1, alpha(juce::Colours::black, 0.5f));
         bevel(k, hx, hy, handleShort, handleLong, s.hover ? p.rimLight.brighter(0.1f) : p.rimLight, s.hover ? p.rimLight : p.rim, p.rimDark, p.outline, s.down);
-        k.vline(hx + 3, hy + 3, hy + handleLong - 4, s.hover || s.down ? p.glow : p.inlay);
-        k.set(hx + 3, hy + 2, p.rimLight);
+        k.vline(hx + handleShort / 2, hy + 3, hy + handleLong - 4, s.hover || s.down ? p.glow : p.inlay);
+        k.set(hx + handleShort / 2, hy + 2, p.rimLight);
         if (s.hover) hoverDecor(k, p, hx, hy, handleShort, handleLong, frame);
     } else {
         const int tx = margin + (handleLong - track) / 2, ty = margin;
         k.box(tx, ty, track, length, p.well, p.outline);
         k.vline(tx + 1, ty + 1, ty + length - 2, p.well.darker(0.4f));
-        for (int j = ty + 4; j < ty + length - 2; j += 6) k.set(tx + 2, j, p.wellLight);
+        for (int j = ty + 4; j < ty + length - 2; j += 6) k.set(tx + track / 2, j, p.wellLight);
         const int top = ty + length - 1 - pos - handleShort / 2;
         if (top < ty + length - 2 && s.enabled) {
             k.fill(tx + 1, top, track - 2, ty + length - 1 - top, lit);
@@ -293,8 +304,8 @@ Canvas slider(const Palette& p, int length, float value, bool vertical, const St
         const int hx = margin, hy = ty + length - handleShort - pos;
         k.fill(hx + 1, hy + handleShort, handleLong - 1, 1, alpha(juce::Colours::black, 0.5f));
         bevel(k, hx, hy, handleLong, handleShort, s.hover ? p.rimLight.brighter(0.1f) : p.rimLight, s.hover ? p.rimLight : p.rim, p.rimDark, p.outline, s.down);
-        k.hline(hx + 3, hx + handleLong - 4, hy + 3, s.hover || s.down ? p.glow : p.inlay);
-        k.set(hx + 2, hy + 3, p.rimLight);
+        k.hline(hx + 3, hx + handleLong - 4, hy + handleShort / 2, s.hover || s.down ? p.glow : p.inlay);
+        k.set(hx + 2, hy + handleShort / 2, p.rimLight);
         if (s.hover) hoverDecor(k, p, hx, hy, handleLong, handleShort, frame);
     }
     return k;
@@ -360,8 +371,8 @@ Canvas meter(const Palette& p, int length, int thickness, float level, bool vert
 
 Canvas button(const Palette& p, const juce::String& text, const State& s, int width, int height, int frame, const Canvas* icon, juce::Colour accent) {
     height = std::max(5, height);
-    const auto font = fontFor(height);
     const int iconW = icon != nullptr ? icon->width() + (text.isEmpty() ? 0 : 3) : 0;
+    const auto font = width > 0 ? fontFitting(text, width - 6 - iconW, height) : fontFor(height);
     const int bw = width > 0 ? width : Canvas::textWidth(text, font) + iconW + 12, bh = height;
     Canvas k(bw + 2 * margin, bh + 1 + 2 * margin);
     const int x = margin, y = margin + (s.down ? 1 : 0);
@@ -384,17 +395,21 @@ Canvas button(const Palette& p, const juce::String& text, const State& s, int wi
     if (roomy && studs > 0.05f)
         for (auto [sx, sy] : { std::pair { x + 2, y + 2 }, { x + bw - 3, y + 2 }, { x + 2, y + bh - 4 }, { x + bw - 3, y + bh - 4 } })
             k.blend(sx, sy, alpha(p.inlay, studs));
-    const bool showLed = roomy && led > 0.05f;
-    if (showLed) k.fill(x + 3, y + bh / 2 - 1, 1, 2, alpha(s.hover || s.on || s.down ? p.glow : p.accentDim, led));
-    scanlines(k, x + 1, y + 1, bw - 2, bh - 2, p.scanline * 0.35f, frame);
     const bool lightFace = s.on && lit.getPerceivedBrightness() > 0.45f;
     const auto ink = !s.enabled ? p.inkDim : s.on ? (lightFace ? p.inkOn : p.ink) : p.ink;
     const auto shadow = s.on && lightFace ? alpha(p.glow, 0.5f) : p.outline;
-    const int room = bw - 4 - (showLed ? 2 : 0) - iconW;
+    // Text first: the icon goes when there is no room for both, the LED when tight.
+    const int textW = Canvas::textWidth(text, font);
+    const bool withIcon = icon != nullptr && (text.isEmpty() || textW + iconW + 4 <= bw);
+    const int contentNeed = (withIcon ? iconW : 0) + textW;
+    const bool showLed = roomy && led > 0.05f && contentNeed + 8 <= bw;
+    if (showLed) k.fill(x + 3, y + bh / 2 - 1, 1, 2, alpha(s.hover || s.on || s.down ? p.glow : p.accentDim, led));
+    scanlines(k, x + 1, y + 1, bw - 2, bh - 2, p.scanline * 0.35f, frame);
+    const int room = bw - 3 - (showLed ? 2 : 0) - (withIcon ? iconW : 0);
     const auto shown = fitText(text, std::max(0, room), font);
-    const int contentW = iconW + (shown.isEmpty() ? 0 : Canvas::textWidth(shown, font));
+    const int contentW = (withIcon ? iconW : 0) + (shown.isEmpty() ? 0 : Canvas::textWidth(shown, font));
     int cx = x + (bw - contentW) / 2 + (showLed ? 1 : 0);
-    if (icon != nullptr) {
+    if (withIcon) {
         // An icon sprite drawn white is tinted to the ink.
         Canvas tinted(icon->width(), icon->height());
         for (int j = 0; j < icon->height(); ++j)
@@ -403,7 +418,7 @@ Canvas button(const Palette& p, const juce::String& text, const State& s, int wi
                 if (c.getAlpha() == 0) continue;
                 tinted.set(i, j, c.getBrightness() > 0.5f ? ink.withMultipliedAlpha(c.getFloatAlpha()) : shadow.withMultipliedAlpha(c.getFloatAlpha()));
             }
-        k.paste(tinted, cx, y + (bh - icon->height()) / 2 - (s.down ? 0 : 0));
+        k.paste(tinted, cx, y + (bh - icon->height()) / 2);
         cx += iconW;
     }
     if (shown.isNotEmpty()) k.shadowText(cx, y + (bh - Canvas::textHeight(font)) / 2 - (font == Font::Large ? 1 : 0), shown, ink, shadow, font);
@@ -436,9 +451,9 @@ Canvas tab(const Palette& p, const juce::String& text, int width, int height, bo
     width = std::max(8, width);
     height = std::max(8, height);
     Canvas k(width, height);
-    const auto font = fontFor(height - 2);
-    const auto line = or_(accent, p.inlay);
     const int iconW = icon != nullptr ? icon->width() + 2 : 0;
+    const auto font = fontFitting(text, width - 8 - iconW, height - 2);
+    const auto line = or_(accent, p.inlay);
     const auto shown = fitText(text, width - 8 - iconW, font);
     const int contentW = iconW + Canvas::textWidth(shown, font);
     const int top = active ? 0 : 2;
@@ -457,8 +472,8 @@ Canvas tab(const Palette& p, const juce::String& text, int width, int height, bo
         bevel(k, 0, top, width, th + 1, hover ? p.face : p.faceDark.brighter(0.05f), hover ? p.faceLight.darker(0.1f) : p.faceDark, p.faceDark.darker(0.3f), p.outline, false);
         k.hline(0, width - 1, height - 1, p.outline);
         k.hline(2, width - 3, top + 1, alpha(line, 0.35f));
-        if (hover && p.sparkle > 0.05f) k.blend(width - 3, top + 2, alpha(p.glow, p.sparkle));
-        if (hover && p.scanline > 0.05f) k.hline(2, width - 3, top + 2, alpha(p.accent, p.scanline * 0.8f));
+        if (hover && delights() && p.sparkle > 0.05f) k.blend(width - 3, top + 2, alpha(p.glow, p.sparkle));
+        if (hover && delights() && p.scanline > 0.05f) k.hline(2, width - 3, top + 2, alpha(p.accent, p.scanline * 0.8f));
     }
     const auto ink = active || hover ? p.ink : p.inkDim;
     int cx = (width - contentW) / 2;
@@ -518,8 +533,8 @@ Canvas chip(const Palette& p, const juce::String& text, int width, int height, c
     k.hline(1, width - 2, 1, s.on ? lit.brighter(0.3f) : body.brighter(0.15f));
     if (!s.on) k.vline(1, 1, height - 2, alpha(lit, 0.9f));   // a stripe of the chip's colour
     const bool lightFace = s.on && body.getPerceivedBrightness() > 0.45f;
-    const auto font = fontFor(height - 2);
-    const auto shown = fitText(text, width - 5, font);
+    const auto font = fontFitting(text, width - 4, height - 2);
+    const auto shown = fitText(text, width - 3, font);
     k.shadowText((width - Canvas::textWidth(shown, font)) / 2 + (s.on ? 0 : 1), (height - Canvas::textHeight(font)) / 2, shown,
                  !s.enabled ? p.inkDim : lightFace ? p.inkOn : p.ink, lightFace ? alpha(p.glow, 0.5f) : p.outline, font);
     return k;
@@ -528,7 +543,7 @@ Canvas chip(const Palette& p, const juce::String& text, int width, int height, c
 Canvas dropdown(const Palette& p, const juce::String& text, int width, const State& s, const juce::StringArray* items, int highlighted, int frame, int height) {
     width = clampWidth(width);
     const int fh = std::max(7, height), itemH = 10;
-    const auto font = fontFor(fh - 2);
+    const auto font = fontFitting(text, width - std::min(13, fh - 2) - 5, fh - 2);
     const bool open = items != nullptr && !items->isEmpty();
     const int menuH = open ? items->size() * itemH + 4 : 0;
     Canvas k(width + 2 * margin + 1, fh + (open ? menuH - 1 : 0) + 2 * margin + 1);
@@ -560,6 +575,50 @@ Canvas dropdown(const Palette& p, const juce::String& text, int width, const Sta
             }
             k.shadowText(x + 9, iy + 2, (*items)[i], hi ? p.inkOn : p.ink, hi ? alpha(p.glow, 0.5f) : p.outline, Font::Large);
         }
+    }
+    return k;
+}
+
+Canvas strip(const Palette& p, int width, int height, juce::Colour accent, bool selected) {
+    width = std::max(8, width);
+    height = std::max(8, height);
+    Canvas k(width, height + 1);
+    const auto face = p.face.interpolatedWith(accent, selected ? 0.2f : 0.1f);
+    k.hline(1, width - 2, height, alpha(juce::Colours::black, 0.45f));
+    bevel(k, 0, 0, width, height, face.brighter(0.18f), face, face.darker(0.35f), selected ? accent : p.outline, false);
+    k.fill(1, 1, 2, height - 2, accent);
+    k.vline(1, 1, height - 2, accent.brighter(0.35f));
+    if (selected) glowAround(k, 0, 0, width, height, alpha(accent, 0.6f));
+    if (p.sparkle > 0.05f) curl(k, width - 2, 1, -1, 1, alpha(p.inlay, p.sparkle * 0.8f));
+    if (p.scanline > 0.05f) k.blend(width - 3, height - 3, alpha(accent, p.scanline));
+    return k;
+}
+
+Canvas badge(const Palette& p, const juce::String& text, juce::Colour accent) {
+    const int w = std::max(7, Canvas::textWidth(text, Font::Small) + 4), h = 7;
+    Canvas k(w + 1, h + 1);
+    k.fill(1, h, w - 1, 1, alpha(juce::Colours::black, 0.5f));
+    k.box(0, 0, w, h, or_(accent, p.accent), p.outline);
+    k.hline(1, w - 2, 1, or_(accent, p.accent).brighter(0.4f));
+    k.text((w - Canvas::textWidth(text, Font::Small) + 1) / 2, 1, text, p.inkOn, Font::Small);
+    return k;
+}
+
+Canvas marker(const Palette& p, juce::Colour colour, bool used, bool here) {
+    Canvas k(9, 9);
+    static const char* gem = "..###..|.#####.|#######|#######|#######|.#####.|..###..";
+    int row = 0, col = 0;
+    for (const char* c = gem; *c != 0; ++c) {
+        if (*c == '|') { ++row; col = 0; continue; }
+        if (*c == '#') {
+            const bool edge = row == 0 || row == 6 || col == 0 || col == 6 || (row == 1 && (col == 1 || col == 5)) || (row == 5 && (col == 1 || col == 5));
+            if (used) k.set(col + 1, row + 1, edge ? p.outline : (row <= 2 && col <= 3 ? colour.brighter(0.4f) : colour));
+            else if (edge) k.set(col + 1, row + 1, p.inkDim);
+        }
+        ++col;
+    }
+    if (here) {
+        k.blend(0, 4, alpha(colour, 0.7f)); k.blend(8, 4, alpha(colour, 0.7f)); k.blend(4, 0, alpha(colour, 0.7f)); k.blend(4, 8, alpha(colour, 0.7f));
     }
     return k;
 }

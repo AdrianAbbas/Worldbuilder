@@ -1,12 +1,9 @@
 #include "CapturePanel.h"
+#include "Pixel.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
 
 namespace wb::ui {
-
-namespace {
-juce::Font font(float size, bool bold = false) { return juce::Font(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain)); }
-}
 
 //==============================================================================
 // A pill button that can also be dragged out of the plugin as a file: a click calls
@@ -21,36 +18,26 @@ public:
     std::function<juce::StringArray()> dragFiles;
 
     void paint(juce::Graphics& g) override {
-        const auto r = getLocalBounds().toFloat().reduced(2.0f);
-        const auto accent = active ? colours::cyan : colours::dim;
-        const float corner = r.getHeight() * 0.5f;
-        drawSurface(g, r, corner, colours::panel.interpolatedWith(accent, 0.18f), accent, SurfaceState { hover && active, false, false, active });
-        if (progress >= 0.0f) {
-            g.setColour(colours::brass.withAlpha(0.45f));
-            g.saveState();
-            g.reduceClipRegion(r.withWidth(r.getWidth() * juce::jlimit(0.0f, 1.0f, progress)).toNearestInt());
-            g.fillRoundedRectangle(r, corner);
-            g.restoreState();
-        }
-        g.setFont(font(10.5f, true));
-        g.setColour(active ? colours::parchment : colours::dim);
-        // The icon says what the chip makes; the arrow (draggable) shows only without one.
+        // A pixel button with the chip's icon; a bar fills along its foot while rendering,
+        // and a small arrow says it can be dragged out (when it has no icon).
+        const auto& pal = pixel::theme().colours;
+        const int w = getWidth() / pixel::unit, h = getHeight() / pixel::unit - 1;
+        pixel::State s;
+        s.hover = hover && active;
+        s.enabled = active;
         const bool showArrow = arrow && icon == Icon::None;
-        auto label = r.withTrimmedRight(showArrow ? 10.0f : 0.0f);
-        if (icon != Icon::None) {
-            const float w = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), text);
-            auto row = juce::Rectangle<float>(13.0f + 4.0f + w, r.getHeight()).withCentre(label.getCentre());
-            drawIcon(g, icon, row.removeFromLeft(13.0f), active ? colours::cyan.brighter(0.3f) : colours::dim);
-            label = row.withTrimmedLeft(4.0f);
-        }
-        g.drawText(text, label, juce::Justification::centred, false);
-        if (showArrow) {
-            juce::Path p;
-            const float x = r.getRight() - 13.0f, y = r.getCentreY();
-            p.addTriangle(x, y - 3.5f, x, y + 3.5f, x + 5.0f, y);
-            g.setColour(accent);
-            g.fillPath(p);
-        }
+        const int filled = progress >= 0.0f ? juce::roundToInt(juce::jlimit(0.0f, 1.0f, progress) * float(w - 4)) : -1;
+        pixel::drawCached(g, "capture/" + text + juce::String(int(icon)) + "/" + juce::String(w) + "x" + juce::String(h) + juce::String(int(s.hover)) + juce::String(int(active))
+                                 + juce::String(int(showArrow)) + "/" + juce::String(filled),
+                          { -pixel::margin * pixel::unit, -pixel::margin * pixel::unit }, [&] {
+                              const auto glyph = pixel::toolIcon(int(icon), 7, juce::Colours::white, juce::Colours::black);
+                              auto k = pixel::button(pal, text.toUpperCase() + (showArrow ? " >" : ""), s, w, h, 0, icon != Icon::None ? &glyph : nullptr, pal.inlay);
+                              if (filled >= 0) {
+                                  k.fill(pixel::margin + 2, pixel::margin + h - 3, w - 4, 1, pal.well);
+                                  k.fill(pixel::margin + 2, pixel::margin + h - 3, filled, 1, pal.accent);
+                              }
+                              return k;
+                          });
     }
     void mouseEnter(const juce::MouseEvent&) override { setHover(true); }
     void mouseExit(const juce::MouseEvent&) override { setHover(false); }
@@ -355,14 +342,9 @@ void CapturePanel::saveRender() {
 }
 
 void CapturePanel::paint(juce::Graphics& g) {
-    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)).withExtraKerningFactor(0.12f));
-    g.setColour(colours::brass.withAlpha(0.8f));
-    g.drawText("CAPTURE", label, juce::Justification::centredLeft, false);
-    if (status.isNotEmpty()) {
-        g.setFont(font(10.0f));
-        g.setColour(colours::dim);
-        g.drawText(status, label.withTrimmedLeft(70), juce::Justification::centredRight, true);
-    }
+    const auto& pal = pixel::theme().colours;
+    pixel::drawText(g, "CAPTURE", label.withHeight(14), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    if (status.isNotEmpty()) pixel::drawText(g, status, label.withTrimmedLeft(70).withHeight(14), pal.inkDim, juce::Justification::centredRight, pixel::Font::Small);
 }
 
 void CapturePanel::resized() {
@@ -381,6 +363,7 @@ void CapturePanel::resized() {
     render->setBounds(bottom.removeFromLeft(w + 2).withSizeKeepingCentre(w + 2, 22));
     bottom.removeFromLeft(4);
     wav->setBounds(bottom.withSizeKeepingCentre(bottom.getWidth(), 22));
+    pixel::snapChildren(*this);
 }
 
 } // namespace wb::ui

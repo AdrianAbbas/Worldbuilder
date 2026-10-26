@@ -20,10 +20,10 @@ juce::String colourKey(juce::Colour c) { return juce::String::toHexString(int(c.
 // The animation frame, for sprites that sparkle or flicker only while hovered.
 juce::String frameKey(const pixel::State& s) { return s.hover ? juce::String(pixel::theme().frame % 6) : juce::String("-"); }
 
-// Where a sprite with a decoration margin goes so that its body fills `bounds` less one
-// art pixel all round.
+// Where a sprite with a decoration margin goes so that its body fills `bounds` (its
+// decoration beyond them is clipped, its drop shadow takes the bottom art pixel).
 juce::Point<int> bodyAt(juce::Rectangle<int> bounds) {
-    return { pixel::snap(bounds.getX()) - (pixel::margin - 1) * pixel::unit, pixel::snap(bounds.getY()) - (pixel::margin - 1) * pixel::unit };
+    return { pixel::snap(bounds.getX()) - pixel::margin * pixel::unit, pixel::snap(bounds.getY()) - pixel::margin * pixel::unit };
 }
 int art(int logical) { return logical / pixel::unit; }
 } // namespace
@@ -81,7 +81,8 @@ void PixelLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wid
                     pixel::Font::Small);
 }
 
-int PixelLookAndFeel::getSliderThumbRadius(juce::Slider&) { return (pixel::margin + 3) * pixel::unit; }
+// The handle's half width plus the track's end: the mouse maps to the handle's centre.
+int PixelLookAndFeel::getSliderThumbRadius(juce::Slider& slider) { return (slider.getHeight() >= 18 ? 4 : 3) * pixel::unit + pixel::unit; }
 
 void PixelLookAndFeel::drawLinearSlider(juce::Graphics& g, int, int, int, int, float, float, float, juce::Slider::SliderStyle style, juce::Slider& slider) {
     const auto s = stateOf(slider, slider.isMouseOverOrDragging(), slider.isMouseButtonDown());
@@ -98,13 +99,16 @@ void PixelLookAndFeel::drawLinearSlider(juce::Graphics& g, int, int, int, int, f
         return;
     }
     const bool vertical = style == juce::Slider::LinearVertical || style == juce::Slider::TwoValueVertical || style == juce::Slider::ThreeValueVertical;
-    const int length = std::max(8, art(vertical ? bounds.getHeight() : bounds.getWidth()) - 2 * pixel::margin);
+    // The track runs the slider's length; the handle is as thick as the slider allows.
+    const int length = std::max(8, art(vertical ? bounds.getHeight() : bounds.getWidth()) - 2);
+    const int thickness = juce::jlimit(5, 11, art(vertical ? bounds.getWidth() : bounds.getHeight()));
     const auto accent = slider.isColourSpecified(juce::Slider::trackColourId) ? moodColour(slider.findColour(juce::Slider::trackColourId)) : juce::Colour();
-    const int across = (11 + 1 + 2 * pixel::margin) * pixel::unit;
-    const juce::Point<int> at = vertical ? juce::Point<int>(bounds.getCentreX() - across / 2, bounds.getY())
-                                         : juce::Point<int>(bounds.getX(), bounds.getCentreY() - across / 2 + pixel::unit / 2);
-    pixel::drawCached(g, "slider/" + juce::String(int(vertical)) + juce::String(length) + "/" + juce::String(v) + "/" + stateKey(s) + frameKey(s) + colourKey(accent), at,
-                      [&] { return pixel::slider(pal(), length, v, vertical, s, pixel::theme().frame, accent); });
+    const int across = (thickness + 1 + 2 * pixel::margin) * pixel::unit;
+    const juce::Point<int> at = vertical ? juce::Point<int>(bounds.getCentreX() - across / 2, bounds.getY() + pixel::unit - pixel::margin * pixel::unit)
+                                         : juce::Point<int>(bounds.getX() + pixel::unit - pixel::margin * pixel::unit, bounds.getCentreY() - across / 2 + pixel::unit);
+    pixel::drawCached(g, "slider/" + juce::String(int(vertical)) + juce::String(length) + "x" + juce::String(thickness) + "/" + juce::String(v) + "/" + stateKey(s) + frameKey(s)
+                             + colourKey(accent),
+                      at, [&] { return pixel::slider(pal(), length, v, vertical, s, pixel::theme().frame, accent, thickness); });
 }
 
 juce::Label* PixelLookAndFeel::createSliderTextBox(juce::Slider& slider) {
@@ -121,18 +125,15 @@ void PixelLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& but
     const auto s = stateOf(button, highlighted, down, button.getToggleState());
     const auto accent = moodColour(button.findColour(juce::TextButton::buttonOnColourId));
     const auto text = button.getButtonText().toUpperCase();
-    const int w = art(button.getWidth()) - 2, h = art(button.getHeight()) - 3;
+    const int w = art(button.getWidth()), h = art(button.getHeight()) - 1;
     const auto icon = iconOf(button);
     pixel::drawCached(g, "button/" + juce::String(w) + "x" + juce::String(h) + "/" + text + "/" + juce::String(int(icon)) + "/" + stateKey(s) + frameKey(s) + colourKey(accent),
                       bodyAt(button.getLocalBounds()), [&] {
-                          const int iconPx = std::max(5, std::min(h - 4, 9));
+                          const int iconPx = std::max(5, std::min(h - 2, 9));
                           const auto sprite = pixel::toolIcon(int(icon), iconPx, juce::Colours::white, juce::Colours::black);
-                          // The icon alone when the text does not fit beside it.
-                          const auto font = h >= 13 ? pixel::Font::Large : pixel::Font::Small;
-                          const bool both = icon != Icon::None && pixel::Canvas::textWidth(text, font) + sprite.width() + 9 <= w;
-                          const bool iconOnly = icon != Icon::None && !both && (text.isEmpty() || pixel::Canvas::textWidth(text, font) + 4 > w);
-                          return pixel::button(pal(), iconOnly ? juce::String() : text, s, w, h, pixel::theme().frame, icon != Icon::None && (both || iconOnly) ? &sprite : nullptr,
-                                               accent);
+                          // The icon alone only when even the text alone does not fit.
+                          const bool iconOnly = icon != Icon::None && (text.isEmpty() || pixel::Canvas::textWidth(text, pixel::Font::Small) + 3 > w);
+                          return pixel::button(pal(), iconOnly ? juce::String() : text, s, w, h, pixel::theme().frame, icon != Icon::None ? &sprite : nullptr, accent);
                       });
 }
 
@@ -148,15 +149,13 @@ void PixelLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b
     }
     // A pill that lights in its colour when on (M, S, Power, Characters, switches).
     const auto accent = moodColour(button.findColour(juce::TextButton::buttonOnColourId));
-    const int w = art(button.getWidth()) - 2, h = art(button.getHeight()) - 3;
+    const int w = art(button.getWidth()), h = art(button.getHeight()) - 1;
     const auto icon = iconOf(button);
     pixel::drawCached(g, "pill/" + juce::String(w) + "x" + juce::String(h) + "/" + text + "/" + juce::String(int(icon)) + "/" + stateKey(s) + frameKey(s) + colourKey(accent),
                       bodyAt(button.getLocalBounds()), [&] {
-                          const int iconPx = std::max(5, std::min(h - 4, 9));
+                          const int iconPx = std::max(5, std::min(h - 2, 9));
                           const auto sprite = pixel::toolIcon(int(icon), iconPx, juce::Colours::white, juce::Colours::black);
-                          const auto font = h >= 13 ? pixel::Font::Large : pixel::Font::Small;
-                          const bool withIcon = icon != Icon::None && pixel::Canvas::textWidth(text, font) + sprite.width() + 9 <= w;
-                          return pixel::button(pal(), text, s, w, h, pixel::theme().frame, withIcon ? &sprite : nullptr, accent);
+                          return pixel::button(pal(), text, s, w, h, pixel::theme().frame, icon != Icon::None ? &sprite : nullptr, accent);
                       });
 }
 
@@ -165,7 +164,7 @@ void PixelLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b
 void PixelLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool down, int, int, int, int, juce::ComboBox& box) {
     const auto s = stateOf(box, box.isMouseOver(true), down || box.isPopupActive());
     const auto text = box.getText().toUpperCase();
-    const int w = art(width) - 2, h = art(height) - 2;
+    const int w = art(width) - 1, h = art(height) - 1;
     pixel::drawCached(g, "combo/" + juce::String(w) + "x" + juce::String(h) + "/" + text + "/" + stateKey(s) + frameKey(s), bodyAt({ 0, 0, width, height }),
                       [&] { return pixel::dropdown(pal(), text, w, s, nullptr, -1, pixel::theme().frame, h); });
 }

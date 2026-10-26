@@ -1212,6 +1212,27 @@ juce::Image bundledSprite(const juce::String& name) {
     return {};
 }
 
+void drawPlaceIcon(juce::Graphics& g, int placeType, juce::Point<int> topLeft, bool half, int frame, int rows) {
+    const auto key = "place/" + juce::String(placeType) + "/" + juce::String(frame % std::max(1, placeIconFrames(placeType))) + "/" + juce::String(rows) + "/"
+                     + theme().colours.outline.toString();
+    const auto make = [&] {
+        const auto icon = placeIcon(placeType, frame, theme().colours.outline);
+        if (rows >= iconSize) return icon;
+        Canvas k(iconSize, std::max(1, rows));
+        k.paste(icon.source().getClippedImage({ 0, 0, iconSize, std::max(1, rows) }), 0, 0);
+        return k;
+    };
+    if (half) drawCachedSmall(g, key, topLeft, make);
+    else drawCached(g, key, topLeft, make);
+}
+
+int iconFrame(int placeType, bool hovered) {
+    const auto& t = theme();
+    if (t.delights == 0 || (t.delights == 1 && !hovered)) return 0;
+    // Two frames a second, each Place at its own phase.
+    return (t.frame / 4 + placeType) % std::max(1, placeIconFrames(placeType));
+}
+
 bool hasPlaceIcon(int placeType) { return iconFor(placeType) != nullptr; }
 
 juce::String placeShortName(int placeType) { return juce::isPositiveAndBelow(placeType, int(PlaceTypeCount)) ? shortNames[placeType] : ""; }

@@ -1,11 +1,11 @@
 #include "LocationBar.h"
+#include "Pixel.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
 
 namespace wb::ui {
 
 namespace {
-juce::Font font(float size, bool bold = false) { return juce::Font(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain)); }
 juce::Colour locationColour(const WorldbuilderProcessor& p, int index) { return juce::Colour(p.locations.colour(index)); }
 const char* colourNames[] = { "Brass", "Cyan", "Rose", "Moss", "Violet", "Ember", "Teal", "Bone" };
 } // namespace
@@ -94,9 +94,9 @@ void LocationBar::resized() {
     auto top = r.removeFromTop(22);
     {
         auto right = top;
-        loadFile.setBounds(right.removeFromRight(84).withSizeKeepingCentre(84, 20));
+        loadFile.setBounds(right.removeFromRight(96).withSizeKeepingCentre(96, 20));
         right.removeFromRight(6);
-        saveFile.setBounds(right.removeFromRight(84).withSizeKeepingCentre(84, 20));
+        saveFile.setBounds(right.removeFromRight(96).withSizeKeepingCentre(96, 20));
         right.removeFromRight(18);
         pathEnd.setBounds(right.removeFromRight(86).withSizeKeepingCentre(86, 20));
         right.removeFromRight(6);
@@ -130,6 +130,7 @@ void LocationBar::resized() {
     to.setBounds(row.removeFromLeft(46).withSizeKeepingCentre(46, 22));
     row.removeFromLeft(8);
     journey.setBounds(row.withSizeKeepingCentre(row.getWidth(), 18));
+    pixel::snapChildren(*this);
 }
 
 bool LocationBar::canSave() const {
@@ -137,9 +138,8 @@ bool LocationBar::canSave() const {
 }
 
 void LocationBar::paint(juce::Graphics& g) {
-    g.setFont(font(11.5f, true).withExtraKerningFactor(0.15f));
-    g.setColour(colours::brass.withAlpha(0.85f));
-    g.drawText("LOCATIONS", title.withTrimmedLeft(4), juce::Justification::centredLeft, false);
+    const auto& pal = pixel::theme().colours;
+    pixel::drawText(g, "LOCATIONS", title.withTrimmedLeft(4).withWidth(116), pal.rim, juce::Justification::centredLeft, pixel::Font::Large);
     const int mode = processor.travel.uiMode.load(std::memory_order_relaxed);
     const int target = processor.travel.uiTarget.load(std::memory_order_relaxed);
     const int arrived = processor.travel.uiArrived.load(std::memory_order_relaxed);
@@ -150,83 +150,66 @@ void LocationBar::paint(juce::Graphics& g) {
         if (mode == Travel::Travelling && target >= 0) state = "travelling to " + processor.locations.name(target) + "  " + juce::String(juce::roundToInt(progress * 100.0f)) + "%";
         else if (mode == Travel::Journeying) {
             const int a = processor.travel.uiFrom.load(std::memory_order_relaxed), b = processor.travel.uiTo.load(std::memory_order_relaxed);
-            state = a >= 0 && b >= 0 ? (processor.locations.name(a) + " -> " + processor.locations.name(b) + "  " + juce::String(juce::roundToInt(progress * 100.0f)) + "%")
+            state = a >= 0 && b >= 0 ? (processor.locations.name(a) + " > " + processor.locations.name(b) + "  " + juce::String(juce::roundToInt(progress * 100.0f)) + "%")
                                      : juce::String("Journey: no Locations saved");
         }
         else if (arrived >= 0 && processor.locations.used(arrived)) state = "at " + processor.locations.name(arrived);
         else state = "click an empty slot to save the world there";
-        g.setFont(font(10.5f));
-        g.setColour(mode == Travel::Idle || mode == Travel::Holding ? colours::dim : colours::cyan);
-        g.drawText(state, title.withTrimmedLeft(96).withTrimmedRight(100), juce::Justification::centredLeft, true);
-        g.setFont(font(10.5f, true).withExtraKerningFactor(0.12f));
-        g.setColour(colours::brass.withAlpha(0.8f));
-        g.drawText("JOURNEY PATH", pathMode.getBounds().withX(title.getRight() - 96).withWidth(92), juce::Justification::centredRight, false);
+        pixel::drawText(g, state, title.withTrimmedLeft(124).withTrimmedRight(104), mode == Travel::Idle || mode == Travel::Holding ? pal.inkDim : pal.inlay,
+                        juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, "JOURNEY PATH", pathMode.getBounds().withX(title.getRight() - 104).withWidth(100), pal.rim, juce::Justification::centredRight, pixel::Font::Small);
     }
     const bool journeyOn = mode == Travel::Journeying;
     const int journeyFrom = processor.travel.uiFrom.load(std::memory_order_relaxed);
     const int journeyTo = processor.travel.uiTo.load(std::memory_order_relaxed);
     for (int i = 0; i < locationCount; ++i) {
-        const auto r = chips[std::size_t(i)].toFloat().reduced(0.5f);
+        const auto r = chips[std::size_t(i)];
         const bool used = processor.locations.used(i);
         const auto colour = locationColour(processor, i);
         const bool here = (mode == Travel::Idle || mode == Travel::Holding) && arrived == i;
         const bool going = mode == Travel::Travelling && target == i;
-        const float corner = 6.0f;
+        const int w = r.getWidth() / pixel::unit, h = r.getHeight() / pixel::unit;
         if (used) {
             // A raised chip in the Location's colour; the one the world stands at glows.
-            drawSurface(g, r.reduced(0.5f), corner, colours::panel.interpolatedWith(colour, 0.22f), colour, SurfaceState { hover == i, false, false, true });
-            if (here) drawGlow(g, r, corner, colour, 5.0f);
-            // Journey Mode: how much of From and To is in the world.
             float fill = going ? progress : 0.0f;
             if (journeyOn) fill = i == journeyTo ? progress : i == journeyFrom ? 1.0f - progress : 0.0f;
             if (journeyOn && journeyFrom == journeyTo && i == journeyTo) fill = 1.0f;
-            if (fill > 0.0f) {
-                g.saveState();
-                g.reduceClipRegion(r.withHeight(4.0f).withY(r.getBottom() - 4.0f).withWidth(r.getWidth() * juce::jlimit(0.0f, 1.0f, fill)).toNearestInt());
-                g.setColour(colours::cyan.withAlpha(0.9f));
-                g.fillRoundedRectangle(r, corner);
-                g.restoreState();
-            }
-            g.setColour(colour);
-            g.fillRoundedRectangle(r.withWidth(3.5f).reduced(0.0f, 4.0f), 1.5f);
-            g.setColour(here ? colour.brighter(0.3f) : going ? colours::cyan : colour.withAlpha(0.55f));
-            g.drawRoundedRectangle(r, corner, here || going ? 1.8f : 1.0f);
-            if (here) {
-                g.setColour(colour.withAlpha(0.22f));
-                g.drawRoundedRectangle(r.expanded(2.0f), corner + 2.0f, 2.5f);
-            }
-            g.setFont(font(10.5f, true));
-            g.setColour(colours::parchment);
-            g.drawFittedText(processor.locations.name(i), r.withTrimmedLeft(7.0f).withTrimmedRight(3.0f).withTrimmedTop(6.0f).toNearestInt(),
-                             juce::Justification::centred, 1, 0.8f);
+            const int filled = juce::roundToInt(juce::jlimit(0.0f, 1.0f, fill) * float(w - 2));
+            pixel::drawCached(g, "loc/" + juce::String(w) + "x" + juce::String(h) + colour.toString() + juce::String(int(here)) + juce::String(int(going)) + juce::String(int(hover == i))
+                                     + "/" + juce::String(filled),
+                              r.getPosition(), [&] {
+                                  auto k = pixel::strip(pal, w, h - 1, colour, here || going);
+                                  if (hover == i) k.outlineBox(0, 0, w, h - 1, pal.glow.withAlpha(0.7f));
+                                  if (filled > 0) k.fill(1, h - 4, filled, 2, pal.inlay);
+                                  return k;
+                              });
+            pixel::drawText(g, processor.locations.name(i), r.withTrimmedLeft(8).withTrimmedRight(3).withTrimmedTop(8), pal.ink, juce::Justification::centred, pixel::Font::Small);
         } else {
-            juce::Path outline;
-            outline.addRoundedRectangle(r, corner);
-            juce::Path dashed;
-            const float dashes[] = { 3.0f, 3.0f };
-            juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
-            g.setColour((hover == i ? colours::parchment : colours::dim).withAlpha(0.7f));
-            g.fillPath(dashed);
-            g.setFont(font(10.0f, true));
-            g.drawText("+ SAVE", r.withTrimmedTop(6.0f), juce::Justification::centred, false);
+            pixel::drawCached(g, "locfree/" + juce::String(w) + "x" + juce::String(h) + juce::String(int(hover == i)), r.getPosition(), [&] {
+                pixel::Canvas k(w, h);
+                const auto c = hover == i ? pal.ink : pal.inkDim.withAlpha(0.7f);
+                for (int x = 1; x < w - 1; ++x)
+                    if ((x / 2) % 2 == 0) { k.set(x, 0, c); k.set(x, h - 1, c); }
+                for (int y = 1; y < h - 1; ++y)
+                    if ((y / 2) % 2 == 0) { k.set(0, y, c); k.set(w - 1, y, c); }
+                return k;
+            });
+            pixel::drawText(g, "+ SAVE", r.withTrimmedTop(8), hover == i ? pal.ink : pal.inkDim, juce::Justification::centred, pixel::Font::Small);
         }
-        g.setFont(font(8.5f, true));
-        g.setColour(used ? colour.withAlpha(0.9f) : colours::dim);
-        g.drawText(juce::String(i + 1), r.withTrimmedLeft(7.0f).withHeight(11.0f).translated(0.0f, 1.0f), juce::Justification::centredLeft, false);
+        pixel::drawText(g, juce::String(i + 1), r.withTrimmedLeft(8).withHeight(12).translated(0, 2), used ? colour.brighter(0.3f) : pal.inkDim,
+                        juce::Justification::centredLeft, pixel::Font::Small);
     }
-    g.setFont(font(10.5f, true).withExtraKerningFactor(0.12f));
-    g.setColour(colours::brass.withAlpha(0.8f));
-    g.drawText("TRAVEL", travelLabel, juce::Justification::centredLeft, false);
-    g.drawText("JOURNEY      FROM       TO", journeyLabel, juce::Justification::centredLeft, false);
+    pixel::drawText(g, "TRAVEL", travelLabel, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "JOURNEY", journeyLabel.withX(journeyMode.getX()).withWidth(journeyMode.getWidth()), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "FROM", journeyLabel.withX(from.getX()).withWidth(from.getWidth()), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "TO", journeyLabel.withX(to.getX()).withWidth(to.getWidth()), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
     const bool synced = juce::roundToInt(processor.parameters.getRawParameterValue(specs[PTravelSync].id)->load()) > 0;
-    g.setFont(font(11.0f));
-    g.setColour(synced ? colours::dim : colours::parchment);
-    g.drawText(travelTime.getTextFromValue(travelTime.getValue()) + " s", travelValue, juce::Justification::centred, false);
-    juce::Path p;
-    const auto c = arrow.toFloat().getCentre();
-    p.addTriangle(c.x - 3.0f, c.y - 4.0f, c.x - 3.0f, c.y + 4.0f, c.x + 3.0f, c.y);
-    g.setColour(colours::brass.withAlpha(0.8f));
-    g.fillPath(p);
+    pixel::drawText(g, travelTime.getTextFromValue(travelTime.getValue()) + " S", travelValue, synced ? pal.inkDim : pal.accent, juce::Justification::centred, pixel::Font::Small);
+    pixel::drawCached(g, "arrow", { arrow.getCentreX() - 4, arrow.getCentreY() - 6 }, [&] {
+        pixel::Canvas k(4, 6);
+        for (int c = 0; c < 3; ++c) k.vline(c, c, 5 - c, pal.rim);
+        return k;
+    });
 }
 
 void LocationBar::timerCallback() {

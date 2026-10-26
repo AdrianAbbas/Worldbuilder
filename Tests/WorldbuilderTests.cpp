@@ -3170,9 +3170,10 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
                 fmt(distance(backgrounds[c], plainBackground)));
     }
     s.check(distance(panels[0], panels[1]) > 0.08f, "Castle and Spaceport look clearly different", fmt(distance(panels[0], panels[1])));
-    s.check(distance(panels[2], panels[0]) > 0.02f && distance(panels[2], panels[1]) > 0.02f
-                && distance(panels[2], panels[0]) + distance(panels[2], panels[1]) < distance(panels[0], panels[1]) * 1.3f,
-            "Castle + Spaceport blends the two palettes");
+    // Milestone 13: fantasy and sci-fi together are the "magitech" blend, a look of its
+    // own (Direction Update 7), not a point between the two: it differs from both.
+    s.check(distance(panels[2], panels[0]) > 0.02f && distance(panels[2], panels[1]) > 0.02f, "Castle + Spaceport has its own (blend) look",
+            fmt(distance(panels[2], panels[0])) + " / " + fmt(distance(panels[2], panels[1])));
 
     // Village, its detail panel (header art) and the Pattern Editor (instrument icons) with
     // the overlays, for looking at.

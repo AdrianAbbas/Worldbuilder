@@ -151,7 +151,9 @@ void setTheme(const Mood& mood, int frame, int delights) {
         t.mood = stepped;
         t.colours = palette(stepped);
         t.delights = delights;
-        ++t.version;
+        // The version names the look (not a counter): two editors in different moods
+        // each keep their own sprites in the cache.
+        t.version = (juce::roundToInt(stepped.sciFi * 64.0f) * 65 + juce::roundToInt(stepped.neutral * 64.0f)) * 3 + delights;
     }
     t.frame = frame;
 }
@@ -403,9 +405,83 @@ void drawCached(juce::Graphics& g, const juce::String& key, juce::Point<int> top
     drawScaled(g, image, { snap(topLeft.x), snap(topLeft.y) }, block);
 }
 
+juce::Rectangle<int> snapArt(juce::Rectangle<float> r) {
+    const int x0 = snap(juce::roundToInt(r.getX())), y0 = snap(juce::roundToInt(r.getY()));
+    const int x1 = snap(juce::roundToInt(r.getRight()) + unit / 2), y1 = snap(juce::roundToInt(r.getBottom()) + unit / 2);
+    return { x0, y0, std::max(unit, x1 - x0), std::max(unit, y1 - y0) };
+}
+
+void fillArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour c) {
+    if (r.isEmpty() || c.getAlpha() == 0) return;
+    g.setColour(c);
+    g.fillRect(snap(r.getX()), snap(r.getY()), snap(r.getWidth() + unit / 2), snap(r.getHeight() + unit / 2));
+}
+
+void frameArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour c) {
+    r = { snap(r.getX()), snap(r.getY()), snap(r.getWidth() + unit / 2), snap(r.getHeight() + unit / 2) };
+    if (r.getWidth() < 3 * unit || r.getHeight() < 3 * unit) {
+        fillArt(g, r, c);
+        return;
+    }
+    g.setColour(c);
+    g.fillRect(r.getX() + unit, r.getY(), r.getWidth() - 2 * unit, unit);
+    g.fillRect(r.getX() + unit, r.getBottom() - unit, r.getWidth() - 2 * unit, unit);
+    g.fillRect(r.getX(), r.getY() + unit, unit, r.getHeight() - 2 * unit);
+    g.fillRect(r.getRight() - unit, r.getY() + unit, unit, r.getHeight() - 2 * unit);
+}
+
+void blockArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour body, juce::Colour light, juce::Colour shade, juce::Colour outline) {
+    r = { snap(r.getX()), snap(r.getY()), snap(r.getWidth() + unit / 2), snap(r.getHeight() + unit / 2) };
+    if (r.getWidth() < 3 * unit || r.getHeight() < 3 * unit) {
+        fillArt(g, r, body);
+        return;
+    }
+    fillArt(g, r.reduced(unit), body);
+    if (r.getHeight() >= 5 * unit) {
+        fillArt(g, { r.getX() + unit, r.getY() + unit, r.getWidth() - 2 * unit, unit }, light);
+        fillArt(g, { r.getX() + unit, r.getBottom() - 2 * unit, r.getWidth() - 2 * unit, unit }, shade);
+    }
+    frameArt(g, r, outline);
+}
+
 void snapChildren(juce::Component& parent) {
     for (auto* child : parent.getChildren())
         if (const auto snapped = snap(child->getBounds()); snapped != child->getBounds()) child->setBounds(snapped);
+}
+
+void drawCachedSmall(juce::Graphics& g, const juce::String& key, juce::Point<int> topLeft, const std::function<Canvas()>& make) {
+    const float physical = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const int block = std::max(1, int(std::floor(physical + 1.0e-3f)));
+    const auto& image = sharedCache().get(key + "@s" + juce::String(block) + "/" + juce::String(theme().version), [&] { return make().scaled(block); });
+    if (std::abs(physical - 1.0f) < 1.0e-3f) {
+        g.drawImageAt(image, topLeft.x, topLeft.y);
+        return;
+    }
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.drawImageTransformed(image, juce::AffineTransform::translation(std::round(float(topLeft.x) * physical), std::round(float(topLeft.y) * physical)).scaled(1.0f / physical));
+}
+
+void drawTitle(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Colour light, juce::Colour shadow) {
+    const int w = Canvas::textWidth(text) + 2, h = Canvas::textHeight() + 2;
+    const float physical = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const int block = std::max(1, juce::roundToInt(float(unit * 2) * physical));
+    const auto key = "title/" + text + colour.toString() + light.toString() + shadow.toString();
+    const auto& image = sharedCache().get(key + "@" + juce::String(block), [&] {
+        Canvas k(w, h);
+        // A shadow, then the letters: lit in the top rows, a darker base.
+        k.text(1, 1, text, shadow);
+        Canvas letters(w, h);
+        letters.text(0, 0, text, colour);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+                if (letters.get(x, y).getAlpha() > 0) k.set(x, y, y < 2 ? light : y > 4 ? colour.darker(0.25f) : colour);
+        return k.scaled(block);
+    });
+    const int x = snap(area.getX()), y = snap(area.getCentreY() - h * unit);
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.drawImageTransformed(image, juce::AffineTransform::translation(std::round(float(x) * physical), std::round(float(y) * physical)).scaled(1.0f / physical));
 }
 
 int textWidthLogical(const juce::String& text, Font font) { return Canvas::textWidth(text, font) * unit; }
@@ -433,9 +509,11 @@ void drawText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> 
 
 const juce::Image& SpriteCache::get(const juce::String& key, const std::function<juce::Image()>& make) {
     if (auto it = sprites.find(key); it != sprites.end()) return it->second;
-    if (int(sprites.size()) >= limit) sprites.clear();   // bounded: sprites are cheap to remake
+    if (int(sprites.size()) >= limit || bytes > budget) clear();   // bounded: sprites are cheap to remake
     ++made;
-    return sprites[key] = make();
+    auto image = make();
+    bytes += int64_t(image.getWidth()) * image.getHeight() * 4;
+    return sprites[key] = std::move(image);
 }
 
 SpriteCache& sharedCache() {

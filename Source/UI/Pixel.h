@@ -59,11 +59,11 @@ float contrast(juce::Colour a, juce::Colour b);
 
 // The look the interface is drawn in now (set by the editor every animation frame).
 struct Theme {
-    Mood mood;
+    Mood mood { -1.0f, 0 };   // none yet
     Palette colours = palette(blendMood);
     int frame = 0;      // the decoration animation frame (twinkles, flicker), ~8 per second
     int delights = 2;   // 0 off, 1 subtle, 2 full: the Overlays setting
-    int version = 0;    // changes with the mood and delights: part of every cached sprite's key
+    int version = 0;    // names the mood and delights: part of every cached sprite's key
                         // (animated sprites add the frame to their own key)
 };
 const Theme& theme();
@@ -135,8 +135,23 @@ void snapChildren(juce::Component& parent);
 void draw(juce::Graphics& g, const Canvas& canvas, juce::Point<int> topLeft);
 // Draws a cached sprite (made by `make` once per key, look and device scale).
 void drawCached(juce::Graphics& g, const juce::String& key, juce::Point<int> topLeft, const std::function<Canvas()>& make);
+// The same at half the art grid: one logical pixel per art pixel (small icons in tight
+// rows). Whole device pixels at every size (it rounds down at 150 %).
+void drawCachedSmall(juce::Graphics& g, const juce::String& key, juce::Point<int> topLeft, const std::function<Canvas()>& make);
+// The title: Large text at twice the art grid, lit from the top.
+void drawTitle(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Colour light, juce::Colour shadow);
 // The size in logical pixels of a sprite once drawn.
 inline juce::Point<int> logicalSize(const Canvas& c) { return { c.width() * unit, c.height() * unit }; }
+
+// Direct drawing on the art grid, for large areas that change all the time (the piano
+// roll, the timeline): rectangles snapped to whole art pixels, so they stay exact at
+// every UI size and cost no sprite.
+juce::Rectangle<int> snapArt(juce::Rectangle<float> r);
+void fillArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour c);
+// A one-art-pixel outline with cut corners.
+void frameArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour c);
+// A raised block: outline with cut corners, a lit top row, a shaded bottom row.
+void blockArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour body, juce::Colour light, juce::Colour shade, juce::Colour outline);
 
 // Pixel text in `area` (logical), with a drop shadow in the mood's outline colour (or
 // `shadow`; transparent for none), cut to fit.
@@ -149,15 +164,20 @@ int textWidthLogical(const juce::String& text, Font font = Font::Small);
 // A small cache of sprites by key. Pixel sprites are cheap to make but cheaper to reuse.
 class SpriteCache {
 public:
-    explicit SpriteCache(int capacity = 768) : limit(capacity) {}
+    explicit SpriteCache(int capacity = 768, int64_t byteBudget = 48 << 20) : limit(capacity), budget(byteBudget) {}
     const juce::Image& get(const juce::String& key, const std::function<juce::Image()>& make);
-    void clear() { sprites.clear(); }
+    void clear() {
+        sprites.clear();
+        bytes = 0;
+    }
     int size() const { return int(sprites.size()); }
+    int64_t memory() const { return bytes; }
     int made = 0;   // how many sprites were drawn (not reused)
 
 private:
     std::unordered_map<juce::String, juce::Image> sprites;
     int limit;
+    int64_t budget, bytes = 0;
 };
 SpriteCache& sharedCache();
 
@@ -177,8 +197,9 @@ Canvas knob(const Palette& p, int dial, float value, const juce::String& label, 
 // The Score Intensity dial: larger, a full ring that heats from cool to the accent,
 // a core that glows with the value.
 Canvas intensityKnob(const Palette& p, int dial, float value, const State& s, int frame = 0);
-// A slider track `length` long with a sprite handle; vertical runs bottom to top.
-Canvas slider(const Palette& p, int length, float value, bool vertical, const State& s, int frame = 0, juce::Colour accent = {});
+// A slider track `length` long with a sprite handle `thickness` across (5-11: slimmer
+// handles and tracks for tight rows); vertical runs bottom to top.
+Canvas slider(const Palette& p, int length, float value, bool vertical, const State& s, int frame = 0, juce::Colour accent = {}, int thickness = 11);
 // The 13a slider with its label and value above it.
 Canvas labelledSlider(const Palette& p, int width, float value, const juce::String& label, const juce::String& valueText, const State& s, int frame = 0);
 // A value bar (a field filled to the value, the value written on it).
@@ -207,6 +228,14 @@ Canvas panel(const Palette& p, int width, int height, int frame = 0, juce::Colou
 // A small label chip (category chips, Location chips); `accent` colours it when on.
 Canvas chip(const Palette& p, const juce::String& text, int width, int height, const State& s, juce::Colour accent = {});
 
+// A Place strip `width` x `height`: a raised face with the Place's colour along its
+// left edge, outlined in it when `selected`.
+Canvas strip(const Palette& p, int width, int height, juce::Colour accent, bool selected);
+// A small round badge with a number (how many of a Place are in use).
+Canvas badge(const Palette& p, const juce::String& text, juce::Colour accent);
+// A Location marker on the globe's orbit: a gem in its colour (an empty ring when unused).
+Canvas marker(const Palette& p, juce::Colour colour, bool used, bool here);
+
 // The tab strip's hit areas, for a test (art pixels, in the sprite).
 juce::Array<juce::Rectangle<int>> tabAreas(const juce::StringArray& names);
 
@@ -221,6 +250,12 @@ int placeIconFrames(int placeType);
 // outline in `outline`. A bundled `assets/pixel/place-<key>.png` (frames side by side,
 // each square) replaces the code-drawn art.
 Canvas placeIcon(int placeType, int frame, juce::Colour outline);
+// Draws a Place icon (cached) at `topLeft`: on the art grid, or at half of it (`half`:
+// one logical pixel per art pixel, for tight rows), showing only its top `rows`.
+void drawPlaceIcon(juce::Graphics& g, int placeType, juce::Point<int> topLeft, bool half, int frame = 0, int rows = iconSize);
+// The icon animation frame for now, by the theme's delights (Full: always moving,
+// Subtle: only when `hovered`, Off: still).
+int iconFrame(int placeType, bool hovered);
 // A Place's short name for small spaces (cards, chips).
 juce::String placeShortName(int placeType);
 

@@ -1,13 +1,13 @@
 #include "ArrangeView.h"
 #include "../Arrangement/Templates.h"
 #include "PlaceArt.h"
+#include "Pixel.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
 
 namespace wb::ui {
 
 namespace {
-juce::Font font(float size, bool bold = false) { return juce::Font(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain)); }
 juce::Colour sectionColour(const arr::Section& s) { return juce::Colour(arr::colours[std::size_t(std::min<int>(s.colour, arr::colourCount - 1))]); }
 const char* colourNames[] = { "Brass", "Cyan", "Ember", "Moss", "Violet", "Amber", "Teal", "Bone", "Rose", "Cobalt" };
 constexpr int labelWidth = 150, headerRow = 16;
@@ -594,34 +594,32 @@ void ArrangeView::resized() {
     emptyArea = r;
     layoutTimeline();
     layoutRows();
+    pixel::snapChildren(*this);
 }
 
 //==============================================================================
 void ArrangeView::paint(juce::Graphics& g) {
-    const auto area = getLocalBounds().toFloat();
-    g.setGradientFill(juce::ColourGradient(colours::panel.brighter(0.04f), 0.0f, 0.0f, colours::panel.darker(0.3f), 0.0f, area.getHeight(), false));
-    g.fillRoundedRectangle(area, 10.0f);
-    g.setColour(colours::brass.withAlpha(0.7f));
-    g.drawRoundedRectangle(area.reduced(0.5f), 10.0f, 1.2f);
-
+    // The timeline and the instrument grid on the art grid: sections as raised pixel
+    // blocks in their colours, cells as pixel blocks, the ramp as a stepped line.
+    const auto& pal = pixel::theme().colours;
+    const int u = pixel::unit;
+    {
+        const int w = getWidth() / u, h = getHeight() / u;
+        pixel::drawCached(g, "arrangepanel/" + juce::String(w) + "x" + juce::String(h), {}, [&] { return pixel::panel(pal, w, h); });
+    }
     {
         auto t = titleArea;
-        g.setColour(colours::parchment);
-        g.setFont(font(19.0f, true).withExtraKerningFactor(0.12f));
-        g.drawText("ARRANGE", t.removeFromTop(22), juce::Justification::centredLeft, false);
-        g.setColour(colours::brass);
-        g.setFont(font(10.5f, true).withExtraKerningFactor(0.18f));
+        pixel::drawText(g, "ARRANGE", t.removeFromTop(22), pal.ink, juce::Justification::centredLeft, pixel::Font::Large);
         const int total = shown.totalBars();
-        juce::String sub = juce::String(shown.count) + (shown.count == 1 ? " SECTION" : " SECTIONS") + "  -  " + juce::String(total) + " BARS";
-        if (shown.firstEndless() < shown.count) sub << "  -  ENDS IN A LOOP";
-        g.drawText(sub, t, juce::Justification::centredLeft, false);
+        juce::String sub = juce::String(shown.count) + (shown.count == 1 ? " SECTION" : " SECTIONS") + " - " + juce::String(total) + " BARS";
+        if (shown.firstEndless() < shown.count) sub << " - ENDS IN A LOOP";
+        pixel::drawText(g, sub, t.withWidth(400), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
     }
 
     // The inspector's labels.
-    g.setColour(colours::brass.withAlpha(0.85f));
-    g.setFont(font(9.5f, true).withExtraKerningFactor(0.12f));
     const auto above = [&](juce::Component& c, const juce::String& text) {
-        g.drawText(text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + 40), juce::Justification::centredLeft, false);
+        pixel::drawText(g, text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + 40), pal.rim, juce::Justification::centredLeft,
+                        pixel::Font::Small);
     };
     const bool any = selectedIndex >= 0 && selectedIndex < shown.count;
     above(nameChoice, any ? "SECTION " + juce::String(selectedIndex + 1) : juce::String("SECTION"));
@@ -636,148 +634,110 @@ void ArrangeView::paint(juce::Graphics& g) {
     above(planetChoice, "PLANET");
     above(worldButton, "OVERRIDES");
     if (swatches[0].getWidth() > 0) {
-        g.drawText("COLOUR", swatches[0].translated(0, -13).withHeight(12).withWidth(80), juce::Justification::centredLeft, false);
+        pixel::drawText(g, "COLOUR", swatches[0].translated(0, -13).withHeight(12).withWidth(80), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
         for (int i = 0; i < arr::colourCount; ++i) {
-            const auto b = swatches[std::size_t(i)].toFloat();
-            g.setColour(juce::Colour(arr::colours[std::size_t(i)]).withAlpha(any ? 1.0f : 0.35f));
-            g.fillRoundedRectangle(b, 2.5f);
-            if (any && shown.sections[std::size_t(selectedIndex)].colour == i) {
-                g.setColour(colours::parchment);
-                g.drawRoundedRectangle(b.expanded(2.0f), 3.5f, 1.4f);
-            }
+            const auto b = swatches[std::size_t(i)];
+            const auto c = juce::Colour(arr::colours[std::size_t(i)]).withAlpha(any ? 1.0f : 0.35f);
+            pixel::blockArt(g, b, c, c.brighter(0.3f), c.darker(0.3f), pal.outline);
+            if (any && shown.sections[std::size_t(selectedIndex)].colour == i) pixel::frameArt(g, b.expanded(u), pal.glow);
         }
     }
 
     // The ruler: bar numbers (1-based), spaced to stay readable.
     {
-        g.setColour(colours::background.withAlpha(0.6f));
-        g.fillRect(ruler);
+        pixel::fillArt(g, ruler, pal.well.withAlpha(0.7f));
         int step = 1;
         while (double(step) * pxPerBar < 26.0) step *= 2;
-        g.setFont(font(9.0f));
         const int first = std::max(0, int(std::floor(scrollBars)));
         const int last = int(scrollBars + double(ruler.getWidth()) / pxPerBar) + 1;
         for (int bar = first; bar <= last; ++bar) {
             if (bar % step != 0) continue;
-            const float x = xForBar(bar);
-            if (x < float(ruler.getX()) || x > float(ruler.getRight())) continue;
-            g.setColour(colours::dim.withAlpha(0.7f));
-            g.drawVerticalLine(int(x), float(ruler.getBottom() - 5), float(ruler.getBottom()));
-            g.setColour(colours::dim);
-            g.drawText(juce::String(bar + 1), juce::Rectangle<float>(x + 2.0f, float(ruler.getY()), 30.0f, float(ruler.getHeight() - 3)), juce::Justification::centredLeft,
-                       false);
+            const int x = int(xForBar(bar));
+            if (x < ruler.getX() || x > ruler.getRight()) continue;
+            pixel::fillArt(g, { x, ruler.getBottom() - 3 * u, u, 3 * u }, pal.inkDim);
+            pixel::drawText(g, juce::String(bar + 1), { x + 4, ruler.getY(), 30, ruler.getHeight() - 2 }, pal.inkDim, juce::Justification::centredLeft, pixel::Font::Small);
         }
     }
 
     // The timeline.
-    g.setColour(colours::background.withAlpha(0.45f));
-    g.fillRoundedRectangle(timeline.toFloat(), 4.0f);
+    pixel::fillArt(g, timeline, pal.well.withAlpha(0.6f));
     {
         g.saveState();
         g.reduceClipRegion(timeline.expanded(0, 2));
         for (int i = 0; i < shown.count; ++i) {
             const auto& s = shown.sections[std::size_t(i)];
-            const auto b = sectionBounds(i).toFloat().reduced(0.0f, 3.0f);
+            const auto b = pixel::snapArt(sectionBounds(i).toFloat().reduced(0.0f, 3.0f));
             if (b.getWidth() <= 0) continue;
             const auto c = sectionColour(s);
             const bool sel = i == selectedIndex, hover = i == hoverSection, playing = i == playSection;
-            g.setGradientFill(juce::ColourGradient(c.withAlpha(sel ? 0.75f : 0.55f), 0.0f, b.getY(), c.darker(0.6f).withAlpha(0.7f), 0.0f, b.getBottom(), false));
-            g.fillRoundedRectangle(b, 4.0f);
-            if (s.endless()) {
-                // An endless loop: hatched.
-                g.setColour(colours::background.withAlpha(0.25f));
-                for (float x = b.getX() - b.getHeight(); x < b.getRight(); x += 7.0f)
-                    g.drawLine(juce::Line<float>(x, b.getBottom(), x + b.getHeight(), b.getY()).withShortenedStart(0.0f), 1.0f);
-            }
-            // The intensity ramp, pass by pass.
+            const auto body = c.interpolatedWith(pal.face, sel ? 0.25f : 0.45f);
+            pixel::blockArt(g, b, body, body.brighter(0.3f), body.darker(0.35f), sel || hover ? pal.glow : pal.outline);
+            if (s.endless())   // an endless loop: a dotted hatch
+                for (int x = b.getX() + 2 * u; x < b.getRight() - u; x += 4 * u)
+                    for (int y = b.getY() + 2 * u + ((x / (4 * u)) % 2) * 2 * u; y < b.getBottom() - u; y += 4 * u) pixel::fillArt(g, { x, y, u, u }, pal.outline.withAlpha(0.35f));
+            // The intensity ramp, pass by pass: a stepped pixel line.
             const int passes = std::max<int>(s.repeats, 1);
-            const float passWidth = b.getWidth() / float(passes);
-            const auto inner = b.reduced(3.0f, 6.0f);
+            const float passWidth = float(b.getWidth()) / float(passes);
+            const auto inner = b.reduced(3 * u, 6 * u);
             for (int pass = 0; pass < passes; ++pass) {
-                juce::Path curve;
-                const float x0 = b.getX() + passWidth * float(pass);
-                for (int k = 0; k <= 24; ++k) {
-                    const float t = float(k) / 24.0f;
-                    const float y = inner.getBottom() - inner.getHeight() * arr::intensityAt(s, t);
-                    const float x = x0 + passWidth * t;
-                    k == 0 ? curve.startNewSubPath(x, y) : curve.lineTo(x, y);
+                const float x0 = float(b.getX()) + passWidth * float(pass);
+                for (int x = 0; x < int(passWidth); x += u) {
+                    const float t = float(x) / passWidth;
+                    const int y = pixel::snap(inner.getBottom() - int(float(inner.getHeight()) * arr::intensityAt(s, t)));
+                    pixel::fillArt(g, { pixel::snap(int(x0) + x), y, u, u }, pal.ink.withAlpha(0.7f));
                 }
-                g.setColour(colours::parchment.withAlpha(0.55f));
-                g.strokePath(curve, juce::PathStrokeType(1.3f));
-                if (pass > 0) {
-                    g.setColour(colours::background.withAlpha(0.5f));
-                    const float dash[] { 3.0f, 3.0f };
-                    g.drawDashedLine(juce::Line<float>(x0, b.getY() + 2.0f, x0, b.getBottom() - 2.0f), dash, 2, 1.0f);
-                }
+                if (pass > 0)
+                    for (int y = b.getY() + 2 * u; y < b.getBottom() - 2 * u; y += 3 * u) pixel::fillArt(g, { pixel::snap(int(x0)), y, u, u }, pal.outline.withAlpha(0.6f));
             }
-            g.setColour(sel || hover ? colours::parchment : c.brighter(0.4f).withAlpha(0.8f));
-            g.drawRoundedRectangle(b, 4.0f, sel ? 1.8f : 1.0f);
-            if (playing) drawGlow(g, b, 4.0f, colours::cyan, 6.0f);
-            // Name and length.
-            if (b.getWidth() > 24.0f) {
-                auto text = b.reduced(5.0f, 3.0f);
-                g.setColour(colours::parchment);
-                g.setFont(font(11.0f, true));
-                g.drawText(juce::String::fromUTF8(s.nameText()), text.removeFromTop(14.0f), juce::Justification::centredLeft, true);
-                g.setFont(font(9.0f));
-                g.setColour(colours::parchment.withAlpha(0.75f));
-                juce::String info = juce::String(s.bars) + " bars";
-                if (s.endless()) info << "  loop";
-                else if (s.repeats > 1) info << "  x" << int(s.repeats);
-                g.drawText(info, text.removeFromBottom(12.0f), juce::Justification::centredLeft, true);
+            if (playing) pixel::frameArt(g, b.expanded(u), pal.inlay);
+            if (b.getWidth() > 24) {
+                auto text = b.reduced(6, 4);
+                pixel::drawText(g, juce::String::fromUTF8(s.nameText()).toUpperCase(), text.removeFromTop(14), pal.ink, juce::Justification::centredLeft, pixel::Font::Small);
+                juce::String info = juce::String(s.bars) + " BARS";
+                if (s.endless()) info << " LOOP";
+                else if (s.repeats > 1) info << " X" << int(s.repeats);
+                pixel::drawText(g, info, text.removeFromBottom(12), pal.ink.withAlpha(0.75f), juce::Justification::centredLeft, pixel::Font::Small);
             }
         }
-        // Milestone 11b: each boundary's transition, and each section's Location.
-        g.setFont(font(8.0f, true));
+        // Each boundary's transition, and each section's Location.
         for (int i = 0; i < shown.count; ++i) {
             const auto& s = shown.sections[std::size_t(i)];
-            const auto b = sectionBounds(i).toFloat().reduced(0.0f, 3.0f);
+            const auto b = pixel::snapArt(sectionBounds(i).toFloat().reduced(0.0f, 3.0f));
             if (b.getWidth() <= 0) continue;
             if (s.transition != arr::TransCut && shown.transitionAfter(i)) {
-                // A shaded span over the transition's length, and its mark at the boundary.
                 const double beats = std::min(arr::transitionBeats(s.transition, s.transitionLength), double(s.bars) * arr::beatsPerBar);
-                const float w = float(beats / arr::beatsPerBar * pxPerBar);
-                g.setColour(colours::cyan.withAlpha(0.16f));
-                g.fillRect(juce::Rectangle<float>(b.getRight() - w, b.getY(), w, b.getHeight()));
+                const int w = pixel::snap(int(beats / arr::beatsPerBar * pxPerBar));
+                pixel::fillArt(g, { b.getRight() - w, b.getY(), w, b.getHeight() }, pal.inlay.withAlpha(0.18f));
                 const juce::String mark = transitionMarks[std::size_t(s.transition)];
-                const float mw = float(mark.length()) * 5.4f + 8.0f;
-                const auto pill = juce::Rectangle<float>(b.getRight() - mw * 0.5f, b.getBottom() - 11.0f, mw, 11.0f);
-                g.setColour(colours::background.withAlpha(0.9f));
-                g.fillRoundedRectangle(pill, 3.0f);
-                g.setColour(colours::cyan);
-                g.drawRoundedRectangle(pill, 3.0f, 0.8f);
-                g.drawText(mark, pill, juce::Justification::centred, false);
+                const int mw = pixel::textWidthLogical(mark) + 8 * u / 2 * 2;
+                const juce::Rectangle<int> pill(b.getRight() - mw / 2, b.getBottom() - 12, mw, 12);
+                pixel::blockArt(g, pill, pal.well, pal.wellLight, pal.well, pal.inlay);
+                pixel::drawText(g, mark, pill, pal.inlay, juce::Justification::centred, pixel::Font::Small);
             }
-            if (s.location >= 0 && b.getWidth() > 18.0f) {
-                const auto pin = juce::Rectangle<float>(b.getRight() - 22.0f, b.getY() + 2.0f, 20.0f, 11.0f);
-                g.setColour(juce::Colour(processor.locations.colour(s.location)).withAlpha(0.9f));
-                g.fillRoundedRectangle(pin, 3.0f);
-                g.setColour(colours::background);
-                g.drawText("L" + juce::String(s.location + 1), pin, juce::Justification::centred, false);
+            if (s.location >= 0 && b.getWidth() > 18) {
+                const juce::Rectangle<int> pin(b.getRight() - 24, b.getY() + 2, 22, 12);
+                const auto c = juce::Colour(processor.locations.colour(s.location));
+                pixel::blockArt(g, pin, c, c.brighter(0.3f), c.darker(0.3f), pal.outline);
+                pixel::drawText(g, "L" + juce::String(s.location + 1), pin, pal.inkOn, juce::Justification::centred, pixel::Font::Small, juce::Colours::transparentBlack, false);
             }
         }
-        // Where a dragged section would go.
         if (drag == Drag::Move && dragStarted && dropIndex >= 0 && dropIndex != dragIndex) {
             const auto b = sectionBounds(dropIndex);
-            const float x = dropIndex > dragIndex ? float(b.getRight()) : float(b.getX());
-            g.setColour(colours::cyan);
-            g.fillRect(juce::Rectangle<float>(x - 1.5f, float(timeline.getY()), 3.0f, float(timeline.getHeight())));
+            const int x = dropIndex > dragIndex ? b.getRight() : b.getX();
+            pixel::fillArt(g, { x - u, timeline.getY(), 2 * u, timeline.getHeight() }, pal.inlay);
         }
-        // The end: stop, or the way back to the loop's start.
         if (shown.count > 0 && shown.firstEndless() == shown.count) {
-            const float x = xForBar(shown.totalBars());
-            g.setColour(colours::brass.withAlpha(0.8f));
-            g.setFont(font(9.0f, true));
+            const int x = int(xForBar(shown.totalBars()));
             const auto label = shown.end == arr::EndStop ? juce::String("END") : "TO " + juce::String(shown.loopTarget() + 1);
-            g.drawText(label, juce::Rectangle<float>(x + 4.0f, float(timeline.getY()), 60.0f, float(timeline.getHeight())), juce::Justification::centredLeft, false);
+            pixel::drawText(g, label, { x + 4, timeline.getY(), 60, timeline.getHeight() }, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
         }
         g.restoreState();
     }
 
     // The instrument grid.
     if (rows.empty() || shown.count == 0) {
-        g.setColour(colours::dim);
-        g.setFont(font(12.0f));
+        g.setColour(pal.inkDim);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
         const juce::String text = shown.count == 0
                                       ? "No sections yet. + SECTION adds one: give each a length, a Score Intensity ramp and the instruments that play in it."
                                       : "Add a Place to the world: its instruments appear here, one row each, with a cell per section.";
@@ -791,72 +751,64 @@ void ArrangeView::paint(juce::Graphics& g) {
             const auto accent = placeAccent(type);
             if (row.element < 0) {
                 auto h = row.bounds;
-                g.setColour(accent.withAlpha(0.18f));
-                g.fillRect(h);
-                drawPlaceIcon(g, type, h.removeFromLeft(18).toFloat().reduced(1.0f), colours::parchment, accent.withAlpha(0.5f));
-                g.setColour(colours::parchment);
-                g.setFont(font(10.5f, true));
-                g.drawText("PLACE " + juce::String(row.slot + 1) + "  " + juce::String(placeNames[std::size_t(type)]).toUpperCase(), h.withTrimmedLeft(4),
-                           juce::Justification::centredLeft, true);
+                pixel::fillArt(g, h, accent.withAlpha(0.2f));
+                pixel::fillArt(g, h.withHeight(u), accent.withAlpha(0.6f));
+                pixel::drawText(g, "PLACE " + juce::String(row.slot + 1) + "  " + juce::String(placeNames[std::size_t(type)]).toUpperCase(), h.withTrimmedLeft(6), pal.ink,
+                                juce::Justification::centredLeft, pixel::Font::Small);
                 continue;
             }
             const auto& spec = placeInfo(type).element[std::size_t(row.element)];
             auto label = row.bounds.withWidth(labelWidth - 6);
-            if (row.element % 2 == 1) {
-                g.setColour(colours::background.withAlpha(0.25f));
-                g.fillRect(row.bounds);
-            }
-            drawInstrumentIcon(g, spec.icon, label.removeFromLeft(18).toFloat().reduced(2.0f), accent);
-            g.setColour(colours::parchment.withAlpha(0.85f));
-            g.setFont(font(std::min(11.0f, float(row.bounds.getHeight()) - 1.0f)));
-            g.drawText(spec.name, label.withTrimmedLeft(4), juce::Justification::centredLeft, true);
+            if (row.element % 2 == 1) pixel::fillArt(g, row.bounds, pal.well.withAlpha(0.3f));
+            const auto ink = accent.interpolatedWith(pal.ink, 0.25f);
+            const int iconSize = std::min(7, row.bounds.getHeight() / u - 2);
+            pixel::drawCached(g, "ainst/" + juce::String(spec.icon) + "/" + juce::String(iconSize) + ink.toString(),
+                              { label.getX() + 2, label.getCentreY() - (iconSize + 1) * u / 2 }, [&] { return pixel::instrumentIcon(spec.icon, iconSize, ink, pal.outline); });
+            pixel::drawText(g, spec.name, label.withTrimmedLeft(22), pal.ink.withAlpha(0.9f), juce::Justification::centredLeft, pixel::Font::Small);
             for (int i = 0; i < shown.count; ++i) {
                 const auto& s = shown.sections[std::size_t(i)];
                 const auto cell = s.cells[std::size_t(row.slot)][std::size_t(row.element)];
-                const auto b = cellBounds(i, row.slot, row.element).toFloat();
-                if (b.getWidth() <= 1.0f) continue;
+                const auto b = pixel::snapArt(cellBounds(i, row.slot, row.element).toFloat());
+                if (b.getWidth() <= u) continue;
                 const auto c = sectionColour(s);
-                g.setColour(colours::background.withAlpha(0.55f));
-                g.fillRoundedRectangle(b, 2.0f);
-                const float passWidth = b.getWidth() / float(std::max<int>(s.repeats, 1));
-                juce::Path shape;
+                pixel::fillArt(g, b, pal.well.withAlpha(0.7f));
+                const int passes = std::max<int>(s.repeats, 1);
+                const float passWidth = float(b.getWidth()) / float(passes);
+                const auto fill = c.withAlpha(0.7f);
                 switch (cell.entry) {
-                    case arr::EntryOn: shape.addRoundedRectangle(b, 2.0f); break;
+                    case arr::EntryOn: pixel::fillArt(g, b, fill); break;
                     case arr::EntryHalfway: {
-                        // Each pass: from its middle bar.
                         const float half = passWidth * (s.bars >= 2 ? float(s.bars / 2) / float(s.bars) : 0.5f);
-                        for (int pass = 0; pass < std::max<int>(s.repeats, 1); ++pass)
-                            shape.addRectangle(b.getX() + passWidth * float(pass) + half, b.getY(), passWidth - half, b.getHeight());
+                        for (int pass = 0; pass < passes; ++pass) {
+                            const int x0 = pixel::snap(b.getX() + int(passWidth * float(pass) + half)), x1 = pixel::snap(b.getX() + int(passWidth * float(pass + 1)));
+                            pixel::fillArt(g, { x0, b.getY(), x1 - x0, b.getHeight() }, fill);
+                        }
                         break;
                     }
                     case arr::EntryFadeIn:
                     case arr::EntryFadeOut:
-                        for (int pass = 0; pass < std::max<int>(s.repeats, 1); ++pass) {
-                            const float x0 = b.getX() + passWidth * float(pass), x1 = x0 + passWidth;
-                            if (cell.entry == arr::EntryFadeIn) shape.addTriangle(x0, b.getBottom(), x1, b.getY(), x1, b.getBottom());
-                            else shape.addTriangle(x0, b.getY(), x1, b.getBottom(), x0, b.getBottom());
+                        // A staircase ramp, one art pixel per column.
+                        for (int pass = 0; pass < passes; ++pass) {
+                            const int x0 = b.getX() + int(passWidth * float(pass)), x1 = b.getX() + int(passWidth * float(pass + 1));
+                            for (int x = x0; x < x1; x += u) {
+                                float t = float(x - x0) / float(std::max(1, x1 - x0));
+                                if (cell.entry == arr::EntryFadeOut) t = 1.0f - t;
+                                const int h = pixel::snap(int(t * float(b.getHeight())) + u);
+                                pixel::fillArt(g, { pixel::snap(x), b.getBottom() - h, u, h }, fill);
+                            }
                         }
                         break;
                     default: break;
                 }
-                if (!shape.isEmpty()) {
-                    g.setColour(c.withAlpha(0.6f));
-                    g.fillPath(shape);
-                }
                 if (cell.fill && cell.entry != arr::EntryOff && shown.changeAfter(i)) {
-                    // The Fill: the last bar.
-                    const float w = std::min(b.getWidth(), float(pxPerBar));
-                    g.setColour(colours::parchment.withAlpha(0.75f));
-                    g.fillRect(juce::Rectangle<float>(b.getRight() - w, b.getY(), w, b.getHeight()).reduced(0.5f, 1.5f));
+                    const int w = pixel::snap(std::min(b.getWidth(), int(pxPerBar)));
+                    pixel::fillArt(g, { b.getRight() - w, b.getY() + u, w, b.getHeight() - 2 * u }, pal.ink.withAlpha(0.75f));
                 }
-                if (cell.entry != arr::EntryOff && b.getWidth() >= 12.0f && b.getHeight() >= 7.0f) {
-                    g.setColour(colours::background.withAlpha(0.9f));
-                    g.setFont(font(std::min(10.0f, b.getHeight() + 0.5f), true));
-                    g.drawText(arr::variantNames[std::size_t(std::min<int>(cell.variant, 2))], b.withTrimmedLeft(3.0f), juce::Justification::centredLeft, false);
-                }
+                if (cell.entry != arr::EntryOff && b.getWidth() >= 12 && b.getHeight() >= 10)
+                    pixel::drawText(g, arr::variantNames[std::size_t(std::min<int>(cell.variant, 2))], b.withTrimmedLeft(4), pal.inkOn, juce::Justification::centredLeft,
+                                    pixel::Font::Small, juce::Colours::transparentBlack, false);
                 const bool hover = i == hoverCellSection && row.slot == hoverCellSlot && row.element == hoverCellElement;
-                g.setColour(hover ? colours::parchment : c.withAlpha(cell.entry == arr::EntryOff ? 0.25f : 0.6f));
-                g.drawRoundedRectangle(b, 2.0f, hover ? 1.3f : 0.8f);
+                pixel::frameArt(g, b, hover ? pal.glow : c.withAlpha(cell.entry == arr::EntryOff ? 0.3f : 0.7f));
             }
         }
         g.restoreState();
@@ -864,23 +816,19 @@ void ArrangeView::paint(juce::Graphics& g) {
 
     // The playhead over the timeline and the grid.
     if (playBar >= 0.0) {
-        const float x = xForBar(playBar);
-        if (x >= float(timeline.getX()) && x <= float(timeline.getRight())) {
-            g.setColour(colours::cyan.withAlpha(0.9f));
-            g.fillRect(juce::Rectangle<float>(x - 0.75f, float(ruler.getY()), 1.5f, float(gridArea.getBottom() - ruler.getY())));
-        }
+        const int x = pixel::snap(int(xForBar(playBar)));
+        if (x >= timeline.getX() && x <= timeline.getRight()) pixel::fillArt(g, { x, ruler.getY(), u, gridArea.getBottom() - ruler.getY() }, pal.accent);
     }
 
-    // Status: how the arrangement plays.
-    g.setFont(font(10.5f));
+    // Status: how the arrangement plays (a sentence: a clean font).
     const int mode = juce::roundToInt(processor.parameters.getRawParameterValue(specs[PPlayMode].id)->load());
     juce::String status;
     if (processor.previewing()) status = "Previewing from bar " + juce::String(processor.engine.arrangeBar.load() >= 0 ? juce::roundToInt(std::floor(playBar)) + 1 : 1) + ".";
     else if (mode != PlayArrangement) status = "Play Mode is " + juce::String(mode == PlayFree ? "Free" : "Transport") + ": set it to Arrangement for the host to play these sections. ";
     else status = "Play Mode Arrangement: the host's song position plays the section there. ";
-    if (!processor.previewing())
-        status += "Click a cell: on/off. Shift-click: variant A/B/C. Right-click: enter halfway, fade, Fill.";
-    g.setColour(colours::dim);
+    if (!processor.previewing()) status += "Click a cell: on/off. Shift-click: variant A/B/C. Right-click: enter halfway, fade, Fill.";
+    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+    g.setColour(pal.inkDim);
     g.drawText(status, statusArea, juce::Justification::centredLeft, true);
 }
 
