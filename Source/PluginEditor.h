@@ -5,6 +5,7 @@
 // The full Living Globe and resizable layout arrive in Milestone 6.
 #include "PluginProcessor.h"
 #include "UI/CapturePanel.h"
+#include "UI/GlobeRenderer.h"
 #include "UI/LocationBar.h"
 #include "UI/PatternEditor.h"
 #include "UI/PlaceArt.h"
@@ -44,6 +45,9 @@ public:
     // Lists one category of Place cards (-1: all), as its chip does; how many are listed.
     void showCategory(int c);
     int listedPlaces() const { return listedCount; }
+    // The globe's planet renderer (its last frame) and the Planet it shows.
+    const wb::ui::GlobeRenderer& globeRenderer() const { return globe; }
+    int shownPlanetType() const { return shownPlanet; }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -138,6 +142,15 @@ private:
     juce::ComboBox playMode;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
     juce::ComboBox overlayChoice;
+    // The Planet, by the globe (Milestone 10).
+    juce::ComboBox planetChoice;
+    juce::Slider planetInfluence;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> planetAttachment;
+    std::unique_ptr<SliderAttachment> planetInfluenceAttachment;
+    juce::Rectangle<int> planetLabel, influenceLabel;
+    wb::ui::GlobeRenderer globe;
+    int shownPlanet = 0, previousPlanet = 0;
+    float planetBlend = 1;   // 0..1: the crossfade from previousPlanet to shownPlanet
     std::unique_ptr<wb::ui::PlaceOverlays> overlays;
     std::vector<juce::Rectangle<int>> overlayKeepClear;
 

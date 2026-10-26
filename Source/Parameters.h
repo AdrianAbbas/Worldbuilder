@@ -50,6 +50,8 @@ inline constexpr std::array<int, 6> travelSyncBars { 0, 1, 2, 4, 8, 16 };
 inline constexpr const char* pathLegChoices = "1 bar|2 bars|4 bars|8 bars|16 bars|32 bars";
 inline constexpr std::array<int, 6> pathLegBars { 1, 2, 4, 8, 16, 32 };
 inline constexpr const char* pathEndChoices = "One-way|Loop";
+// Planet types (Milestone 10), in dsp::PlanetType order.
+inline constexpr const char* planetChoices = "Rocky|Ocean|Ice Giant|Gas Giant|Desert World|Lava World|Forest World";
 enum PlayMode { PlayFree, PlayTransport };
 
 // Each of the four Place slots has these parameters, in this order.
@@ -75,6 +77,8 @@ enum P {
     // Locations and Journeys (Milestone 9).
     PDestination, PTravelTime, PTravelSync, PJourneyOn, PJourneyFrom, PJourneyTo, PJourney,
     PPathOn, PPathLeg, PPathEnd,
+    // The Planet (Milestone 10).
+    PPlanet, PPlanetInfluence,
     PCount
 };
 
@@ -172,6 +176,10 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { "pathmode", "Journey Path", Kind::Bool, 0, 1, 0 },
     { "pathleg", "Path Leg", Kind::Choice, 0, 5, 2, pathLegChoices },
     { "pathend", "Path End", Kind::Choice, 0, 1, 1, pathEndChoices },
+    // The Planet: the globe's look and a sound colour on the whole world, as strong as
+    // Planet Influence.
+    { "planet", "Planet", Kind::Choice, 0, 6, 0, planetChoices },
+    { "planetinfluence", "Planet Influence", Kind::Float, 0, 1, 0.35f },
 } };
 // clang-format on
 

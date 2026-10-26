@@ -132,6 +132,8 @@ void LocationBank::fromValueTree(const juce::ValueTree& tree) {
                     if (const float x = float(double(*stored)); std::isfinite(x)) v = std::clamp(x, spec.min, spec.max);
                 slot.values[std::size_t(p)] = v;
             }
+            // A Location saved before the Planet keeps its sound: no planet colour.
+            if (!values.hasProperty(juce::Identifier(specs[PPlanetInfluence].id))) slot.values[PPlanetInfluence] = 0.0f;
             // An instrument effect stored by no version yet takes its Place's default.
             for (int s = 0; s < locationSlots; ++s) {
                 const int type = slotTypeIn(slot.values, s);

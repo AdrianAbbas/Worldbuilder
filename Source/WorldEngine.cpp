@@ -24,6 +24,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     }
     space.prepare(rate);
     sharedFx.prepare(r);
+    planet.prepare(r);
     glue.prepare(r);
     limiter.prepare(r);
     for (auto& s : worldSmooth) s.setTime(0.25f, controlRate);
@@ -49,6 +50,7 @@ void WorldEngine::reset(const EngineControls& initial) {
     for (auto& f : distance) f.reset();
     glue.reset();
     limiter.reset();
+    planet.reset(initial.planet, initial.planetInfluence);
     for (std::size_t i = 0; i < worldSmooth.size(); ++i) {
         worldSmooth[i].snap(clamp01(initial.world[i]));
         world.c[i] = worldSmooth[i].value;
@@ -232,6 +234,10 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     std::array<float, chunk> fxL {}, fxR {};
     sharedFx.process(fxL.data(), fxR.data(), n, bpm);
 
+    // The Planet's colour (it glides to a new planet or Influence on its own).
+    planet.update(controls.planet, controls.planetInfluence, double(clock) / rate);
+    const float planetSpace = planet.space(), planetWidth = planet.width();
+
     const float masterTarget = dbToGain(std::clamp(controls.masterDb, -60.0f, 6.0f));
     const float widthTarget = std::clamp(controls.width, 0.0f, 2.0f);
     const float mixTarget = clamp01(controls.spaceMix);
@@ -240,10 +246,11 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);
-        float l = distance[0].lp(dryL[k]) * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f + fxL[k];
-        float r = distance[1].lp(dryR[k]) * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f + fxR[k];
+        float l = distance[0].lp(dryL[k]) * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f * planetSpace + fxL[k];
+        float r = distance[1].lp(dryR[k]) * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f * planetSpace + fxR[k];
+        planet.process(l, r, clock + uint64_t(i));
 
-        const float w = width.next(widthTarget);
+        const float w = width.next(widthTarget) * planetWidth;
         const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * w;
         l = mid + side;
         r = mid - side;

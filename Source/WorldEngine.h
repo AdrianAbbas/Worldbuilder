@@ -6,6 +6,7 @@
 #include "DSP/EarthLayer.h"
 #include "DSP/FireLayer.h"
 #include "DSP/Master.h"
+#include "DSP/Planet.h"
 #include "DSP/ThunderLayer.h"
 #include "DSP/TonalBed.h"
 #include "DSP/WaterLayer.h"
@@ -24,6 +25,8 @@ struct EngineControls {
     float intensity = 0.5f;   // Score Intensity
     bool power = true;
     int root = 2, mood = 0, quality = 1;
+    int planet = 0;                 // dsp::PlanetType
+    float planetInfluence = 0.35f;  // how strongly the Planet colours the world
     uint32_t seed = 1;
     float hostBpm = 0;   // 0 when the host gives no tempo: the world uses defaultBpm
     bool gate = true;    // Play Mode Transport: false while the host is stopped (the world fades out)
@@ -63,6 +66,7 @@ public:
     const ThunderLayer& thunderLayer() const { return thunder; }
     const PlaceSlot& placeSlot(int i) const { return slots[std::size_t(std::clamp(i, 0, placeSlots - 1))]; }
     const dsp::SharedFx& shared() const { return sharedFx; }
+    const dsp::PlanetColour& planetColour() const { return planet; }
 
     // Patterns, lock-free both ways: the editor publishes each slot's patterns into
     // patternsIn (the audio thread picks up the newest at the next chunk); the slots
@@ -96,6 +100,7 @@ private:
     // The shared reverbs and delays every instrument sends to.
     dsp::SharedFx sharedFx;
     std::array<dsp::OnePole, 2> distance;
+    dsp::PlanetColour planet;
     dsp::Glue glue;
     dsp::SafetyLimiter limiter;
     dsp::Smoother master, width, spaceMix, intensity;

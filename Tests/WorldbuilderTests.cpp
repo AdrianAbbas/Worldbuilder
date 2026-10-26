@@ -8,6 +8,7 @@
 //   WorldbuilderTests --render f.wav seconds [id=value ...]
 //                                      render a world to a WAV file (listening aid)
 #include "PluginEditor.h"
+#include "DSP/Planet.h"
 #include "PluginProcessor.h"
 #include "Patterns/PatternMidi.h"
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -4003,6 +4004,181 @@ void testSmoke(Suite& s) {
 }
 
 
+// The Planet (Milestone 10): each planet type colours the whole world, as strongly as
+// Planet Influence; changes crossfade.
+void testPlanet(Suite& s) {
+    s.section("planet");
+    using dsp::Rocky, dsp::Ocean, dsp::IceGiant, dsp::GasGiant, dsp::DesertWorld, dsp::LavaWorld, dsp::ForestWorld, dsp::PlanetTypeCount, dsp::planetNames;
+    const auto world = [](Host& h, int planet, float influence) {
+        h.set("p2_type", float(Village));
+        h.set("planet", float(planet));
+        h.set("planetinfluence", influence);
+    };
+    {
+        Host h;
+        s.check(juce::roundToInt(h.get("planet")) == 0 && std::abs(h.get("planetinfluence") - 0.35f) < 1.0e-4f, "Planet defaults to Rocky at 35 % Influence");
+        bool automatable = true;
+        for (const char* id : { "planet", "planetinfluence" }) automatable &= h.p->parameters.getParameter(id)->isAutomatable();
+        s.check(automatable, "Planet and Planet Influence are automatable");
+        s.check(moveOf(PPlanet) == Move::Switch && moveOf(PPlanetInfluence) == Move::Glide, "a Location holds the Planet (changes at the far point) and its Influence (glides)");
+    }
+    // Influence 0: no colour at all, whatever the planet.
+    Audio neutral;
+    {
+        Host a, b;
+        world(a, LavaWorld, 0.0f);
+        world(b, Ocean, 0.0f);
+        neutral = a.render(6.0);
+        const auto other = b.render(6.0);
+        // (after the opening glide from the default Rocky at 35 %)
+        float most = 0;
+        for (std::size_t i = std::size_t(3.0 * neutral.rate); i < neutral.l.size(); ++i)
+            most = std::max({ most, std::abs(neutral.l[i] - other.l[i]), std::abs(neutral.r[i] - other.r[i]) });
+        s.check(most < 1.0e-5f, "at 0 % Influence every planet sounds the same (no colour)", fmt(toDb(most)) + " dB largest difference");
+    }
+    const auto base = measure(neutral, 2.0);
+    std::array<Stats, PlanetTypeCount> at {};
+    for (int planet = 0; planet < PlanetTypeCount; ++planet) {
+        Host h;
+        world(h, planet, 1.0f);
+        const auto a = h.render(6.0);
+        const auto m = measure(a, 2.0);
+        at[std::size_t(planet)] = m;
+        const std::string name = planetNames[std::size_t(planet)];
+        s.metric("Planet " + name + " at 100 %: level / low / mid / high / side change (dB)", m.rmsDb - base.rmsDb, "");
+        std::cout << "    " << fmt(m.lowDb - base.lowDb) << " / " << fmt(m.midDb - base.midDb) << " / " << fmt(m.highDb - base.highDb) << " / "
+                  << fmt(m.sideDb - base.sideDb) << ", motion " << fmt(m.motionDb - base.motionDb) << "\n";
+        s.check(m.finite && m.peak < 0.9, name + " at 100 %: finite, below the ceiling", fmt(m.peak));
+        s.check(std::abs(m.rmsDb - base.rmsDb) < 3.0, name + " at 100 %: level within 3 dB of no colour", fmt(m.rmsDb - base.rmsDb) + " dB");
+        s.check(difference(m, base) > 1.0, name + " at 100 %: a measurable colour (> 1 dB in some band)", fmt(difference(m, base)) + " dB");
+    }
+    // The colours point the right way.
+    const auto tilt = [&](int planet) { return (at[std::size_t(planet)].highDb - at[std::size_t(planet)].lowDb) - (base.highDb - base.lowDb); };
+    s.check(tilt(IceGiant) > 1.5, "Ice Giant is brighter (highs up against lows)", fmt(tilt(IceGiant)) + " dB");
+    s.check(tilt(DesertWorld) < -1.0 && tilt(ForestWorld) < -1.0, "Desert and Forest worlds are darker (dusty, damped)",
+            fmt(tilt(DesertWorld)) + ", " + fmt(tilt(ForestWorld)) + " dB");
+    // (against the mids: the glue compressor evens out the overall level)
+    const auto weight = [&](int planet) { return (at[std::size_t(planet)].lowDb - at[std::size_t(planet)].midDb) - (base.lowDb - base.midDb); };
+    s.check(weight(GasGiant) > 1.5 && weight(LavaWorld) > 1.0, "Gas Giant and Lava World add low weight (lows against mids)",
+            fmt(weight(GasGiant)) + ", " + fmt(weight(LavaWorld)) + " dB");
+    s.check(at[DesertWorld].sideDb - at[DesertWorld].rmsDb > base.sideDb - base.rmsDb + 1.0, "Desert World is wider",
+            fmt((at[DesertWorld].sideDb - at[DesertWorld].rmsDb) - (base.sideDb - base.rmsDb)) + " dB");
+    s.check(at[Rocky].sideDb - at[Rocky].rmsDb < base.sideDb - base.rmsDb, "Rocky is closer and drier (narrower)");
+    {
+        int alike = 0;
+        for (int a = 0; a < PlanetTypeCount; ++a)
+            for (int b = a + 1; b < PlanetTypeCount; ++b) alike += difference(at[std::size_t(a)], at[std::size_t(b)]) < 0.5 ? 1 : 0;
+        s.check(alike == 0, "every planet colours the world differently from every other", std::to_string(alike) + " pairs alike");
+    }
+    // Influence scales the colour.
+    {
+        Host h;
+        world(h, IceGiant, 0.35f);
+        const auto m = measure(h.render(6.0), 2.0);
+        const double subtle = difference(m, base), full = difference(at[IceGiant], base);
+        s.check(subtle > 0.3 && subtle < full, "35 % Influence is a subtler colour than 100 %", fmt(subtle) + " < " + fmt(full) + " dB");
+    }
+    // A new planet crossfades: no click and no level jump beyond the world's own.
+    for (auto [from, to] : { std::pair<int, int> { Rocky, LavaWorld }, { GasGiant, IceGiant }, { Ocean, DesertWorld } }) {
+        Host steady, changed;
+        world(steady, from, 1.0f);
+        world(changed, from, 1.0f);
+        auto a = steady.render(3.0), b = changed.render(3.0);
+        changed.set("planet", float(to));
+        const auto rest = changed.render(4.0), restSteady = steady.render(4.0);
+        b.l.insert(b.l.end(), rest.l.begin(), rest.l.end());
+        b.r.insert(b.r.end(), rest.r.begin(), rest.r.end());
+        a.l.insert(a.l.end(), restSteady.l.begin(), restSteady.l.end());
+        a.r.insert(a.r.end(), restSteady.r.begin(), restSteady.r.end());
+        const auto [up, down] = levelSteps(b, 2.5, 6.5);
+        const auto [upA, downA] = levelSteps(a, 2.5, 6.5);
+        const double click = suddenness(b, a, 3.0);
+        const std::string name = std::string(planetNames[std::size_t(from)]) + " -> " + planetNames[std::size_t(to)];
+        s.check(std::max(up, down) < std::max(upA, downA) + 3.0 && click < -20.0, name + ": crossfades without a click or jump",
+                "step " + fmt(std::max(up, down)) + " dB (steady " + fmt(std::max(upA, downA)) + "), click " + fmt(click) + " dB");
+    }
+    // Influence automated from 0 to 100 % over 4 s: smooth.
+    {
+        Host h;
+        world(h, LavaWorld, 0.0f);
+        h.render(1.0);
+        Audio sweep;
+        for (int k = 0; k <= 100; ++k) {
+            h.set("planetinfluence", float(k) / 100.0f);
+            const auto part = h.render(0.04);
+            sweep.l.insert(sweep.l.end(), part.l.begin(), part.l.end());
+            sweep.r.insert(sweep.r.end(), part.r.begin(), part.r.end());
+        }
+        const auto [up, down] = levelSteps(sweep, 0.0, 4.0);
+        s.check(std::max(up, down) < 6.0 && measure(sweep, 0).finite, "Planet Influence automation is smooth", fmt(std::max(up, down)) + " dB largest 20 ms step");
+    }
+    // The globe shows the Planet: each one its own surface, crossfading on a change.
+    {
+        Host h;
+        h.render(2.5);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        std::vector<juce::Colour> centres;
+        bool opaque = true;
+        for (int planet = 0; planet < PlanetTypeCount; ++planet) {
+            h.set("planet", float(planet));
+            view->settle(1.5f);
+            editor->createComponentSnapshot(editor->getLocalBounds());
+            const auto& f = view->globeRenderer().lastFrame();
+            const auto c = f.getPixelAt(f.getWidth() * 2 / 5, f.getHeight() * 2 / 5);
+            opaque &= c.getAlpha() == 255;
+            centres.push_back(c);
+        }
+        int alike = 0;
+        for (std::size_t a = 0; a < centres.size(); ++a)
+            for (std::size_t b = a + 1; b < centres.size(); ++b)
+                alike += std::abs(centres[a].getFloatRed() - centres[b].getFloatRed()) + std::abs(centres[a].getFloatGreen() - centres[b].getFloatGreen())
+                                 + std::abs(centres[a].getFloatBlue() - centres[b].getFloatBlue()) < 0.06f
+                             ? 1 : 0;
+        s.check(opaque && alike == 0 && view->shownPlanetType() == PlanetTypeCount - 1, "the globe draws each planet opaque and in its own colours",
+                std::to_string(alike) + " alike");
+        h.set("planet", float(Rocky));
+        view->settle(0.3f);
+        editor->createComponentSnapshot(editor->getLocalBounds());
+        s.check(view->shownPlanetType() == Rocky, "a new planet starts its crossfade on the globe");
+        // The Planet controls sit by the globe, clear of the Location markers; hidden while
+        // the detail panel covers the globe.
+        juce::Component* planetBox = nullptr;
+        for (auto* c : editor->getChildren())
+            if (auto* box = dynamic_cast<juce::ComboBox*>(c); box != nullptr && box->getText() == "Rocky") planetBox = box;
+        bool clear = planetBox != nullptr && planetBox->isVisible();
+        for (int i = 0; i < locationCount && clear; ++i) clear &= !planetBox->getBounds().toFloat().expanded(7.0f).contains(view->markerPosition(i));
+        s.check(clear, "the PLANET menu is shown by the globe, clear of the Location markers");
+        view->addPlace(Village);
+        view->openDetail(0);
+        view->settle(0.1f);
+        s.check(planetBox != nullptr && !planetBox->isVisible(), "the Planet controls hide while a detail panel covers the globe");
+    }
+    // State: saved and restored; a project from before the Planet keeps its sound.
+    {
+        Host a;
+        a.set("planet", float(GasGiant));
+        a.set("planetinfluence", 0.8f);
+        juce::MemoryBlock state;
+        a.p->getStateInformation(state);
+        Host b;
+        b.p->setStateInformation(state.getData(), int(state.getSize()));
+        s.check(juce::roundToInt(b.get("planet")) == GasGiant && std::abs(b.get("planetinfluence") - 0.8f) < 1.0e-4f, "the Planet survives a state round trip");
+        auto xml = juce::AudioProcessor::getXmlFromBinary(state.getData(), int(state.getSize()));
+        for (auto* child = xml->getFirstChildElement(); child != nullptr;) {
+            auto* next = child->getNextElement();
+            const auto id = child->getStringAttribute("id");
+            if (id == "planet" || id == "planetinfluence") xml->removeChildElement(child, true);
+            child = next;
+        }
+        juce::MemoryBlock old;
+        juce::AudioProcessor::copyXmlToBinary(*xml, old);
+        Host c;
+        c.p->setStateInformation(old.getData(), int(old.getSize()));
+        s.check(c.get("planetinfluence") == 0.0f, "a project saved before the Planet opens with no planet colour (its sound unchanged)");
+    }
+}
+
 // --snapshots dir [prefix]: images of the interface for review by eye (the globe on
 // each planet, the cards, the strips, the detail panel, the Pattern Editor, the bars),
 // written as dir/prefix-name.png. Crops follow the editor's fixed 1160 x 812 layout.
@@ -4027,7 +4203,7 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
             for (int slot = 0; slot < placeSlotCount && slot < int(places.size()); ++slot) h.set(slotId(slot, PlType), float(places[std::size_t(slot)]));
             for (auto [id, value] : settings)
                 if (h.p->parameters.getParameter(id) != nullptr) h.set(id, value);
-            h.render(1.0);
+            h.render(2.5);   // past the 2 s power fade-in
             editor.reset(h.p->createEditor());
             view = dynamic_cast<WorldbuilderEditor*>(editor.get());
             view->settle(2.5f);
@@ -4077,6 +4253,11 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
         for (int planet = 0; planet < planets.size(); ++planet) {
             View v({ Castle, Village }, { { "planet", float(planet) }, { "population", 0.7f } });
             save(v.image().getClippedImage(globe), "globe-planet-" + planets[planet]);
+            if (std::getenv("WB_DEBUG_GLOBE")) {
+                const auto& f = v.view->globeRenderer().lastFrame();
+                std::cout << planets[planet] << " shown " << v.view->shownPlanetType() << " centre " << juce::String::toHexString((int) f.getPixelAt(f.getWidth() / 2, f.getHeight() / 2).getARGB()) << " ul "
+                          << juce::String::toHexString((int) f.getPixelAt(f.getWidth() / 3, f.getHeight() / 3).getARGB()) << "\n";
+            }
         }
     }
     return 0;
@@ -4138,6 +4319,7 @@ int main(int argc, char** argv) {
     if (run("overlays")) testOverlays(s, snapshot);
     if (run("locations")) testLocations(s);
     if (run("smoke")) testSmoke(s);
+    if (run("planet")) testPlanet(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

@@ -2987,8 +2987,8 @@ recorded here.
 Ticked when committed and pushed. A resumed session starts at the first unticked item.
 
 - [x] 0. CPU budget checks report-only (the developer measures CPU on the Mac); `--snapshots` review images, "before" set in `docs/snapshots/`
-- [ ] 1. Planet types and their sound colours: Planet and Planet Influence parameters, the master colour, crossfade, state, Locations, tests
-- [ ] 2. Globe revamp: textured, lit planet per type (layered shading, atmosphere, clouds, rings, night-side lights), Planet controls by the globe; before/after snapshots
+- [x] 1. Planet types and their sound colours: Planet and Planet Influence parameters, the master colour, crossfade, state, Locations, tests
+- [x] 2. Globe revamp: textured, lit planet per type (layered shading, atmosphere, clouds, rings, night-side lights), Planet controls by the globe; before/after snapshots
 - [ ] 3. Buttons, toggles, menus, tabs, icons and Place cards restyle (overlays unchanged); before/after snapshots
 - [ ] 4. Final: full suite, README/MANUAL_TEST, handoff, final push without `[skip ci]`
 
@@ -3009,3 +3009,84 @@ another container, 18.4 % and 8.9 %, which shows how much these machines differ)
 `detail`, `patterns`, `bottom`, the globe in several worlds and, once planets exist, on
 each planet). `docs/snapshots/before-*.png` is the Milestone 9 interface; the `after-*`
 images come with each part of this milestone.
+
+### Planet types and their sound colour (step 1)
+
+Two new host parameters, appended (saved projects keep theirs): **Planet** (Rocky, Ocean,
+Ice Giant, Gas Giant, Desert World, Lava World, Forest World: all seven, the optional
+three included) and **Planet Influence** (0-100 %, default 35 %).
+
+`Source/DSP/PlanetColour` (`DSP/Planet.h`) sits on the master, after the World Space and
+the shared effects are mixed and before width, glue and limiter. Each planet is a shape:
+
+| Planet | What it does at 100 % |
+|---|---|
+| Rocky | +3 dB at 260 Hz, a little low shelf, -1.5 dB air, World Space wet x0.55, width x0.85: dry, close, grounded |
+| Ocean | chorus (above 180 Hz) at 0.21 Hz, a 9 kHz low-pass rolling 1.3 octaves over 14 s, wet x1.2, width x1.15 |
+| Ice Giant | +6 dB above 4.5 kHz, a glassy swaying copy of the highs (shimmer), -3 dB lows, wet x1.3, width x1.2 |
+| Gas Giant | +7 dB shelf at 110 Hz, a slow pressure swell (about 14 s) of level, a low rumble, slow chorus, wet x1.8, width x1.25 |
+| Desert World | 6.5 kHz low-pass (dusty), light saturation, warm low-mids, wet x0.75, width x1.4 |
+| Lava World | saturation, +4.5 dB low shelf, a heat-haze chorus wobble (1.7 Hz), a low rumble, a moving 12 kHz low-pass |
+| Forest World | 5.5 kHz low-pass, -6 dB air, +2 dB body, a gentle slow chorus: soft and damped |
+
+Influence scales every part of the shape from neutral (at 0 % it is exactly transparent,
+the filters' contributions are multiplied by zero). A new planet crossfades: each
+planet's weight glides (about 1.5 s) and the shape is their weighted sum, so every part
+moves smoothly; the slow movements follow the song position (repeatable). A per-planet
+trim keeps the planets within about 1 dB of each other. Cost: three filters, a high
+split, two short modulated delays per side, coefficients once per chunk.
+
+**Decisions:**
+- Projects and Locations saved before this milestone have no Planet: they open with
+  Planet Influence at 0 %, so they sound exactly as they did. New instances start at
+  Rocky, 35 %.
+- In a Location the Planet changes at the journey's far point (a choice) and the colour
+  then crossfades on its own; Planet Influence glides. Both are host-automatable and in
+  the automation audit's parameter list.
+- The chorus runs above 180 Hz: a chorused bass sounded hollow (combing) and robbed the
+  Gas Giant of its weight.
+
+Tests (`planet` group, 42 checks, in the "rest" shard): defaults and automation; at 0 %
+every planet is identical; each planet at 100 % is finite, within 3 dB of no colour and
+measurably different (> 1 dB in some band) and different from every other; Ice Giant is
+brighter, Desert and Forest darker, Gas Giant and Lava heavier (lows against mids),
+Desert wider, Rocky narrower; 35 % is subtler than 100 %; three planet changes crossfade
+without a click (-20 dB) or a level step beyond the world's own; an Influence automation
+sweep is smooth; state round trip, and an old project opens at 0 %; the globe draws
+each planet opaque in its own colours; the PLANET menu sits clear of the Location
+markers and hides under the detail panel. Measured at 100 % (level change against no
+colour): Rocky -0.5, Ocean -0.4, Ice +0.3, Gas +0.6, Desert +0.8, Lava -0.4, Forest +0.6 dB.
+
+### Globe revamp (step 2)
+
+`Source/UI/GlobeRenderer.*`: the planet is now a textured, lit sphere.
+- **Maps, made once per planet type** (procedurally, 512 x 256, from 3D value noise on
+  the sphere, so no seam and no pinch at the poles): the surface colour, cloud density,
+  city lights, glowing cracks and shininess. Rocky: grey-brown highlands and 70 craters;
+  Ocean: deep water, shallows and a few islands; Ice Giant: cyan banded ice and pale
+  poles; Gas Giant: warped bands and a great storm; Desert: dunes, rock and salt flats;
+  Lava: dark basalt with cracks and lava lakes; Forest: green continents, seas and polar
+  caps. About 40 ms the first time a planet is shown, then cached (about 0.9 MB each).
+- **A per-pixel table of the sphere** for the current size (latitude, longitude, light
+  from the upper left with a soft terminator, limb and a specular highlight), made once
+  per size. A frame turns the maps under it: one pass over the disc's pixels (about
+  66 000 at 290 px), no paths, then one image draw.
+- **Layers:** lit surface, specular glints on water and ice, clouds that drift faster
+  than the ground (their cover grows with Weather and Wetness), city lights on the night
+  side (from the populated Places and Population), lava glowing through the dark side
+  (stronger with Temperature), the atmosphere's rim and an outer glow (tinted by the
+  Places' light), rings for the Ice and Gas Giants (the far half behind the planet, the
+  near half in front, uneven bands with a gap), the world's grade (cold blues, hot
+  ambers, a darker red for Danger). Power dims the planet instead of fading it (rings
+  never show through).
+- A Planet change crossfades the globe over about a second, like the sound.
+- Kept: the Place landmarks, the Location orbit and markers, the journey comet, rain,
+  snow, lightning, the scorching lava spots, the Places' marks (fields, now fainter,
+  forests, dunes, smoke, crystals, ruins, hive veins, the ports' orbits and the temples'
+  aura) and a faint graticule. Dropped: the flat shaded sphere, the drawn cloud ovals
+  and the day-side city-light dots (the night side has real lights now).
+- **PLANET** menu and **INFLUENCE** slider in the globe panel's top right corner.
+
+Snapshots: `docs/snapshots/before-globe-*.png` (Milestone 9) and `after-globe-*.png`
+(the frozen, scorching, stormy and city worlds, and `after-globe-planet-*` for each
+planet).

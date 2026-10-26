@@ -96,6 +96,8 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
     c.quality = juce::roundToInt(value(PQuality));
     c.root = juce::roundToInt(value(PRoot));
     c.mood = juce::roundToInt(value(PMood));
+    c.planet = juce::roundToInt(value(PPlanet));
+    c.planetInfluence = value(PPlanetInfluence);
     for (int slot = 0; slot < placeSlots; ++slot) {
         auto& pc = c.places[std::size_t(slot)];
         const auto field = [&](int f) { return value(placeParam(slot, f)); };
@@ -386,6 +388,8 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         const auto child = state.getChildWithProperty("id", juce::String(s.id));
         // Projects from before Play Mode keep playing as they did (Free).
         if (!child.isValid() && juce::String(s.id) == "playmode") value = float(PlayFree);
+        // Projects from before the Planet keep their sound: no planet colour.
+        if (!child.isValid() && juce::String(s.id) == "planetinfluence") value = 0.0f;
         // Projects from before the instrument effects: each instrument starts from its
         // Place's own effect defaults.
         if (!child.isValid()) value = legacyDefault(state, int(&s - specs.data()), value);

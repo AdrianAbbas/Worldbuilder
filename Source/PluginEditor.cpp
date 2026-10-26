@@ -39,13 +39,6 @@ const char* tooltipFor(int p) {
 
 float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
-juce::Colour globeColour(float temperature, float danger) {
-    const juce::Colour ice { 0xff9fd3f0 }, temperate { 0xff3f8f7a }, scorch { 0xffd2622c };
-    auto c = temperature < 0.5f ? ice.interpolatedWith(temperate, temperature * 2.0f)
-                                : temperate.interpolatedWith(scorch, (temperature - 0.5f) * 2.0f);
-    return c.interpolatedWith(juce::Colour(0xff2a0f14), danger * 0.55f);
-}
-
 // Each Place's accent colour on its card, strip and landmark.
 juce::Colour placeColour(int type) { return ui::placeAccent(type); }
 
@@ -62,7 +55,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 9 PREVIEW";
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 10 PREVIEW";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -250,6 +243,18 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         openDetail(slot);
     };
     addChildComponent(*patterns);
+
+    setupCombo(planetChoice, PPlanet, planetAttachment);
+    planetChoice.setTooltip("Planet: the globe's look and a sound colour on the whole world (Rocky: dry and close; Ocean: watery movement; "
+                            "Ice Giant: cold shimmer; Gas Giant: vast and swirling; Desert: dusty and wide; Lava: hot and saturated; Forest: soft and damped)");
+    planetInfluence.setSliderStyle(juce::Slider::LinearHorizontal);
+    planetInfluence.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    planetInfluence.setTooltip("Planet Influence: how strongly the Planet colours the sound (subtle at 35 %)");
+    addAndMakeVisible(planetInfluence);
+    planetInfluenceAttachment = std::make_unique<SliderAttachment>(processor.parameters, specs[PPlanetInfluence].id, planetInfluence);
+    planetInfluence.setDoubleClickReturnValue(true, specs[PPlanetInfluence].def);
+    planetInfluence.onValueChange = [this] { repaint(influenceLabel); };
+    shownPlanet = previousPlanet = juce::roundToInt(param(PPlanet));
 
     for (int m = 0; m < ui::OverlayModeCount; ++m) overlayChoice.addItem(ui::overlayModeNames[std::size_t(m)], m + 1);
     overlayChoice.setTooltip("Place overlays: each Place decorates the edges of the interface (grass and ivy, neon, wooden beams...). "
@@ -447,6 +452,15 @@ void WorldbuilderEditor::resized() {
     cardsPanel = area;
     const float globeSize = std::min(float(globePanel.getWidth()) - 40.0f, float(globePanel.getHeight()) - 40.0f);
     globeArea = juce::Rectangle<float>(globeSize, globeSize).withCentre(globePanel.toFloat().getCentre().translated(0, 8));
+    {
+        // The Planet in the globe panel's top right corner, clear of the Location orbit.
+        auto corner = globePanel.reduced(10, 8).removeFromRight(104);
+        planetLabel = corner.removeFromTop(14);
+        planetChoice.setBounds(corner.removeFromTop(22));
+        corner.removeFromTop(4);
+        influenceLabel = corner.removeFromTop(13);
+        planetInfluence.setBounds(corner.removeFromTop(14));
+    }
 
     // World Controls: one row per group, title on top.
     auto rows = controlsPanel.reduced(8, 8);
@@ -714,6 +728,12 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
             g.setColour(colours::brass.withAlpha(0.85f));
             g.drawText("LIVING GLOBE", globePanel.reduced(14, 8).withHeight(16), juce::Justification::centredLeft, false);
             paintGlobe(g, globeArea);
+            g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)).withExtraKerningFactor(0.12f));
+            g.setColour(colours::brass.withAlpha(0.85f));
+            g.drawText("PLANET", planetLabel, juce::Justification::centredLeft, false);
+            g.drawText("INFLUENCE", influenceLabel, juce::Justification::centredLeft, false);
+            g.setColour(colours::cyan);
+            g.drawText(juce::String(juce::roundToInt(param(PPlanetInfluence) * 100.0f)) + "%", influenceLabel, juce::Justification::centredRight, false);
         }
         if (g.clipRegionIntersects(cardsPanel.reduced(ui::PlaceOverlays::frameBand))) paintCards(g);
     }
@@ -910,8 +930,9 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     }
 }
 
-// Placeholder globe: shaded sphere coloured by the world, turning meridians, clouds,
-// weather, lava, lightning, and the active Places as landmarks.
+// The Living Globe: the Planet (its surface, clouds, atmosphere, rings and lights, see
+// GlobeRenderer), graded by the world, with weather, lava, lightning, what the active
+// Places add to it, and the Places as landmarks.
 void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> area) {
     const auto& world = processor.engine.frame();
     const float temperature = world[Temperature], danger = world[Danger], weather = world[Weather], magic = world[Magic];
@@ -919,48 +940,44 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
     const auto centre = area.getCentre();
     const float r = area.getWidth() * 0.5f;
 
-    const auto glow = themeGlow.interpolatedWith(juce::Colour(0xffb78cff), magic * 0.6f).withAlpha(0.18f + 0.3f * magic);
-    g.setGradientFill(juce::ColourGradient(glow, centre.x, centre.y, glow.withAlpha(0.0f), centre.x + r * 1.18f, centre.y, true));
-    g.fillEllipse(area.expanded(r * 0.18f));
-
-    const auto base = globeColour(temperature, danger);
-    juce::ColourGradient sphere(base.brighter(0.6f).withMultipliedAlpha(alpha), centre.x - r * 0.4f, centre.y - r * 0.45f,
-                                base.darker(1.6f).withMultipliedAlpha(alpha), centre.x + r * 0.7f, centre.y + r * 0.8f, true);
-    g.setGradientFill(sphere);
-    g.fillEllipse(area);
-
+    // Magic: a violet aura behind the planet.
+    if (magic > 0.05f) {
+        const auto aura = juce::Colour(0xffb78cff).interpolatedWith(themeGlow, 0.3f).withAlpha(0.3f * magic * alpha);
+        g.setGradientFill(juce::ColourGradient(aura, centre.x, centre.y, aura.withAlpha(0.0f), centre.x + r * 1.3f, centre.y, true));
+        g.fillEllipse(area.expanded(r * 0.3f));
+    }
+    // The planet: its own surface, lit from the upper left, with clouds, atmosphere,
+    // rings, city lights on the night side and the world's colour grade.
+    {
+        ui::GlobeLook look;
+        look.spin = spin;
+        look.time = animTime;
+        look.clouds = juce::jlimit(0.0f, 1.0f, weather * 0.85f + world[Wetness] * 0.3f);
+        look.lights = juce::jlimit(0.0f, 1.0f, featureAmount[ui::GlobeCityLights] + 0.45f * themeStrength) * (0.35f + 0.65f * world[Population]);
+        look.heat = juce::jlimit(0.0f, 1.0f, (temperature - 0.55f) / 0.45f);
+        look.cold = 0.4f * juce::jlimit(0.0f, 1.0f, (0.45f - temperature) / 0.45f);
+        look.warm = 0.35f * juce::jlimit(0.0f, 1.0f, (temperature - 0.55f) / 0.45f);
+        look.danger = 0.55f * danger;
+        look.alpha = alpha;
+        look.accent = themeGlow;
+        globe.draw(g, area, shownPlanet, previousPlanet, planetBlend, look);
+    }
     {
         juce::Graphics::ScopedSaveState clip(g);
         juce::Path disc;
         disc.addEllipse(area);
         g.reduceClipRegion(disc);
 
-        g.setColour(colours::parchment.withAlpha(0.18f * alpha));
+        // A faint graticule: the cartographer's lines over the planet.
+        g.setColour(colours::parchment.withAlpha(0.07f * alpha));
         for (int k = 0; k < 6; ++k) {
             const float phase = spin + float(k) * juce::MathConstants<float>::pi / 6.0f;
             const float w = std::abs(std::cos(phase)) * r;
-            g.drawEllipse(juce::Rectangle<float>(w * 2.0f, r * 2.0f).withCentre(centre), 1.0f);
-        }
-        for (int k = 1; k < 4; ++k) {
-            const float y = r * float(k) / 4.0f;
-            const float half = std::sqrt(r * r - y * y);
-            g.drawHorizontalLine(int(centre.y - y), centre.x - half, centre.x + half);
-            g.drawHorizontalLine(int(centre.y + y), centre.x - half, centre.x + half);
+            g.drawEllipse(juce::Rectangle<float>(w * 2.0f, r * 2.0f).withCentre(centre), 0.8f);
         }
         g.drawHorizontalLine(int(centre.y), centre.x - r, centre.x + r);
 
         paintGlobeFeatures(g, area, alpha);
-
-        juce::Random random(7);
-        const int clouds = 3 + int(weather * 9.0f);
-        for (int i = 0; i < clouds; ++i) {
-            const float lat = (random.nextFloat() - 0.5f) * 1.6f * r;
-            const float speed = 0.6f + random.nextFloat();
-            const float x = std::fmod(random.nextFloat() * 2.0f * r + spin * speed * r * 0.35f, 2.6f * r) - 1.3f * r;
-            const float w = r * (0.25f + 0.3f * random.nextFloat()), h = r * 0.07f;
-            g.setColour(juce::Colours::white.interpolatedWith(juce::Colours::grey, weather).withAlpha((0.12f + 0.25f * weather) * alpha));
-            g.fillEllipse(centre.x + x - w * 0.5f, centre.y + lat - h * 0.5f, w, h);
-        }
 
         const float lava = juce::jlimit(0.0f, 1.0f, (temperature - 0.72f) / 0.28f);
         if (lava > 0.0f) {
@@ -1002,12 +1019,9 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
             }
         }
 
-        g.setGradientFill(juce::ColourGradient(juce::Colours::transparentBlack, centre.x - r * 0.1f, centre.y,
-                                               juce::Colours::black.withAlpha(0.55f), centre.x + r, centre.y + r * 0.3f, false));
-        g.fillEllipse(area);
     }
-    g.setColour(colours::brass.interpolatedWith(themeGlow, 0.4f).withAlpha(0.5f));
-    g.drawEllipse(area, 1.2f);
+    g.setColour(colours::brass.interpolatedWith(themeGlow, 0.4f).withAlpha(0.22f * alpha));
+    g.drawEllipse(area.expanded(1.5f), 1.0f);
     // Atmosphere marks outside the disc: a golden aura (temples, palaces) and orbits (ports, ships).
     if (const float aura = featureAmount[ui::GlobeGlow]; aura > 0.01f) {
         const auto c = juce::Colour(0xffffe0a0).withAlpha(0.25f * aura * (0.8f + 0.2f * std::sin(animTime * 1.5f)));
@@ -1144,10 +1158,10 @@ void WorldbuilderEditor::paintGlobeFeatures(juce::Graphics& g, juce::Rectangle<f
         for (int k = 0; k < 3; ++k) {
             const auto field = juce::Rectangle<float>(w, h).withCentre(p.translated(float(k - 1) * w * 1.04f, float(k % 2) * h * 0.3f));
             const juce::uint32 tones[] { 0xffd8b84e, 0xff7fae4e, 0xff9cc45a, 0xffb89a44 };
-            g.setColour(juce::Colour(tones[(i + k) % 4]).withAlpha(0.7f * a * facing));
+            g.setColour(juce::Colour(tones[(i + k) % 4]).withAlpha(0.32f * a * facing));
             g.fillRect(field);
-            g.setColour(juce::Colour(0xff2f4a24).withAlpha(0.6f * a * facing));
-            g.drawRect(field, 0.8f);
+            g.setColour(juce::Colour(0xff2f4a24).withAlpha(0.25f * a * facing));
+            g.drawRect(field, 0.6f);
         }
     });
     spots(ui::GlobeForest, 59, 16, [&](juce::Point<float> p, float facing, float a, float size, int) {
@@ -1155,11 +1169,6 @@ void WorldbuilderEditor::paintGlobeFeatures(juce::Graphics& g, juce::Rectangle<f
         const auto c = juce::Colour(0xff2f6a3a).withAlpha(0.6f * a * facing);
         g.setGradientFill(juce::ColourGradient(c, p.x, p.y, c.withAlpha(0.0f), p.x + w * 0.6f, p.y, true));
         g.fillEllipse(juce::Rectangle<float>(w, w * 0.75f * (0.4f + 0.6f * facing)).withCentre(p));
-    });
-    spots(ui::GlobeCityLights, 61, 70, [&](juce::Point<float> p, float facing, float a, float size, int i) {
-        const float twinkle = 0.6f + 0.4f * std::sin(animTime * (2.0f + size * 3.0f) + float(i));
-        g.setColour(juce::Colour(i % 4 == 0 ? 0xffff8ad0 : 0xffffe08a).withAlpha(0.8f * a * facing * twinkle));
-        g.fillEllipse(juce::Rectangle<float>(1.6f + size, 1.6f + size).withCentre(p));
     });
     spots(ui::GlobeSmoke, 63, 8, [&](juce::Point<float> p, float facing, float a, float size, int i) {
         const float rise = std::fmod(animTime * 0.15f + size, 1.0f);
@@ -1533,6 +1542,19 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     }
     if (animating && detail.slot < 0 && !patterns->isVisible()) repaint(cardsPanel);
     if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 8));
+    {
+        // A new Planet crossfades on the globe over about a second, as it does in the sound.
+        const int planet = juce::jlimit(0, ui::GlobeRenderer::planetCount - 1, juce::roundToInt(param(PPlanet)));
+        if (planet != shownPlanet) {
+            previousPlanet = planetBlend < 0.5f ? previousPlanet : shownPlanet;
+            shownPlanet = planet;
+            planetBlend = 0.0f;
+        }
+        planetBlend = std::min(1.0f, planetBlend + seconds / 1.1f);
+        const bool globeShown = detail.slot < 0 && !patterns->isVisible();
+        planetChoice.setVisible(globeShown);
+        planetInfluence.setVisible(globeShown);
+    }
     spin += 0.004f + 0.02f * processor.engine.frame()[Activity];
     // On a journey the globe turns faster, most in the middle of the way.
     if (processor.travel.uiMode.load(std::memory_order_relaxed) == Travel::Travelling)
