@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "UI/PlaceArt.h"
+#include "UI/Style.h"
 
 using namespace wb;
 namespace colours = wb::ui::colours;
@@ -131,6 +132,8 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         s.muteAttachment = std::make_unique<ButtonAttachment>(processor.parameters, id(PlMute), s.mute);
         s.soloAttachment = std::make_unique<ButtonAttachment>(processor.parameters, id(PlSolo), s.solo);
         s.edit.setTooltip("Open this Place's controls");
+        ui::setIcon(s.remove, ui::Icon::Close);
+        s.remove.setButtonText({});
         s.remove.setTooltip("Remove this Place");
         s.edit.onClick = [this, slot] { detail.slot == slot ? closeDetail() : openDetail(slot); };
         s.remove.onClick = [this, slot] {
@@ -176,6 +179,13 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         if (detail.slot >= 0) setParam(placeParam(detail.slot, PlSeed), float(juce::Random::getSystemRandom().nextInt({ 1, 10000 })));
     };
     detail.dice.setTooltip("Roll a new seed for this Place");
+    ui::setIcon(detail.dice, ui::Icon::Dice);
+    ui::setIcon(detail.close, ui::Icon::Close);
+    detail.close.setButtonText({});
+    detail.close.setTooltip("Close this Place's panel");
+    ui::setIcon(detail.patterns, ui::Icon::Patterns);
+    ui::setIcon(detail.mood, ui::Icon::Note);
+    ui::setIcon(detail.sync, ui::Icon::Sync);
     addChildComponent(detail.dice);
     detail.close.onClick = [this] { closeDetail(); };
     addChildComponent(detail.close);
@@ -205,6 +215,7 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
 
     power.setColour(juce::TextButton::buttonOnColourId, colours::cyan);
     power.setTooltip("Fades the whole world in or out over 2 seconds");
+    ui::setIcon(power, ui::Icon::Power);
     addAndMakeVisible(power);
     powerAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "power", power);
 
@@ -229,6 +240,7 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     addAndMakeVisible(seed);
     seedAttachment = std::make_unique<SliderAttachment>(processor.parameters, "seed", seed);
     dice.setTooltip("Roll a new seed for the whole world");
+    ui::setIcon(dice, ui::Icon::Dice);
     dice.onClick = [this] { setParam(PSeed, float(juce::Random::getSystemRandom().nextInt({ 1, 10000 }))); };
     addAndMakeVisible(dice);
     capture = std::make_unique<ui::CapturePanel>(processor);
@@ -565,9 +577,9 @@ void WorldbuilderEditor::layoutDetail() {
     auto r = d.area.reduced(16, 10);
     // The header: the Place's scene, its name and buttons on top, its description below.
     d.titleArea = r.removeFromTop(86);
-    d.close.setBounds(d.titleArea.withHeight(30).withTrimmedLeft(d.titleArea.getWidth() - 70).withSizeKeepingCentre(66, 24));
-    d.patterns.setBounds(d.close.getBounds().translated(-96, 0).withWidth(88));
-    d.mood.setBounds(d.patterns.getBounds().translated(-134, 0).withWidth(126));
+    d.close.setBounds(d.titleArea.withHeight(30).withTrimmedLeft(d.titleArea.getWidth() - 34).withSizeKeepingCentre(30, 26));
+    d.patterns.setBounds(d.close.getBounds().translated(-112, 0).withWidth(106));
+    d.mood.setBounds(d.patterns.getBounds().translated(-140, 0).withWidth(134));
     r.removeFromTop(4);
     d.characterArea = r.removeFromTop(34);
     {
@@ -753,9 +765,17 @@ void WorldbuilderEditor::paintPlaceStrips(juce::Graphics& g) {
             continue;
         }
         const auto accent = placeColour(type);
-        g.setColour(accent.withAlpha(detail.slot == slot ? 0.22f : 0.1f));
+        // A raised strip in the Place's colour, lit when its detail panel is open.
+        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        g.fillRoundedRectangle(row.translated(0.0f, 1.2f), 6.0f);
+        if (detail.slot == slot) ui::drawGlow(g, row, 6.0f, accent.withAlpha(0.8f), 4.0f);
+        const float lift = detail.slot == slot ? 0.24f : 0.13f;
+        g.setGradientFill(juce::ColourGradient(colours::panel.interpolatedWith(accent, lift + 0.08f), 0.0f, row.getY(), colours::panel.darker(0.25f).interpolatedWith(accent, lift * 0.4f),
+                                               0.0f, row.getBottom(), false));
         g.fillRoundedRectangle(row, 6.0f);
-        g.setColour(accent.withAlpha(0.6f));
+        g.setColour(juce::Colours::white.withAlpha(0.1f));
+        g.drawHorizontalLine(int(row.getY()) + 1, row.getX() + 6.0f, row.getRight() - 6.0f);
+        g.setColour(accent.withAlpha(detail.slot == slot ? 0.9f : 0.6f));
         g.drawRoundedRectangle(row.reduced(0.5f), 6.0f, 1.0f);
         auto inner = s.row.reduced(6, 4);
         auto top = inner.removeFromTop(22).withTrimmedRight(128);   // the buttons sit on the right
@@ -794,11 +814,10 @@ void WorldbuilderEditor::paintCards(juce::Graphics& g) {
     // Category chips.
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)).withExtraKerningFactor(0.1f));
     for (int k = 0; k <= PlaceCategoryCount; ++k) {
-        const auto chip = categoryChips[std::size_t(k)].toFloat();
-        const bool on = category == k - 1;
-        g.setColour(on ? colours::brass.withAlpha(0.85f) : colours::panelEdge.withAlpha(0.6f));
-        g.fillRoundedRectangle(chip, chip.getHeight() * 0.5f);
-        g.setColour(on ? colours::background : colours::parchment.withAlpha(0.8f));
+        const auto chip = categoryChips[std::size_t(k)].toFloat().reduced(0.5f);
+        const ui::SurfaceState st { hoverChip == k, false, category == k - 1, true };
+        ui::drawSurface(g, chip, chip.getHeight() * 0.5f, colours::panel.brighter(0.06f), colours::brass, st);
+        g.setColour(ui::inkFor(st, colours::brass));
         g.drawText(chipNames[std::size_t(k)], chip, juce::Justification::centred, false);
     }
 
@@ -815,16 +834,33 @@ void WorldbuilderEditor::paintCards(juce::Graphics& g) {
         const auto accent = placeColour(type);
         int count = 0;
         for (int slot = 0; slot < placeSlotCount; ++slot) count += placeType(slot) == type ? 1 : 0;
-        if (hover > 0.01f) {
-            const auto halo = accent.withAlpha(0.3f * hover);
-            g.setColour(halo);
-            g.fillRoundedRectangle(card.expanded(2.0f), 9.0f);
-        }
+        // A raised card: its shadow, a glow in its colour on hover, the scene, a glass
+        // sheen, a bevelled frame and a name plate.
+        g.setColour(juce::Colours::black.withAlpha(0.4f + 0.15f * hover));
+        g.fillRoundedRectangle(card.translated(0.0f, 1.5f + 2.0f * hover), 7.0f);
+        if (hover > 0.01f) ui::drawGlow(g, card, 6.0f, accent.withAlpha(0.9f * hover), 6.0f);
         ui::drawPlaceScene(g, type, card, hover, animTime, built);
-        g.setColour(built ? accent.withAlpha(0.45f + 0.5f * hover) : colours::panelEdge);
+        {
+            juce::Graphics::ScopedSaveState sheen(g);
+            juce::Path shape;
+            shape.addRoundedRectangle(card, 6.0f);
+            g.reduceClipRegion(shape);
+            g.setGradientFill(juce::ColourGradient(juce::Colours::white.withAlpha(0.13f + 0.07f * hover), card.getX(), card.getY(),
+                                                   juce::Colours::white.withAlpha(0.0f), card.getX() + card.getWidth() * 0.45f, card.getY() + card.getHeight() * 0.45f, false));
+            g.fillRect(card);
+            // The name plate: a dark glass band along the bottom.
+            const auto plate = card.withTrimmedTop(card.getHeight() - 19.0f);
+            g.setGradientFill(juce::ColourGradient(colours::background.withAlpha(0.25f), 0.0f, plate.getY(), colours::background.withAlpha(0.85f), 0.0f, plate.getBottom(), false));
+            g.fillRect(plate);
+            g.setColour(accent.withAlpha(built ? 0.55f + 0.4f * hover : 0.2f));
+            g.fillRect(plate.withHeight(1.0f).reduced(8.0f, 0.0f));
+        }
+        g.setColour(juce::Colours::white.withAlpha(0.18f + 0.1f * hover));
+        g.drawRoundedRectangle(card.reduced(1.5f), 5.0f, 1.0f);
+        g.setColour(built ? accent.withAlpha(0.55f + 0.45f * hover) : colours::panelEdge);
         g.drawRoundedRectangle(card.reduced(0.5f), 6.0f, 1.0f + 0.6f * hover);
         g.setColour(built ? colours::parchment : colours::dim.brighter(0.3f));
-        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)).withExtraKerningFactor(0.04f));
         g.drawFittedText(placeNames[std::size_t(type)], card.withTrimmedTop(card.getHeight() - 18.0f).toNearestInt(), juce::Justification::centred, 1, 0.8f);
         if (!built) {
             g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
@@ -832,8 +868,12 @@ void WorldbuilderEditor::paintCards(juce::Graphics& g) {
             g.drawText(juce::String("IN ") + placeArrives[std::size_t(type)], card.reduced(5.0f, 3.0f).withHeight(11.0f), juce::Justification::centredRight, false);
         } else if (count > 0) {
             const auto badge = juce::Rectangle<float>(15.0f, 15.0f).withPosition(card.getRight() - 18.0f, card.getY() + 3.0f);
-            g.setColour(accent);
+            g.setColour(juce::Colours::black.withAlpha(0.45f));
+            g.fillEllipse(badge.translated(0.0f, 1.0f));
+            g.setGradientFill(juce::ColourGradient(accent.brighter(0.45f), badge.getX(), badge.getY(), accent.darker(0.35f), badge.getX(), badge.getBottom(), false));
             g.fillEllipse(badge);
+            g.setColour(juce::Colours::white.withAlpha(0.45f));
+            g.drawEllipse(badge.reduced(0.5f), 0.8f);
             g.setColour(colours::background);
             g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
             g.drawText(juce::String(count), badge, juce::Justification::centred, false);
@@ -1473,6 +1513,10 @@ void WorldbuilderEditor::mouseMove(const juce::MouseEvent& e) {
         hoverCard = card;
         repaint(cardsPanel);
     }
+    if (const int chip = detail.slot >= 0 ? -1 : categoryAt(e.getPosition()); chip != hoverChip) {
+        hoverChip = chip;
+        repaint(cardsPanel);
+    }
     const bool overLandmark = detail.slot < 0 && landmarkAt(e.position) >= 0;
     const bool clickable = (card >= 0 && placeImplemented[std::size_t(card)]) || overLandmark || (detail.slot < 0 && categoryAt(e.getPosition()) >= 0);
     setMouseCursor(clickable ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
@@ -1487,8 +1531,8 @@ void WorldbuilderEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::M
 }
 
 void WorldbuilderEditor::mouseExit(const juce::MouseEvent&) {
-    if (hoverCard != -1) {
-        hoverCard = -1;
+    if (hoverCard != -1 || hoverChip != -1) {
+        hoverCard = hoverChip = -1;
         repaint(cardsPanel);
     }
 }

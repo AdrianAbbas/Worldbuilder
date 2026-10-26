@@ -26,6 +26,10 @@ public:
     void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&, bool highlighted, bool down) override;
     void drawComboBox(juce::Graphics&, int width, int height, bool down, int buttonX, int buttonY, int buttonW, int buttonH,
                       juce::ComboBox&) override;
+    void drawButtonText(juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
+    void positionComboBoxText(juce::ComboBox&, juce::Label&) override;
+    void drawPopupMenuBackground(juce::Graphics&, int width, int height) override;
+    void drawTooltip(juce::Graphics&, const juce::String& text, int width, int height) override;
     juce::Font getComboBoxFont(juce::ComboBox&) override;
     juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
     juce::Label* createSliderTextBox(juce::Slider&) override;

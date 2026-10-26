@@ -161,7 +161,7 @@ const GlobeRenderer::Maps& GlobeRenderer::maps(int planet) {
                     const float warp = fbm(p, 2.5f, 5, seed) - 0.5f;
                     const float swirl = fbm({ p.x * 1.4f, p.y * 5.0f, p.z * 1.4f }, 3.0f, 4, seed + 4u);
                     const float y = lat + 0.22f * warp + 0.05f * std::sin(lon * 3.0f + lat * 6.0f);
-                    const float band = std::sin(y * 15.0f + swirl * 2.5f) * 0.5f + 0.5f;
+                    const float band = std::sin(y * 21.0f + swirl * 4.0f) * 0.5f + 0.5f;
                     const float band2 = std::sin(y * 6.0f + 1.0f) * 0.5f + 0.5f;
                     c = mix(rgb(0x7a4426), rgb(0xf4e0b8), smoothstep(0.2f, 0.8f, band));
                     c = mix(c, rgb(0xd09a5a), 0.5f * smoothstep(0.3f, 0.7f, band2) * band);
@@ -223,6 +223,13 @@ const GlobeRenderer::Maps& GlobeRenderer::maps(int planet) {
             m->shine[std::size_t(k)] = byte(shine);
         }
     }
+    m->colour.resize(m->surface.size() * 3);
+    for (std::size_t k = 0; k < m->surface.size(); ++k) {
+        const auto c = m->surface[k];
+        m->colour[k * 3] = float((c >> 16) & 255) / 255.0f;
+        m->colour[k * 3 + 1] = float((c >> 8) & 255) / 255.0f;
+        m->colour[k * 3 + 2] = float(c & 255) / 255.0f;
+    }
     slot = std::move(m);
     return *slot;
 }
@@ -256,69 +263,84 @@ void GlobeRenderer::buildTable(int diameter) {
             const float lat = std::asin(std::clamp(-ty, -1.0f, 1.0f));
             const float lon = std::atan2(tx, std::max(nz, 1.0e-4f));
             px.row = std::clamp(int((0.5f - lat / pi) * float(Maps::height)), 0, Maps::height - 1);
-            px.u = (lon / twoPi + 0.5f) * float(Maps::width);
+            px.uFixed = int((lon / twoPi + 0.5f) * float(Maps::width) * 256.0f) & (Maps::width * 256 - 1);
             table.push_back(px);
         }
 }
 
-void GlobeRenderer::renderPlanet(int planet, const GlobeLook& look, float weight, bool first) {
+void GlobeRenderer::renderPlanet(int planet, const GlobeLook& look, float weight, bool first, const Sink& sink) {
     const auto& m = maps(planet);
     constexpr int W = Maps::width;
+    // Longitudes in fixed point (1/256 of a map column), so turning and wrapping are
+    // integer adds and masks.
+    constexpr int fixed = 256, mask = W * fixed - 1;
+    const auto toFixed = [](float columns) { return int(std::floor(columns * float(fixed))) & mask; };
     const float shift = -look.spin / twoPi * float(W);
+    const int shiftFixed = toFixed(shift);
     // Clouds drift a little faster than the ground.
-    const float cloudShift = shift * 1.18f - look.time * 2.0f;
+    const int cloudFixed = toFixed(std::fmod(shift * 1.18f - look.time * 2.0f, float(W)) + float(W));
     const float cover = clamp01(m.cloudCover + look.clouds * (1.0f - m.cloudCover) * (planet == 2 || planet == 3 ? 0.25f : 0.7f));
     const float cloudFrom = 1.0f - cover, cloudTo = cloudFrom + 0.28f;
+    std::array<float, 256> cloudOf {};
+    for (int k = 0; k < 256; ++k) cloudOf[std::size_t(k)] = smoothstep(cloudFrom, cloudTo, float(k) / 255.0f) * 0.92f;
     const Rgb cloudColour { m.cloudColour.getFloatRed(), m.cloudColour.getFloatGreen(), m.cloudColour.getFloatBlue() };
     const auto atm = atmosphere(planet).interpolatedWith(look.accent, 0.25f);
-    const Rgb air { atm.getFloatRed(), atm.getFloatGreen(), atm.getFloatBlue() };
-    const Rgb city = rgb(0xffd890), fire = rgb(0xff6a1c), fireHot = rgb(0xffd060);
-    const float lightsAmount = look.lights, heat = 0.6f + 0.4f * look.heat;
-    const auto wrap = [](float u) {
-        u = std::fmod(u, float(W));
-        return u < 0.0f ? u + float(W) : u;
+    const float hazeAmount = planet == 0 ? 0.45f : planet == 2 || planet == 3 ? 0.55f : 0.95f;
+    const Rgb air { atm.getFloatRed() * hazeAmount, atm.getFloatGreen() * hazeAmount, atm.getFloatBlue() * hazeAmount };
+    const Rgb city = scale(rgb(0xffd890), 1.2f / 255.0f * look.lights), fire = rgb(0xff6a1c), fireHot = rgb(0xffd060);
+    const float heat = (0.6f + 0.4f * look.heat) / 255.0f;
+    // The world's grade as one colour matrix (diagonal plus offset), with Power.
+    Rgb gain { 1, 1, 1 }, offset { 0, 0, 0 };
+    const auto grade = [&](Rgb k, Rgb o, float amount) {
+        if (amount <= 0.0f) return;
+        gain = { gain.r * mixf(1, k.r, amount), gain.g * mixf(1, k.g, amount), gain.b * mixf(1, k.b, amount) };
+        offset = { offset.r * mixf(1, k.r, amount) + o.r * amount, offset.g * mixf(1, k.g, amount) + o.g * amount, offset.b * mixf(1, k.b, amount) + o.b * amount };
     };
-    if (first) std::fill(accum.begin(), accum.end(), 0.0f);
+    grade({ 0.8f, 0.95f, 1.15f }, { 0, 0, 0.04f }, look.cold);
+    grade({ 1.12f, 0.95f, 0.78f }, { 0.03f, 0, 0 }, look.warm);
+    grade({ 0.75f, 0.55f, 0.55f }, { 0.05f, 0, 0 }, look.danger);
+    gain = scale(gain, look.alpha);
+    offset = scale(offset, look.alpha);
+    const float* surface = m.colour.data();
+    if (first && sink == nullptr) std::fill(accum.begin(), accum.end(), 0.0f);
     for (const auto& px : table) {
-        const float u = wrap(px.u + shift);
-        const int i0 = int(u), i1 = (i0 + 1) % W;
-        const float f = u - float(i0);
-        const int row = px.row * W;
-        const auto unpack = [](juce::uint32 c) { return Rgb { float((c >> 16) & 255), float((c >> 8) & 255), float(c & 255) }; };
-        const Rgb a = unpack(m.surface[std::size_t(row + i0)]), b = unpack(m.surface[std::size_t(row + i1)]);
-        Rgb c = scale(mix(a, b, f), 1.0f / 255.0f);
-        const float light = px.light;
-        c = scale(c, 0.05f + 1.05f * light);
-        c.r += px.spec * float(m.shine[std::size_t(row + i0)]) / 255.0f * 0.55f * light;
-        c.g += px.spec * float(m.shine[std::size_t(row + i0)]) / 255.0f * 0.6f * light;
-        c.b += px.spec * float(m.shine[std::size_t(row + i0)]) / 255.0f * 0.65f * light;
-        // Clouds, lit like the ground, casting a faint shade.
-        const int ci = int(wrap(px.u + cloudShift));
-        const float cloud = smoothstep(cloudFrom, cloudTo, float(m.cloud[std::size_t(row + ci)]) / 255.0f) * 0.92f;
+        const int u = (px.uFixed + shiftFixed) & mask;
+        const int i0 = u / fixed, i1 = (i0 + 1) & (W - 1);
+        const float f = float(u & (fixed - 1)) * (1.0f / float(fixed));
+        const int row = px.row * W, k0 = row + i0;
+        const float* a = surface + std::size_t(k0) * 3;
+        const float* b = surface + std::size_t(row + i1) * 3;
+        const float light = px.light, lit = 0.05f + 1.05f * light;
+        const float shine = px.spec * float(m.shine[std::size_t(k0)]) * (light / 255.0f);
+        Rgb c { (a[0] + (b[0] - a[0]) * f) * lit + shine * 0.55f, (a[1] + (b[1] - a[1]) * f) * lit + shine * 0.6f,
+                (a[2] + (b[2] - a[2]) * f) * lit + shine * 0.65f };
+        // Clouds, lit like the ground.
+        const float cloud = cloudOf[m.cloud[std::size_t(row + ((px.uFixed + cloudFixed) & mask) / fixed)]];
+        const float cloudLight = 0.06f + light;
+        c = { c.r + (cloudColour.r * cloudLight - c.r) * cloud, c.g + (cloudColour.g * cloudLight - c.g) * cloud, c.b + (cloudColour.b * cloudLight - c.b) * cloud };
         // The night side: city lights and glowing cracks (dimmed under clouds).
         const float night = (1.0f - light) * (1.0f - light);
-        const float lit = float(m.lights[std::size_t(row + i0)]) / 255.0f * lightsAmount * night * (1.0f - 0.7f * cloud);
-        const float glow = float(m.glow[std::size_t(row + i0)]) / 255.0f * heat * (1.0f - 0.5f * cloud);
-        c = mix(c, scale(cloudColour, 0.06f + 1.0f * light), cloud);
-        c.r += lit * city.r * 1.2f + glow * mixf(fire.r, fireHot.r, glow) * (0.55f + 0.45f * night);
-        c.g += lit * city.g * 1.2f + glow * mixf(fire.g, fireHot.g, glow) * (0.55f + 0.45f * night);
-        c.b += lit * city.b * 1.2f + glow * mixf(fire.b, fireHot.b, glow) * (0.55f + 0.45f * night);
+        if (const juce::uint8 l = m.lights[std::size_t(k0)]; l != 0) {
+            const float n = float(l) * night * (1.0f - 0.7f * cloud);
+            c = { c.r + n * city.r, c.g + n * city.g, c.b + n * city.b };
+        }
+        if (const juce::uint8 gl = m.glow[std::size_t(k0)]; gl != 0) {
+            const float glow = float(gl) * heat * (1.0f - 0.5f * cloud), hot = float(gl) / 255.0f, side = 0.55f + 0.45f * night;
+            c = { c.r + glow * mixf(fire.r, fireHot.r, hot) * side, c.g + glow * mixf(fire.g, fireHot.g, hot) * side, c.b + glow * mixf(fire.b, fireHot.b, hot) * side };
+        }
         // The atmosphere: brightest at the lit limb.
-        const float haze = px.rim * (0.2f + 0.8f * light) * (planet == 0 ? 0.45f : planet == 2 || planet == 3 ? 0.55f : 0.95f);
-        c.r += air.r * haze;
-        c.g += air.g * haze;
-        c.b += air.b * haze;
-        // The world's grade: cold blues, hot ambers, a darker red for danger.
-        if (look.cold > 0.0f) c = mix(c, { c.r * 0.8f, c.g * 0.95f, c.b * 1.15f + 0.04f }, look.cold);
-        if (look.warm > 0.0f) c = mix(c, { c.r * 1.12f + 0.03f, c.g * 0.95f, c.b * 0.78f }, look.warm);
-        if (look.danger > 0.0f) c = mix(c, { c.r * 0.75f + 0.05f, c.g * 0.55f, c.b * 0.55f }, look.danger);
-        // Power: the planet dims rather than fading out (the rings never show through it).
-        c = scale(c, look.alpha);
+        const float haze = px.rim * (0.2f + 0.8f * light);
         const float alpha = px.edge * weight;
+        const float red = ((c.r + air.r * haze) * gain.r + offset.r) * alpha, green = ((c.g + air.g * haze) * gain.g + offset.g) * alpha,
+                    blue = ((c.b + air.b * haze) * gain.b + offset.b) * alpha;
+        if (sink != nullptr) {
+            sink(px.offset, alpha, red, green, blue);
+            continue;
+        }
         auto* out = accum.data() + std::size_t(px.offset) * 4;
-        out[0] += c.r * alpha;
-        out[1] += c.g * alpha;
-        out[2] += c.b * alpha;
+        out[0] += red;
+        out[1] += green;
+        out[2] += blue;
         out[3] += alpha;
     }
 }
@@ -332,19 +354,29 @@ void GlobeRenderer::drawRings(juce::Graphics& g, juce::Rectangle<float> area, in
     const int bands = ice ? 9 : 16;
     const auto colourA = ice ? juce::Colour(0xffd8f6ff) : juce::Colour(0xfff0dcb0);
     const auto colourB = ice ? juce::Colour(0xff7fc8dc) : juce::Colour(0xffb08058);
-    // Front: the near half (below the planet's centre in the ring's own frame).
-    const float from = front ? 0.0f : pi, to = front ? pi : twoPi;
-    const float bandWidth = (outer - inner) * r / float(bands);
+    // One fill: a half annulus with a radial gradient of uneven bands (and a gap like a
+    // Cassini division two thirds of the way out), flattened and tilted into an ellipse.
+    juce::ColourGradient bandsFill(juce::Colours::transparentBlack, 0.0f, 0.0f, juce::Colours::transparentBlack, outer * r, 0.0f, true);
+    const float strength = alpha * (front ? 0.62f : 0.5f);
     for (int b = 0; b < bands; ++b) {
-        const float t = (float(b) + 0.5f) / float(bands);
-        const float radius = (inner + (outer - inner) * t) * r;
-        // Uneven bands with a gap (like a Cassini division) two thirds of the way out.
-        const float density = (0.35f + 0.65f * lattice(b, 7, 1, 99u)) * (std::abs(t - 0.68f) < 0.07f ? 0.12f : 1.0f);
-        juce::Path arc;
-        arc.addCentredArc(c.x, c.y, radius, radius * flat, tilt, from + pi * 0.5f, to + pi * 0.5f, true);
-        g.setColour(colourA.interpolatedWith(colourB, lattice(b, 3, 2, 98u)).withAlpha(alpha * density * (front ? 0.62f : 0.5f)));
-        g.strokePath(arc, juce::PathStrokeType(bandWidth * 0.92f));
+        const float t0 = float(b) / float(bands), t1 = float(b + 1) / float(bands), mid = 0.5f * (t0 + t1);
+        const float density = (0.35f + 0.65f * lattice(b, 7, 1, 99u)) * (std::abs(mid - 0.68f) < 0.07f ? 0.12f : 1.0f);
+        const auto colour = colourA.interpolatedWith(colourB, lattice(b, 3, 2, 98u)).withAlpha(strength * density);
+        const auto at = [&](float t) { return (inner + (outer - inner) * t) / outer; };
+        bandsFill.addColour(at(t0) + 0.002f, colour);
+        bandsFill.addColour(at(t1) - 0.002f, colour.withMultipliedAlpha(0.8f));
     }
+    bandsFill.addColour(inner / outer - 0.004f, juce::Colours::transparentBlack);
+    juce::Path ring;
+    // Front: the near half (below the centre in the ring's own frame).
+    const float from = front ? pi * 0.5f : pi * 1.5f;
+    ring.addCentredArc(0.0f, 0.0f, outer * r, outer * r, 0.0f, from, from + pi, true);
+    ring.addCentredArc(0.0f, 0.0f, inner * r, inner * r, 0.0f, from + pi, from, false);
+    ring.closeSubPath();
+    juce::Graphics::ScopedSaveState s(g);
+    g.addTransform(juce::AffineTransform::scale(1.0f, flat).rotated(tilt).translated(c.x, c.y));
+    g.setGradientFill(bandsFill);
+    g.fillPath(ring);
 }
 
 void GlobeRenderer::draw(juce::Graphics& g, juce::Rectangle<float> area, int planet, int previous, float blend, const GlobeLook& look) {
@@ -360,12 +392,17 @@ void GlobeRenderer::draw(juce::Graphics& g, juce::Rectangle<float> area, int pla
         auto atm = atmosphere(planet).interpolatedWith(look.accent, 0.3f);
         if (fading) atm = atmosphere(previous).interpolatedWith(atm, blend);
         const float thick = planet == 0 ? 0.08f : 0.16f;
-        const auto glow = atm.withAlpha(0.42f * look.alpha);
-        juce::ColourGradient halo(glow, centre.x - r * 0.18f, centre.y - r * 0.16f, glow.withAlpha(0.0f), centre.x - r * 0.18f + r * (1.0f + thick + 0.1f),
-                                  centre.y - r * 0.16f, true);
-        halo.addColour(r * 0.98f / (r * (1.0f + thick + 0.1f)), glow);
-        g.setGradientFill(halo);
-        g.fillEllipse(area.expanded(r * (thick + 0.12f)));
+        // Concentric rings fading outwards, centred a little towards the light: only the
+        // band around the disc is drawn (a full gradient fill was the globe's dearest part).
+        const float width = r * (thick + 0.12f);
+        const int steps = 7;
+        const auto c = centre.translated(-r * 0.05f, -r * 0.045f);
+        for (int k = 0; k < steps; ++k) {
+            const float t = (float(k) + 0.5f) / float(steps);
+            const float radius = r * 0.99f + width * t;
+            g.setColour(atm.withAlpha(0.42f * look.alpha * (1.0f - t) * (1.0f - t)));
+            g.drawEllipse(juce::Rectangle<float>(radius * 2.0f, radius * 2.0f).withCentre(c), width / float(steps) + 0.6f);
+        }
     }
     // Rings: the far half behind the planet.
     const float ringNow = hasRings(planet) ? (fading ? blend : 1.0f) : 0.0f;
@@ -373,18 +410,26 @@ void GlobeRenderer::draw(juce::Graphics& g, juce::Rectangle<float> area, int pla
     drawRings(g, area, planet, ringNow * look.alpha, false);
     if (fading) drawRings(g, area, previous, ringBefore * look.alpha, false);
 
-    if (fading) renderPlanet(previous, look, 1.0f - blend, true);
-    renderPlanet(planet, look, fading ? blend : 1.0f, !fading);
     {
         juce::Image::BitmapData data(frame, juce::Image::BitmapData::writeOnly);
-        for (const auto& px : table) {
-            const float* a = accum.data() + std::size_t(px.offset) * 4;
-            const float alpha = std::min(1.0f, a[3]);
+        const auto put = [&](int offset, float alpha, float r, float g, float b) {
+            alpha = std::min(1.0f, alpha);
             const auto q = [alpha](float v) { return juce::uint8(std::clamp(v, 0.0f, alpha) * 255.0f + 0.5f); };
-            auto* p = reinterpret_cast<juce::PixelARGB*>(data.getPixelPointer(px.offset % tableSize, px.offset / tableSize));
-            p->setARGB(juce::uint8(alpha * 255.0f + 0.5f), q(a[0]), q(a[1]), q(a[2]));
+            auto* p = reinterpret_cast<juce::PixelARGB*>(data.getPixelPointer(offset % tableSize, offset / tableSize));
+            p->setARGB(juce::uint8(alpha * 255.0f + 0.5f), q(r), q(g), q(b));
+        };
+        if (fading) {
+            renderPlanet(previous, look, 1.0f - blend, true);
+            renderPlanet(planet, look, blend, false);
+            for (const auto& px : table) {
+                const float* a = accum.data() + std::size_t(px.offset) * 4;
+                put(px.offset, a[3], a[0], a[1], a[2]);
+            }
+        } else {
+            renderPlanet(planet, look, 1.0f, true, [&](int offset, float alpha, float r, float g, float b) { put(offset, alpha, r, g, b); });
         }
     }
+    g.setOpacity(1.0f);   // (drawImage takes the opacity of the last colour set)
     g.drawImage(frame, area, juce::RectanglePlacement::stretchToFit);
 
     // Rings: the near half in front.

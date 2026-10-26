@@ -7,6 +7,7 @@
 // costs one pass over its pixels: no paths, no gradients.
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -45,6 +46,7 @@ private:
     struct Maps {
         static constexpr int width = 512, height = 256;
         std::vector<juce::uint32> surface;   // RGB
+        std::vector<float> colour;           // the same, as floats (r, g, b), for the frames
         std::vector<juce::uint8> cloud;      // cloud density 0..255
         std::vector<juce::uint8> lights;     // city lights 0..255
         std::vector<juce::uint8> glow;       // emissive cracks 0..255
@@ -54,7 +56,7 @@ private:
     };
     struct Pixel {
         int offset;      // position in the frame
-        float u;         // longitude in map columns, before the spin
+        int uFixed;      // longitude in 1/256 map columns, before the spin
         int row;         // latitude row in the maps
         float light;     // 0..1 lit, after the terminator's softness
         float rim;       // 0..1 towards the limb
@@ -63,7 +65,10 @@ private:
     };
     const Maps& maps(int planet);
     void buildTable(int diameter);
-    void renderPlanet(int planet, const GlobeLook& look, float weight, bool first);
+    // Renders a planet into the crossfade buffer, or straight to `sink` (offset, alpha and
+    // premultiplied colour) when it is the only one.
+    using Sink = std::function<void(int, float, float, float, float)>;
+    void renderPlanet(int planet, const GlobeLook& look, float weight, bool first, const Sink& sink = nullptr);
     void drawRings(juce::Graphics& g, juce::Rectangle<float> area, int planet, float alpha, bool front) const;
 
     std::array<std::unique_ptr<Maps>, planetCount> cache;

@@ -1,6 +1,7 @@
 #include "PatternEditor.h"
 #include "../Patterns/PatternMidi.h"
 #include "PlaceArt.h"
+#include "Style.h"
 
 namespace wb::ui {
 
@@ -400,11 +401,10 @@ public:
         const auto accent = accentFor(owner.type());
         const bool on = getToggleState();
         const auto controls = owner.processor.patterns.element(owner.slotIndex, owner.type(), element).controls;
-        g.setColour(on ? accent.withAlpha(0.85f) : colours::panel.brighter(highlighted ? 0.25f : 0.1f));
-        g.fillRoundedRectangle(r, 5.0f);
-        g.setColour(accent.withAlpha(on ? 1.0f : 0.5f));
-        g.drawRoundedRectangle(r, 5.0f, 1.0f);
-        const auto ink = on ? colours::background : (controls.mute ? colours::dim : colours::parchment);
+        // A tab: raised, lit in the Place's colour when selected.
+        const SurfaceState st { highlighted, false, on, true };
+        drawSurface(g, r.reduced(1.0f), 5.0f, colours::panel.brighter(0.06f), accent, st);
+        const auto ink = on ? inkFor(st, accent) : (controls.mute ? colours::dim : colours::parchment);
         auto inner = r.reduced(5.0f, 3.0f);
         drawInstrumentIcon(g, placeInfo(owner.type()).element[std::size_t(element)].icon, inner.removeFromLeft(16.0f), ink);
         inner.removeFromLeft(4.0f);
@@ -436,17 +436,14 @@ public:
         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
     }
     void paint(juce::Graphics& g) override {
-        const auto r = getLocalBounds().toFloat().reduced(1.0f);
-        g.setColour(colours::cyan.withAlpha(0.14f));
-        g.fillRoundedRectangle(r, r.getHeight() * 0.5f);
-        g.setColour(colours::cyan.withAlpha(0.8f));
-        g.drawRoundedRectangle(r, r.getHeight() * 0.5f, 1.0f);
+        const auto r = getLocalBounds().toFloat().reduced(2.0f);
+        drawSurface(g, r, r.getHeight() * 0.5f, colours::panel.interpolatedWith(colours::cyan, 0.18f), colours::cyan, SurfaceState { isMouseOver(), dragging, false, true });
         g.setFont(font(10.5f, true));
-        g.drawText("DRAG MIDI", r.withTrimmedRight(14.0f), juce::Justification::centred, false);
-        juce::Path arrow;
-        const float x = r.getRight() - 14.0f, y = r.getCentreY();
-        arrow.addTriangle(x, y - 4.0f, x, y + 4.0f, x + 6.0f, y);
-        g.fillPath(arrow);
+        g.setColour(colours::parchment);
+        const float w = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "DRAG MIDI");
+        auto row = juce::Rectangle<float>(w + 18.0f, r.getHeight()).withCentre(r.getCentre());
+        g.drawText("DRAG MIDI", row.removeFromLeft(w), juce::Justification::centred, false);
+        drawIcon(g, Icon::DragOut, row.withTrimmedLeft(4.0f), colours::cyan.brighter(0.3f));
     }
     void mouseDrag(const juce::MouseEvent& e) override {
         if (dragging || e.getDistanceFromDragStart() < 5) return;
@@ -458,6 +455,8 @@ public:
             dragging = false;
     }
     void mouseUp(const juce::MouseEvent&) override { dragging = false; }
+    void mouseEnter(const juce::MouseEvent&) override { repaint(); }
+    void mouseExit(const juce::MouseEvent&) override { repaint(); }
 
 private:
     PatternEditor& owner;
@@ -484,6 +483,13 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     vScroll.addListener(this);
 
     for (auto* b : { &draw, &select }) b->setColour(juce::TextButton::buttonOnColourId, colours::brass);
+    // One icon per tool, the same set as the rest of the interface.
+    for (auto [b, icon] : { std::pair<juce::Component*, Icon> { &back, Icon::Back }, { &draw, Icon::Draw }, { &select, Icon::Select }, { &undoButton, Icon::Undo },
+                            { &redoButton, Icon::Redo }, { &copy, Icon::Copy }, { &pasteButton, Icon::Paste }, { &clear, Icon::Clear },
+                            { &generateButton, Icon::Generate }, { &up, Icon::Up }, { &down, Icon::Down }, { &twice, Icon::Double }, { &half, Icon::Half },
+                            { &lock, Icon::Lock }, { &twelve, Icon::Tone12 }, { &follow, Icon::Chords }, { &snapButton, Icon::Snap },
+                            { &importButton, Icon::Import }, { &saveButton, Icon::Save } })
+        setIcon(*b, icon);
     for (int e = 0; e < placeElements; ++e) {
         tabs[std::size_t(e)] = std::make_unique<ElementTab>(*this, e);
         auto& tab = *tabs[std::size_t(e)];

@@ -56,7 +56,7 @@ target_sources(WORLDBUILDER PRIVATE
     Source/Patterns/PatternStore.cpp Source/Patterns/PatternMidi.cpp Source/Capture/Capture.cpp
     Source/Locations/Travel.cpp Source/Locations/LocationBank.cpp
     Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/OverlayArt.cpp Source/UI/PatternEditor.cpp Source/UI/CapturePanel.cpp Source/UI/LocationBar.cpp
-    Source/UI/GlobeRenderer.cpp)
+    Source/UI/GlobeRenderer.cpp Source/UI/Style.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
 # Hand-made Place artwork (optional): assets/places/<place>/{back,mid,front,lights}.png
 # is bundled as <place>_<layer>.png; without any, the procedural art is used.

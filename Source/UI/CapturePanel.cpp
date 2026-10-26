@@ -1,4 +1,5 @@
 #include "CapturePanel.h"
+#include "Style.h"
 #include "WorldLookAndFeel.h"
 
 namespace wb::ui {
@@ -13,18 +14,17 @@ juce::Font font(float size, bool bold = false) { return juce::Font(juce::FontOpt
 class CapturePanel::Chip final : public juce::Component, public juce::SettableTooltipClient {
 public:
     juce::String text;
+    Icon icon = Icon::None;
     bool arrow = false, active = true;
     float progress = -1;   // 0..1 while rendering
     std::function<void()> onClick;
     std::function<juce::StringArray()> dragFiles;
 
     void paint(juce::Graphics& g) override {
-        const auto r = getLocalBounds().toFloat().reduced(1.0f);
+        const auto r = getLocalBounds().toFloat().reduced(2.0f);
         const auto accent = active ? colours::cyan : colours::dim;
         const float corner = r.getHeight() * 0.5f;
-        juce::ColourGradient fill(accent.withAlpha(hover ? 0.30f : 0.18f), r.getX(), r.getY(), colours::panel.withAlpha(0.9f), r.getX(), r.getBottom(), false);
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(r, corner);
+        drawSurface(g, r, corner, colours::panel.interpolatedWith(accent, 0.18f), accent, SurfaceState { hover && active, false, false, active });
         if (progress >= 0.0f) {
             g.setColour(colours::brass.withAlpha(0.45f));
             g.saveState();
@@ -32,12 +32,19 @@ public:
             g.fillRoundedRectangle(r, corner);
             g.restoreState();
         }
-        g.setColour(accent.withAlpha(active ? 0.85f : 0.5f));
-        g.drawRoundedRectangle(r, corner, 1.0f);
         g.setFont(font(10.5f, true));
         g.setColour(active ? colours::parchment : colours::dim);
-        g.drawText(text, r.withTrimmedRight(arrow ? 10.0f : 0.0f), juce::Justification::centred, false);
-        if (arrow) {
+        // The icon says what the chip makes; the arrow (draggable) shows only without one.
+        const bool showArrow = arrow && icon == Icon::None;
+        auto label = r.withTrimmedRight(showArrow ? 10.0f : 0.0f);
+        if (icon != Icon::None) {
+            const float w = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), text);
+            auto row = juce::Rectangle<float>(13.0f + 4.0f + w, r.getHeight()).withCentre(label.getCentre());
+            drawIcon(g, icon, row.removeFromLeft(13.0f), active ? colours::cyan.brighter(0.3f) : colours::dim);
+            label = row.withTrimmedLeft(4.0f);
+        }
+        g.drawText(text, label, juce::Justification::centred, false);
+        if (showArrow) {
             juce::Path p;
             const float x = r.getRight() - 13.0f, y = r.getCentreY();
             p.addTriangle(x, y - 3.5f, x, y + 3.5f, x + 5.0f, y);
@@ -111,6 +118,7 @@ CapturePanel::CapturePanel(WorldbuilderProcessor& p) : processor(p) {
 
     midi = std::make_unique<Chip>();
     midi->text = "MIDI";
+    midi->icon = Icon::Midi;
     midi->arrow = true;
     midi->setTooltip("Scene MIDI: the patterns of every active instrument, one track each (\"Place - Instrument\"), from bar 1 at the "
                      "host's tempo. Drag it onto the host's tracks, or click to save the file.");
@@ -123,6 +131,7 @@ CapturePanel::CapturePanel(WorldbuilderProcessor& p) : processor(p) {
 
     render = std::make_unique<Chip>();
     render->text = "RENDER";
+    render->icon = Icon::Render;
     render->setTooltip("Renders the bars of the current world offline, faster than real time, exactly as the host plays it from bar 1 "
                        "in Transport mode. Click again to cancel. Automation is not included: for that, bounce in the host.");
     render->onClick = [this] { rendering() ? cancelRender() : startRender(); };
@@ -130,6 +139,7 @@ CapturePanel::CapturePanel(WorldbuilderProcessor& p) : processor(p) {
 
     wav = std::make_unique<Chip>();
     wav->text = "WAV";
+    wav->icon = Icon::DragOut;
     wav->arrow = true;
     wav->active = false;
     wav->setTooltip("The last render: drag it onto the host's tracks (at bar 1), or click to save it.");
@@ -204,6 +214,7 @@ void CapturePanel::startRender() {
     worker->startThread(juce::Thread::Priority::low);
     status = {};
     render->text = "CANCEL";
+    render->icon = Icon::Close;
     render->progress = 0;
     render->repaint();
     startTimerHz(15);
@@ -216,6 +227,7 @@ void CapturePanel::cancelRender() {
     worker.reset();
     stopTimer();
     render->text = "RENDER";
+    render->icon = Icon::Render;
     render->progress = -1;
     render->repaint();
     status = "Cancelled";
@@ -243,6 +255,7 @@ void CapturePanel::finishRender() {
     status = ok ? (rendered.size() == 1 ? juce::String("Rendered") : juce::String(rendered.size()) + " stems") : juce::String("Render failed");
     worker.reset();
     render->text = "RENDER";
+    render->icon = Icon::Render;
     render->progress = -1;
     render->repaint();
     wav->active = !rendered.isEmpty();

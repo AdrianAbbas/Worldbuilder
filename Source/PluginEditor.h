@@ -176,7 +176,7 @@ private:
     std::array<float, 8> particleAmount {};
     juce::Rectangle<float> globeArea;
     float spin = 0, precipitation = 0, flash = 0;
-    int boltSeed = 1, hoverCard = -1, dragLandmark = -1;
+    int boltSeed = 1, hoverCard = -1, hoverChip = -1, dragLandmark = -1;
     // The marker a journey on the globe set out from (-1: the top of the orbit).
     int journeyStart = -1, journeySeen = -1;
     double fullMessageUntil = 0;

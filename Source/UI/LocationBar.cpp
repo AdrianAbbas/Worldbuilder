@@ -1,4 +1,5 @@
 #include "LocationBar.h"
+#include "Style.h"
 #include "WorldLookAndFeel.h"
 
 namespace wb::ui {
@@ -27,6 +28,7 @@ LocationBar::LocationBar(WorldbuilderProcessor& p) : processor(p) {
     journeyMode.setTooltip("Journey Mode: the world morphs between From and To at the Journey position, so a drawn automation curve "
                            "walks the listener from one Location to the other. Switching it off keeps the world where it stands.");
     journeyMode.setColour(juce::TextButton::buttonOnColourId, colours::cyan);
+    setIcon(journeyMode, Icon::Journey);
     addAndMakeVisible(journeyMode);
     journeyModeAttachment = std::make_unique<ButtonAttachment>(state, specs[PJourneyOn].id, journeyMode);
     for (auto* box : { &from, &to }) {
@@ -48,6 +50,9 @@ LocationBar::LocationBar(WorldbuilderProcessor& p) : processor(p) {
                         "arriving at each on the downbeat (the journey takes the Travel Time). It follows the song position, so it plays "
                         "the same every time. Switching it off keeps the world where it stands.");
     pathMode.setColour(juce::TextButton::buttonOnColourId, colours::cyan);
+    setIcon(pathMode, Icon::Path);
+    setIcon(saveFile, Icon::Save);
+    setIcon(loadFile, Icon::Load);
     addAndMakeVisible(pathMode);
     pathModeAttachment = std::make_unique<ButtonAttachment>(state, specs[PPathOn].id, pathMode);
     pathLeg.addItemList(juce::StringArray::fromTokens(pathLegChoices, "|", ""), 1);
@@ -168,9 +173,9 @@ void LocationBar::paint(juce::Graphics& g) {
         const bool going = mode == Travel::Travelling && target == i;
         const float corner = 6.0f;
         if (used) {
-            const float lift = hover == i ? 0.10f : 0.0f;
-            g.setGradientFill(juce::ColourGradient(colour.withAlpha(0.30f + lift), r.getX(), r.getY(), colours::panel.withAlpha(0.95f), r.getX(), r.getBottom(), false));
-            g.fillRoundedRectangle(r, corner);
+            // A raised chip in the Location's colour; the one the world stands at glows.
+            drawSurface(g, r.reduced(0.5f), corner, colours::panel.interpolatedWith(colour, 0.22f), colour, SurfaceState { hover == i, false, false, true });
+            if (here) drawGlow(g, r, corner, colour, 5.0f);
             // Journey Mode: how much of From and To is in the world.
             float fill = going ? progress : 0.0f;
             if (journeyOn) fill = i == journeyTo ? progress : i == journeyFrom ? 1.0f - progress : 0.0f;

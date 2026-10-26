@@ -4135,8 +4135,36 @@ void testPlanet(Suite& s) {
                 alike += std::abs(centres[a].getFloatRed() - centres[b].getFloatRed()) + std::abs(centres[a].getFloatGreen() - centres[b].getFloatGreen())
                                  + std::abs(centres[a].getFloatBlue() - centres[b].getFloatBlue()) < 0.06f
                              ? 1 : 0;
-        s.check(opaque && alike == 0 && view->shownPlanetType() == PlanetTypeCount - 1, "the globe draws each planet opaque and in its own colours",
+        s.check(opaque && alike == 0 && view->shownPlanetType() == PlanetTypeCount - 1, "the globe draws each planet opaque and in its own colours (its frame)",
                 std::to_string(alike) + " alike");
+        {
+            // What the planet costs per frame (report only: the developer measures CPU on the Mac).
+            ui::GlobeRenderer globe;
+            juce::Image canvas(juce::Image::ARGB, 300, 300, true);
+            juce::Graphics g(canvas);
+            ui::GlobeLook look;
+            globe.draw(g, { 5, 5, 290, 290 }, GasGiant, GasGiant, 1.0f, look);   // maps made once
+            for (int planet : { Rocky, GasGiant }) {
+                globe.draw(g, { 5, 5, 290, 290 }, planet, planet, 1.0f, look);   // maps made once
+                const auto begin = juce::Time::getHighResolutionTicks();
+                for (int frame = 0; frame < 60; ++frame) {
+                    look.spin += 0.01f;
+                    globe.draw(g, { 5, 5, 290, 290 }, planet, planet, 1.0f, look);
+                }
+                const double ms = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) * 1000.0 / 60.0;
+                s.metric(std::string("globe: one ") + planetNames[std::size_t(planet)] + " frame at 290 px (report only; at 30 fps " + fmt(ms * 3.0) + " % of one core)", ms, " ms");
+            }
+        }
+        {
+            // And the frame reaches the screen: the editor's pixels at the globe show it.
+            const auto shot = editor->createComponentSnapshot(editor->getLocalBounds());
+            const auto& f = view->globeRenderer().lastFrame();
+            const auto onScreen = shot.getPixelAt(575 - f.getWidth() / 2 + f.getWidth() * 2 / 5, 233 - f.getHeight() / 2 + f.getHeight() * 2 / 5);
+            const auto drawn = f.getPixelAt(f.getWidth() * 2 / 5, f.getHeight() * 2 / 5);
+            const float gap = std::abs(onScreen.getFloatRed() - drawn.getFloatRed()) + std::abs(onScreen.getFloatGreen() - drawn.getFloatGreen())
+                              + std::abs(onScreen.getFloatBlue() - drawn.getFloatBlue());
+            s.check(gap < 0.25f, "the planet is drawn on screen (the editor's pixels show its frame)", fmt(gap));
+        }
         h.set("planet", float(Rocky));
         view->settle(0.3f);
         editor->createComponentSnapshot(editor->getLocalBounds());
