@@ -5,10 +5,12 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 11b/11c is in progress** (the Arrangement, Direction Update 6). The live
-checklist is in the
+**Milestone 11 is complete** (the Arrangement, Direction Update 6: 11a, 11b and 11c).
+Next is Milestone 12 (pro features, presets and release). The checklist and handoff
+are in the
 [Milestone 11b and 11c section](#milestone-11b-and-11c-transitions-templates-auto-arrange-game-audio-export-2026-10-26)
-at the end; a resumed session continues from its first unticked item.
+at the end. A new milestone starts its own progress checklist; a resumed session
+continues from the first unticked item.
 
 ---
 
@@ -3415,14 +3417,17 @@ attempts; the Linux suite passes before every push.
 
 Ticked when committed and pushed. A resumed session starts at the first unticked item.
 
-- [ ] 11b.1 Model and engine: transitions (Cut, Crossfade 1-4 bars, Riser, Drum fill, Drop, Reverse swell, Filter sweep), a section's Location (journey timed to arrive on its downbeat) and its Planet / World Control overrides, the six templates and Auto-arrange (World Seed); state; tests (`--only transitions`)
-- [ ] 11b.2 ARRANGE view: TEMPLATE menu and AUTO-ARRANGE (undoable), the inspector's INTO NEXT / LENGTH / LOCATION / PLANET / WORLD controls, transition and Location marks on the timeline; snapshots; tests
-- [ ] 11b.3 README, MANUAL_TEST, handoff for 11b
-- [ ] 11c.1 Render the arrangement (full mix or stems per Place) from CAPTURE
-- [ ] 11c.2 Render sections separately, seamless loop sections (tail wrapped into the start), game-engine names (`Tavern_Intro.wav`...)
-- [ ] 11c.3 Stingers: one-shot cues from a section's ending or a transition
-- [ ] 11c.4 Scene MIDI export follows the arrangement (variants and on/off per section)
-- [ ] 11c.5 Polish, README, MANUAL_TEST, final handoff, final push without `[skip ci]`
+- [x] 11b.1 Model and engine: transitions (Cut, Crossfade 1-4 bars, Riser, Drum fill, Drop, Reverse swell, Filter sweep), a section's Location (journey timed to arrive on its downbeat) and its Planet / World Control overrides, the six templates and Auto-arrange (World Seed); state; tests (`--only transitions`)
+- [x] 11b.2 ARRANGE view: TEMPLATE menu and AUTO-ARRANGE (undoable), the inspector's INTO NEXT / LENGTH / LOCATION / PLANET / WORLD controls, transition and Location marks on the timeline; snapshots; tests
+- [x] 11b.3 README, MANUAL_TEST, handoff for 11b
+- [x] 11c.1 Render the arrangement (full mix or stems per Place) from CAPTURE
+- [x] 11c.2 Render sections separately, seamless loop sections (tail wrapped into the start), game-engine names (`Tavern_Intro.wav`...)
+- [x] 11c.3 Stingers: one-shot cues from a section's ending or a transition
+- [x] 11c.4 Scene MIDI export follows the arrangement (variants and on/off per section)
+- [x] 11c.5 Polish, README, MANUAL_TEST, final handoff, final push without `[skip ci]`
+
+11b and 11c.1-4 were finished together and pushed in one commit (a9779e7, `[skip ci]`)
+once the full suite passed on that build; 11c.5 (this handoff) is the final push.
 
 ### Decisions (11b)
 
@@ -3606,4 +3611,51 @@ block, so the scene took the default 96 bpm instead of the host's 120.
 
 Snapshot: `docs/snapshots/m11c-capture-arrangement.png` (the footer with Arrangement and
 Sections).
+
+### Tests (Linux, GCC)
+
+Full suite (`scripts/run-tests-parallel.sh`, which now includes the `transitions` and
+`gameaudio` groups in the "rest" shard) on the final build: **3540 checks pass, 0 fail**
+(rest 1642, places 1092, instruments 391 + 380, CPU shard). CPU metrics, report-only, on
+this container: four busy Places at Standard quality 20.2 % of one core (budget 15 % on
+the developer's Mac; Milestone 11a's run 20.2 %), the instrument effects alone 8.5 %.
+Transitions add work only while one plays. The new files were also syntax-checked with
+clang (the macOS compiler).
+
+### Milestone 11 handoff
+
+**Done:** all of Milestone 11 (Direction Update 6).
+1. 11a: the timeline, sections, instrument grid, pattern variants, Play Mode Arrangement.
+2. 11b: transitions per boundary (Cut, Crossfade, Riser, Drum fill, Drop, Reverse swell,
+   Filter sweep), a section's Location (timed arrival) and Planet / World overrides, six
+   templates and Auto-arrange.
+3. 11c: CAPTURE from the arrangement (mix or stems, equal to playback), sections as game
+   files with seamless loops, stingers, scene MIDI following the arrangement.
+
+**What to test first** (the 11b and 11c checks in [MANUAL_TEST.md](MANUAL_TEST.md)):
+- TEMPLATE → Classic Arc with two or three Places: is the auto-arrangement musical?
+- each transition by ear across a boundary: Riser and Reverse swell level against the
+  Places (the riser was made louder after a test; it may now be too loud in a sparse
+  world), the Drop's sub hit, the Filter sweep; any clicks;
+- a section Location arriving on its downbeat, and the knobs unchanged afterwards;
+- Sections: loop `_Loop.wav` in GarageBand's cycle: seamless?
+
+**Next:** Milestone 12 (Direction Update 6 section 6, old Milestone 11 of Update 5):
+separate outputs per Place, Inspire (now also picks a template and auto-arranges),
+20+ factory presets as complete arranged scenes, README/control guide/keyboard map,
+final DEVLOG.
+
+**Known issues / limits:**
+- Nothing of 11b/11c has been heard on a Mac.
+- Riser and Reverse swell are their own small synth (tuned, in the world's reverb), not
+  played by the Places' instruments; Drum fill and Crossfade use the instruments.
+- While the arrangement drives section Locations, the Destination, Journey and Path
+  controls wait; renders without section Locations use the parameters as set.
+- Arrangement MIDI uses B/C/Fill as generated at the current settings (playback
+  regenerates them as intensity moves); Location patterns are not followed.
+- A loop file is held in memory while it renders (about 25 MB for 32 bars at 120 bpm).
+- Exploration Loop's Loop plays twice (so the Outro is reached in a DAW); set it to
+  endless for a game.
+- Carried over from 11a: 4/4 only; patterns on the song's bar grid; an endless section
+  makes later ones unreachable; the `push-access-check` branch can be deleted.
 
