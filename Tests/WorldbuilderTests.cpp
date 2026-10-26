@@ -6711,6 +6711,47 @@ void testTinyPlanetMotion(Suite& s) {
         s.check(changed > 50 && widest < 0.6, "the aurora is faint curtains, never a solid band across the sky",
                 fmt(widest * 100.0) + " % of the busiest row, " + fmt(changed) + " pixels");
     }
+    {
+        // Forest World: lakes and rivers (water) and clearings (meadow) among the trees,
+        // somewhere in view at every quarter turn, and not on the other planets.
+        const auto count = [](int planetType, float turn, int& water, int& meadow) {
+            ui::TinyPlanet planet;
+            ui::TinyPlanetScene scene;
+            scene.width = 249;
+            scene.height = 157;
+            scene.day = 1.0f;
+            scene.planet = scene.previous = planetType;
+            scene.turn = turn;
+            const auto& f = planet.render(scene, ui::pixel::palette(ui::pixel::fantasyMood));
+            const auto o = ui::TinyPlanet::centre(scene.width, scene.height);
+            const float r = ui::TinyPlanet::radius(scene.width, scene.height);
+            water = meadow = 0;
+            for (int y = 0; y < scene.height; ++y)
+                for (int x = 0; x < scene.width; ++x) {
+                    const float dx = float(x) + 0.5f - o.x, dy = float(y) + 0.5f - o.y;
+                    if (dx * dx + dy * dy > (r - 2.0f) * (r - 2.0f)) continue;
+                    const auto c = f.get(x, y);
+                    if (c.getBlue() > c.getGreen() + 25 && c.getBlue() > c.getRed() + 60) ++water;
+                    if (c == juce::Colour(0xffb4dc78) || c == juce::Colour(0xff9ccc68)) ++meadow;
+                }
+        };
+        int fewestWater = 1 << 30, fewestMeadow = 1 << 30, totalWater = 0, totalMeadow = 0;
+        for (int q = 0; q < 8; ++q) {
+            int water = 0, meadow = 0;
+            count(dsp::ForestWorld, float(q) * juce::MathConstants<float>::twoPi / 8.0f, water, meadow);
+            fewestWater = std::min(fewestWater, water);
+            fewestMeadow = std::min(fewestMeadow, meadow);
+            totalWater += water;
+            totalMeadow += meadow;
+        }
+        int rockyWater = 0, rockyMeadow = 0;
+        count(dsp::Rocky, 0.0f, rockyWater, rockyMeadow);
+        s.metric("Forest World: fewest water / meadow pixels in view over a turn", fewestWater);
+        s.metric("  meadow", fewestMeadow);
+        s.check(totalWater > 400 && fewestWater > 0 && totalMeadow > 300 && rockyWater == 0 && rockyMeadow == 0,
+                "Forest World has lakes and rivers and clearings among its trees (in view all the way round)",
+                "water " + std::to_string(totalWater) + " (fewest " + std::to_string(fewestWater) + "), meadow " + std::to_string(totalMeadow));
+    }
 }
 
 // The freeze found in GarageBand (3+ Places, overlays Full): the editor's animation

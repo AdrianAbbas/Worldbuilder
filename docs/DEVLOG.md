@@ -4197,7 +4197,7 @@ water or a hurdy-gurdy rebuild).
 - [x] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
 - [x] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
 - [x] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
-- [ ] 6. Forest planet: lakes, rivers and clearings
+- [x] 6. Forest planet: lakes, rivers and clearings
 - [ ] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
 - [ ] 8. Location labels in the sky: hidden by default, shown on hover or for a journey's ends, never overlapping
 
@@ -4382,3 +4382,18 @@ shots with `WorldbuilderTests --snapshot-pixel <dir>` (the files are named
   than 60 % covered.
 - Snapshots `docs/snapshots/tiny-planet-*.png` regenerated
   (`WorldbuilderTests --snapshot-planets docs/snapshots`).
+
+### 6. Forest World: lakes, rivers and clearings
+
+The Forest planet's ground (`forestGround` in `TinyPlanet.cpp`) is woods broken by:
+- **rivers**, one every so often along the surface, meandering down from the horizon
+  (two sine wiggles), widening as they come nearer, with dark banks and glints drifting
+  downstream;
+- **lakes**, flattened toward the horizon, with a reedy and sandy shore and moving
+  ripples;
+- **clearings**: sunny meadows with a dithered edge into the woods and little yellow and
+  pink flowers;
+- the **treeline** on the horizon opens where one of them reaches it.
+All turn with the planet and darken at night like the rest of the ground. Test: over
+eight points of a turn, water and meadow are always in view (at least 375 and 231 art
+pixels), and the Rocky planet has neither. Snapshot: `tiny-planet-forest.png`.

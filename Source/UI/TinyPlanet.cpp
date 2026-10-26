@@ -47,6 +47,55 @@ Look lookOf(int planet) {
     }
 }
 
+// Forest World's open ground, at a surface point (`u` along the surface, `depth` below
+// the horizon): rivers meandering down from the horizon, lakes, meadow clearings. `rim`
+// gets how close the point is to the feature's edge (0 inside .. 1 at the edge).
+enum ForestGround { Woods, River, Lake, Clearing };
+ForestGround forestGround(float u, float depth, float& rim) {
+    rim = 0;
+    // A river every so often: its course wanders as it runs down the slope, widening.
+    {
+        const int cell = int(std::floor(u / 150.0f));
+        if (hash(cell, 0, 51) > 0.35f) {
+            const float course = (float(cell) + 0.3f + 0.4f * hash(cell, 1, 51)) * 150.0f + 7.0f * std::sin(depth / 9.0f + hash(cell, 2, 51) * 6.0f)
+                                 + 3.0f * std::sin(depth / 3.7f);
+            const float half = 1.2f + depth * 0.035f;
+            const float off = std::abs(u - course);
+            if (off < half + 1.0f) {
+                rim = juce::jlimit(0.0f, 1.0f, off / (half + 1.0f));
+                return River;
+            }
+        }
+    }
+    // Lakes: flattened toward the horizon.
+    {
+        const int cell = int(std::floor(u / 95.0f));
+        if (hash(cell, 0, 53) > 0.2f) {
+            const float cu = (float(cell) + 0.25f + 0.5f * hash(cell, 1, 53)) * 95.0f, cd = 12.0f + 40.0f * hash(cell, 2, 53);
+            const float rx = 12.0f + 10.0f * hash(cell, 3, 53), ry = rx * (0.3f + std::min(0.4f, cd / 110.0f));
+            const float e = ((u - cu) * (u - cu)) / (rx * rx) + ((depth - cd) * (depth - cd)) / (ry * ry);
+            if (e < 1.25f) {
+                rim = juce::jlimit(0.0f, 1.0f, e / 1.25f);
+                return Lake;
+            }
+        }
+    }
+    // Clearings: meadows open in the woods.
+    {
+        const int cell = int(std::floor(u / 80.0f));
+        if (hash(cell, 0, 55) > 0.35f) {
+            const float cu = (float(cell) + 0.2f + 0.6f * hash(cell, 1, 55)) * 80.0f, cd = 6.0f + 50.0f * hash(cell, 2, 55);
+            const float rx = 10.0f + 9.0f * hash(cell, 3, 55), ry = rx * (0.35f + std::min(0.4f, cd / 100.0f));
+            const float e = ((u - cu) * (u - cu)) / (rx * rx) + ((depth - cd) * (depth - cd)) / (ry * ry);
+            if (e < 1.0f) {
+                rim = e;
+                return Clearing;
+            }
+        }
+    }
+    return Woods;
+}
+
 // The ground at a surface point: `u` (art pixels along the surface, turning with the
 // planet), `depth` (art pixels below the horizon), `edge` (0 centre .. 1 the side).
 juce::Colour groundAt(int planet, const Look& look, float u, float depth, int px, int py, float time, int frame) {
@@ -94,8 +143,41 @@ juce::Colour groundAt(int planet, const Look& look, float u, float depth, int px
             break;
         }
         case ForestWorld: {
-            // Bushes and tree tops dotted over the ground.
-            if (hash(ui / 3, int(depth / 3.0f), 7) > 0.8f && depth > 4) col = look.ground[std::size_t(std::min(band + 1, 3))].darker(0.15f);
+            // Woods: tree tops dotted over the ground, broken by rivers, lakes and
+            // clearings.
+            float rim = 0;
+            switch (forestGround(u, depth, rim)) {
+                case River: {
+                    // Water with a dark bank, glints drifting downstream.
+                    if (rim > 0.75f) col = c(0x2e5a34);
+                    else {
+                        col = mixc(c(0x4a9ad8), c(0x2f6ab8), juce::jlimit(0.0f, 1.0f, depth / 60.0f));
+                        if (hash(int(std::floor(depth - time * 4.0f)), ui / 2, 57) > 0.86f) col = c(0xbfe6ff);
+                    }
+                    break;
+                }
+                case Lake: {
+                    // A reedy edge, a sandy shore by day, still water with a few ripples.
+                    if (rim > 0.82f) col = bayer(px, py) < 0.5f ? c(0x3c7a40) : c(0xd8d090);
+                    else {
+                        col = rim > 0.6f ? c(0x3c88c8) : c(0x2a66a8);
+                        const float ripple = std::fmod(depth * 1.3f + u * 0.15f + time * 1.5f, 5.0f);
+                        if (ripple < 0.6f && bayer(px, py) < 0.5f) col = c(0x8ccaf0);
+                    }
+                    break;
+                }
+                case Clearing: {
+                    // A sunny meadow with a dithered edge into the woods, and flowers.
+                    if (rim > 0.7f && bayer(px, py) < (rim - 0.7f) * 3.3f) break;
+                    col = rim < 0.5f ? c(0xb4dc78) : c(0x9ccc68);
+                    if (hash(ui, int(depth), 59) > 0.94f) col = hash(ui, int(depth), 61) > 0.5f ? c(0xfff0a0) : c(0xff9ccf);
+                    break;
+                }
+                case Woods:
+                    if (hash(ui / 3, int(depth / 3.0f), 7) > 0.7f && depth > 4) col = look.ground[std::size_t(std::min(band + 1, 3))].darker(0.15f);
+                    else if (hash(ui / 2, int(depth / 2.0f), 9) > 0.85f) col = col.brighter(0.12f);
+                    break;
+            }
             break;
         }
         case GasGiant: {
@@ -138,6 +220,9 @@ float skylineAt(int planet, float u, float time) {
             return std::max(0.0f, h * (1.0f - std::abs(u - centre) / 4.0f));
         }
         case ForestWorld: {
+            // A treeline, open where a river, lake or clearing meets the horizon.
+            float rim = 0;
+            if (forestGround(u, 0.5f, rim) != Woods) return 0.0f;
             const int cell = int(std::floor(u / 6.0f));
             const float h = 5.0f + 7.0f * hash(cell, 0, 43), centre = (float(cell) + 0.5f) * 6.0f;
             return hash(cell, 1, 43) > 0.2f ? std::max(0.0f, h * (1.0f - std::abs(u - centre) / 3.4f)) : 0.0f;
