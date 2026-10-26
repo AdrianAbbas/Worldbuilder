@@ -23,6 +23,9 @@ public:
     int slot() const { return slotIndex; }
     int element() const { return elementIndex; }
     void selectElement(int element);
+    // The pattern variant shown and edited: A, B, C or the Fill (Milestone 11).
+    void selectVariant(int variant);
+    int variant() const { return variantIndex; }
     std::function<void()> onClose;
 
     // Also used by the tests.
@@ -78,8 +81,14 @@ private:
     void setFollowChords(bool on);
     juce::File tempMidiFile(int element) const;
 
+    // One variant of an element as the editor works on it (its pattern in `pattern`, its
+    // edited flag and Generate count in the controls), and back into the element.
+    static pat::Element viewOf(const pat::Element& element, int variant);
+    static void mergeInto(pat::Element& element, const pat::Element& view, int variant);
+
     WorldbuilderProcessor& processor;
-    int slotIndex = -1, elementIndex = -1, shownType = -1;
+    int slotIndex = -1, elementIndex = -1, shownType = -1, variantIndex = 0;
+    std::array<juce::TextButton, pat::variantCount> variantTabs;
     pat::Element working;
     bool chromatic = false, snap = true;
     int cursorStep = 0, lastLength = 2, lastVelocity = 100;

@@ -490,6 +490,19 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
                             { &lock, Icon::Lock }, { &twelve, Icon::Tone12 }, { &follow, Icon::Chords }, { &snapButton, Icon::Snap },
                             { &importButton, Icon::Import }, { &saveButton, Icon::Save } })
         setIcon(*b, icon);
+    const char* variantTips[] = { "Pattern A: the instrument's main pattern.", "Pattern B: a second pattern (generated busier than A until you edit it).",
+                                  "Pattern C: a third pattern (generated sparser than A until you edit it).",
+                                  "Fill: plays in the last bar before an arrangement section changes, where the section's grid asks for it." };
+    for (int v = 0; v < pat::variantCount; ++v) {
+        auto& tab = variantTabs[std::size_t(v)];
+        tab.setButtonText(v == pat::VariantFill ? "FILL" : arr::variantNames[std::size_t(v)]);
+        tab.setTooltip(variantTips[v]);
+        tab.setClickingTogglesState(false);
+        tab.setColour(juce::TextButton::buttonOnColourId, colours::brass);
+        tab.setToggleState(v == 0, juce::dontSendNotification);
+        tab.onClick = [this, v] { selectVariant(v); };
+        addAndMakeVisible(tab);
+    }
     for (int e = 0; e < placeElements; ++e) {
         tabs[std::size_t(e)] = std::make_unique<ElementTab>(*this, e);
         auto& tab = *tabs[std::size_t(e)];
@@ -702,6 +715,7 @@ int PatternEditor::root() const { return juce::roundToInt(processor.parameters.g
 
 void PatternEditor::open(int slot, int element) {
     slotIndex = slot;
+    for (int k = 0; k < placeSlots; ++k) processor.engine.showVariants[std::size_t(k)].store(k == slot, std::memory_order_relaxed);
     shownType = type();
     int first = -1;
     for (int e = 0; e < placeElements; ++e)
@@ -774,12 +788,43 @@ void PatternEditor::layoutTabs() {
     resized();
 }
 
+pat::Element PatternEditor::viewOf(const pat::Element& element, int v) {
+    pat::Element view = element;
+    view.pattern = element.patternOf(v);
+    view.controls.edited = element.edited(v);
+    view.controls.variant = element.generation(v);
+    return view;
+}
+
+void PatternEditor::mergeInto(pat::Element& element, const pat::Element& view, int v) {
+    // Randomness, Evolve, mute and solo are shared; the pattern, its edited flag and
+    // Generate count belong to the variant.
+    const auto edited = element.controls.edited;
+    const auto generation = element.controls.variant;
+    element.controls = view.controls;
+    if (v != 0) {
+        element.controls.edited = edited;
+        element.controls.variant = generation;
+    }
+    element.patternOf(v) = view.pattern;
+    element.setEdited(v, view.controls.edited);
+    element.setGeneration(v, view.controls.variant);
+}
+
+void PatternEditor::selectVariant(int v) {
+    variantIndex = pat::Element::clampVariant(v);
+    for (int i = 0; i < pat::variantCount; ++i) variantTabs[std::size_t(i)].setToggleState(i == variantIndex, juce::dontSendNotification);
+    undoStack.clear();
+    redoStack.clear();
+    if (elementIndex >= 0) selectElement(elementIndex);
+}
+
 void PatternEditor::refreshFromStore() {
     if (slotIndex < 0 || elementIndex < 0) return;
     const int t = type();
-    working = processor.patterns.element(slotIndex, t, elementIndex);
+    working = viewOf(processor.patterns.element(slotIndex, t, elementIndex), variantIndex);
     if (!working.controls.edited) {
-        working.pattern = processor.patterns.playing(slotIndex, t, elementIndex);
+        working.pattern = processor.patterns.playing(slotIndex, t, elementIndex, variantIndex);
         working.pattern.swing = processor.parameters.getRawParameterValue(specs[std::size_t(placeParam(slotIndex, PlSwing))].id)->load();
     }
     lastGeneratedSerial = processor.patterns.generated(slotIndex).serial;
@@ -864,8 +909,10 @@ void PatternEditor::beginEdit() {
 void PatternEditor::commit() {
     if (slotIndex < 0 || elementIndex < 0) return;
     working.pattern.normalise();
-    auto published = working;
-    for (int i = 0; i < published.pattern.count; ++i) published.pattern.notes[std::size_t(i)].flags &= uint8_t(~selectedFlag);
+    auto view = working;
+    for (int i = 0; i < view.pattern.count; ++i) view.pattern.notes[std::size_t(i)].flags &= uint8_t(~selectedFlag);
+    auto published = processor.patterns.element(slotIndex, type(), elementIndex);
+    mergeInto(published, view, variantIndex);
     processor.patterns.setElement(slotIndex, type(), elementIndex, published);
     rebuildRows();
     refreshControls();
@@ -1061,7 +1108,7 @@ juce::File PatternEditor::tempMidiFile(int element) const {
 bool PatternEditor::saveMidi(const juce::File& file, int element) {
     if (slotIndex < 0 || element < 0) return false;
     const int t = type();
-    const auto pattern = element == elementIndex ? working.pattern : processor.patterns.playing(slotIndex, t, element);
+    const auto pattern = element == elementIndex ? working.pattern : processor.patterns.playing(slotIndex, t, element, variantIndex);
     pat::MidiTarget target;
     target.root = root();
     target.mood = mood();
@@ -1137,6 +1184,10 @@ bool PatternEditor::keyPressed(const juce::KeyPress& key) {
 }
 
 void PatternEditor::timerCallback() {
+    // While the editor shows a slot, every variant of its Place is generated (so B, C
+    // and the Fill can be shown before they play).
+    for (int slot = 0; slot < placeSlots; ++slot)
+        processor.engine.showVariants[std::size_t(slot)].store(isShowing() && slot == slotIndex, std::memory_order_relaxed);
     if (!isShowing() || slotIndex < 0) return;
     const int t = type();
     if (t != shownType) {
@@ -1187,7 +1238,11 @@ void PatternEditor::resized() {
     r.removeFromTop(4);
     elementArea = r.removeFromTop(24);
     {
-        auto t = elementArea.withTrimmedLeft(200);
+        // The variant tabs after the instrument's name.
+        auto tabsArea = elementArea.withTrimmedLeft(140).withWidth(132);
+        for (int v = 0; v < pat::variantCount; ++v)
+            variantTabs[std::size_t(v)].setBounds(tabsArea.removeFromLeft(v == pat::VariantFill ? 42 : 30).reduced(1, 1));
+        auto t = elementArea.withTrimmedLeft(290);
         soloButton.setBounds(t.removeFromRight(56).reduced(2, 1));
         muteButton.setBounds(t.removeFromRight(60).reduced(2, 1));
         elementOn.setBounds(t.removeFromRight(48).reduced(2, 1));
@@ -1334,7 +1389,7 @@ void PatternEditor::paint(juce::Graphics& g) {
         strip.removeFromLeft(6);
         g.setColour(colours::parchment);
         g.setFont(font(12.0f, true));
-        g.drawText(spec.name, strip.removeFromLeft(170), juce::Justification::centredLeft, true);
+        g.drawText(spec.name, strip.removeFromLeft(112), juce::Justification::centredLeft, true);
         g.setColour(colours::brass.withAlpha(0.85f));
         g.setFont(font(9.5f, true).withExtraKerningFactor(0.12f));
         g.drawText("LEVEL", elementLevel.getBounds().withX(elementLevel.getX() - 44).withWidth(40), juce::Justification::centredLeft, false);
@@ -1365,8 +1420,15 @@ void PatternEditor::paint(juce::Graphics& g) {
     // Status: generated or edited, and what the rows mean.
     g.setFont(font(10.5f));
     juce::String status;
+    if (variantIndex != 0) status = "Pattern " + juce::String(arr::variantNames[std::size_t(variantIndex)]) + " (chosen per section in ARRANGE). ";
     if (working.controls.edited)
-        status = "Edited: this pattern plays as written (with its Randomness), whatever the Place's knobs do. GENERATE replaces it.";
+        status += "Edited: this pattern plays as written (with its Randomness), whatever the Place's knobs do. GENERATE replaces it.";
+    else if (variantIndex == pat::VariantB)
+        status += "Generated: a busier take on A, from the Place's Seed, until you edit it.";
+    else if (variantIndex == pat::VariantC)
+        status += "Generated: a sparser take on A, from the Place's Seed, until you edit it.";
+    else if (variantIndex == pat::VariantFill)
+        status += "Generated: the busiest take, building over its bar; it plays in a section's last bar.";
     else
         status = "Generated from the Place's Seed: it follows Character, Activity, Density, Tension and Life until you edit it.";
     if (!isKit() && working.pattern.followChords) status += "  Rows follow the chords (named on the tonic chord).";

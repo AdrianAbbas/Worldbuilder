@@ -1,5 +1,6 @@
 #pragma once
 #include "Parameters.h"
+#include "Arrangement/ArrangementStore.h"
 #include "Capture/Capture.h"
 #include "Locations/LocationBank.h"
 #include "Patterns/PatternStore.h"
@@ -46,6 +47,18 @@ public:
     // The composer's patterns (message thread), published to the engine.
     wb::PatternStore patterns { engine };
     std::atomic<float> cpuLoad { 0 };
+    // The arrangement (Milestone 11), published to the engine.
+    wb::ArrangementStore arrangement { engine.arrangementIn };
+
+    // The ARRANGE view's preview: plays the arrangement from a bar on the plugin's own
+    // clock (at the host tempo) while the host is stopped, in any Play Mode. The host
+    // starting playback ends it.
+    void previewFrom(int bar);
+    void stopPreview();
+    bool previewing() const { return previewOn.load(std::memory_order_relaxed); }
+    // Whether the world follows the arrangement now (Play Mode Arrangement with the host
+    // playing, or the preview).
+    bool arranging() const { return engine.arrangeSection.load(std::memory_order_relaxed) != -1; }
 
     // A snapshot of the world as it sounds now, for offline renders and scene MIDI
     // (message thread): the parameters, the patterns, the host's tempo and sample rate.
@@ -89,6 +102,10 @@ private:
     bool hostWasPlaying = false;
     std::atomic<float> hostBpm { 0 };
     bool gateOpen = true;
+    std::atomic<int> previewBar { 0 };
+    std::atomic<uint32_t> previewSerial { 0 };
+    std::atomic<bool> previewOn { false };
+    uint32_t previewSeen = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorldbuilderProcessor)
 };

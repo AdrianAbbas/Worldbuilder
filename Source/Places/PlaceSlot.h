@@ -1,6 +1,7 @@
 #pragma once
 #include "Intensity.h"
 #include "Places.h"
+#include <atomic>
 #include <memory>
 
 namespace wb {
@@ -21,6 +22,10 @@ struct PlaceSlotControls {
     // A journey between Locations sends the Place away (0: where the slot puts it, 1: at
     // the horizon, nearly silent) as it leaves or arrives.
     float travelFar = 0;
+    // The Arrangement (Milestone 11): each instrument's gain in the current section (1
+    // without an arrangement) and the pattern variant it plays (A, B, C or Fill).
+    std::array<float, placeElements> arrange { 1, 1, 1, 1, 1, 1 };
+    std::array<uint8_t, placeElements> variant {};
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -42,11 +47,18 @@ public:
                 double hostBeat, float hostBpm, float* left, float* right, int n);
     // Where generated patterns are reported (the editor reads them).
     void setFeedback(pat::TripleBuffer<pat::Generated>* buffer) { feedback = buffer; }
+    // While this flag is set (the Pattern Editor shows variants), every variant is
+    // generated, not only the ones playing.
+    void setVariantFlag(const std::atomic<bool>* flag) { allVariants = flag; }
     // The Place's beat at the last chunk (for the editor's playhead).
     double beat() const { return lastBeat; }
     // The pattern element e is playing now (nullptr when none), for the tests.
     const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements ? playing[std::size_t(e)] : nullptr; }
-    const pat::Pattern& generatedPattern(int e) const { return generated[std::size_t(std::clamp(e, 0, placeElements - 1))]; }
+    const pat::Pattern& generatedPattern(int e, int variant = 0) const {
+        return generated[std::size_t(pat::Element::clampVariant(variant))][std::size_t(std::clamp(e, 0, placeElements - 1))];
+    }
+    // The arrangement's gain on element e now (after its entrance and exit ramps).
+    float arrangeGain(int e) const { return arranged[std::size_t(std::clamp(e, 0, placeElements - 1))]; }
     // World Space send for the last rendered chunk.
     float spaceSend() const { return send; }
     // The instruments' sends to the shared reverbs and delays for the last rendered
@@ -96,13 +108,21 @@ private:
     void tiltSends(float tone, float far, int n);
     std::array<std::array<float, dsp::chunk>, 2> sendGain {};
 
-    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns);
-    std::array<pat::Pattern, placeElements> generated {};
-    std::array<GenInputs, placeElements> generatedFor {};
-    std::array<bool, placeElements> generatedValid {};
+    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants);
+    // Generated patterns per variant (A, B, C, Fill) and element.
+    using VariantPatterns = std::array<std::array<pat::Pattern, placeElements>, pat::variantCount>;
+    VariantPatterns generated {};
+    std::array<std::array<GenInputs, placeElements>, pat::variantCount> generatedFor {};
+    std::array<std::array<bool, placeElements>, pat::variantCount> generatedValid {};
+    void generateVariant(int variant, int e, GenInputs in);
+    // The arrangement's gain per element: an entrance from silence starts at once, a
+    // re-entrance while ringing rises over 20 ms, an exit fades over 250 ms.
+    std::array<float, placeElements> arranged {};
+    float arrangeUp = 0.001f, arrangeDown = 0.0001f;
     std::array<const pat::Pattern*, placeElements> playing {};
     std::array<pat::Controls, placeElements> controlsNow {};
     pat::TripleBuffer<pat::Generated>* feedback = nullptr;
+    const std::atomic<bool>* allVariants = nullptr;
     uint32_t feedbackSerial = 0;
     double lastBeat = 0;
 };

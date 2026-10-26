@@ -4,6 +4,7 @@
 // and the four Place strips on the right; key, quality, seed and output below.
 // The full Living Globe and resizable layout arrive in Milestone 6.
 #include "PluginProcessor.h"
+#include "UI/ArrangeView.h"
 #include "UI/CapturePanel.h"
 #include "UI/GlobeRenderer.h"
 #include "UI/LocationBar.h"
@@ -34,6 +35,11 @@ public:
     // Opens the Pattern Editor on a slot's Place (on `element`, or its first pattern).
     void openPatterns(int slot, int element = -1);
     wb::ui::PatternEditor& patternEditor() { return *patterns; }
+    // The ARRANGE view (Milestone 11), over the globe and the cards like the Pattern Editor.
+    void openArrange();
+    void closeArrange();
+    wb::ui::ArrangeView& arrangeView() { return *arrange; }
+    juce::Button& arrangeButton() { return arrangeToggle; }
     wb::ui::CapturePanel& capturePanel() { return *capture; }
     wb::ui::LocationBar& locationBar() { return *locationRow; }
     // Where Location i's marker sits on the globe's orbit.
@@ -137,6 +143,10 @@ private:
     std::unique_ptr<SliderAttachment> seedAttachment;
     juce::TextButton dice { "New world" };
     std::unique_ptr<wb::ui::PatternEditor> patterns;
+    std::unique_ptr<wb::ui::ArrangeView> arrange;
+    juce::TextButton arrangeToggle { "ARRANGE" };
+    // The globe and the cards are covered (by the Pattern Editor or the ARRANGE view).
+    bool covered() const;
     std::unique_ptr<wb::ui::CapturePanel> capture;
     std::unique_ptr<wb::ui::LocationBar> locationRow;
     juce::ComboBox playMode;

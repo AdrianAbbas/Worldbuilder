@@ -183,7 +183,8 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     // every start or locate, so the same song position always sounds the same.
     // A host with no transport at all (no tempo, no song position: a test host, the
     // standalone app) cannot start or stop the world, so there it plays freely.
-    bool transportMode = juce::roundToInt(raw[PPlayMode]->load(std::memory_order_relaxed)) == PlayTransport;
+    const int mode = juce::roundToInt(raw[PPlayMode]->load(std::memory_order_relaxed));
+    bool transportMode = mode == PlayTransport || mode == PlayArrangement;
     bool hostHasTransport = false;
     bool playing = false;
     bool restart = false;
@@ -214,9 +215,28 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                 }
         }
     if (!hostHasTransport) transportMode = false;
-    engine.transportRolling.store(playing, std::memory_order_relaxed);
-    gateOpen = !transportMode || playing;
+    // The ARRANGE preview: while the host is stopped, the arrangement plays from the
+    // chosen bar on the world's own clock. The host starting playback ends it.
+    if (playing) {
+        previewOn.store(false, std::memory_order_relaxed);
+        previewSeen = previewSerial.load(std::memory_order_acquire);
+    } else if (const auto serial = previewSerial.load(std::memory_order_acquire); serial != previewSeen) {
+        previewSeen = serial;
+        if (previewOn.load(std::memory_order_relaxed)) {
+            const float bpm = hostBpm.load(std::memory_order_relaxed);
+            const double tempo = bpm >= 20.0f && bpm <= 999.0f ? double(bpm) : double(WorldEngine::defaultBpm);
+            restart = true;
+            restartBeat = double(std::max(0, previewBar.load(std::memory_order_relaxed)) * arr::beatsPerBar);
+            restartAt = uint64_t(restartBeat * 60.0 / tempo * rate);
+        }
+    }
+    const bool previewing = !playing && previewOn.load(std::memory_order_relaxed);
+    engine.transportRolling.store(playing || previewing, std::memory_order_relaxed);
+    gateOpen = !transportMode || playing || previewing;
     hostWasPlaying = playing;
+    // Play Mode Arrangement (with the host playing) and the preview follow the arrangement.
+    engine.arrangementIn.update();
+    const arr::Arrangement* arranged = (transportMode && mode == PlayArrangement && playing) || previewing ? &engine.arrangementIn.read() : nullptr;
 
     // The world: the parameters, or a journey between Locations. While one is under way
     // the block is rendered in short pieces so it glides.
@@ -235,6 +255,7 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         const auto& world = travel.advance(live, livePatterns, in, restart && done == 0);
         const int count = travel.active() ? std::min(n - done, travelPiece) : n - done;
         auto controls = controlsFor(world.v);
+        controls.arrangement = arranged;
         for (int slot = 0; slot < placeSlots; ++slot) {
             controls.places[std::size_t(slot)].travelFar = world.far[std::size_t(slot)];
             controls.patterns[std::size_t(slot)] = world.patterns[std::size_t(slot)];
@@ -276,6 +297,14 @@ TravelInputs WorldbuilderProcessor::travelInputs(const WorldValues& v) const noe
     in.bpm = bpm >= 20.0f && bpm <= 999.0f ? double(bpm) : double(WorldEngine::defaultBpm);
     return in;
 }
+
+void WorldbuilderProcessor::previewFrom(int bar) {
+    previewBar.store(std::max(0, bar), std::memory_order_relaxed);
+    previewOn.store(true, std::memory_order_relaxed);
+    previewSerial.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void WorldbuilderProcessor::stopPreview() { previewOn.store(false, std::memory_order_relaxed); }
 
 void WorldbuilderProcessor::saveLocation(int index) {
     patterns.syncTypes(slotTypes());
@@ -359,6 +388,8 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto locationTree = locations.toValueTree();
     locationTree.setProperty("settled", travel.settledDestination.load(), nullptr);
     state.appendChild(locationTree, nullptr);
+    state.removeChild(state.getChildWithName("Arrangement"), nullptr);
+    state.appendChild(arrangement.toValueTree(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
 }
 
@@ -407,6 +438,8 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     locations.fromValueTree(locationTree);
     travel.settledDestination.store(int(locationTree.getProperty("settled", juce::roundToInt(raw[PDestination]->load()))), std::memory_order_relaxed);
     travel.requestReset();
+    // The arrangement (Milestone 11); older projects have none.
+    arrangement.fromValueTree(state.getChildWithName("Arrangement"));
     // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
     // project stored Full, the old default, so those open with the new default (Off).
     const int overlays = int(state.getProperty("version", 0)) >= 3 ? int(state.getProperty("overlays", ui::defaultOverlayMode)) : ui::defaultOverlayMode;

@@ -20,6 +20,8 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     distance.setTime(0.2f, controlRate);
     pan.setTime(0.2f, controlRate);
     fadeStep = 1.0f / (0.3f * rate);
+    arrangeUp = 1.0f / (0.02f * rate);
+    arrangeDown = 1.0f / (0.25f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
     fx.prepare(rate);
     for (auto& f : fullness) f.setCutoff(260.0f, rate);
@@ -42,8 +44,9 @@ void PlaceSlot::reset() {
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.reset();
     fresh = true;
-    generatedValid.fill(false);
+    for (auto& v : generatedValid) v.fill(false);
     playing.fill(nullptr);
+    arranged.fill(0.0f);
     lastBeat = 0;
 }
 
@@ -139,7 +142,52 @@ PlaceSettings PlaceSlot::settingsFor(const WorldFrame& world, const PlaceSlotCon
     return s;
 }
 
-void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns) {
+void PlaceSlot::generateVariant(int v, int e, GenInputs in) {
+    const auto k = std::size_t(e), kv = std::size_t(v);
+    // B is busier, C sparser, the Fill busiest (and builds over its bar); each is
+    // regenerated as a fresh take if it came out the same as A.
+    switch (v) {
+        case pat::VariantB:
+            in.activity = std::min(1.0f, in.activity + 0.25f);
+            in.density = std::min(1.0f, in.density + 0.2f);
+            break;
+        case pat::VariantC:
+            in.activity = std::max(0.0f, in.activity - 0.25f);
+            in.density = std::max(0.0f, in.density - 0.25f);
+            break;
+        case pat::VariantFill:
+            in.activity = std::min(1.0f, in.activity + 0.45f);
+            in.density = std::min(1.0f, in.density + 0.4f);
+            in.tension = std::min(1.0f, in.tension + 0.1f);
+            break;
+        default: break;
+    }
+    auto& out = generated[kv][k];
+    current->generate(e, in, out);
+    if (v > 0 && generatedValid[0][k] && out.sameNotes(generated[0][k])) {
+        in.variant = uint8_t(in.variant ^ (0x40 + 0x10 * v));
+        current->generate(e, in, out);
+    }
+    // Still the same (a held instrument whose generator does not change with activity):
+    // B moves every note up a chord step, C down an octave of the scale.
+    if (v > 0 && v != pat::VariantFill && generatedValid[0][k] && out.sameNotes(generated[0][k]) && patternInfo(currentType, e).kind == Melodic) {
+        const int shift = v == pat::VariantB ? 2 : -music::scaleFor(in.mood).size;
+        for (int i = 0; i < out.count; ++i) {
+            auto& n = out.notes[std::size_t(i)];
+            n.degree = int8_t(std::clamp(int(n.degree) + shift, -40, 40));
+        }
+    }
+    if (v == pat::VariantFill) {
+        const int perBar = pat::stepsPerBar(out.resolution);
+        for (int i = 0; i < out.count; ++i) {
+            auto& n = out.notes[std::size_t(i)];
+            const float at = float(n.step % std::max(perBar, 1)) / float(std::max(perBar, 1));
+            n.velocity = uint8_t(std::clamp(int(float(n.velocity) * (0.85f + 0.35f * at)), 1, 127));
+        }
+    }
+}
+
+void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants) {
     const bool mine = patterns.type == currentType;
     // Generator inputs on a grid of 1/256 (rounded down, so a value exactly on one of
     // a generator's thresholds stays on the same side): a turning knob regenerates at
@@ -153,6 +201,7 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
     in.tension = grid(target.tension);
     in.life = grid(target.life);
     in.key = seedKey;
+    const bool all = allVariants != nullptr && allVariants->load(std::memory_order_relaxed);
     bool changed = false;
     for (int e = 0; e < placeElements; ++e) {
         const auto k = std::size_t(e);
@@ -163,24 +212,29 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
         }
         const auto& element = patterns.element[k];
         controlsNow[k] = mine ? element.controls : defaultControls(currentType, e);
-        if (mine && element.controls.edited) {
-            playing[k] = &element.pattern;
-            continue;
+        const int want = pat::Element::clampVariant(variants[k]);
+        for (int v = 0; v < pat::variantCount; ++v) {
+            // A is always ready (the editor shows it); the others when they play, or
+            // while the editor shows them.
+            if (v != 0 && v != want && !all) continue;
+            if (mine && element.edited(v)) continue;
+            in.variant = mine ? element.generation(v) : 0;
+            const auto kv = std::size_t(v);
+            if (!generatedValid[kv][k] || !(generatedFor[kv][k] == in)) {
+                generateVariant(v, e, in);
+                generatedFor[kv][k] = in;
+                generatedValid[kv][k] = true;
+                changed = true;
+            }
         }
-        in.variant = controlsNow[k].variant;
-        if (!generatedValid[k] || !(generatedFor[k] == in)) {
-            current->generate(e, in, generated[k]);
-            generatedFor[k] = in;
-            generatedValid[k] = true;
-            changed = true;
-        }
-        playing[k] = &generated[k];
+        playing[k] = mine && element.edited(want) ? &element.patternOf(want) : &generated[std::size_t(want)][k];
     }
     if (changed && feedback != nullptr) {
         auto& out = feedback->write();
         out.type = currentType;
         out.serial = ++feedbackSerial;
-        out.pattern = generated;
+        out.pattern = generated[0];
+        for (int v = 1; v < pat::variantCount; ++v) out.alt[std::size_t(v - 1)] = generated[std::size_t(v)];
         feedback->publish();
     }
 }
@@ -196,7 +250,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         freeBeat = hostBeat;
         seeded = false;
         fresh = true;
-        generatedValid.fill(false);
+        for (auto& v : generatedValid) v.fill(false);
         playing.fill(nullptr);
         fx.reset();
     }
@@ -226,6 +280,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         }
     }
     const std::array<float, 8> targets { target.activity, target.tension, target.density, target.swing, target.tone, target.size, target.variation, target.fxDepth };
+    const bool snapArrange = fresh;
     if (fresh) {
         for (std::size_t i = 0; i < smooth.size(); ++i) smooth[i].snap(targets[i]);
         for (int e = 0; e < placeElements; ++e) elementSmooth[std::size_t(e)].snap(target.element[std::size_t(e)]);
@@ -243,6 +298,19 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     settings.variation = smooth[6].next(targets[6]);
     settings.fxDepth = smooth[7].next(targets[7]);
     for (int e = 0; e < placeElements; ++e) settings.element[std::size_t(e)] = elementSmooth[std::size_t(e)].next(target.element[std::size_t(e)]);
+    // The Arrangement: an instrument entering from silence starts at once (on the
+    // downbeat, at full level), one coming back while it still rings rises over 20 ms,
+    // one leaving stops its notes at the boundary and fades what rings over 250 ms.
+    for (int e = 0; e < placeElements; ++e) {
+        const auto k = std::size_t(e);
+        const float want = clamp01(c.arrange[k]);
+        float& g = arranged[k];
+        if (snapArrange || (want > g && g < 1.0e-4f)) g = want;
+        else if (want > g) g = std::min(want, g + arrangeUp * float(n));
+        else g = std::max(want, g - arrangeDown * float(n));
+        settings.element[k] *= g;
+        settings.notes[k] = want > 0.0f;
+    }
 
     // The beat: the host's (or the world's default tempo), or the Place's own free tempo.
     PlaceContext context;
@@ -263,7 +331,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     context.chord = music::chordDegree(hostBeat, world[Danger]);
 
     // Patterns: the composer's, or generated from the seed and the settings.
-    updatePatterns(target, world.mood, patterns);
+    updatePatterns(target, world.mood, patterns, c.variant);
     for (int e = 0; e < placeElements; ++e) {
         const auto k = std::size_t(e);
         auto& play = context.play[k];
@@ -272,7 +340,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         play.controls = controlsNow[k];
         // Variation scales every element's Randomness; at its default it is as set.
         play.randomness = clamp01(controlsNow[k].randomness * settings.variation / 0.35f);
-        play.swing = controlsNow[k].edited && patterns.type == currentType ? play.pattern->swing : settings.swing;
+        play.swing = patterns.type == currentType && patterns.element[k].edited(c.variant[k]) ? play.pattern->swing : settings.swing;
         play.kit = patternInfo(currentType, e).kind == Kit;
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
     }

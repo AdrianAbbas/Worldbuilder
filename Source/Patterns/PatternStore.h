@@ -23,8 +23,9 @@ public:
     void syncTypes(const std::array<int, placeSlots>& types);
     // The newest patterns the audio thread generated (message thread only).
     const pat::Generated& generated(int slot);
-    // The pattern element e of a slot plays now: the edited one, or the generated one.
-    pat::Pattern playing(int slot, int type, int e);
+    // The pattern element e of a slot plays in a variant (A, B, C, Fill): the edited one,
+    // or the generated one.
+    pat::Pattern playing(int slot, int type, int e, int variant = 0);
 
     juce::ValueTree toValueTree() const;
     void fromValueTree(const juce::ValueTree& tree, const std::array<int, placeSlots>& types);
@@ -34,6 +35,8 @@ public:
     static pat::SlotPatterns defaultsFor(int type);
 
     static juce::String encodeNotes(const pat::Pattern& p);
+    static void writePattern(juce::ValueTree& x, const pat::Pattern& p);
+    static void readPattern(const juce::ValueTree& x, pat::Pattern& p);
     static void decodeNotes(const juce::String& text, pat::Pattern& p);
 
 private:

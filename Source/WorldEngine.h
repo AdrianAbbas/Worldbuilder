@@ -2,6 +2,7 @@
 // Everything that makes sound, independent of JUCE: the layers, their mixer, the
 // World Space and the master section. The processor feeds it parameter values and
 // the clock; tests can drive it through the processor's processBlock.
+#include "Arrangement/Arrangement.h"
 #include "DSP/AirLayer.h"
 #include "DSP/EarthLayer.h"
 #include "DSP/FireLayer.h"
@@ -34,6 +35,10 @@ struct EngineControls {
     // Each slot's patterns during a journey between Locations (nullptr: the editor's,
     // from patternsIn).
     std::array<const pat::SlotPatterns*, placeSlots> patterns {};
+    // Play Mode Arrangement, or the ARRANGE preview: the arrangement the world follows
+    // (nullptr, or no sections: none). Its Score Intensity is the section's, plus the
+    // Score Intensity parameter's offset from its middle (automation adds on top).
+    const arr::Arrangement* arrangement = nullptr;
 };
 
 class WorldEngine {
@@ -77,7 +82,20 @@ public:
     std::array<std::atomic<double>, placeSlots> slotBeat {};
     std::atomic<bool> transportRolling { false };
 
+    // The arrangement, published by the editor (lock-free), and where it stands (for the
+    // ARRANGE view's playhead): the section (-1: not arranging) and the timeline bar.
+    pat::TripleBuffer<arr::Arrangement> arrangementIn;
+    std::atomic<int> arrangeSection { -1 };
+    std::atomic<double> arrangeBar { 0 };
+    // Set while the Pattern Editor shows variants: every variant is generated.
+    std::array<std::atomic<bool>, placeSlots> showVariants {};
+    // For the tests: the arrangement state of the last chunk.
+    const arr::State& arrangeState() const { return arranged; }
+
 private:
+    // Fills the FIFO with one chunk; with an arrangement the chunk is split at beat
+    // lines, so sections, entrances, variants and Fills change on the exact sample.
+    void fillChunk(const EngineControls& controls);
     void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls);
 
     double rate = 48000;
@@ -110,6 +128,10 @@ private:
     uint32_t seed = 0;
     float seedGain = 1, seedStep = 0;
     bool seedFresh = true;
+    arr::State arranged;
+    bool arranging = false;
+    float endGain = 1;
+    float arrangedIntensity(const EngineControls& controls) const;
     uint64_t clock = 0;   // absolute position of the next chunk to render
     int fifoRead = dsp::chunk;
     std::array<float, dsp::chunk> fifoL {}, fifoR {};

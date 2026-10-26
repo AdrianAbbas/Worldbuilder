@@ -21,6 +21,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     for (int i = 0; i < placeSlots; ++i) {
         slots[std::size_t(i)].prepare(rate, i);
         slots[std::size_t(i)].setFeedback(&patternsOut[std::size_t(i)]);
+        slots[std::size_t(i)].setVariantFlag(&showVariants[std::size_t(i)]);
     }
     space.prepare(rate);
     sharedFx.prepare(r);
@@ -74,6 +75,9 @@ void WorldEngine::reset(const EngineControls& initial) {
     fifoRead = chunk;
     layerPeak.fill(0);
     placePeak.fill(0);
+    arranged = arr::State {};
+    arranging = false;
+    endGain = 1;
 }
 
 void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& controls) {
@@ -82,6 +86,49 @@ void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& c
     powerRamp = controls.power ? 1.0f : 0.0f;
     gateRamp = 0;
     resync(position, ppq);
+    // An arrangement starts where the song position is: its intensity and end fade too.
+    if (controls.arrangement != nullptr && controls.arrangement->count > 0) {
+        arranged = controls.arrangement->evaluate(beat + double(bpm) / 60.0 / rate);
+        arranging = true;
+        intensity.snap(arrangedIntensity(controls));
+        world.intensity = intensity.value;
+        endGain = arranged.endGain;
+    }
+}
+
+float WorldEngine::arrangedIntensity(const EngineControls& controls) const {
+    const float own = clamp01(finiteOr(controls.intensity, 0.5f));
+    return arranging ? clamp01(arranged.intensity + own - 0.5f) : own;
+}
+
+void WorldEngine::fillChunk(const EngineControls& controls) {
+    const arr::Arrangement* a = controls.arrangement;
+    if (a == nullptr || a->count <= 0) {
+        if (arranging) arrangeSection.store(-1, std::memory_order_relaxed);
+        arranging = false;
+        arranged = arr::State {};
+        renderChunk(fifoL.data(), fifoR.data(), chunk, clock, controls);
+        return;
+    }
+    arranging = true;
+    for (int done = 0; done < chunk;) {
+        // The state that holds from the chunk's second sample; the chunk ends before the
+        // next beat line after it, so a note on that line falls in the next piece.
+        const double perSample = double(bpm) / 60.0 / rate;
+        const double next = std::floor(beat + perSample) + 1.0;
+        int n = chunk - done;
+        const double until = (next - beat) / perSample;
+        if (until < double(n)) n = std::clamp(int(std::floor(until + 1.0e-9)), 1, n);
+        arranged = a->evaluate(beat + perSample);
+        renderChunk(fifoL.data() + done, fifoR.data() + done, n, clock + uint64_t(done), controls);
+        done += n;
+    }
+    const auto& at = arranged.at;
+    const auto& s = a->sections[std::size_t(std::max(at.section, 0))];
+    const double bar = at.ended ? double(a->totalBars()) + at.beyond
+                                : double(at.startBar) + (s.endless() ? 0.0 : double(at.pass) * double(s.bars)) + at.bar;
+    arrangeBar.store(bar, std::memory_order_relaxed);
+    arrangeSection.store(at.ended ? -2 : at.section, std::memory_order_relaxed);
 }
 
 void WorldEngine::resync(uint64_t position, double ppq) {
@@ -104,7 +151,7 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
     // has no input, so rendering a chunk ahead adds no latency.
     for (int done = 0; done < n;) {
         if (fifoRead == chunk) {
-            renderChunk(fifoL.data(), fifoR.data(), chunk, clock, controls);
+            fillChunk(controls);
             clock += chunk;
             fifoRead = 0;
         }
@@ -126,9 +173,12 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
 
 void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls) {
     // Fully powered down: silence, and no work.
-    if ((!controls.power && powerRamp <= 0.0f) || (!controls.gate && gateRamp <= 0.0f)) {
+    // After the arrangement's end has faded out: silence too.
+    if ((!controls.power && powerRamp <= 0.0f) || (!controls.gate && gateRamp <= 0.0f) || (arranging && endGain <= 0.0f && arranged.endGain <= 0.0f)) {
         std::fill(left, left + n, 0.0f);
         std::fill(right, right + n, 0.0f);
+        // The song goes on: an arrangement keeps following it.
+        if (arranging) beat += double(bpm) / 60.0 * double(n) / rate;
         return;
     }
 
@@ -146,7 +196,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     const float duckTo = controls.seed != seed ? std::max(0.0f, seedGain - seedStep * float(n)) : std::min(1.0f, seedGain + seedStep * float(n));
     seedGain = duckTo;
     for (std::size_t i = 0; i < worldSmooth.size(); ++i) world.c[i] = worldSmooth[i].next(clamp01(finiteOr(controls.world[i], 0.5f)));
-    world.intensity = intensity.next(clamp01(finiteOr(controls.intensity, 0.5f)));
+    world.intensity = intensity.next(arrangedIntensity(controls));
     world.root = controls.root;
     world.mood = controls.mood;
     world.quality = controls.quality;
@@ -210,7 +260,18 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         const bool audible = !pc.mute && (!anySolo || pc.solo);
         patternsIn[si].update();
         const auto& slotPatterns = controls.patterns[si] != nullptr ? *controls.patterns[si] : patternsIn[si].read();
-        const bool sounding = slots[si].render(world, pc, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
+        bool sounding = false;
+        if (arranging) {
+            // The section's instrument grid: gains and pattern variants.
+            PlaceSlotControls arrangedControls = pc;
+            for (int e = 0; e < placeElements; ++e) {
+                arrangedControls.arrange[std::size_t(e)] = arranged.gain[si][std::size_t(e)];
+                arrangedControls.variant[std::size_t(e)] = arranged.variant[si][std::size_t(e)];
+            }
+            sounding = slots[si].render(world, arrangedControls, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
+        } else {
+            sounding = slots[si].render(world, pc, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
+        }
         slotBeat[si].store(slots[si].beat(), std::memory_order_relaxed);
         if (!sounding) continue;
         sharedFx.add(slots[si].sends(), slots[si].sendGainL(), slots[si].sendGainR(), n);
@@ -243,6 +304,10 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     const float mixTarget = clamp01(controls.spaceMix);
     const float powerTarget = controls.power ? 1.0f : 0.0f;
     const bool gateOpen = controls.gate;
+    // After the arrangement's end (End: stop) the world fades out.
+    const float endFrom = endGain, endTo = arranging ? arranged.endGain : 1.0f;
+    endGain = endTo;
+    const bool ending = endFrom < 1.0f || endTo < 1.0f;
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);
@@ -261,7 +326,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
 
         powerRamp = powerRamp < powerTarget ? std::min(powerTarget, powerRamp + powerStep) : std::max(powerTarget, powerRamp - powerStep);
         gateRamp = gateOpen ? std::min(1.0f, gateRamp + gateUp) : std::max(0.0f, gateRamp - gateDown);
-        const float fade = (0.5f - 0.5f * std::cos(pi * powerRamp)) * gateRamp * gateRamp;
+        float fade = (0.5f - 0.5f * std::cos(pi * powerRamp)) * gateRamp * gateRamp;
+        if (ending) fade *= lerp(endFrom, endTo, float(i + 1) / float(n));
         const float g = master.next(masterTarget) * fade;
         l *= g;
         r *= g;

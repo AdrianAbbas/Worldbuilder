@@ -132,10 +132,36 @@ struct Controls {
 
 inline constexpr std::array<int, 6> returnChoices { 0, 1, 2, 4, 8, 16 };
 
-// An element: its controls, and its pattern once edited.
+// Pattern variants (Milestone 11): every element has patterns A, B and C, and a Fill
+// that plays in the last bar before an arrangement section changes.
+enum Variant : uint8_t { VariantA, VariantB, VariantC, VariantFill };
+constexpr int variantCount = 4;
+
+// An element: its controls, and its patterns once edited. Variant A is `pattern` (its
+// edited flag and Generate count are in the controls); B, C and the Fill are `alt`.
+// Randomness, Evolve, mute and solo are shared by the variants.
 struct Element {
     Controls controls;
     Pattern pattern;
+    std::array<Pattern, variantCount - 1> alt {};
+    uint8_t altEdited = 0;                             // bit v - 1: variant v is edited
+    std::array<uint8_t, variantCount - 1> altGenerate {};   // Generate counts of B, C, Fill
+
+    static int clampVariant(int v) { return std::clamp(v, 0, variantCount - 1); }
+    bool edited(int v) const { return v <= 0 ? controls.edited : ((altEdited >> (clampVariant(v) - 1)) & 1) != 0; }
+    void setEdited(int v, bool on) {
+        if (v <= 0) controls.edited = on;
+        else altEdited = uint8_t(on ? (altEdited | (1 << (clampVariant(v) - 1))) : (altEdited & ~(1 << (clampVariant(v) - 1))));
+    }
+    Pattern& patternOf(int v) { return v <= 0 ? pattern : alt[std::size_t(clampVariant(v) - 1)]; }
+    const Pattern& patternOf(int v) const { return v <= 0 ? pattern : alt[std::size_t(clampVariant(v) - 1)]; }
+    uint8_t generation(int v) const { return v <= 0 ? controls.variant : altGenerate[std::size_t(clampVariant(v) - 1)]; }
+    void setGeneration(int v, uint8_t g) {
+        if (v <= 0) controls.variant = g;
+        else altGenerate[std::size_t(clampVariant(v) - 1)] = g;
+    }
+    // Only A has been touched (B, C and the Fill as generated).
+    bool variantsUntouched() const { return altEdited == 0 && altGenerate == std::array<uint8_t, variantCount - 1> {}; }
 };
 
 // Every Place has up to six instruments, each an element with its own pattern.
@@ -153,6 +179,11 @@ struct Generated {
     int type = 0;
     uint32_t serial = 0;
     std::array<Pattern, elementsPerPlace> pattern {};
+    std::array<std::array<Pattern, elementsPerPlace>, variantCount - 1> alt {};   // B, C, Fill
+    const Pattern& of(int variant, int e) const {
+        const auto k = std::size_t(std::clamp(e, 0, elementsPerPlace - 1));
+        return variant <= 0 ? pattern[k] : alt[std::size_t(std::min(variant, variantCount - 1) - 1)][k];
+    }
 };
 
 //==============================================================================

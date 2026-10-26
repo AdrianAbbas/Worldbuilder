@@ -435,7 +435,8 @@ void testParameters(Suite& s) {
         s.check(ids.insert(spec.id).second, std::string("parameter id is unique: ") + spec.id);
         s.check(spec.def >= spec.min && spec.def <= spec.max, std::string("default inside range: ") + spec.id);
     }
-    WorldbuilderProcessor p;
+    auto pHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
+    auto& p = *pHolder;
     s.check(int(p.getParameters().size()) == PCount, "every spec is a host parameter", std::to_string(p.getParameters().size()));
     s.check(p.getTotalNumInputChannels() == 0 && p.getTotalNumOutputChannels() == 2, "instrument: no input, stereo output");
     s.check(p.acceptsMidi(), "accepts MIDI");
@@ -2111,7 +2112,8 @@ void testPatterns(Suite& s) {
 void testPlayMode(Suite& s) {
     s.section("Play Mode: Free and Transport");
     {
-        WorldbuilderProcessor fresh;
+        auto freshHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
+        auto& fresh = *freshHolder;
         s.check(juce::roundToInt(fresh.parameters.getRawParameterValue("playmode")->load()) == PlayTransport, "new instances start in Transport mode");
     }
     {
@@ -2180,7 +2182,8 @@ void testPlayMode(Suite& s) {
             }
         juce::MemoryBlock old;
         juce::AudioProcessor::copyXmlToBinary(*xml, old);
-        WorldbuilderProcessor loaded;
+        auto loadedHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
+        auto& loaded = *loadedHolder;
         loaded.setStateInformation(old.getData(), int(old.getSize()));
         s.check(juce::roundToInt(loaded.parameters.getRawParameterValue("playmode")->load()) == PlayFree, "an older project loads in Free mode, as it played");
     }
@@ -2914,7 +2917,8 @@ void testAutomation(Suite& s) {
         { "master", "Master Level" }, { "power", "Power" }, { "destination", "Destination" }, { "traveltime", "Travel Time" },
         { "journeymode", "Journey Mode" }, { "journeyfrom", "Journey From" }, { "journeyto", "Journey To" }, { "journey", "Journey" } };
     {
-        WorldbuilderProcessor p;
+        auto pHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
+        auto& p = *pHolder;
         std::string missing;
         for (const auto& [id, name] : important)
             if (auto* parameter = p.parameters.getParameter(id); parameter == nullptr || !parameter->isAutomatable()) missing += name + " ";
@@ -3559,7 +3563,8 @@ double quietest(const Audio& a, double from, double to) {
 void testLocations(Suite& s) {
     s.section("Locations and Journeys");
     {
-        WorldbuilderProcessor p;
+        auto pHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
+        auto& p = *pHolder;
         std::string missing;
         for (const char* id : { "destination", "traveltime", "travelsync", "journeymode", "journeyfrom", "journeyto", "journey", "pathmode", "pathleg", "pathend" })
             if (auto* parameter = p.parameters.getParameter(id); parameter == nullptr || !parameter->isAutomatable()) missing += std::string(id) + " ";
@@ -3966,6 +3971,531 @@ void testLocations(Suite& s) {
 // A short subset for a second architecture (x86_64 under Rosetta in macOS CI): the
 // default world, one Place from each category, and a state round trip. The Linux job
 // runs everything.
+//==============================================================================
+// The Arrangement (Milestone 11a): sections, the instrument grid, pattern variants and
+// Play Mode Arrangement.
+namespace arrangeTest {
+// Events of slot 1's Place (clock in samples, element, pitch), all of them.
+std::vector<Place::Logged> events(const Host& h) {
+    std::vector<Place::Logged> out;
+    if (const auto* place = h.p->engine.placeSlot(0).place()) {
+        const uint32_t count = place->eventCount();
+        for (uint32_t i = count > uint32_t(Place::logSize) ? count - uint32_t(Place::logSize) : 0; i < count; ++i) out.push_back(place->logged(i));
+    }
+    return out;
+}
+// A pattern of `perBar` evenly spaced notes in one bar of sixteenths.
+pat::Element notesPerBar(int perBar, int degree) {
+    pat::Element el;
+    el.controls.randomness = 0;
+    el.controls.vary = 0;
+    el.controls.edited = true;
+    el.pattern.setGrid(pat::Sixteenth, 1);
+    el.pattern.swing = 0;
+    for (int i = 0; i < perBar; ++i) {
+        pat::Note n;
+        n.step = int16_t(i * 16 / perBar);
+        n.length = 1;
+        n.degree = int8_t(degree);
+        el.pattern.add(n);
+    }
+    return el;
+}
+// A Classic Arc with some of everything (the snapshots and the editor tests).
+arr::Arrangement classicArc() {
+    arr::Arrangement a;
+    const std::array<std::pair<const char*, int>, 5> parts { { { "Intro", 8 }, { "Build", 16 }, { "Climax", 16 }, { "Wind-down", 16 }, { "Outro", 8 } } };
+    const std::array<std::pair<float, float>, 5> ramps { { { 0.25f, 0.35f }, { 0.4f, 0.75f }, { 0.9f, 0.9f }, { 0.7f, 0.35f }, { 0.3f, 0.1f } } };
+    for (int i = 0; i < 5; ++i) {
+        auto sec = arr::makeSection(parts[std::size_t(i)].first, parts[std::size_t(i)].second, i);
+        sec.intensityStart = ramps[std::size_t(i)].first;
+        sec.intensityEnd = ramps[std::size_t(i)].second;
+        sec.curve = uint8_t(i == 1 ? arr::CurveEaseIn : i == 3 ? arr::CurveEaseOut : arr::CurveLinear);
+        for (int slot = 0; slot < placeSlots; ++slot)
+            for (int e = 0; e < placeElements; ++e) {
+                auto& c = sec.cells[std::size_t(slot)][std::size_t(e)];
+                const int order = (e + slot) % placeElements;   // drone first, accents last
+                if (i == 0) c.entry = order < 2 ? arr::EntryOn : arr::EntryOff;
+                else if (i == 1) c.entry = order < 2 ? arr::EntryOn : order < 4 ? arr::EntryHalfway : order == 4 ? arr::EntryFadeIn : arr::EntryOff;
+                else if (i == 2) c.variant = order % 2 == 0 ? pat::VariantB : pat::VariantA;
+                else if (i == 3) c.entry = order < 3 ? arr::EntryOn : arr::EntryFadeOut;
+                else c.entry = order < 1 ? arr::EntryOn : arr::EntryOff;
+                c.fill = i == 1 && order >= 2 && order <= 3;
+            }
+        a.sections[std::size_t(i)] = sec;
+    }
+    a.count = 5;
+    return a;
+}
+void play(Host& h, int64_t position = 0) {
+    h.set("playmode", float(PlayArrangement));
+    h.playHead.playing = true;
+    h.playHead.position = position;
+}
+} // namespace arrangeTest
+
+void testArrangement(Suite& s) {
+    using namespace arrangeTest;
+    s.section("arrangement: model");
+    {
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 8, 0, 0.2f);
+        a.sections[1] = arr::makeSection("Build", 4, 1);
+        a.sections[1].repeats = 2;
+        a.sections[2] = arr::makeSection("Outro", 4, 2);
+        a.count = 3;
+        s.check(a.totalBars() == 20 && a.startOf(1) == 8 && a.startOf(2) == 16, "sections lie end to end (8 + 2 x 4 + 4 = 20 bars)");
+        const auto at = [&](double bar) { return a.locate(bar * arr::beatsPerBar); };
+        s.check(at(0).section == 0 && at(7.9).section == 0 && at(8).section == 1 && at(8).pass == 0 && at(12).section == 1 && at(12).pass == 1
+                    && at(16).section == 2,
+                "a song position finds its section and pass");
+        s.check(at(20).ended && at(25).ended, "after the last section the arrangement has ended (End: stop)");
+        s.check(a.evaluate(23.0 * 4).endGain < 1.0e-6f && a.evaluate(20.5 * 4).endGain > 0.5f, "after the end the world fades out over two bars");
+        a.end = arr::EndLoop;
+        a.loopTo = 1;
+        s.check(at(20).section == 1 && at(20).pass == 0 && at(24).section == 1 && at(24).pass == 1 && at(28).section == 2 && at(32).section == 1
+                    && !at(40).ended,
+                "End: loop to a section goes back there");
+        // Fills: the last bar before a change, only on the last pass.
+        a.sections[1].cells[0][4].fill = true;
+        s.check(a.evaluate(11.5 * 4).variant[0][4] == pat::VariantA && a.evaluate(15.5 * 4).variant[0][4] == pat::VariantFill
+                    && a.evaluate(14.5 * 4).variant[0][4] == pat::VariantA,
+                "a Fill plays in the last bar before a section change (not before a repeat)");
+        // An endless section holds the song there.
+        a.sections[1].repeats = 0;
+        s.check(at(200).section == 1 && !at(200).ended && a.firstEndless() == 1, "an endless section loops for ever");
+        a.sections[1].repeats = 1;
+        // Entries.
+        auto& cells = a.sections[0].cells[1];
+        cells[0].entry = arr::EntryOff;
+        cells[1].entry = arr::EntryHalfway;
+        cells[2].entry = arr::EntryFadeIn;
+        cells[3].entry = arr::EntryFadeOut;
+        const auto early = a.evaluate(1.0 * 4), late = a.evaluate(6.0 * 4), mid = a.evaluate(4.0 * 4);
+        s.check(early.gain[1][0] == 0 && early.gain[1][1] == 0 && late.gain[1][1] == 1 && a.evaluate(3.99 * 4).gain[1][1] == 0
+                    && a.evaluate(4.0 * 4).gain[1][1] == 1,
+                "off, and entering halfway (on from the middle bar)");
+        s.check(early.gain[1][2] < mid.gain[1][2] && mid.gain[1][2] < late.gain[1][2] && early.gain[1][3] > late.gain[1][3]
+                    && std::abs(mid.gain[1][2] - 0.5f) < 0.01f,
+                "fading in and out across the section");
+        // Intensity curves.
+        auto ramp = arr::makeSection("Rise", 8, 0);
+        ramp.intensityStart = 0.2f;
+        ramp.intensityEnd = 0.8f;
+        const float linear = arr::intensityAt(ramp, 0.5f);
+        ramp.curve = arr::CurveEaseIn;
+        const float easeIn = arr::intensityAt(ramp, 0.5f);
+        ramp.curve = arr::CurveEaseOut;
+        const float easeOut = arr::intensityAt(ramp, 0.5f);
+        ramp.curve = arr::CurveSwell;
+        const float swell = arr::intensityAt(ramp, 0.5f);
+        s.check(std::abs(linear - 0.5f) < 1.0e-4f && easeIn < linear && easeOut > linear && swell > 0.7f
+                    && std::abs(arr::intensityAt(ramp, 0.0f) - 0.2f) < 1.0e-4f && std::abs(arr::intensityAt(ramp, 1.0f) - 0.8f) < 1.0e-4f,
+                "Score Intensity ramps from start to end on the chosen curve", fmt(linear) + " " + fmt(easeIn) + " " + fmt(easeOut) + " " + fmt(swell));
+    }
+    {
+        auto pHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
+        auto& p = *pHolder;
+        auto& store = p.arrangement;
+        s.check(store.get().count == 0, "a new instance has no sections");
+        store.add(arr::makeSection("Intro", 8, 0));
+        store.add(arr::makeSection("Build", 16, 1));
+        store.add(arr::makeSection("Climax", 16, 2));
+        const int d = store.duplicate(1);
+        s.check(store.get().count == 4 && d == 2 && std::string(store.get().sections[2].nameText()) == "Build", "duplicate places a copy after the section");
+        const int m = store.move(3, 0);
+        s.check(m == 0 && std::string(store.get().sections[0].nameText()) == "Climax" && std::string(store.get().sections[1].nameText()) == "Intro",
+                "reorder");
+        store.resize(1, 100);
+        s.check(store.get().sections[1].bars == arr::maxBars, "a section is 1-64 bars");
+        store.remove(0);
+        s.check(store.get().count == 3 && std::string(store.get().sections[0].nameText()) == "Intro", "delete");
+        int undone = 0;
+        while (store.undo()) ++undone;
+        s.check(undone == 7 && store.get().count == 0, "every edit undoes", std::to_string(undone) + " undos");
+        while (store.redo()) {}
+        s.check(store.get().count == 3 && store.get().sections[0].bars == arr::maxBars, "and redoes");
+    }
+    s.section("arrangement: state");
+    {
+        Host a;
+        a.set("p2_type", float(Tavern));
+        auto arrangement = a.p->arrangement.get();
+        const char* names[] { "Intro", "Build", "Climax", "Wind-down", "Outro", "Victory" };
+        for (int i = 0; i < 6; ++i) {
+            auto sec = arr::makeSection(names[i], 4 + 4 * i, i, 0.1f * float(i));
+            sec.intensityEnd = 0.9f - 0.1f * float(i);
+            sec.curve = uint8_t(i % arr::CurveCount);
+            sec.repeats = uint8_t(i == 4 ? 0 : 1 + i % 2);
+            sec.cells[0][1] = { uint8_t(i % arr::EntryCount), uint8_t(i % 3), i % 2 == 0 };
+            sec.cells[1][5] = { arr::EntryHalfway, pat::VariantC, true };
+            arrangement.sections[std::size_t(i)] = sec;
+        }
+        arrangement.count = 6;
+        arrangement.end = arr::EndLoop;
+        arrangement.loopTo = 2;
+        a.p->arrangement.set(arrangement);
+        // Variants: an edited B and Fill, a generated C taken again.
+        auto el = a.p->patterns.element(0, Castle, 4);
+        el.alt[0] = notesPerBar(4, 2).pattern;
+        el.setEdited(pat::VariantB, true);
+        el.alt[2] = notesPerBar(8, 1).pattern;
+        el.setEdited(pat::VariantFill, true);
+        el.setGeneration(pat::VariantC, 3);
+        a.p->patterns.setElement(0, Castle, 4, el);
+        a.p->saveLocation(0);
+        juce::MemoryBlock state;
+        a.p->getStateInformation(state);
+        Host b;
+        b.p->setStateInformation(state.getData(), int(state.getSize()));
+        s.check(b.p->arrangement.get() == arrangement, "a six-section arrangement survives a state round trip");
+        const auto back = b.p->patterns.element(0, Castle, 4);
+        s.check(back.edited(pat::VariantB) && back.edited(pat::VariantFill) && !back.edited(pat::VariantC) && back.generation(pat::VariantC) == 3
+                    && back.patternOf(pat::VariantB).sameNotes(el.patternOf(pat::VariantB)) && back.patternOf(pat::VariantFill).sameNotes(el.patternOf(pat::VariantFill)),
+                "pattern variants survive it");
+        s.check(b.p->locations.used(0) && b.p->locations.get(0).patterns[0].element[4].edited(pat::VariantB), "and a Location keeps the variants");
+        // An older project has no arrangement.
+        auto xml = juce::AudioProcessor::getXmlFromBinary(state.getData(), int(state.getSize()));
+        xml->deleteAllChildElementsWithTagName("Arrangement");
+        juce::MemoryBlock old;
+        juce::AudioProcessor::copyXmlToBinary(*xml, old);
+        b.p->setStateInformation(old.getData(), int(old.getSize()));
+        s.check(b.p->arrangement.get().count == 0, "an older project opens without sections");
+        s.check(b.p->parameters.getParameter("playmode")->isAutomatable() && b.p->parameters.getParameter("playmode")->getNumSteps() == 3,
+                "Play Mode is Free, Transport or Arrangement");
+    }
+
+    s.section("arrangement: playback");
+    // Castle in slot 1 at 120 bpm (a bar is 2 s). Intro: only the drone and the harp;
+    // Build: everything. Two bars each.
+    const auto castleArrangement = [] {
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0);
+        for (int e = 0; e < placeElements; ++e) a.sections[0].cells[0][std::size_t(e)].entry = e == 0 || e == 4 ? arr::EntryOn : arr::EntryOff;
+        a.sections[1] = arr::makeSection("Build", 2, 1);
+        a.count = 2;
+        return a;
+    };
+    const auto boundary = int64_t(4 * 48000);
+    {
+        Host h;
+        h.p->arrangement.set(castleArrangement());
+        h.set("p1_activity", 0.9f);
+        h.set("p1_density", 0.9f);
+        play(h);
+        const auto audio = h.render(7.0);
+        bool earlyQuiet = true;
+        std::set<int> heard, free;
+        for (const auto& ev : events(h)) {
+            if (int64_t(ev.clock) < boundary - 48 && ev.element != 0 && ev.element != 4) earlyQuiet = false;
+            if (int64_t(ev.clock) >= boundary - 48 && ev.clock < uint64_t(7 * 48000)) heard.insert(ev.element);
+        }
+        // The same Castle without an arrangement, over the same stretch.
+        Host plain;
+        plain.set("playmode", float(PlayTransport));
+        plain.set("p1_activity", 0.9f);
+        plain.set("p1_density", 0.9f);
+        plain.playHead.playing = true;
+        plain.render(7.0);
+        for (const auto& ev : events(plain))
+            if (int64_t(ev.clock) >= boundary - 48 && ev.clock < uint64_t(7 * 48000)) free.insert(ev.element);
+        s.check(earlyQuiet, "in the Intro only its instruments play");
+        bool newcomer = false;
+        for (int e : heard) newcomer |= e != 0 && e != 4;
+        s.check(heard == free && newcomer, "at the Build the others enter (as the Castle plays there without an arrangement)",
+                std::to_string(heard.size()) + " instruments, " + std::to_string(free.size()) + " without");
+        // Exactly at the boundary: no instrument that was off plays before it.
+        int64_t firstEntry = -1;
+        for (const auto& ev : events(h))
+            if (ev.element != 0 && ev.element != 4 && (firstEntry < 0 || int64_t(ev.clock) < firstEntry)) firstEntry = int64_t(ev.clock);
+        s.check(firstEntry >= boundary && firstEntry < boundary + 48000, "the first entrance is at or after the section boundary",
+                std::to_string(firstEntry - boundary) + " samples after it");
+        const auto st = measure(audio, 0.5);
+        s.check(st.finite && st.peak < 1.0, "finite and below the ceiling");
+        // No click at the boundary: the sharpest sample step there is no sharper than the music's own.
+        double around = 0, elsewhere = 0;
+        for (std::size_t i = 1; i < audio.l.size(); ++i) {
+            const double d = std::max(std::abs(audio.l[i] - audio.l[i - 1]), std::abs(audio.r[i] - audio.r[i - 1]));
+            if (std::abs(int64_t(i) - boundary) < 96) around = std::max(around, d);
+            else if (i > 48000) elsewhere = std::max(elsewhere, d);
+        }
+        s.check(around <= elsewhere * 1.05, "no click at the section boundary", fmt(toDb(around)) + " dB step there, " + fmt(toDb(elsewhere)) + " elsewhere");
+    }
+    {
+        // Leaving: Build -> a section with everything off. The notes stop at the boundary and
+        // what rings fades out (no new events, the level falls smoothly).
+        Host h;
+        auto a = castleArrangement();
+        a.sections[0] = arr::makeSection("Build", 2, 1);
+        a.sections[1] = arr::makeSection("Break", 2, 2);
+        for (auto& c : a.sections[1].cells[0]) c.entry = arr::EntryOff;
+        a.end = arr::EndLoop;
+        a.loopTo = 1;
+        h.p->arrangement.set(a);
+        h.set("air_mute", 1.0f);
+        h.set("water_mute", 1.0f);
+        h.set("bed_mute", 1.0f);
+        h.set("thunder_mute", 1.0f);
+        h.set("fire_mute", 1.0f);
+        h.set("earth_mute", 1.0f);
+        play(h);
+        const auto audio = h.render(7.0);
+        int late = 0;
+        for (const auto& ev : events(h))
+            if (int64_t(ev.clock) >= boundary) ++late;
+        s.check(late == 0, "an instrument switched off starts no note after the boundary", std::to_string(late) + " notes");
+        const auto before = measure(audio, 3.0, 4.0), tail = measure(audio, 6.0, 7.0);
+        s.check(tail.rmsDb < before.rmsDb - 12.0, "and what rings dies away", fmt(before.rmsDb) + " -> " + fmt(tail.rmsDb) + " dB");
+        const auto env = envelopeDb(audio, 0.005, 4.0);
+        double rise = 0;
+        for (std::size_t i = 1; i < std::min<std::size_t>(env.size(), 100); ++i) rise = std::max(rise, env[i] - env[i - 1]);
+        s.check(rise < 6.0, "no jump as the instruments leave", fmt(rise) + " dB largest 5 ms rise");
+    }
+    {
+        // Deterministic from any start bar: playing from bar 2 equals a fresh start at bar 2,
+        // whatever played before; and the section there is the right one.
+        Host x, y;
+        for (auto* h : { &x, &y }) h->p->arrangement.set(castleArrangement());
+        play(x, boundary);
+        const auto first = x.render(3.0);
+        play(y);
+        y.render(5.0);
+        y.playHead.playing = false;
+        y.render(0.5);
+        play(y, boundary);
+        const auto second = y.render(3.0);
+        s.check(first.l == second.l && first.r == second.r, "playback from a bar is the same every time (and so matches a bounce from there)");
+        s.check(x.p->engine.arrangeState().at.section == 1, "starting at bar 3 plays the Build");
+        // A render from bar 1 at another block size equals playback.
+        Host z(48000, 256);
+        z.p->arrangement.set(castleArrangement());
+        Host w(48000, 1000);
+        w.p->arrangement.set(castleArrangement());
+        play(z);
+        play(w);
+        const auto zr = z.render(6.0), wr = w.render(6.0);
+        double worst = 0;
+        for (std::size_t i = 0; i < zr.l.size(); ++i) worst = std::max(worst, double(std::abs(zr.l[i] - wr.l[i])));
+        s.check(worst < 1.0e-4, "the same at any host block size", fmt(toDb(worst)) + " dB");
+    }
+    {
+        // Score Intensity follows the section's ramp, and the parameter adds on top.
+        Host h;
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Rise", 4, 0);
+        a.sections[0].intensityStart = 0.1f;
+        a.sections[0].intensityEnd = 0.9f;
+        a.count = 1;
+        a.end = arr::EndLoop;
+        h.p->arrangement.set(a);
+        play(h);
+        std::vector<float> seen;
+        for (int i = 0; i < 8; ++i) {
+            h.render(1.0);
+            seen.push_back(h.p->engine.frame().intensity);
+        }
+        bool follows = true;
+        std::string text;
+        for (int i = 0; i < 7; ++i) {
+            const float expected = 0.1f + 0.8f * float(i + 1) / 8.0f;
+            follows &= std::abs(seen[std::size_t(i)] - expected) < 0.07f;
+            text += fmt(seen[std::size_t(i)]) + " ";
+        }
+        s.check(follows, "Score Intensity follows the section's ramp (within the 0.5 s glide)", text);
+        h.set("intensity", 0.7f);
+        h.playHead.position = 2 * 96000 + 48000;   // locate: bar 3.5 of 4
+        h.render(1.5);
+        // Located to 5 s (bar 2.5 of 4) and played 1.5 s: 6.5 s into the 8 s ramp, less the
+        // 0.5 s glide's lag behind a ramp of 0.1 a second, plus 0.2 from the parameter.
+        const float expected = 0.1f + 0.8f * 6.5f / 8.0f - 0.05f + 0.2f;
+        s.check(std::abs(h.p->engine.frame().intensity - std::min(expected, 1.0f)) < 0.08f, "automation of Score Intensity adds on top",
+                fmt(h.p->engine.frame().intensity) + " for " + fmt(expected));
+        // A jump between sections glides (no level spike).
+        Host j;
+        arr::Arrangement b;
+        b.sections[0] = arr::makeSection("Calm", 2, 0, 0.0f);
+        b.sections[1] = arr::makeSection("Climax", 2, 1, 1.0f);
+        b.count = 2;
+        j.p->arrangement.set(b);
+        j.set("p2_type", float(Megacity));
+        play(j);
+        const auto audio = j.render(7.0);
+        const auto env = envelopeDb(audio, 0.02, 1.0);
+        double jump = 0;
+        for (std::size_t i = 1; i < env.size(); ++i) jump = std::max(jump, env[i] - env[i - 1]);
+        s.check(jump < 9.0 && measure(audio, 0).peak < 1.0, "a section change in intensity has no level spike", fmt(jump) + " dB largest 20 ms rise");
+    }
+    {
+        // Pattern variants as written: A one note a bar, B four, Fill eight; the Intro plays
+        // A with its Fill in the last bar, the Build plays B.
+        Host h;
+        auto el = notesPerBar(1, 0);
+        el.alt[0] = notesPerBar(4, 0).pattern;
+        el.setEdited(pat::VariantB, true);
+        el.alt[1] = notesPerBar(2, 0).pattern;
+        el.setEdited(pat::VariantC, true);
+        el.alt[2] = notesPerBar(8, 0).pattern;
+        el.setEdited(pat::VariantFill, true);
+        h.p->patterns.setElement(0, Castle, 4, el);
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 3, 0);
+        a.sections[0].cells[0][4].fill = true;
+        a.sections[1] = arr::makeSection("Build", 2, 1);
+        a.sections[1].cells[0][4].variant = pat::VariantB;
+        a.sections[2] = arr::makeSection("Break", 2, 2);
+        a.sections[2].cells[0][4].variant = pat::VariantC;
+        a.count = 3;
+        for (int k = 0; k < 3; ++k)
+            for (int e = 0; e < placeElements; ++e)
+                if (e != 4) a.sections[std::size_t(k)].cells[0][std::size_t(e)].entry = arr::EntryOff;
+        h.p->arrangement.set(a);
+        play(h);
+        h.render(14.5);
+        std::array<int, 7> perBar {};
+        for (const auto& ev : events(h))
+            if (ev.element == 4) {
+                const auto bar = std::size_t((ev.clock + 48) / 96000);   // the beat clock may land a sample early
+                if (bar < perBar.size()) ++perBar[bar];
+            }
+        std::string text;
+        for (int c : perBar) text += std::to_string(c) + " ";
+        s.check(perBar[0] == 1 && perBar[1] == 1 && perBar[2] == 8 && perBar[3] == 4 && perBar[4] == 4 && perBar[5] == 2 && perBar[6] == 2,
+                "variants A, B, C and the Fill play as written, switching on the bar", "notes per bar: " + text);
+        // Generated variants differ from A.
+        Host g;
+        g.p->engine.showVariants[0] = true;
+        g.render(0.5);
+        int differ = 0, total = 0;
+        for (int e = 0; e < placeElements; ++e) {
+            if (patternInfo(Castle, e).kind == NoPattern) continue;
+            ++total;
+            const auto& slot = g.p->engine.placeSlot(0);
+            if (!slot.generatedPattern(e, 1).sameNotes(slot.generatedPattern(e, 0)) && !slot.generatedPattern(e, 2).sameNotes(slot.generatedPattern(e, 0)))
+                ++differ;
+        }
+        s.check(differ == total, "generated B and C differ from A for every instrument", std::to_string(differ) + " of " + std::to_string(total));
+        const auto& generated = g.p->patterns.generated(0);
+        s.check(generated.type == Castle && generated.of(pat::VariantFill, 1).count > 0, "generated variants reach the Pattern Editor");
+    }
+    {
+        // End: stop. Silence two bars after the end.
+        Host h;
+        h.p->arrangement.set(castleArrangement());
+        play(h);
+        h.render(13.0);
+        s.check(measure(h.render(1.0), 0).rmsDb < -100.0, "End: stop fades the world out after the last section");
+        s.check(h.p->engine.arrangeSection.load() == -2, "the playhead knows the arrangement has ended");
+    }
+    {
+        // The preview, with the host stopped (in Transport mode).
+        Host h;
+        h.set("playmode", float(PlayTransport));
+        h.p->arrangement.set(castleArrangement());
+        h.render(1.0);
+        s.check(measure(h.render(1.0), 0).rmsDb < -100.0, "stopped: silent");
+        h.p->previewFrom(1);
+        const auto pv = h.render(2.0);
+        s.check(measure(pv, 0.5).rmsDb > -45.0 && h.p->engine.arrangeSection.load() == 0, "PREVIEW plays the arrangement from a bar");
+        s.check(h.p->engine.arrangeBar.load() > 1.5 && h.p->engine.arrangeBar.load() < 2.5, "from that bar", fmt(h.p->engine.arrangeBar.load()));
+        h.p->previewFrom(2);
+        h.render(0.2);
+        s.check(h.p->engine.arrangeSection.load() == 1, "and jumps to another section");
+        h.p->stopPreview();
+        h.render(0.5);
+        s.check(measure(h.render(1.0), 0).rmsDb < -100.0, "stopping the preview stops the world");
+        h.p->previewFrom(0);
+        h.render(0.5);
+        h.playHead.playing = true;
+        h.render(0.2);
+        s.check(!h.p->previewing(), "the host starting playback ends the preview");
+    }
+    s.section("arrangement: interface");
+    {
+        Host h;
+        h.set("p2_type", float(Village));
+        h.render(0.3);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->arrangeButton().onClick();
+        view->settle(0.1f);
+        auto& arrange = view->arrangeView();
+        s.check(arrange.isVisible() && view->arrangeButton().getToggleState(), "ARRANGE opens its view from the header");
+        arrange.addSection();
+        arrange.addSection();
+        arrange.addSection();
+        auto a = h.p->arrangement.get();
+        s.check(a.count == 3 && std::string(a.sections[0].nameText()) == "Intro" && std::string(a.sections[1].nameText()) == "Build"
+                    && std::string(a.sections[2].nameText()) == "Climax" && arrange.selected() == 2,
+                "+ SECTION adds Intro, Build, Climax in turn, each selected");
+        s.check(a.sections[1].intensityEnd > a.sections[1].intensityStart && a.sections[2].intensityStart > a.sections[0].intensityStart,
+                "new sections start from a musical intensity arc");
+        const auto b0 = arrange.sectionBounds(0), b1 = arrange.sectionBounds(1);
+        s.check(b0.getWidth() > 20 && std::abs(b0.getWidth() - b1.getWidth()) <= 2 && b1.getX() >= b0.getRight() - 1 && arrange.timelineBounds().contains(b0),
+                "sections lie on the timeline, as wide as their bars");
+        const auto cell = arrange.cellBounds(1, 1, 2);
+        s.check(!cell.isEmpty() && std::abs(cell.getCentreX() - b1.getCentreX()) <= 2 && arrange.cellBounds(0, 2, 0).isEmpty(),
+                "the grid has a row per instrument of each active Place, a cell under each section");
+        arrange.clickCell(1, 1, 2);
+        arrange.clickCell(1, 1, 3, true);
+        a = h.p->arrangement.get();
+        s.check(a.sections[1].cells[1][2].entry == arr::EntryOff && a.sections[1].cells[1][3].variant == pat::VariantB,
+                "a click switches an instrument off in a section; Shift-click steps its variant");
+        h.p->arrangement.undo();
+        s.check(h.p->arrangement.get().sections[1].cells[1][3].variant == pat::VariantA, "and it undoes");
+        arrange.select(0);
+        arrange.duplicateSection();
+        s.check(h.p->arrangement.get().count == 4 && arrange.selected() == 1, "DUPLICATE");
+        arrange.deleteSection();
+        s.check(h.p->arrangement.get().count == 3, "DELETE");
+        // Paint with a playhead (the preview).
+        h.p->previewFrom(8);
+        h.render(0.3);
+        view->settle(0.1f);
+        editor->createComponentSnapshot(editor->getLocalBounds());
+        s.check(h.p->previewing() && h.p->engine.arrangeSection.load() == 1, "PREVIEW from the Build plays it");
+        // The Pattern Editor closes ARRANGE, and edits variants.
+        view->openPatterns(0, 4);
+        view->settle(0.1f);
+        s.check(!arrange.isVisible() && view->patternEditor().isVisible(), "the Pattern Editor and ARRANGE share the space");
+        auto& pe = view->patternEditor();
+        pe.selectVariant(pat::VariantB);
+        h.render(0.2);   // the audio thread generates every variant while the editor shows the slot
+        pe.selectVariant(pat::VariantB);
+        auto generatedB = h.p->patterns.generated(0).of(pat::VariantB, 4);
+        generatedB.swing = pe.shown().pattern.swing;   // the editor shows the Place's swing on a generated pattern
+        s.check(generatedB.count > 0 && pe.shown().pattern.sameNotes(generatedB) && !pe.shown().controls.edited, "the B tab shows the generated B pattern",
+                std::to_string(generatedB.count) + " generated, " + std::to_string(pe.shown().pattern.count) + " shown");
+        const auto before = h.p->patterns.element(0, Castle, 4);
+        pe.addNote(3, 5);
+        const auto after = h.p->patterns.element(0, Castle, 4);
+        s.check(after.edited(pat::VariantB) && !after.edited(pat::VariantA) && after.patternOf(pat::VariantA).sameNotes(before.patternOf(pat::VariantA))
+                    && after.patternOf(pat::VariantB).count == generatedB.count + 1,
+                "editing B keeps A as it was");
+        pe.selectVariant(pat::VariantA);
+        s.check(!pe.shown().controls.edited, "the A tab shows A");
+        view->arrangeButton().onClick();
+        s.check(arrange.isVisible() && !pe.isVisible(), "and ARRANGE opens over it again");
+        view->arrangeButton().onClick();
+        s.check(!arrange.isVisible() && !h.p->previewing(), "closing ARRANGE stops the preview");
+    }
+    {
+        // Real-time safety across section changes, entrances, Fills and the end.
+        Host h;
+        auto a = castleArrangement();
+        a.sections[0].cells[0][1].fill = true;
+        a.sections[1].cells[0][2].entry = arr::EntryFadeIn;
+        h.p->arrangement.set(a);
+        h.set("p2_type", float(Tavern));
+        play(h);
+        h.render(0.5);
+        allocationProbe::calls = 0;
+        allocationProbe::enabled = true;
+        for (int i = 0; i < 1000; ++i) h.processOne(512);
+        allocationProbe::enabled = false;
+        s.check(allocationProbe::calls == 0, "no heap allocation while the arrangement plays", std::to_string(allocationProbe::calls) + " allocations");
+    }
+}
+
 void testSmoke(Suite& s) {
     s.section("smoke: default world, one Place per category, state round trip");
     {
@@ -4261,6 +4791,11 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
         v.view->openPatterns(0);
         v.view->settle(0.1f);
         save(v.image().getClippedImage(editorArea), "patterns");
+        v.h.p->arrangement.set(arrangeTest::classicArc());
+        v.view->openArrange();
+        v.view->settle(0.1f);
+        save(v.image().getClippedImage(editorArea), "arrange");
+        save(v.image().getClippedImage(header), "header-arrange");
     }
     const std::vector<std::pair<const char*, std::vector<std::pair<const char*, float>>>> worlds {
         { "globe-frozen", { { "temperature", 0.05f }, { "weather", 0.2f } } },
@@ -4348,6 +4883,7 @@ int main(int argc, char** argv) {
     if (run("locations")) testLocations(s);
     if (run("smoke")) testSmoke(s);
     if (run("planet")) testPlanet(s);
+    if (run("arrangement")) testArrangement(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

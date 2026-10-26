@@ -41,7 +41,8 @@ inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Fact
                                             "Space Station|Cyberpunk Megacity|Starship Bridge|Asteroid Mining Colony|Alien Ruins|Nebula";
 inline constexpr int placeChoiceCount = 27;
 inline constexpr const char* characterChoices = "1|2|3";
-inline constexpr const char* playModeChoices = "Free|Transport";
+// Arrangement (Milestone 11): as Transport, following the arrangement's sections.
+inline constexpr const char* playModeChoices = "Free|Transport|Arrangement";
 // Locations and Journeys (Milestone 9): eight Location slots.
 inline constexpr const char* destinationChoices = "-|1|2|3|4|5|6|7|8";
 inline constexpr const char* locationChoices = "1|2|3|4|5|6|7|8";
@@ -52,7 +53,7 @@ inline constexpr std::array<int, 6> pathLegBars { 1, 2, 4, 8, 16, 32 };
 inline constexpr const char* pathEndChoices = "One-way|Loop";
 // Planet types (Milestone 10), in dsp::PlanetType order.
 inline constexpr const char* planetChoices = "Rocky|Ocean|Ice Giant|Gas Giant|Desert World|Lava World|Forest World";
-enum PlayMode { PlayFree, PlayTransport };
+enum PlayMode { PlayFree, PlayTransport, PlayArrangement };
 
 // Each of the four Place slots has these parameters, in this order.
 enum PlaceParam {
@@ -158,7 +159,8 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
 #undef WB_ELEMENTS
     // Free: the world plays all the time. Transport: only while the host plays, from
     // silence and locked to the song position (so bounces always contain it).
-    { "playmode", "Play Mode", Kind::Choice, 0, 1, PlayTransport, playModeChoices },
+    // Arrangement: as Transport, playing the arrangement's section at the song position.
+    { "playmode", "Play Mode", Kind::Choice, 0, 2, PlayTransport, playModeChoices },
     // Score Intensity: a calm bed at 0, every Place as set at 0.5, a climax at 1.
     { "intensity", "Score Intensity", Kind::Float, 0, 1, 0.5f },
     // Locations: choosing a Destination travels there over the Travel Time (seconds, or

@@ -5,11 +5,12 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 10 is complete** (visual revamp and planet types, Direction Update 5); its
-handoff is at the end of the
-[Milestone 10 section](#milestone-10-visual-revamp-and-planet-types-2026-10-26). Next:
-Milestone 11 (pro features, presets and release). A new milestone starts its own
-progress checklist; a resumed session continues from the first unticked item.
+**Milestone 11a is in progress** (the Arrangement, Direction Update 6, which inserts a
+new Milestone 11 and moves pro features, presets and release to Milestone 12). Its
+checklist and handoff are in the
+[Milestone 11a section](#milestone-11a-arrangement-timeline-sections-grid-variants-2026-10-26)
+at the end. A new milestone starts its own progress checklist; a resumed session
+continues from the first unticked item.
 
 ---
 
@@ -3193,3 +3194,122 @@ Snapshots: `docs/snapshots/after-*.png` beside `before-*.png` (`full-default`,
   drawn over it as before, which can read oddly on a giant (fields on a gas giant).
 - Carried over from Milestone 9: the first-playback difference in the Path test,
   Places matched by slot, the `push-access-check` branch.
+
+---
+
+## Milestone 11a: arrangement timeline, sections, grid, variants (2026-10-26)
+
+Direction Update 6 (`docs/DIRECTION_UPDATE_6.md`): WORLDBUILDER becomes a game-soundtrack
+maker. Milestone 11 is split into 11a (this: timeline, sections, instrument grid,
+pattern variants, Arrangement play mode), 11b (transitions, templates, auto-arrange)
+and 11c (game-audio export and polish). Milestones 7-10 are being tested by the
+developer in GarageBand while this runs. Unattended: decisions are recorded here.
+
+### Progress checklist
+
+Ticked when committed and pushed. A resumed session starts at the first unticked item.
+
+- [x] 1. Arrangement core: sections (name, colour, 1-64 bars, plays 1-8 times or endlessly, intensity ramp and curve), instrument grid (on, off, enter halfway, fade in, fade out; variant; Fill), End (stop, loop to a section), evaluation at any song position; store with undo/redo; state; engine (chunks split on beat lines, arranged intensity, gains and variants, end fade); Play Mode Arrangement; the preview; tests
+- [x] 2. Pattern variants A, B, C and Fill: storage, generation (B busier, C sparser, Fill busiest), playback per section, state and Locations, the Pattern Editor's A/B/C/FILL tabs; tests
+- [x] 3. ARRANGE view: header button, timeline (select, reorder by drag, resize by the right edge, rename, colour, plays, menus), inspector, instrument grid, playhead and current section, PREVIEW; snapshots; tests
+- [ ] 4. README, MANUAL_TEST, handoff, final push without `[skip ci]`
+
+### Decisions
+
+- **4/4 bars of four beats**, as the patterns and chord progression already count. The
+  host's time signature is not read.
+- **What plays at a song position is a pure function of the arrangement and that
+  position** (`arr::Arrangement::evaluate`), so Arrangement mode is Transport mode plus
+  the arrangement: the world restarts from a fixed state at every start or locate, and
+  starting at bar 37 plays what bar 37 holds (tested: equal to playing there after
+  having played from bar 1, and equal at any host block size).
+- **Sections change on the exact sample.** With an arrangement the engine splits its
+  32-sample chunks at beat lines, so a section boundary, an entrance halfway, a Fill and
+  the end all take effect on the first sample at or after the line, and a pattern note
+  on the line falls in the new state (the piece before stops just short of it).
+- **Entrances and exits.** An instrument entering from silence starts at full level on
+  the boundary (its downbeat is not faded; there is nothing to click). One coming back
+  while it still rings rises over 20 ms. One leaving starts no note after the boundary
+  and what rings fades over 250 ms (tested: no note after the boundary, no jump, the
+  tail dies away). Fade in and fade out are raised-cosine curves over each pass.
+- **Enter halfway** is from the middle bar (`bars / 2`, whole bars; a one-bar section:
+  its third beat).
+- **Repeats.** A section plays 1, 2, 3, 4 or 8 times, or endlessly (a game-style loop:
+  the song stays in it, so the sections after it are only reached by moving it; the
+  timeline says "ENDS IN A LOOP"). Ramps, fades and entrances replay on each pass; a Fill
+  plays only on the last pass before the section changes (not before a repeat, and not
+  before looping back to itself).
+- **End:** stop (the instruments stop at the end and the whole world fades out over two
+  bars, then renders nothing) or loop back to a chosen section.
+- **Score Intensity:** the section's ramp (start, end, curve: linear, ease in, ease out,
+  swell: the ramp plus a 25 % rise in the middle) plus the Score Intensity parameter's
+  offset from 50 %, so host automation adds on top and the parameter at its default
+  changes nothing. The 0.5 s Intensity glide smooths section jumps.
+- **The preview** (ARRANGE, host stopped): plays the arrangement from a section's first
+  bar on the world's own clock at the host tempo, in any Play Mode; clicking another
+  section (or the ruler) jumps; the host starting playback, closing ARRANGE or PREVIEW
+  ends it. In Free mode the world then carries on without the arrangement.
+- **Pattern variants.** Each instrument has A (its pattern as before), B, C and a Fill;
+  Randomness, Evolve, mute and solo are shared. Until edited they are generated from
+  the Place's Seed: B with Activity +25 % and Density +20 % (busier), C with both -25 %
+  (sparser), the Fill at +45 % / +40 % and Tension +10 %, its velocities rising over its
+  bar. A variant that comes out the same as A is generated again as a fresh take; a held
+  instrument whose generator ignores activity gets B a chord step up and C an octave
+  (of the scale) down. B, C and the Fill are generated only while they play or while
+  the Pattern Editor shows the slot (generation is cheap but runs again whenever the
+  inputs move, e.g. under an intensity ramp).
+- **Patterns run on the song's bar grid** (as before), not from each section's start:
+  a 4-bar pattern in a section starting on bar 3 plays from its third bar. Sections of
+  whole multiples of the patterns' lengths line up.
+- **Play Mode** became Free / Transport / Arrangement. Saved projects keep their mode
+  (the state stores the index); host *automation* of Play Mode (normalised 0-1) maps
+  Transport's old 1.0 to Arrangement. Play Mode is rarely automated; noted here.
+- The grid is per slot and instrument: changing a slot's Place keeps the slot's cells.
+- **Memory.** Patterns now hold four variants, so a slot's patterns are about 60 KB and
+  the processor is several megabytes. Hosts allocate it on the heap; the tests that
+  built one on the stack now use the heap, and two places that copied empty slot
+  patterns through a temporary on the audio thread copy from a static instead.
+
+### What was built
+
+- `Source/Arrangement/Arrangement.h`: `Section`, `Cell`, `Arrangement` (`locate`,
+  `evaluate`, `startOf`, `totalBars`, `changeAfter`), the curves, names and colours.
+- `Source/Arrangement/ArrangementStore.{h,cpp}`: the composer's arrangement (message
+  thread), undo/redo (100 steps), add/remove/duplicate/move/resize, state
+  (`<Arrangement end loopTo><Section name colour bars repeats curve start end
+  cells="0A- 1Bf ..."/></Arrangement>`), published to `WorldEngine::arrangementIn`.
+- `WorldEngine`: `fillChunk` (split on beat lines), `arrangeSection` / `arrangeBar`
+  (the playhead), the end fade, the arranged intensity; `PlaceSlotControls::arrange`
+  and `variant`; `PlaceSlot` (entrance/exit gains, per-variant generation and choice,
+  `PlaceSettings::notes`).
+- `pat::Element::alt` (B, C, Fill), `altEdited`, `altGenerate`; `pat::Generated::alt`;
+  `PatternStore::playing(..., variant)` and `<Variant index generate .../>` in state.
+- The processor: Play Mode Arrangement, `previewFrom`/`stopPreview`, the arrangement
+  in the state (and so in `.world` files).
+- `Source/UI/ArrangeView.{h,cpp}` and the header's ARRANGE button; the Pattern Editor's
+  A / B / C / FILL tabs.
+
+### Interface
+
+ARRANGE (header, left of Score Intensity) opens the view over the controls, globe and
+cards, where the Pattern Editor opens (each closes the other):
+- title row: section count and bars, UNDO, REDO, PREVIEW, BACK; toolbar: + SECTION
+  (Intro, Build, Climax, Wind-down, Outro, Loop, Bridge, Break in turn, each with a
+  starting intensity arc), DUPLICATE, DELETE, End (stop / loop to a section);
+- the selected section: name (pick or type), colour swatches, length, plays, intensity
+  start and end, curve;
+- the ruler and the timeline: coloured sections as wide as their bars, the intensity
+  curve drawn in each pass, the repeats, a hatched endless loop, END or the loop target;
+  click to select, drag to reorder, drag the right edge to resize, double-click to
+  preview, right-click for preview, duplicate, delete, plays, colour, all on / all off;
+- the instrument grid: a header per active Place and a row per instrument, a cell under
+  each section: filled (on), empty (off), the right part (enter halfway), a ramp (fade in
+  or out), the variant letter, a light last bar for the Fill. Click: on/off; Shift-click:
+  the next variant; right-click: every option and "the same in every section";
+  right-click a name: on/off or a variant everywhere;
+- a cyan playhead across ruler, timeline and grid and a glow on the current section
+  while the host (Arrangement mode) or the preview plays; a status line saying what the
+  Play Mode does.
+Keys: Cmd-Z / Cmd-Shift-Z undo/redo, Cmd-D duplicate, Delete, arrows select, Space preview.
+
+Snapshots: `docs/snapshots/m11a-arrange.png`, `m11a-patterns.png`, `m11a-header.png`.

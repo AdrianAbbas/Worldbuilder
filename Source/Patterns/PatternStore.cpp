@@ -67,11 +67,11 @@ const pat::Generated& PatternStore::generated(int slot) {
     return latest[k];
 }
 
-pat::Pattern PatternStore::playing(int slot, int type, int e) {
+pat::Pattern PatternStore::playing(int slot, int type, int e, int variant) {
     const auto el = element(slot, type, e);
-    if (el.controls.edited) return el.pattern;
+    if (el.edited(variant)) return el.patternOf(variant);
     const auto& g = generated(slot);
-    if (g.type == type) return g.pattern[std::size_t(std::clamp(e, 0, placeElements - 1))];
+    if (g.type == type) return g.of(variant, e);
     return {};
 }
 
@@ -108,6 +108,31 @@ void PatternStore::decodeNotes(const juce::String& text, pat::Pattern& p) {
     }
 }
 
+void PatternStore::writePattern(juce::ValueTree& x, const pat::Pattern& p) {
+    x.setProperty("resolution", int(p.resolution), nullptr);
+    x.setProperty("bars", int(p.bars), nullptr);
+    x.setProperty("steps", int(p.lengthSteps), nullptr);
+    x.setProperty("follow", p.followChords, nullptr);
+    x.setProperty("base", int(p.base), nullptr);
+    x.setProperty("swing", p.swing, nullptr);
+    x.setProperty("notes", encodeNotes(p), nullptr);
+}
+
+void PatternStore::readPattern(const juce::ValueTree& x, pat::Pattern& p) {
+    const auto number = [&](const char* id, float fallback, float lo, float hi) {
+        const float v = float(double(x.getProperty(id, fallback)));
+        return std::isfinite(v) ? juce::jlimit(lo, hi, v) : fallback;
+    };
+    const int bars = int(number("bars", 4.0f, 0.0f, float(pat::maxBars)));
+    p.setGrid(int(number("resolution", float(pat::Sixteenth), 0.0f, float(pat::ResolutionCount - 1))), bars,
+              int(number("steps", 16.0f, 1.0f, float(pat::maxSteps))));
+    p.followChords = bool(x.getProperty("follow", true));
+    p.base = int8_t(int(number("base", 0.0f, -36.0f, 36.0f)));
+    p.swing = number("swing", 0.0f, 0.0f, 1.0f);
+    decodeNotes(x.getProperty("notes").toString(), p);
+    p.normalise();
+}
+
 juce::ValueTree PatternStore::toValueTree() const {
     std::array<pat::SlotPatterns, placeSlots> slots;
     {
@@ -128,7 +153,7 @@ juce::ValueTree PatternStore::toTree(const std::array<pat::SlotPatterns, placeSl
         for (int e = 0; e < placeElements; ++e) {
             const auto& el = m.element[std::size_t(e)];
             // Untouched elements are left out: the Place regenerates them from its seed.
-            if (!el.controls.edited && el.controls == defaultControls(m.type, e)) continue;
+            if (!el.controls.edited && el.controls == defaultControls(m.type, e) && el.variantsUntouched()) continue;
             juce::ValueTree x("Element");
             x.setProperty("index", e, nullptr);
             x.setProperty("randomness", el.controls.randomness, nullptr);
@@ -138,15 +163,15 @@ juce::ValueTree PatternStore::toTree(const std::array<pat::SlotPatterns, placeSl
             x.setProperty("variant", int(el.controls.variant), nullptr);
             if (el.controls.mute) x.setProperty("mute", true, nullptr);
             if (el.controls.solo) x.setProperty("solo", true, nullptr);
-            if (el.controls.edited) {
-                const auto& p = el.pattern;
-                x.setProperty("resolution", int(p.resolution), nullptr);
-                x.setProperty("bars", int(p.bars), nullptr);
-                x.setProperty("steps", int(p.lengthSteps), nullptr);
-                x.setProperty("follow", p.followChords, nullptr);
-                x.setProperty("base", int(p.base), nullptr);
-                x.setProperty("swing", p.swing, nullptr);
-                x.setProperty("notes", encodeNotes(p), nullptr);
+            if (el.controls.edited) writePattern(x, el.pattern);
+            // Variants B, C and Fill (Milestone 11): their Generate counts and edited patterns.
+            for (int v = 1; v < pat::variantCount; ++v) {
+                if (el.generation(v) == 0 && !el.edited(v)) continue;
+                juce::ValueTree vx("Variant");
+                vx.setProperty("index", v, nullptr);
+                vx.setProperty("generate", int(el.generation(v)), nullptr);
+                if (el.edited(v)) writePattern(vx, el.patternOf(v));
+                x.appendChild(vx, nullptr);
             }
             s.appendChild(x, nullptr);
         }
@@ -190,16 +215,17 @@ std::array<pat::SlotPatterns, placeSlots> PatternStore::fromTree(const juce::Val
                 el.controls.mute = bool(x.getProperty("mute", false));
                 el.controls.solo = bool(x.getProperty("solo", false));
                 if (x.hasProperty("notes")) {
-                    auto& p = el.pattern;
-                    const int bars = int(number("bars", 4.0f, 0.0f, float(pat::maxBars)));
-                    p.setGrid(int(number("resolution", float(pat::Sixteenth), 0.0f, float(pat::ResolutionCount - 1))), bars,
-                              int(number("steps", 16.0f, 1.0f, float(pat::maxSteps))));
-                    p.followChords = bool(x.getProperty("follow", true));
-                    p.base = int8_t(int(number("base", 0.0f, -36.0f, 36.0f)));
-                    p.swing = number("swing", 0.0f, 0.0f, 1.0f);
-                    decodeNotes(x.getProperty("notes").toString(), p);
-                    p.normalise();
+                    readPattern(x, el.pattern);
                     el.controls.edited = true;
+                }
+                for (const auto& vx : x) {
+                    const int v = vx.getProperty("index", -1);
+                    if (!vx.hasType("Variant") || v < 1 || v >= pat::variantCount) continue;
+                    el.setGeneration(v, uint8_t(juce::jlimit(0, 255, int(vx.getProperty("generate", 0)))));
+                    if (vx.hasProperty("notes")) {
+                        readPattern(vx, el.patternOf(v));
+                        el.setEdited(v, true);
+                    }
                 }
             }
         }

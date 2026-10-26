@@ -3,6 +3,16 @@
 namespace wb {
 
 namespace {
+// Empty slot patterns, copied from one static instance (a temporary would put tens of
+// kilobytes on the audio thread's stack).
+const pat::SlotPatterns& emptyPatterns() {
+    static const pat::SlotPatterns empty {};
+    return empty;
+}
+} // namespace
+
+
+namespace {
 // The parameters that are not part of a Location (always the host's).
 const std::array<bool, PCount>& liveMask() {
     static const auto mask = [] {
@@ -129,7 +139,7 @@ void Travel::begin(Target to, int location, const TravelInputs& in, const WorldV
         const auto k = std::size_t(slot);
         const pat::SlotPatterns* from = out.patterns[k] != nullptr ? out.patterns[k] : livePatterns[k];
         if (from != nullptr) store[k] = *from;
-        else store[k] = pat::SlotPatterns {};
+        else store[k] = emptyPatterns();
         origin.patterns[k] = &store[k];
     }
     origin.v = out.v;
@@ -178,7 +188,7 @@ void Travel::keep(const Sounding& world, const std::array<const pat::SlotPattern
     for (int slot = 0; slot < locationSlots; ++slot) {
         const auto k = std::size_t(slot);
         const pat::SlotPatterns* from = world.patterns[k] != nullptr ? world.patterns[k] : livePatterns[k];
-        if (from != &keptStore[k]) keptStore[k] = from != nullptr ? *from : pat::SlotPatterns {};
+        if (from != &keptStore[k]) keptStore[k] = from != nullptr ? *from : emptyPatterns();
         kept.patterns[k] = &keptStore[k];
     }
 }

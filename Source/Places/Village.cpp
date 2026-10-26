@@ -389,7 +389,7 @@ void VillagePlace::configure(const PlaceContext& c) {
 
 int VillagePlace::addNotes(const PlaceContext& c, int n, std::array<Scheduled, maxScheduled>& notes, int count) {
     // Machinery: a mill's clack on every eighth note (not part of the pattern).
-    if (c.s.machinery <= 0.05f || c.s.element[HandDrums] <= 0.001f) return count;
+    if (c.s.machinery <= 0.05f || !c.s.plays(HandDrums)) return count;
     forEachStep(c.beat, c.beatsPerSample * double(n), 2, 0.0f, [&](int64_t step) {
         if (count >= maxScheduled) return;
         Scheduled x;

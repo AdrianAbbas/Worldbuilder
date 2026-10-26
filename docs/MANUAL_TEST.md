@@ -600,3 +600,32 @@ Load the CI build in GarageBand.
   pixels). Is the editor still light on the MacBook Air with the window open (Activity
   Monitor, GarageBand's CPU meter), compared with Milestone 9?
 
+
+## Milestone 11a check: the Arrangement
+
+Load the CI build in GarageBand. Add three or four Places first.
+
+**ARRANGE view**
+- [ ] ARRANGE (top bar) opens the timeline over the globe; BACK closes it. Readable at 100 %?
+- [ ] + SECTION five times (Intro, Build, Climax, Wind-down, Outro). Rename one by typing;
+  change colours, lengths (slider, and dragging a section's right edge), Plays; drag a
+  section to reorder. UNDO / REDO (and Cmd-Z) step back through all of it.
+- [ ] The grid: click cells off in the Intro, set some to Enter halfway / Fade in in the
+  Build (right-click), Shift-click variants to B in the Climax, a Fill in the Build.
+- [ ] PREVIEW with GarageBand stopped: the arrangement plays from the selected section;
+  the playhead moves and the section glows; clicking another section jumps there.
+
+**Playback**
+- [ ] Play Mode: Arrangement. Play from bar 1: do instruments enter and leave exactly at
+  the boundaries, with no clicks? Does the Fill land in the last bar before a change?
+- [ ] Start playback in the middle of a section (e.g. bar 37): it plays that section
+  straight away. Play the same spot twice: identical?
+- [ ] Intensity ramps: a Build from 40 % to 75 % audibly grows; automation of Score
+  Intensity on top still works.
+- [ ] End: stop (fades out over two bars) and End: loop to a section.
+- [ ] Bounce / export the project in Arrangement mode: the bounce sounds like playback.
+
+**Variants**
+- [ ] Pattern Editor: tabs A, B, C, FILL. Are the generated B (busier), C (sparser) and
+  Fill useful starting points? Edit B: A stays as it was.
+- [ ] Save and reopen the project: arrangement, variants and grid come back.

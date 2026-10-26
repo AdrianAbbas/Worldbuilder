@@ -56,7 +56,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 10 PREVIEW";
+constexpr const char* headerText = "FILM & GAME SCORING INSTRUMENT  -  MILESTONE 11";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -229,7 +229,8 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     setupCombo(quality, PQuality, qualityAttachment);
     setupCombo(playMode, PPlayMode, playModeAttachment);
     playMode.setTooltip("Transport: plays only while the host plays, from silence and locked to the song position, so bounces and exports "
-                        "always contain it. Free: plays all the time (GarageBand exports only up to the last region).");
+                        "always contain it. Arrangement: as Transport, playing the ARRANGE section at the song position. "
+                        "Free: plays all the time (GarageBand exports only up to the last region).");
     root.setTooltip("Key root: everything tonal (bed, drips, rain, wind, thunder, every Place) follows it");
     mood.setTooltip("Scale and mood: everything tonal follows it");
     quality.setTooltip("Eco / Standard / High: voice counts and detail");
@@ -255,6 +256,16 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         openDetail(slot);
     };
     addChildComponent(*patterns);
+
+    arrange = std::make_unique<ui::ArrangeView>(processor);
+    arrange->onClose = [this] { closeArrange(); };
+    addChildComponent(*arrange);
+    arrangeToggle.setTooltip("ARRANGE: design the track as a timeline of sections (Intro, Build, Climax...): their lengths, Score Intensity "
+                             "ramps and which instruments and pattern variants play in each. Play Mode Arrangement follows it.");
+    arrangeToggle.setColour(juce::TextButton::buttonOnColourId, ui::colours::brass);
+    ui::setIcon(arrangeToggle, ui::Icon::Path);
+    arrangeToggle.onClick = [this] { arrange->isVisible() ? closeArrange() : openArrange(); };
+    addAndMakeVisible(arrangeToggle);
 
     setupCombo(planetChoice, PPlanet, planetAttachment);
     planetChoice.setTooltip("Planet: the globe's look and a sound colour on the whole world (Rocky: dry and close; Ocean: watery movement; "
@@ -352,9 +363,33 @@ void WorldbuilderEditor::setOverlayMode(int mode) {
     processor.parameters.state.setProperty("overlays", mode, nullptr);
 }
 
+bool WorldbuilderEditor::covered() const { return patterns->isVisible() || arrange->isVisible(); }
+
+void WorldbuilderEditor::openArrange() {
+    closeDetail();
+    if (patterns->isVisible()) patterns->setVisible(false);
+    arrange->refresh();
+    arrange->setVisible(true);
+    arrange->toFront(true);
+    overlays->toFront(false);
+    arrangeToggle.setToggleState(true, juce::dontSendNotification);
+    updateOverlayFrames();
+    repaint();
+}
+
+void WorldbuilderEditor::closeArrange() {
+    if (!arrange->isVisible()) return;
+    arrange->setVisible(false);
+    processor.stopPreview();
+    arrangeToggle.setToggleState(false, juce::dontSendNotification);
+    updateOverlayFrames();
+    repaint();
+}
+
 void WorldbuilderEditor::openPatterns(int slot, int element) {
     if (slot < 0 || slot >= placeSlotCount || !hasPatterns(placeType(slot))) return;
     closeDetail();
+    closeArrange();
     patterns->setVisible(true);
     patterns->toFront(false);
     overlays->toFront(false);
@@ -366,6 +401,7 @@ void WorldbuilderEditor::openDetail(int slot) {
     if (slot < 0 || slot >= placeSlotCount || placeType(slot) == NoPlace) return;
     closeDetail();
     if (patterns->isVisible()) patterns->setVisible(false);
+    closeArrange();
     detail.slot = slot;
     detail.shownType = -1;
     const auto id = [slot](int field) { return specs[std::size_t(placeParam(slot, field))].id; };
@@ -443,7 +479,8 @@ void WorldbuilderEditor::resized() {
         const auto block = header.withRight(power.getX() - 48).withLeft(power.getX() - 48 - 170);
         knobFor[std::size_t(PIntensity)]->setBounds(block.withLeft(block.getRight() - 46).withSizeKeepingCentre(46, 46));
         intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(116, 30);
-        headerOpen = header.withLeft(headerSubtitle.getRight() + 16).withRight(intensityLabel.getX() - 12);
+        arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 24 - 108, header.getCentreY() - 13, 108, 26));
+        headerOpen = header.withLeft(headerSubtitle.getRight() + 16).withRight(arrangeToggle.getX() - 12);
         if (headerOpen.getWidth() < 60) headerOpen = {};
     }
     area.removeFromTop(6);
@@ -538,6 +575,7 @@ void WorldbuilderEditor::resized() {
 
     layoutDetail();
     patterns->setBounds(controlsPanel.getUnion(globePanel).getUnion(cardsPanel));
+    arrange->setBounds(patterns->getBounds());
 
     // Footer: key and global settings, then the output knobs.
     auto f = footer.reduced(12, 8);
@@ -1463,7 +1501,7 @@ void WorldbuilderEditor::showCategory(int c) {
 }
 
 void WorldbuilderEditor::mouseDown(const juce::MouseEvent& e) {
-    if (detail.slot >= 0 || patterns->isVisible()) return;
+    if (detail.slot >= 0 || covered()) return;
     if (const int marker = markerAt(e.position); marker >= 0) {
         if (processor.locations.used(marker)) processor.travelTo(marker);
         return;
@@ -1524,7 +1562,7 @@ void WorldbuilderEditor::mouseMove(const juce::MouseEvent& e) {
 }
 
 void WorldbuilderEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-    if (detail.slot >= 0 || patterns->isVisible() || !cardsPanel.contains(e.getPosition())) return;
+    if (detail.slot >= 0 || covered() || !cardsPanel.contains(e.getPosition())) return;
     const float before = cardScroll;
     cardScroll = juce::jlimit(0.0f, maxCardScroll(), cardScroll - wheel.deltaY * 160.0f);
     if (cardScroll != before) repaint(cardsPanel);
@@ -1584,7 +1622,7 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         if (std::abs(target - h) < 0.002f) h = target;
         animating |= h > 0.0f;
     }
-    if (animating && detail.slot < 0 && !patterns->isVisible()) repaint(cardsPanel);
+    if (animating && detail.slot < 0 && !covered()) repaint(cardsPanel);
     if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 8));
     {
         // A new Planet crossfades on the globe over about a second, as it does in the sound.
@@ -1595,7 +1633,7 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
             planetBlend = 0.0f;
         }
         planetBlend = std::min(1.0f, planetBlend + seconds / 1.1f);
-        const bool globeShown = detail.slot < 0 && !patterns->isVisible();
+        const bool globeShown = detail.slot < 0 && !covered();
         planetChoice.setVisible(globeShown);
         planetInfluence.setVisible(globeShown);
     }
@@ -1614,7 +1652,7 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     masterMeter = processor.engine.masterMeter.load(std::memory_order_relaxed);
 
     if (detail.slot >= 0) updateDetailLabels();
-    else if (!patterns->isVisible()) repaint(globePanel);
+    else if (!covered()) repaint(globePanel);
     repaint(layersPanel);
     repaint(placesPanel);
     repaint(footer.withTrimmedLeft(footer.getWidth() - 50));

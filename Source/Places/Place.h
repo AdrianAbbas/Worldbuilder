@@ -274,7 +274,11 @@ struct PlaceSettings {
     float activity = 0.5f, tension = 0.3f, density = 0.5f, swing = 0.15f, tone = 0.5f, size = 0.5f, variation = 0.35f;
     float fxDepth = 0.5f, life = 0.3f, machinery = 0, magic = 0.25f, era = 0.3f;
     std::array<float, placeElements> element {};
+    // Whether each element starts new notes: an arrangement section that switches an
+    // instrument off stops its notes at the boundary while what rings fades out.
+    std::array<bool, placeElements> notes { true, true, true, true, true, true };
     bool sync = true;
+    bool plays(int e) const { return notes[std::size_t(e)] && element[std::size_t(e)] > 0.001f; }
 };
 
 struct PlaceContext {
@@ -404,7 +408,7 @@ protected:
         const float danger = (*c.world)[Danger];
         for (int e = 0; e < placeElements; ++e) {
             const auto& play = c.play[std::size_t(e)];
-            if (play.pattern == nullptr || c.s.element[std::size_t(e)] <= 0.001f) continue;
+            if (play.pattern == nullptr || !c.s.plays(e)) continue;
             play.play(c.beat, span, [&](const pat::Event& ev) {
                 if (count >= maxScheduled) return;
                 Scheduled x;

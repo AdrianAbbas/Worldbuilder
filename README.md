@@ -7,10 +7,11 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 10 (26 Places of six instruments, each with its own instrument
+**Status: Milestone 11a (26 Places of six instruments, each with its own instrument
 effects; Score Intensity; render to WAV and scene MIDI export; Locations and
 Journeys; seven planet types with their own sound colour; the revamped globe and
-controls).**
+controls; and the Arrangement: a timeline of sections with an instrument grid,
+pattern variants A/B/C/Fill and Play Mode Arrangement).**
 These work now:
 - **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
@@ -99,7 +100,7 @@ Now: Milestone 10, the visual revamp and planet types. Next (Direction Update 5)
 features, presets and release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
 plan is in [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) to
-[docs/DIRECTION_UPDATE_5.md](docs/DIRECTION_UPDATE_5.md); later files override earlier
+[docs/DIRECTION_UPDATE_6.md](docs/DIRECTION_UPDATE_6.md); later files override earlier
 ones. How the instruments are modelled, and the acoustics data behind them:
 [docs/INSTRUMENT_NOTES.md](docs/INSTRUMENT_NOTES.md).
 
@@ -138,6 +139,37 @@ Play Mode and the World Seed are not part of a Location.
 - **.world files:** SAVE .world writes the whole world and its eight Locations to a
   file (in Documents/WORLDBUILDER/Worlds by default); LOAD .world brings one back.
   Locations are also saved with the project.
+
+## Arrangement: a cue in sections
+
+WORLDBUILDER can play a track that evolves through sections you design, like a
+composed game or film cue: for example 8 bars of Intro, 16 of Build, 16 of Climax, 16
+of Wind-down and 8 of Outro, in any order, lengths and number.
+
+- **ARRANGE** (top of the window) opens the timeline. **+ SECTION** adds Intro, Build,
+  Climax, Wind-down, Outro, Loop, Bridge and Break in turn; rename one by typing in its
+  name box. Each section has a colour, a length (1-64 bars; or drag its right edge),
+  how many times it plays (or **Loop (endless)** for a game-style loop), and **Score
+  Intensity** at its start and end with a curve (linear, ease in, ease out, swell).
+  Drag a section to reorder it; right-click it for more. Every edit undoes (Cmd-Z).
+- **The instrument grid** under the timeline has a row for every instrument of every
+  active Place and a cell under each section. Click a cell to switch the instrument on
+  or off there; Shift-click to step its pattern (A, B, C); right-click for **enter
+  halfway**, **fade in**, **fade out** and **Fill** (the instrument plays its Fill
+  pattern in the last bar before the section changes).
+- **Pattern variants:** in the Pattern Editor every instrument has tabs **A, B, C** and
+  **FILL**. Until you edit them, B is a busier take on A, C a sparser one and the Fill
+  the busiest, building over its bar.
+- **Play Mode Arrangement** (footer): like Transport, the plugin plays while the host
+  plays and follows its song position, and plays the section the arrangement has
+  there. Starting playback at bar 37 plays exactly what bar 37 holds, so playback and
+  bounces match. After the last section it stops (the world fades out over two bars) or
+  loops back to a section you choose (the End menu).
+- **PREVIEW** plays the arrangement from the selected section while the host is
+  stopped; click another section to jump there.
+- Automating Score Intensity still works: it adds on top of the sections' ramps (50 %
+  adds nothing).
+- Bars are 4/4. The arrangement is saved with the project and in `.world` files.
 
 ## Getting WORLDBUILDER into your song
 
