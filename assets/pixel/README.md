@@ -1,0 +1,19 @@
+# Pixel sprites (optional)
+
+The 8-bit interface (Milestone 13) draws its sprites in code: palette-indexed pixel
+maps in `Source/UI/PixelArt.cpp` and the control sprites in `Source/UI/Pixel.cpp`.
+Any of them can be replaced by hand-drawn pixel art: put a PNG with the sprite's name
+in this folder and rebuild. CMake bundles every `*.png` here (BinaryData) and the
+plugin uses it instead of the code-drawn sprite.
+
+| File | What it replaces |
+|---|---|
+| `place-<key>.png` | a Place icon. Frames side by side, each square (32 x 32 is the native size): a 4-frame idle animation is 128 x 32. `<key>` is the Place's key (`castle`, `tavern`, `forest`, `spaceport`, `megacity`, `nebula`, ...; the full list is `placeKeys` in `Source/Places/Place.h`). |
+
+Rules for replacements:
+- draw at 1 art pixel per image pixel, with a transparent background; the plugin
+  scales it by whole numbers (no smoothing);
+- original art only (nothing taken from existing games);
+- keep each file small; together they count toward the installed plugin's size.
+
+13b adds the control and tool-icon sprite names to this table.

@@ -12,6 +12,8 @@
 #include "PluginProcessor.h"
 #include "Patterns/PatternMidi.h"
 #include "Arrangement/Templates.h"
+#include "UI/PixelLookAndFeel.h"
+#include "UI/WorldLookAndFeel.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -5759,6 +5761,359 @@ void testScenes(Suite& s) {
 
 // --snapshot-scenes dir: the header with a factory scene loaded, and the ARRANGE view
 // with its arrangement (Milestone 12).
+// ---- Milestone 13a: the 8-bit style prototype -------------------------------------------
+
+namespace pixelTest {
+namespace px = wb::ui::pixel;
+
+// True when `out` shows `canvas` at `scale` from (ox, oy): every art pixel a uniform
+// scale x scale block of its colour (no partial or smoothed pixels).
+bool showsAtScale(const juce::Image& out, const px::Canvas& canvas, int ox, int oy, int scale, std::string& detail) {
+    for (int y = 0; y < canvas.height(); ++y)
+        for (int x = 0; x < canvas.width(); ++x) {
+            const auto want = canvas.get(x, y);
+            for (int j = 0; j < scale; ++j)
+                for (int i = 0; i < scale; ++i) {
+                    const auto got = out.getPixelAt(ox + x * scale + i, oy + y * scale + j);
+                    if (want.getAlpha() == 255 ? got != want : got.getAlpha() != want.getAlpha() && want.getAlpha() == 0) {
+                        detail = "art pixel " + std::to_string(x) + "," + std::to_string(y) + " block " + std::to_string(i) + "," + std::to_string(j);
+                        return false;
+                    }
+                }
+        }
+    return true;
+}
+
+// True when an image is made of uniform scale x scale blocks on the grid from (0, 0).
+bool onGrid(const juce::Image& image, int scale, std::string& detail) {
+    for (int y = 0; y + scale <= image.getHeight(); y += scale)
+        for (int x = 0; x + scale <= image.getWidth(); x += scale) {
+            const auto first = image.getPixelAt(x, y);
+            for (int j = 0; j < scale; ++j)
+                for (int i = 0; i < scale; ++i)
+                    if (image.getPixelAt(x + i, y + j) != first) {
+                        detail = "block at " + std::to_string(x) + "," + std::to_string(y);
+                        return false;
+                    }
+        }
+    return true;
+}
+
+int opaquePixels(const px::Canvas& c) {
+    int n = 0;
+    for (int y = 0; y < c.height(); ++y)
+        for (int x = 0; x < c.width(); ++x) n += c.get(x, y).getAlpha() > 0 ? 1 : 0;
+    return n;
+}
+bool differ(const px::Canvas& a, const px::Canvas& b) {
+    if (a.width() != b.width() || a.height() != b.height()) return true;
+    for (int y = 0; y < a.height(); ++y)
+        for (int x = 0; x < a.width(); ++x)
+            if (a.get(x, y) != b.get(x, y)) return true;
+    return false;
+}
+
+// The prototype's six controls as real JUCE components, on a parent the size of the
+// sheet's control area, laid out on whole art pixels.
+struct Controls : juce::Component {
+    juce::Slider knob, slider;
+    juce::TextButton button { "Render" };
+    juce::ToggleButton toggle { "Sync" };
+    juce::ComboBox combo;
+    juce::TabbedButtonBar tabs { juce::TabbedButtonBar::TabsAtTop };
+    explicit Controls(juce::LookAndFeel& lnf) {
+        setLookAndFeel(&lnf);
+        knob.setName("Temp");
+        knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        knob.setRange(0.0, 100.0, 1.0);
+        knob.setValue(62.0, juce::dontSendNotification);
+        knob.setDoubleClickReturnValue(true, 50.0);
+        knob.setTextValueSuffix("%");
+        slider.setName("Tone");
+        slider.setSliderStyle(juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setRange(-6.0, 6.0, 0.5);
+        slider.setValue(3.5, juce::dontSendNotification);
+        slider.setDoubleClickReturnValue(true, 0.0);
+        combo.addItemList({ "Minor", "Phrygian", "Lydian", "Dorian" }, 1);
+        combo.setSelectedId(2, juce::dontSendNotification);
+        tabs.addTab("Bells", juce::Colours::black, -1);
+        tabs.addTab("Horns", juce::Colours::black, -1);
+        tabs.addTab("Drone", juce::Colours::black, -1);
+        for (auto* c : std::initializer_list<juce::Component*> { &knob, &slider, &button, &toggle, &combo, &tabs }) addAndMakeVisible(c);
+        setSize(460, 220);
+        knob.setBounds(10, 10, 80, 100);
+        slider.setBounds(100, 10, 220, 50);
+        button.setBounds(100, 70, 90, 40);
+        toggle.setBounds(200, 70, 120, 40);
+        combo.setBounds(100, 120, 200, 40);
+        tabs.setBounds(10, 170, 420, 40);   // wide enough for three tabs at x3 (squeezed tabs leave the grid)
+    }
+    ~Controls() override { setLookAndFeel(nullptr); }
+};
+
+juce::MouseEvent mouseAt(juce::Component& c, juce::Point<float> at, juce::Point<float> downAt, int clicks, bool dragged) {
+    auto source = juce::Desktop::getInstance().getMainMouseSource();
+    return juce::MouseEvent(source, at, juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &c, &c, juce::Time::getCurrentTime(),
+                            downAt, juce::Time::getCurrentTime(), clicks, dragged);
+}
+} // namespace pixelTest
+
+void testPixel(Suite& s) {
+    using namespace pixelTest;
+    s.section("Milestone 13a: the 8-bit style prototype");
+    const float moods[] { px::fantasyMood, px::blendMood, px::sciFiMood };
+
+    // Moods: three distinct looks, a smooth path between them, and readable text all along.
+    {
+        const auto f = px::palette(px::fantasyMood), b = px::palette(px::blendMood), sf = px::palette(px::sciFiMood);
+        s.check(f.accent != b.accent && b.accent != sf.accent && f.rim != sf.rim && f.face != b.face, "the three moods have their own materials");
+        s.check(f.sparkle == 1 && b.runes == 1 && sf.scanline == 1, "each mood shows its own decoration (sparkles, runes, scanlines)");
+        const auto q = px::palette(0.25f);
+        s.check(q.sparkle > 0 && q.runes > 0 && q.scanline == 0, "between fantasy and the blend, both decorations cross-fade");
+        float worst = 100, worstOn = 100, worstPanel = 100, worstValue = 100, worstWell = 100, step = 0;
+        for (int i = 0; i <= 64; ++i) {
+            const auto p = px::palette(float(i) / 64.0f);
+            worst = std::min({ worst, px::contrast(p.ink, p.face), px::contrast(p.ink, p.faceLight) });
+            worstOn = std::min(worstOn, px::contrast(p.inkOn, p.accent));
+            worstPanel = std::min(worstPanel, px::contrast(p.ink, p.panel));
+            worstValue = std::min(worstValue, px::contrast(p.accent, p.panel));
+            worstWell = std::min(worstWell, px::contrast(p.ink, p.well));
+            if (i > 0) {
+                const auto prev = px::palette(float(i - 1) / 64.0f);
+                step = std::max({ step, std::abs(p.face.getFloatRed() - prev.face.getFloatRed()), std::abs(p.accent.getFloatGreen() - prev.accent.getFloatGreen()),
+                                  std::abs(p.accent.getFloatRed() - prev.accent.getFloatRed()), std::abs(p.rim.getFloatBlue() - prev.rim.getFloatBlue()) });
+            }
+        }
+        s.metric("pixel: lowest text contrast on a face / lit face / panel / field / value on panel", worst);
+        s.metric("  lit face", worstOn);
+        s.metric("  panel", worstPanel);
+        s.metric("  field", worstWell);
+        s.metric("  value text on panel", worstValue);
+        s.check(worst >= 4.5f, "text on buttons, knobs and tabs keeps WCAG AA contrast (4.5:1) in every mood", fmt(worst));
+        s.check(worstOn >= 4.5f, "text on a lit (active) face keeps 4.5:1 in every mood", fmt(worstOn));
+        s.check(worstPanel >= 4.5f && worstWell >= 4.5f, "labels on the panel and text in fields keep 4.5:1 in every mood", fmt(std::min(worstPanel, worstWell)));
+        s.check(worstValue >= 3.0f, "value readouts (accent on panel) keep 3:1 in every mood", fmt(worstValue));
+        s.check(step < 0.06f, "the mood changes smoothly (no colour jumps between 1/64 steps)", fmt(step));
+    }
+
+    // The mood of a mix of Places follows the world theme's weighting.
+    {
+        std::array<float, PlaceTypeCount> presence {};
+        const auto moodWith = [&](std::vector<std::pair<int, float>> places) {
+            presence.fill(0);
+            for (auto [type, w] : places) presence[std::size_t(type)] = w;
+            return px::moodOf(presence.data(), int(presence.size()));
+        };
+        s.check(moodWith({ { Castle, 1 } }) == 0.0f && moodWith({ { Tavern, 1 } }) == 0.0f, "fantasy Places give the fantasy mood");
+        s.check(moodWith({ { Nebula, 1 } }) == 1.0f && moodWith({ { Megacity, 1 }, { Spaceport, 0.5f } }) == 1.0f, "sci-fi Places give the sci-fi mood");
+        s.check(std::abs(moodWith({ { Castle, 1 }, { Spaceport, 1 } }) - 0.5f) < 1e-6f, "fantasy and sci-fi together give the blend");
+        s.check(std::abs(moodWith({ { Castle, 1 }, { Spaceport, 0.5f } }) - 1.0f / 3.0f) < 1e-6f, "the blend follows each Place's presence");
+        s.check(moodWith({}) == px::blendMood && moodWith({ { City, 1 } }) == 0.5f, "no Places, or a modern one: the blend (neutral styling is 13b)");
+    }
+
+    // The six Place icons: present, animated, not empty, unaffected outside their 32 x 32.
+    {
+        const int demo[] { Castle, Tavern, Forest, Spaceport, Megacity, Nebula };
+        bool all = true, animated = true, filled = true, framesOk = true;
+        for (int type : demo) {
+            all = all && px::hasPlaceIcon(type);
+            const int frames = px::placeIconFrames(type);
+            framesOk = framesOk && frames >= 2 && frames <= 4;
+            const auto first = px::placeIcon(type, 0, juce::Colours::black);
+            filled = filled && opaquePixels(first) > 250;
+            for (int f = 1; f < frames; ++f) animated = animated && differ(first, px::placeIcon(type, f, juce::Colours::black));
+        }
+        s.check(all, "Castle, Tavern, Forest, Spaceport, Cyberpunk Megacity and Nebula have pixel icons");
+        s.check(framesOk, "each icon has a 2-4 frame idle animation");
+        s.check(animated, "every animation frame differs from the first");
+        s.check(filled, "each icon fills its 32 x 32 (more than 250 art pixels)");
+        s.check(!px::hasPlaceIcon(Village), "the other Places have no pixel icon yet (13b)");
+        s.check(differ(px::placeIcon(Castle, 0, juce::Colours::black), px::placeIcon(Castle, 0, juce::Colours::white)), "the icon outline takes the mood's colour");
+    }
+
+    // Every sprite at integer scale: each art pixel a uniform block, the corner snapped
+    // to whole pixels even from a fractional position.
+    {
+        std::vector<std::pair<std::string, px::Canvas>> sprites;
+        const juce::StringArray items { "MINOR", "PHRYGIAN", "LYDIAN" };
+        for (float m : moods) {
+            const auto p = px::palette(m);
+            const std::string tag = m < 0.25f ? "fantasy" : m > 0.75f ? "sci-fi" : "blend";
+            sprites.push_back({ tag + " knob", px::knob(p, 0.62f, "TEMP", "62%", { true }) });
+            sprites.push_back({ tag + " slider", px::slider(p, 120, 0.3f, "TONE", "-2 DB", {}) });
+            sprites.push_back({ tag + " button", px::button(p, "RENDER", { true }) });
+            sprites.push_back({ tag + " pressed button", px::button(p, "RENDER", { true, true }) });
+            sprites.push_back({ tag + " toggle", px::toggle(p, "SYNC", { false, false, true }) });
+            sprites.push_back({ tag + " tabs", px::tabs(p, { "BELLS", "HORNS" }, 1, 0) });
+            sprites.push_back({ tag + " dropdown", px::dropdown(p, "LYDIAN", 80, {}, &items, 0) });
+            sprites.push_back({ tag + " card", px::placeCard(p, Nebula, "NEBULA", { false, false, true }) });
+        }
+        bool exact = true;
+        std::string failure;
+        for (int scale : { 2, 3, 4 })
+            for (const auto& [name, sprite] : sprites) {
+                juce::Image out(juce::Image::ARGB, sprite.width() * scale + 12, sprite.height() * scale + 12, true);
+                {
+                    juce::Graphics g(out);
+                    px::draw(g, sprite, { 5.4f, 3.6f }, scale);
+                }
+                std::string detail;
+                if (!showsAtScale(out, sprite, 5, 4, scale, detail)) {
+                    exact = false;
+                    failure = name + " at x" + std::to_string(scale) + ": " + detail;
+                }
+            }
+        s.check(exact, "every control sprite draws at x2, x3 and x4 with no partial pixels, snapped to whole pixels", failure);
+        bool decorated = true;
+        for (float m : moods) {
+            const auto p = px::palette(m);
+            decorated = decorated && differ(px::button(p, "PLAY", {}), px::button(p, "PLAY", { true })) && differ(px::button(p, "PLAY", { true }), px::button(p, "PLAY", { true, true }))
+                        && differ(px::toggle(p, "ON", {}), px::toggle(p, "ON", { false, false, true })) && differ(px::knob(p, 0.2f, "A", "1", {}), px::knob(p, 0.8f, "A", "1", {}));
+        }
+        s.check(decorated, "hover, press, on and value each change the sprite, in every mood");
+        s.check(differ(px::button(px::palette(0), "PLAY", {}), px::button(px::palette(1), "PLAY", {})), "the same button looks different in fantasy and sci-fi");
+    }
+
+    // Real JUCE controls through the PixelLookAndFeel: drawn on the grid, still working.
+    {
+        bool grid = true, drawn = true;
+        std::string failure;
+        for (int scale : { 2, 3 })
+            for (float m : moods) {
+                wb::ui::PixelLookAndFeel lnf;
+                lnf.setMood(m);
+                lnf.setPixelScale(scale);
+                Controls c(lnf);
+                // Snap every control to whole art pixels, as the editor will.
+                for (auto* child : c.getChildren()) {
+                    auto b = child->getBounds();
+                    child->setBounds(b.getX() / scale * scale, b.getY() / scale * scale, b.getWidth() / scale * scale, b.getHeight() / scale * scale);
+                }
+                const auto image = c.createComponentSnapshot(c.getLocalBounds(), true, 1.0f);
+                std::string detail;
+                if (!onGrid(image, scale, detail)) {
+                    grid = false;
+                    failure = "scale " + std::to_string(scale) + " mood " + fmt(m) + ": " + detail;
+                }
+                for (auto* child : c.getChildren()) {
+                    int painted = 0;
+                    const auto b = child->getBounds();
+                    for (int y = b.getY(); y < b.getBottom(); ++y)
+                        for (int x = b.getX(); x < b.getRight(); ++x) painted += image.getPixelAt(x, y).getAlpha() > 0 ? 1 : 0;
+                    drawn = drawn && painted > b.getWidth() * b.getHeight() / 10;
+                }
+            }
+        s.check(grid, "knob, slider, button, toggle, dropdown and tabs render on the integer pixel grid (x2 and x3, every mood)", failure);
+        s.check(drawn, "each control draws inside its own bounds (its hit area)");
+
+        wb::ui::PixelLookAndFeel lnf;
+        lnf.setMood(px::sciFiMood);
+        Controls c(lnf);
+        const auto before = c.createComponentSnapshot(c.knob.getBounds());
+        c.knob.setValue(20.0);
+        const auto after = c.createComponentSnapshot(c.knob.getBounds());
+        bool changed = false;
+        for (int y = 0; y < before.getHeight() && !changed; ++y)
+            for (int x = 0; x < before.getWidth() && !changed; ++x) changed = before.getPixelAt(x, y) != after.getPixelAt(x, y);
+        s.check(changed, "the knob's sprite follows its value");
+        if (juce::Desktop::getInstance().getNumMouseSources() > 0) {
+            // Drag the knob up (it rises), double-click it (it resets), click the button
+            // and toggle (they fire and latch).
+            const auto centre = c.knob.getLocalBounds().getCentre().toFloat();
+            const double start = c.knob.getValue();
+            c.knob.mouseDown(mouseAt(c.knob, centre, centre, 1, false));
+            c.knob.mouseDrag(mouseAt(c.knob, centre.translated(0, -40), centre, 1, true));
+            c.knob.mouseUp(mouseAt(c.knob, centre.translated(0, -40), centre, 1, true));
+            s.check(c.knob.getValue() > start, "dragging the pixel knob up raises its value", fmt(start) + " -> " + fmt(c.knob.getValue()));
+            c.knob.mouseDoubleClick(mouseAt(c.knob, centre, centre, 2, false));
+            s.check(c.knob.getValue() == 50.0, "double-click still resets the pixel knob", fmt(c.knob.getValue()));
+            const auto sliderMid = c.slider.getLocalBounds().getCentre().toFloat();
+            c.slider.mouseDoubleClick(mouseAt(c.slider, sliderMid, sliderMid, 2, false));
+            s.check(c.slider.getValue() == 0.0, "double-click still resets the pixel slider", fmt(c.slider.getValue()));
+        } else {
+            std::cout << "  (no mouse source here: drag and double-click checks skipped)\n";
+        }
+        const auto toggleOff = c.createComponentSnapshot(c.toggle.getBounds());
+        c.toggle.setToggleState(true, juce::dontSendNotification);
+        const auto toggleOn = c.createComponentSnapshot(c.toggle.getBounds());
+        bool switched = false;
+        for (int y = 0; y < toggleOff.getHeight() && !switched; ++y)
+            for (int x = 0; x < toggleOff.getWidth() && !switched; ++x) switched = toggleOff.getPixelAt(x, y) != toggleOn.getPixelAt(x, y);
+        s.check(switched, "the toggle's sprite follows its state");
+        c.tabs.setCurrentTabIndex(2);
+        s.check(c.tabs.getCurrentTabIndex() == 2 && c.combo.getText() == "Phrygian", "tabs switch and the dropdown keeps its choice");
+        c.knob.setTooltip("Temperature");
+        s.check(c.knob.getTooltip() == "Temperature", "tooltips are untouched");
+    }
+
+    // Draw cost, report-only: the six controls painted 300 times with the current
+    // vector style and with the pixel style (sprites cached after the first paint).
+    {
+        const auto timePaints = [](juce::LookAndFeel& lnf) {
+            Controls c(lnf);
+            juce::Image target(juce::Image::ARGB, c.getWidth(), c.getHeight(), true);
+            const auto start = juce::Time::getMillisecondCounterHiRes();
+            for (int i = 0; i < 300; ++i) {
+                juce::Graphics g(target);
+                c.paintEntireComponent(g, true);
+            }
+            return (juce::Time::getMillisecondCounterHiRes() - start) / 300.0;
+        };
+        wb::ui::WorldLookAndFeel vector;
+        wb::ui::PixelLookAndFeel pixel;
+        pixel.setMood(px::blendMood);
+        const double before = timePaints(vector), after = timePaints(pixel);
+        s.metric("pixel: paint of the six prototype controls, vector style (ms)", before);
+        s.metric("pixel: paint of the six prototype controls, pixel style (ms)", after);
+        s.metric("pixel: sprites drawn for those 300 paints", pixel.cache().made);
+        s.check(pixel.cache().made < 40, "the pixel style draws each sprite once and reuses it", std::to_string(pixel.cache().made));
+    }
+
+    // The prototype sheets build in every mood, with all elements on them.
+    {
+        bool built = true;
+        for (float m : moods) {
+            const auto sheet = px::prototypeSheet(m);
+            built = built && sheet.width() > 150 && sheet.height() > 300 && opaquePixels(sheet) == sheet.width() * sheet.height();
+        }
+        s.check(built, "the prototype sheet builds in all three moods");
+        s.check(differ(px::prototypeSheet(px::blendMood, 0), px::prototypeSheet(px::blendMood, 1)), "the sheet animates (icon frames, twinkles, scanlines)");
+    }
+}
+
+// --snapshot-pixel dir: the 13a prototype images, docs/snapshots/pixel-prototype-*.
+int writePixelSnapshots(const juce::String& dir) {
+    namespace px = wb::ui::pixel;
+    juce::File folder(dir);
+    folder.createDirectory();
+    const auto save = [&](const px::Canvas& canvas, int scale, const juce::String& name) {
+        juce::File file(folder.getChildFile("pixel-prototype-" + name + ".png"));
+        file.deleteFile();
+        juce::FileOutputStream out(file);
+        juce::PNGImageFormat().writeImageToStream(canvas.scaled(scale), out);
+        std::cout << "  " << file.getFullPathName() << "\n";
+    };
+    // 100 % UI scale is two screen pixels per art pixel.
+    save(px::prototypeSheet(px::fantasyMood), 2, "fantasy");
+    save(px::prototypeSheet(px::sciFiMood), 2, "scifi");
+    save(px::prototypeSheet(px::blendMood), 2, "blend");
+    save(px::prototypeComparison(), 2, "sheet");
+    save(px::moodSweep(), 2, "mood-sweep");
+    save(px::iconStrips(), 4, "icons");
+    // A close-up of the controls at 200 % (four screen pixels per art pixel).
+    {
+        const auto sheet = px::prototypeComparison();
+        px::Canvas crop(sheet.width(), 160);
+        crop.paste(sheet.source().getClippedImage({ 0, 0, sheet.width(), 160 }), 0, 0);
+        save(crop, 4, "controls-200");
+    }
+    // The idle animation, as frames of the sheet.
+    for (int f = 1; f < 4; ++f) save(px::prototypeComparison(f), 2, "sheet-frame" + juce::String(f));   // the sheet is frame 0
+    return 0;
+}
+
 int writeSceneSnapshots(const juce::String& dir) {
     juce::File folder(dir);
     folder.createDirectory();
@@ -5903,6 +6258,7 @@ int main(int argc, char** argv) {
         if (juce::String(argv[i]) == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (juce::String(argv[i]) == "--snapshots" && i + 1 < argc) return writeSnapshots(argv[i + 1], i + 2 < argc ? juce::String(argv[i + 2]) : juce::String("shot"));
         else if (juce::String(argv[i]) == "--snapshot-scenes" && i + 1 < argc) return writeSceneSnapshots(argv[i + 1]);
+        else if (juce::String(argv[i]) == "--snapshot-pixel" && i + 1 < argc) return writePixelSnapshots(argv[i + 1]);
         else if (juce::String(argv[i]) == "--probe") return probe();
         else if (juce::String(argv[i]) == "--probe-places") return probePlaces();
         else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {
@@ -5957,6 +6313,7 @@ int main(int argc, char** argv) {
     if (run("gameaudio")) testGameAudio(s);
     if (run("outputs")) testOutputs(s);
     if (run("scenes")) testScenes(s);
+    if (run("pixel")) testPixel(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

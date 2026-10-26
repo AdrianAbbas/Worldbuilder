@@ -56,7 +56,7 @@ target_sources(WORLDBUILDER PRIVATE
     Source/Patterns/PatternStore.cpp Source/Patterns/PatternMidi.cpp Source/Capture/Capture.cpp
     Source/Locations/Travel.cpp Source/Locations/LocationBank.cpp Source/Arrangement/ArrangementStore.cpp Source/Arrangement/Templates.cpp Source/Scenes/Scenes.cpp
     Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/OverlayArt.cpp Source/UI/PatternEditor.cpp Source/UI/CapturePanel.cpp Source/UI/LocationBar.cpp Source/UI/ArrangeView.cpp
-    Source/UI/GlobeRenderer.cpp Source/UI/Style.cpp)
+    Source/UI/GlobeRenderer.cpp Source/UI/Style.cpp Source/UI/Pixel.cpp Source/UI/PixelArt.cpp Source/UI/PixelLookAndFeel.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
 # Hand-made Place artwork (optional): assets/places/<place>/{back,mid,front,lights}.png
 # is bundled as <place>_<layer>.png; without any, the procedural art is used.
@@ -76,6 +76,16 @@ if(WORLDBUILDER_ART_SOURCES)
     target_compile_definitions(WORLDBUILDER PRIVATE WB_HAS_PLACE_ART=1)
 else()
     target_compile_definitions(WORLDBUILDER PRIVATE WB_HAS_PLACE_ART=0)
+endif()
+# Hand-drawn pixel sprites (optional, Milestone 13): assets/pixel/<name>.png replaces
+# the code-drawn sprite of that name (see assets/pixel/README.md).
+file(GLOB WORLDBUILDER_PIXEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/assets/pixel/*.png")
+if(WORLDBUILDER_PIXEL_SOURCES)
+    juce_add_binary_data(WorldbuilderPixel HEADER_NAME WorldbuilderPixel.h NAMESPACE WorldbuilderPixel SOURCES ${WORLDBUILDER_PIXEL_SOURCES})
+    target_link_libraries(WORLDBUILDER PRIVATE WorldbuilderPixel)
+    target_compile_definitions(WORLDBUILDER PRIVATE WB_HAS_PIXEL_ART=1)
+else()
+    target_compile_definitions(WORLDBUILDER PRIVATE WB_HAS_PIXEL_ART=0)
 endif()
 target_compile_definitions(WORLDBUILDER PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0

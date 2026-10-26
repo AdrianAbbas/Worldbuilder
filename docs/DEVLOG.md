@@ -5,13 +5,13 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 12 is complete** (separate outputs, Inspire, 24 factory scenes, release
-docs). Next is Milestone 13, the 8-bit interface overhaul of
-[Direction Update 7](DIRECTION_UPDATE_7.md), starting with the 13a style prototype,
-which stops for the developer's approval. The checklist and handoff are in the
-[Milestone 12 section](#milestone-12-separate-outputs-inspire-factory-scenes-release-docs-2026-10-26)
-at the end. A new milestone starts its own progress checklist; a resumed session
-continues from the first unticked item.
+**Milestone 13a (the 8-bit style prototype) is done and waits for the developer's
+approval.** Milestones 1-12 are complete. Next is 13b, the full 8-bit overhaul of
+[Direction Update 7](DIRECTION_UPDATE_7.md), **only after the developer approves or
+redirects the 13a look**. The checklist and handoff are in the
+[Milestone 13a section](#milestone-13a-8-bit-style-prototype-2026-10-26) at the end. A
+new milestone starts its own progress checklist; a resumed session continues from the
+first unticked item.
 
 ---
 
@@ -3848,3 +3848,133 @@ sheet, push, then **stop for the developer's approval** before 13b.
 - Carried over: 4/4 only; the Riser and Reverse swell are their own small synth;
   arrangement MIDI uses B/C/Fill as generated at the current settings; the
   `push-access-check` branch can be deleted.
+
+---
+
+## Milestone 13a: 8-bit style prototype (2026-10-26)
+
+Direction Update 7 section 1: the pixel style for one knob, slider, button, toggle, tab
+strip and dropdown, and six Place icons (Castle, Tavern, Forest, Spaceport, Cyberpunk
+Megacity, Nebula), in the fantasy, sci-fi and blend moods; snapshots and a side-by-side
+sheet; then **stop for approval**. The live editor is unchanged: nothing in the plugin's
+interface uses the new style yet (that is 13b).
+
+### Progress checklist
+
+- [x] 13a.1 Pixel canvas, integer-scale drawing, sprite cache, original 5 x 7 pixel font
+- [x] 13a.2 Mood palettes (fantasy / blend / sci-fi), smooth in between; mood from the active Places
+- [x] 13a.3 Knob, slider, button, toggle, tabs, dropdown (closed and open), Place card, panel
+- [x] 13a.4 Six Place icons, 32 x 32, 3-4 frame idle animations; `assets/pixel/` replacement pipeline
+- [x] 13a.5 `PixelLookAndFeel` (real JUCE controls in the style); tests (`--only pixel`)
+- [x] 13a.6 Snapshots `docs/snapshots/pixel-prototype-*`, the side-by-side sheet; push without `[skip ci]`; **stop for approval**
+- [ ] 13b Full overhaul (Direction Update 7 section 2) — not started, waits for approval
+
+### Decisions
+
+- **Everything is drawn as pixel art in code** (`Source/UI/Pixel.cpp`, `PixelArt.cpp`):
+  each sprite is drawn into a `Canvas` at source resolution (one art pixel per image
+  pixel, no antialiasing), then scaled by a whole number, nearest neighbour, and drawn
+  at a position snapped to whole pixels. 100 % UI = 2 screen pixels per art pixel; 150 %
+  and 200 % will be 3 and 4. Scaled sprites are cached by mood, value and state.
+- **Moods are one number,** 0 fantasy, 0.5 blend, 1 sci-fi, with palettes interpolated
+  between three keyframes and each mood's decoration cross-fading (sparkles and gold
+  studs; glowing runes and neon inlays; scanlines, LEDs and HUD brackets). `moodOf`
+  weights the active Places like the world theme: sci-fi 1, fantasy 0, modern 0.5,
+  nature 0.25; none gives the blend. A proper "neutral" look for modern Places is left
+  for 13b.
+- **Materials:** fantasy = warm wood faces, gold trim, amber gems, plank panels;
+  sci-fi = gunmetal, cyan LEDs, dot-grid panels with scanlines; blend ("magitech") =
+  dark wood frames, plum lacquer faces, teal neon inlays, violet rune glow, circuit
+  traces on the panel. All faces are dark with light ink in every mood, so text keeps
+  its contrast all the way through a mood change (tested, below).
+- **Font:** an original 5 x 7 pixel font drawn in code for this plugin (capitals,
+  digits, common signs), always with a one-pixel drop shadow. No third-party font is
+  used, so there is no licence to carry. At 100 % its capitals are 14 px tall. If the
+  developer wants a richer pixel font in 13b, it will be an OFL/CC0 one with its licence
+  checked and included.
+- **Icons:** 32 x 32 palette-indexed maps (frame 0 in full, later frames as small pixel
+  patches), composed with a small authoring script and checked by eye. Idle animations:
+  the castle's flag waves (3 frames), the tavern's mug sign swings and its chimney
+  smokes (4), fireflies blink in the forest (4), the rocket's thruster flickers (3), rain
+  falls and neon flickers on the megacity (4), stars twinkle around the nebula (3).
+  Fantasy Places are drawn storybook-whimsical, sci-fi ones crisp and neon; the card
+  frame and icon outline take the mood.
+- **Replaceable art:** any `assets/pixel/<name>.png` is bundled (BinaryData, only when
+  such files exist) and replaces the code-drawn sprite of that name; 13a covers Place
+  icons (`place-<key>.png`, frames side by side). See `assets/pixel/README.md`.
+- **`PixelLookAndFeel`** draws real JUCE sliders (rotary and horizontal), buttons,
+  toggles, combo boxes, popup menus and tab bars from the same sprites. Behaviour is
+  untouched: hit areas, dragging, Shift fine control, double-click reset, tooltips and
+  automation all stay with the components. Tabs need a bar wide enough for their full
+  width: if JUCE squeezes them they leave the pixel grid (a layout rule for 13b).
+
+### Tests (Linux, GCC)
+
+`--only pixel` (34 checks): the three moods have their own materials and decoration and
+cross-fade between them; text contrast at 65 mood steps: ink on faces and lit faces at
+least 5.0:1 (WCAG AA is 4.5), on the panel 12.9:1, in fields 14.6:1, ink on lit (active)
+faces 6.9:1, value readouts on the panel 6.6:1; no colour jump between 1/64 mood
+steps; `moodOf` for fantasy, sci-fi, mixed and empty worlds; the six icons exist, have
+2-4 frames that all differ, fill their 32 x 32 and take the mood's outline; every
+control sprite (24, in all moods) drawn at x2, x3 and x4 from a fractional position is
+whole uniform blocks on whole pixels; real knob, slider, button, toggle, dropdown and
+tabs through `PixelLookAndFeel` render on the integer grid at x2 and x3 in every mood
+and inside their own bounds; the knob's and toggle's sprites follow value and state;
+dragging the knob raises it, and double-click resets knob and slider; tabs switch;
+tooltips are kept; the sheets build and animate.
+
+Draw cost (report-only, this container): the six controls painted 300 times, vector
+style 0.65 ms per paint, pixel style 0.16 ms per paint (8 sprites drawn, then reused).
+
+The first run found three issues, all fixed: the fantasy lit face was too light for
+4.5:1 (4.30, now darker); the panel's frame wiped its own interior (a transparent box
+fill); and the knobs were too small next to their labels (dial 26 → 34 art pixels).
+
+Full suite (`scripts/run-tests-parallel.sh`; `pixel` joins the "rest" shard) on the
+final build: **3621 checks pass, 0 fail** (rest 1697, places 1118, instruments 391 +
+380, CPU 35). CPU, report-only: this container measured Standard quality four busy
+Places at 18.2 % of one core (Milestone 12: 13.8 % on that session's container). No
+audio code changed in 13a (the new code is interface-only and not on the audio
+thread), so the difference is this container's speed, not the plugin.
+
+### Snapshots (`docs/snapshots/`)
+
+- `pixel-prototype-sheet.png`: **the side-by-side sheet**, fantasy, blend and sci-fi at
+  100 % UI (each: two knobs, at rest and hovered; toggles off and on; the slider; the
+  button normal, hovered and pressed; the tabs with a hovered tab; the dropdown closed
+  (hovered) and open; the six Place cards, Spaceport selected, Tavern hovered).
+- `pixel-prototype-fantasy.png`, `-blend.png`, `-scifi.png`: each mood alone.
+- `pixel-prototype-controls-200.png`: the controls at 200 %.
+- `pixel-prototype-mood-sweep.png`: one button, knob, card and toggle at 0, 25, 50, 75
+  and 100 % sci-fi (how the look moves when Places change).
+- `pixel-prototype-icons.png`: the six icons, every animation frame, in each mood (x4).
+- `pixel-prototype-sheet-frame1..3.png`: later animation frames of the sheet.
+
+Regenerate with `WorldbuilderTests --snapshot-pixel docs/snapshots`.
+
+### Milestone 13a handoff
+
+**Done:** the 13a style prototype (above). The plugin's own interface is unchanged.
+
+**What to review** (no GarageBand test is needed for 13a: nothing the plugin shows has
+changed): open `docs/snapshots/pixel-prototype-sheet.png` first, then the mood sweep
+and the icons. Questions worth answering when approving or redirecting:
+- the three moods: right materials and colours? Is the blend "magitech" enough?
+- size: 2 screen pixels per art pixel at 100 % (chunkier, or finer?);
+- the font: readable enough, or a different pixel font (OFL/CC0) for 13b?
+- the icons: recognisable, the right amount of whimsy / neon, animations welcome?
+- decoration (sparkles, runes, scanlines, brackets): too much, too little?
+
+**Next (only after approval):** 13b, Direction Update 7 section 2: all 27 Place icons,
+every control, tool icons, the Pattern Editor, Arrange timeline, meters and the Score
+Intensity knob in the approved style; mood theming from the active Places; a neutral
+look for modern Places; UI scale 100 / 150 / 200 %; the Overlays setting for the small
+delights; before/after draw time of the whole editor.
+
+**Known issues / limits:**
+- Vertical sliders, meters and the large Score Intensity knob are not in the prototype
+  (13b).
+- `PixelLookAndFeel` assumes controls laid out on whole art pixels; the editor's layout
+  will be snapped to the grid in 13b.
+- Carried over from Milestone 12: nothing of Milestone 12 has been checked on a Mac yet
+  (five output buses, scenes, INSPIRE); the `push-access-check` branch can be deleted.
