@@ -536,3 +536,39 @@ Load the CI build in GarageBand with two or three Places (Transport mode). The n
 - [ ] Automate a few controls over a cue, with steps as well as ramps: Score
   Intensity, a Place's level and mute, a Character switch, Activity or Tension, Root.
   Nothing clicks or jumps; the export matches playback.
+
+## Milestone 9 check: Locations and Journeys
+
+Load the CI build in GarageBand. The new **LOCATIONS** row sits between the panels and
+the footer; the globe has eight markers on an orbit around it.
+
+**Saving and travelling**
+- [ ] Build a world (two or three Places, some World Controls), click chip 1: it fills
+  ("Location 1"), and marker 1 lights up on the orbit. Double-click it and rename it.
+- [ ] Change the world a lot: another Place in one slot, a Place added to an empty slot,
+  one removed, other Characters, Temperature, Weather, Root and Mood. Click chip 2.
+- [ ] Click chip 1 (Travel Time 4 s): does it sound like moving through a world rather
+  than a crossfade? The changed Place should recede into the distance and the old one
+  approach; the removed one should come back from far away; Root and Mood should change
+  in the middle without a clash. The globe turns faster, a comet runs along the orbit,
+  chip 1 fills; on arrival the knobs show Location 1.
+- [ ] Clicks, level jumps or a moment of silence anywhere on the way? (Tested by
+  measurement only.)
+- [ ] Travel Time 30 s, and 2 bars with Travel Sync. Click another chip half way: it
+  turns back smoothly.
+- [ ] Right-click a chip: Save here (replace), Rename, Colour, Clear.
+
+**Automation**
+- [ ] Show automation, choose **Destination**, draw 1 at bar 1, 2 at bar 9, 1 at bar 17
+  (Transport mode). Play from bar 1: the world travels at bars 9 and 17. Start playing
+  at bar 12: the world is at Location 2 straight away. Export the song: it matches.
+- [ ] Switch on **JOURNEY**, From 1, To 2, and draw the **Journey** automation from 0 to
+  100 % over 16 bars: the listener walks from one place to the other. Switch it off:
+  the world stays where the Journey stood.
+
+**Saving**
+- [ ] Save the project, close it, reopen: the Locations (names, colours, worlds) are
+  back and no journey starts on its own.
+- [ ] SAVE .world, change everything, LOAD .world: the world and its Locations come
+  back; Master Level and Play Mode stay as they were. Do the file dialogs open inside
+  sandboxed GarageBand?

@@ -1708,12 +1708,59 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
         const bool saved = pe.saveMidi(file, VillagePlace::Lute);
         const bool imported = pe.importMidi(file, VillagePlace::Marimba, false);
         const auto wood = h.p->patterns.element(1, Village, VillagePlace::Marimba);
-        s.check(saved && imported && wood.controls.edited && wood.pattern.count == stored.pattern.count,
-                "a pattern saved as MIDI imports into another element", std::to_string(wood.pattern.count) + " notes");
+        // Two notes of the same pitch starting together are one in MIDI (the drawn note
+        // can land on a generated one).
+        int doubled = 0;
+        for (int i = 0; i < stored.pattern.count; ++i)
+            for (int j = 0; j < i; ++j) {
+                const auto &x = stored.pattern.notes[std::size_t(i)], &y = stored.pattern.notes[std::size_t(j)];
+                doubled += x.step == y.step && x.degree == y.degree && x.alter == y.alter ? 1 : 0;
+            }
+        s.check(saved && imported && wood.controls.edited && wood.pattern.count == stored.pattern.count - doubled,
+                "a pattern saved as MIDI imports into another element", std::to_string(wood.pattern.count) + " notes of " + std::to_string(stored.pattern.count)
+                + " (" + std::to_string(doubled) + " doubled)");
         file.deleteFile();
         pe.generate();
         h.render(0.3);
         s.check(!h.p->patterns.element(1, Village, VillagePlace::Marimba).controls.edited, "Generate returns the element to a generated pattern");
+    }
+    // LOCATIONS: the row between the panels and the footer, and the markers on the globe.
+    {
+        auto& bar = world->locationBar();
+        const auto barArea = bar.getBounds();
+        s.check(editor->getLocalBounds().contains(barArea) && barArea.getWidth() > 900 && bar.isVisible(), "the LOCATIONS row spans the editor",
+                barArea.toString().toStdString());
+        bool chipsFit = true;
+        for (int i = 0; i < locationCount; ++i) chipsFit &= bar.getLocalBounds().contains(bar.chipBounds(i)) && (i == 0 || bar.chipBounds(i).getX() > bar.chipBounds(i - 1).getRight());
+        bool clear = true;
+        for (auto* child : bar.getChildren()) clear &= !child->getBounds().intersects(bar.chipBounds(locationCount - 1)) && bar.getLocalBounds().contains(child->getBounds());
+        s.check(chipsFit && clear, "eight Location chips side by side, clear of the Travel and Journey controls");
+        bar.clickChip(2);
+        s.check(h.p->locations.used(2) && !h.p->locations.used(0), "clicking an empty chip saves the world there");
+        h.set("temperature", 0.9f);
+        bar.clickChip(5);
+        h.render(0.2);
+        bar.clickChip(2);
+        s.check(juce::roundToInt(h.get("destination")) == 3, "clicking a saved chip travels there (sets the Destination)");
+        h.render(5.0);
+        h.p->serviceLocations();
+        s.check(std::abs(h.get("temperature") - 0.5f) < 1.0e-4f, "and the world arrives (Temperature back to where it was saved)", fmt(h.get("temperature")));
+        bool onGlobe = true;
+        for (int i = 0; i < locationCount; ++i) {
+            const auto m = world->markerPosition(i);
+            onGlobe &= editor->getLocalBounds().toFloat().contains(m);
+            for (auto* child : editor->getChildren())
+                if (child->isVisible() && child != &world->placeOverlays() && child != &world->patternEditor()) onGlobe &= !child->getBounds().toFloat().contains(m);
+        }
+        s.check(onGlobe, "the Location markers sit around the globe, clear of every control");
+        h.set("traveltime", 4.0f);
+        bar.clickChip(5);
+        h.render(1.5);
+        world->patternEditor().setVisible(false);   // the globe, with the comet on its orbit
+        world->settle(0.2f);
+        const auto img = editor->createComponentSnapshot(editor->getLocalBounds());
+        s.check(img.isValid(), "the editor paints during a journey");
+        save(img, snapshotPath.isEmpty() ? juce::String() : snapshotPath.upToLastOccurrenceOf(".", false, false) + "-travel.png");
     }
     editor.reset();
 }
@@ -1734,6 +1781,27 @@ Host placeHost(int type, int character, const std::vector<std::pair<std::string,
     h.set("p1_solo", 1);
     for (const auto& [id, value] : extra) h.set(id, value);
     return h;
+}
+
+// Transport mode: the first playback after loading equals every later one, for every
+// Place and Character (a Place engine reset after playing must be as it was when new).
+void testFirstPlay(Suite& s) {
+    s.section("Transport mode: the first playback equals later ones (every Place and Character)");
+    std::string differ;
+    int same = 0, total = 0;
+    for (int type : builtPlaces())
+        for (int character = 0; character < placeCharacters; ++character) {
+            auto h = placeHost(type, character, { { "playmode", float(PlayTransport) } });
+            h.playHead.playing = true;
+            h.playHead.position = 0;
+            const auto first = h.render(5.0);
+            h.playHead.position = 0;
+            const auto second = h.render(5.0);
+            ++total;
+            if (first.l == second.l && first.r == second.r) ++same;
+            else differ += std::string(placeNames[std::size_t(type)]) + " " + std::to_string(character + 1) + "; ";
+        }
+    s.check(same == total, "playing from bar 1 again sounds exactly as the first time", std::to_string(same) + " of " + std::to_string(total) + ": " + differ);
 }
 
 //==============================================================================
@@ -2839,7 +2907,8 @@ void testAutomation(Suite& s) {
         { "p1_tone", "Place Tone" }, { "p1_distance", "Place distance" }, { "p1_pan", "Place pan" }, { "p1_e1", "instrument level" },
         { "p1_e1_on", "instrument on" }, { "p1_e1_rev", "instrument reverb" }, { "p1_e1_char", "instrument character effect" },
         { "temperature", "Temperature" }, { "danger", "Danger" }, { "scale", "Scale" }, { "root", "Root" }, { "mood", "Mood" },
-        { "master", "Master Level" }, { "power", "Power" } };
+        { "master", "Master Level" }, { "power", "Power" }, { "destination", "Destination" }, { "traveltime", "Travel Time" },
+        { "journeymode", "Journey Mode" }, { "journeyfrom", "Journey From" }, { "journeyto", "Journey To" }, { "journey", "Journey" } };
     {
         WorldbuilderProcessor p;
         std::string missing;
@@ -2847,7 +2916,7 @@ void testAutomation(Suite& s) {
             if (auto* parameter = p.parameters.getParameter(id); parameter == nullptr || !parameter->isAutomatable()) missing += name + " ";
         for (int w = 0; w < WorldControlCount; ++w)
             if (p.parameters.getParameter(worldId(w)) == nullptr) missing += std::string(worldId(w)) + " ";
-        s.check(missing.empty(), "Score Intensity, the Place controls, Characters, instrument effects and the World Controls are host parameters", missing);
+        s.check(missing.empty(), "Score Intensity, the Place controls, Characters, instrument effects, the World Controls and the Locations are host parameters", missing);
     }
 
     // A four-Place world playing in Transport mode from bar 5.
@@ -2934,7 +3003,7 @@ void testAutomation(Suite& s) {
         { "p1_e2_dlytype", 3.0f, "Castle instrument 2 delay type" }, { "p1_e2_char", 5.0f, "Castle instrument 2 character -> Lo-Fi" },
         { "temperature", 1.0f, "Temperature -> scorching" }, { "danger", 1.0f, "Danger -> hostile" }, { "scale", 1.0f, "Scale -> colossal" },
         { "root", 7.0f, "Root D -> G" }, { "mood", 3.0f, "Mood Minor -> Phrygian" }, { "master", -12.0f, "Master Level -> -12 dB" },
-        { "width", 0.0f, "Width -> mono" }, { "spacemix", 1.0f, "Space Mix -> 100 %" }, { "power", 0.0f, "Power off" } };
+        { "width", 0.0f, "Width -> mono" }, { "spacemix", 1.0f, "Space Mix -> 100 %" }, { "seed", 4321.0f, "World Seed" }, { "power", 0.0f, "Power off" } };
     int smooth = 0;
     std::string rough;
     for (const auto& step : steps) {
@@ -3371,6 +3440,525 @@ void testIntensity(Suite& s) {
     }
 }
 
+//==============================================================================
+// Locations and Journeys.
+
+// A Place in a slot as a card adds it: its instruments start from their own effects.
+void setPlace(Host& h, int slot, int type, int character = 0) {
+    h.set(slotId(slot, PlType), float(type));
+    h.set(slotId(slot, PlCharacter), float(character));
+    if (type != NoPlace)
+        for (int e = 0; e < placeElements; ++e)
+            for (int f = 0; f < FxFieldCount; ++f) h.set(fxId(slot, e, f), instrumentFxDefault(type, e, f));
+}
+
+// Two very different worlds. A: a frozen, magical, ancient valley (Castle, Tavern, -,
+// Forest) in D minor. B: a scorching, stormy, futuristic, hostile one (Castle in another
+// Character, Megacity, Nebula, -) in A Phrygian, with another seed. Slot 1 keeps its
+// Place (it morphs), slot 2 changes Place (recede, then approach), slot 3 gains one
+// (approach), slot 4 loses one (recede).
+void worldA(Host& h) {
+    const std::vector<std::pair<const char*, float>> values { { "temperature", 0.08f }, { "weather", 0.15f }, { "wetness", 0.6f }, { "magic", 0.7f },
+        { "scale", 0.75f }, { "era", 0.1f }, { "danger", 0.05f }, { "activity", 0.3f }, { "root", 2 }, { "mood", 0 }, { "seed", 7 },
+        { "intensity", 0.35f }, { "water_level", -3.0f }, { "thunder_mute", 1 }, { "fire_mute", 0 }, { "air_level", 0.0f }, { "spacemix", 0.5f } };
+    for (const auto& [id, v] : values) h.set(id, v);
+    setPlace(h, 0, Castle, 1);
+    setPlace(h, 1, Tavern, 0);
+    setPlace(h, 2, NoPlace);
+    setPlace(h, 3, Forest, 0);
+    h.set("p1_distance", 0.2f);
+    h.set("p1_tension", 0.1f);
+    h.p->patterns.syncTypes(h.p->slotTypes());
+    h.p->patterns.setElement(0, Castle, CastlePlace::Bells, editedElement({ makeNote(0, 0, 4), makeNote(8, 2, 4, 90), makeNote(12, 4, 2, 70) }, 0.0f));
+}
+void worldB(Host& h) {
+    const std::vector<std::pair<const char*, float>> values { { "temperature", 0.95f }, { "weather", 0.9f }, { "wetness", 0.1f }, { "magic", 0.1f },
+        { "scale", 0.3f }, { "era", 0.95f }, { "danger", 0.8f }, { "activity", 0.8f }, { "root", 9 }, { "mood", 3 }, { "seed", 4242 },
+        { "intensity", 0.8f }, { "water_level", -12.0f }, { "thunder_mute", 0 }, { "fire_mute", 1 }, { "air_level", -6.0f }, { "spacemix", 0.25f } };
+    for (const auto& [id, v] : values) h.set(id, v);
+    setPlace(h, 0, Castle, 2);
+    setPlace(h, 1, Megacity, 1);
+    setPlace(h, 2, Nebula, 0);
+    setPlace(h, 3, NoPlace);
+    h.set("p1_distance", 0.6f);
+    h.set("p1_tension", 0.9f);
+    h.p->patterns.syncTypes(h.p->slotTypes());
+    h.p->patterns.setElement(1, Megacity, 0, editedElement({ makeNote(0, 0, 2), makeNote(3, 0, 1, 80), makeNote(6, 4, 2, 110) }, 0.0f));
+}
+
+// A host with A saved in Location 1 and B in Location 2, standing at A (arrived).
+std::unique_ptr<Host> locationHost(bool transport = false) {
+    auto h = std::make_unique<Host>(48000, 512);
+    h->playHead.bpm = 120;
+    if (transport) h->set("playmode", float(PlayTransport));
+    // The plugin has played (its first block takes the Destination as already settled).
+    h->render(0.1);
+    worldA(*h);
+    h->p->saveLocation(0);
+    worldB(*h);
+    h->p->saveLocation(1);
+    h->set("traveltime", 0.5f);
+    h->set("destination", 1);
+    h->render(1.0);
+    h->p->serviceLocations();
+    h->render(0.1);
+    return h;
+}
+
+// Every value a Location holds, compared with the host's parameters.
+int locatedMismatches(const Host& h, const WorldValues& values, std::string& first) {
+    int bad = 0;
+    for (int p = 0; p < PCount; ++p)
+        if (moveOf(p) != Move::Live && std::abs(h.get(specs[std::size_t(p)].id) - values[std::size_t(p)]) > 1.0e-5f * std::max(1.0f, std::abs(values[std::size_t(p)])))
+            if (bad++ == 0) first = specs[std::size_t(p)].id;
+    return bad;
+}
+
+// The largest rise and the largest fall of the 20 ms level in [from, to) s.
+std::pair<double, double> levelSteps(const Audio& a, double from, double to) {
+    const auto env = envelopeDb(a, 0.02, from);
+    const auto count = std::min(env.size(), std::size_t((to - from) / 0.02));
+    double up = 0, down = 0;
+    for (std::size_t k = 1; k < count; ++k) {
+        up = std::max(up, env[k] - env[k - 1]);
+        down = std::max(down, env[k - 1] - env[k]);
+    }
+    return { up, down };
+}
+
+// A click where two renders part: the high-frequency energy (second difference) of
+// their difference over the first 3 ms after `at` seconds, against that of the first
+// render (dB). A smoothed change grows from nothing; a jump is as bright as the music.
+double suddenness(const Audio& changed, const Audio& base, double at) {
+    double diff = 0, ref = 0;
+    const auto begin = std::max<std::size_t>(2, std::size_t(at * base.rate)), end = begin + std::size_t(0.003 * base.rate);
+    for (std::size_t i = begin; i < end && i < base.l.size() && i < changed.l.size(); ++i)
+        for (int ch = 0; ch < 2; ++ch) {
+            const auto& x = ch == 0 ? base.l : base.r;
+            const auto& y = ch == 0 ? changed.l : changed.r;
+            const double d2 = (y[i] - x[i]) - 2.0 * (y[i - 1] - x[i - 1]) + (y[i - 2] - x[i - 2]);
+            const double x2 = x[i] - 2.0 * x[i - 1] + x[i - 2];
+            diff += d2 * d2;
+            ref += x2 * x2;
+        }
+    return 10.0 * std::log10((diff + 1.0e-30) / (ref + 1.0e-30));
+}
+
+// The quietest 100 ms in [from, to) s (dBFS).
+double quietest(const Audio& a, double from, double to) {
+    const auto env = envelopeDb(a, 0.1, from);
+    double low = 240;
+    for (std::size_t k = 0; k < env.size() && double(k) * 0.1 + from < to; ++k) low = std::min(low, env[k]);
+    return low;
+}
+
+void testLocations(Suite& s) {
+    s.section("Locations and Journeys");
+    {
+        WorldbuilderProcessor p;
+        std::string missing;
+        for (const char* id : { "destination", "traveltime", "travelsync", "journeymode", "journeyfrom", "journeyto", "journey", "pathmode", "pathleg", "pathend" })
+            if (auto* parameter = p.parameters.getParameter(id); parameter == nullptr || !parameter->isAutomatable()) missing += std::string(id) + " ";
+        s.check(missing.empty(), "Destination, Travel Time, Travel Sync, Journey Mode, From, To, Journey and the Journey Path are automatable host parameters", missing);
+        s.check(specs[PTravelTime].min == 0.5f && specs[PTravelTime].max == 60.0f && specs[PDestination].def == 0.0f,
+                "Travel Time runs from 0.5 s to 60 s; a new plugin has no Destination");
+        const bool live = moveOf(PPower) == Move::Live && moveOf(PMaster) == Move::Live && moveOf(PQuality) == Move::Live && moveOf(PPlayMode) == Move::Live
+                          && moveOf(layerSolo(Air)) == Move::Live && moveOf(placeParam(2, PlSolo)) == Move::Live && moveOf(PDestination) == Move::Live
+                          && moveOf(PJourney) == Move::Live;
+        const bool held = moveOf(PTemperature) == Move::Glide && moveOf(PIntensity) == Move::Glide && moveOf(layerLevel(Water)) == Move::Gain
+                          && moveOf(layerMute(Water)) == Move::Paired && moveOf(PRoot) == Move::Switch && moveOf(PSeed) == Move::Live
+                          && moveOf(placeParam(1, PlType)) == Move::Switch && moveOf(placeParam(1, PlCharacter)) == Move::Switch
+                          && moveOf(placeParam(1, PlLevel)) == Move::Gain && moveOf(placeParam(1, PlElement + 3)) == Move::Gain
+                          && moveOf(placeParam(1, PlElementOn + 3)) == Move::Paired && moveOf(placeParam(3, fxField(2, FxReverb))) == Move::Glide
+                          && moveOf(placeParam(3, fxField(2, FxReverbType))) == Move::Switch;
+        s.check(live, "Power, Master, Quality, Play Mode, the World Seed, solos and the Location controls stay live (not part of a Location)");
+        s.check(held, "a Location holds the World Controls, Score Intensity, levels, Root, Mood, the Places, their seeds, Characters and instrument effects");
+    }
+
+    // Saving, and arriving: the parameters and patterns become the Location's.
+    auto h = locationHost();
+    const auto a = h->p->locations.get(0), b = h->p->locations.get(1);
+    {
+        std::string first;
+        const int bad = locatedMismatches(*h, a.values, first);
+        s.check(a.used && b.used && !h->p->locations.used(2), "saving fills a Location slot (the others stay empty)");
+        s.check(bad == 0 && !h->p->travel.active(), "after arriving at Location 1 the parameters are its world and the hold is released",
+                std::to_string(bad) + " differ, first " + first);
+        s.check(h->p->patterns.element(0, Castle, CastlePlace::Bells).pattern.sameNotes(a.patterns[0].element[CastlePlace::Bells].pattern)
+                    && h->p->patterns.element(0, Castle, CastlePlace::Bells).controls.edited,
+                "arriving restores the Location's edited patterns");
+        s.check(juce::roundToInt(h->get("p2_type")) == Tavern && juce::roundToInt(h->get("root")) == 2 && juce::roundToInt(h->get("seed")) == 4242,
+                "the Places and Root are Location 1's again (the World Seed stays as set)");
+    }
+
+    // The journey from A to B (6 s), against both worlds standing still.
+    const double travel = 6.0;
+    const auto steadyA = h->render(4.0);
+    h->set("traveltime", float(travel));
+    h->set("destination", 2);
+    Audio way;
+    way.rate = h->rate;
+    std::vector<int> slot2, slot3, slot4;
+    std::vector<double> slot2Peak;
+    for (int piece = 0; piece < int((travel + 2.0) / 0.25); ++piece) {
+        const auto part = h->render(0.25);
+        way.l.insert(way.l.end(), part.l.begin(), part.l.end());
+        way.r.insert(way.r.end(), part.r.begin(), part.r.end());
+        slot2.push_back(h->p->engine.placeSlot(1).playingType());
+        slot3.push_back(h->p->engine.placeSlot(2).playingType());
+        slot4.push_back(h->p->engine.placeSlot(3).playingType());
+        slot2Peak.push_back(toDb(h->p->engine.placeMeter[1].load()));
+    }
+    const bool holding = h->p->travel.currentMode() == Travel::Holding;
+    h->p->serviceLocations();
+    h->render(0.1);
+    const auto steadyB = h->render(4.0);
+    // A stretch staying at A, `skip` seconds after arriving there (the music's own
+    // attacks at the same moments as a journey starting then).
+    const auto stayed = [](double skip, double length) {
+        auto x = locationHost();
+        if (skip > 0) x->render(skip);
+        return x->render(length);
+    };
+    {
+        std::string first;
+        const int bad = locatedMismatches(*h, b.values, first);
+        s.check(holding && bad == 0 && !h->p->travel.active(), "the journey arrives: Location 2's world is written into the parameters, then they take over",
+                std::to_string(bad) + " differ, first " + first);
+        s.check(h->p->patterns.element(1, Megacity, 0).pattern.sameNotes(b.patterns[1].element[0].pattern), "and its patterns");
+    }
+    {
+        const auto [upA, downA] = levelSteps(steadyA, 0.0, 4.0);
+        const auto [upB, downB] = levelSteps(steadyB, 0.0, 4.0);
+        const auto [up, down] = levelSteps(way, 0.0, travel + 0.5);
+        s.metric("journey A -> B: largest 20 ms rise / fall", up, " dB");
+        s.metric("  fall", down, " dB");
+        s.metric("  the worlds' own: rise", std::max(upA, upB), " dB");
+        s.metric("  fall", std::max(downA, downB), " dB");
+        s.check(up <= std::max(upA, upB) + 3.0 && down <= std::max(downA, downB) + 3.0, "no level jumps on the way beyond the worlds' own (20 ms windows)",
+                fmt(up) + " / " + fmt(down) + " dB vs " + fmt(std::max(upA, upB)) + " / " + fmt(std::max(downA, downB)) + " dB");
+        const double low = quietest(way, 0.0, travel + 0.5), lowOwn = std::min(quietest(steadyA, 0.0, 4.0), quietest(steadyB, 0.0, 4.0));
+        s.metric("journey A -> B: quietest 100 ms", low, " dBFS");
+        s.check(low > -50.0 && low > lowOwn - 12.0, "no silence on the way", fmt(low) + " dBFS (the worlds' quietest " + fmt(lowOwn) + ")");
+        s.check(measure(way, 0.0).finite && measure(way, 0.0).peak < 0.95, "finite and below the ceiling all the way");
+    }
+    {
+        // Pieces of 0.25 s: the midpoint (eased) is at 3 s, piece 12.
+        const bool tavernFirst = slot2[0] == Tavern && slot2[9] == Tavern, megacityLater = slot2[14] == Megacity && slot2.back() == Megacity;
+        s.check(tavernFirst && megacityLater, "a slot whose Place changes plays the old Place until the far point, then the new one",
+                std::to_string(slot2[9]) + " / " + std::to_string(slot2[14]));
+        s.check(slot2Peak[10] < slot2Peak[0] - 10.0 && slot2Peak.back() > slot2Peak[13] + 6.0,
+                "the old Place recedes (quieter by the far point), the new one approaches", fmt(slot2Peak[0]) + " -> " + fmt(slot2Peak[10]) + " dB; "
+                + fmt(slot2Peak[13]) + " -> " + fmt(slot2Peak.back()) + " dB");
+        s.check(slot3[0] == Nebula && slot4[0] == Forest && slot4[int(travel / 0.25) - 2] == Forest && slot4.back() == NoPlace,
+                "a Place arriving in an empty slot approaches from the start; one leaving recedes until the arrival");
+    }
+
+    // The same journey again gives the same sound.
+    {
+        auto x = locationHost(), y = locationHost();
+        for (auto* host : { x.get(), y.get() }) {
+            host->set("traveltime", 3.0f);
+            host->set("destination", 2);
+        }
+        const auto ax = x->render(4.0), ay = y->render(4.0);
+        s.check(ax.l == ay.l && ax.r == ay.r, "a journey is deterministic (the same world, the same journey, the same sound)");
+    }
+
+    // Interrupted: back to A from 40 % of the way to B.
+    {
+        auto x = locationHost();
+        x->set("traveltime", 6.0f);
+        x->set("destination", 2);
+        auto turned = x->render(2.4);
+        x->set("destination", 1);
+        const auto back = x->render(7.0);
+        turned.l.insert(turned.l.end(), back.l.begin(), back.l.end());
+        turned.r.insert(turned.r.end(), back.r.begin(), back.r.end());
+        x->p->serviceLocations();
+        x->render(0.1);
+        std::string first;
+        const int bad = locatedMismatches(*x, a.values, first);
+        const auto [up, down] = levelSteps(turned, 0.0, 9.0);
+        const auto [upA, downA] = levelSteps(steadyA, 0.0, 4.0);
+        const auto [upB, downB] = levelSteps(steadyB, 0.0, 4.0);
+        s.check(up <= std::max(upA, upB) + 3.0 && down <= std::max(downA, downB) + 3.0, "turning back halfway is smooth too", fmt(up) + " / " + fmt(down) + " dB");
+        s.check(bad == 0, "and arrives back at Location 1", std::to_string(bad) + " differ, first " + first);
+    }
+
+    // What changes at the far point (seeds, Root, Mood, Characters, effect types) changes
+    // without a click: a journey to a Location that differs from A only there is the same
+    // as staying at A up to that moment, so the click detector of the automation test
+    // can look at the very moment they part.
+    {
+        const double length = 2.0;
+        const auto stay = [&] {
+            auto x = locationHost();
+            x->set("traveltime", float(length));
+            return x->render(length + 1.0);
+        }();
+        // The detector: an unsmoothed 3 dB step of the mix reads above the limit.
+        const double limit = -20.0;
+        {
+            auto stepped = stay;
+            for (auto i = std::size_t(1.0 * stay.rate); i < stepped.l.size(); ++i) {
+                stepped.l[i] *= 0.708f;
+                stepped.r[i] *= 0.708f;
+            }
+            s.check(suddenness(stepped, stay, 1.0) > limit, "the click detector catches an unsmoothed 3 dB step in this world", fmt(suddenness(stepped, stay, 1.0)) + " dB");
+        }
+        const std::vector<std::pair<std::vector<std::pair<const char*, float>>, std::string>> changes {
+            { { { "root", 7 } }, "Root" }, { { { "mood", 4 } }, "Mood" },
+            { { { "p1_character", 0 } }, "Castle Character" }, { { { "p2_character", 2 } }, "Tavern Character" }, { { { "p1_seed", 500 } }, "Place seed" },
+            { { { "p1_e2_revtype", 3 }, { "p2_e1_dlytype", 2 }, { "p4_e3_char", 4 } }, "instrument effect types" }, { { { "p2_sync", 0 } }, "Sync" } };
+        std::string rough;
+        int smooth = 0;
+        for (const auto& [settings, name] : changes) {
+            auto x = locationHost();
+            for (const auto& [id, v] : settings) x->set(id, v);
+            x->p->patterns.syncTypes(x->p->slotTypes());
+            x->p->saveLocation(2);
+            x->set("destination", 1);   // back to A as saved (the change is only in Location 3)
+            x->render(0.0);
+            x->p->serviceLocations();
+            auto y = locationHost();
+            y->p->locations.save(2, x->p->locations.get(2).values, x->p->locations.get(2).patterns);
+            y->set("traveltime", float(length));
+            y->set("destination", 3);
+            const auto way = y->render(length + 1.0);
+            std::size_t parted = 0;
+            while (parted < way.l.size() && way.l[parted] == stay.l[parted] && way.r[parted] == stay.r[parted]) ++parted;
+            const double at = double(parted) / way.rate, click = suddenness(way, stay, at);
+            s.metric("far point: " + name + " changes at", at, " s");
+            s.metric("  suddenness", click, " dB");
+            if (at > 0.45 * length && click < limit) ++smooth;
+            else rough += name + " (" + fmt(at) + " s, " + fmt(click) + " dB); ";
+        }
+        s.check(smooth == int(changes.size()), "Place seeds, Root, Mood, Characters, effect types and Sync change at the far point without a click",
+                std::to_string(smooth) + " of " + std::to_string(changes.size()) + ": " + rough);
+    }
+
+    // An empty Location slot goes nowhere; Travel Sync counts bars of the host tempo.
+    {
+        auto x = locationHost();
+        const auto before = x->get("temperature");
+        x->set("destination", 5);
+        x->render(1.0);
+        s.check(!x->p->travel.active() && x->get("temperature") == before, "a Destination with no Location saved there changes nothing");
+        x->set("travelsync", 1);   // one bar: 2 s at 120 bpm
+        x->set("destination", 2);
+        x->render(1.9);
+        const bool still = x->p->travel.currentMode() == Travel::Travelling;
+        x->render(0.2);
+        s.check(still && x->p->travel.currentMode() == Travel::Holding, "Travel Sync: a one-bar journey at 120 bpm takes 2 s");
+    }
+
+    // Transport mode: a start or locate is where the world should be, at once, and
+    // playing the same automation again gives the same sound.
+    {
+        auto x = locationHost(true);
+        x->playHead.playing = true;
+        x->playHead.position = 0;
+        x->set("traveltime", 2.0f);
+        const auto run = [&]() {
+            auto first = x->render(2.0);
+            x->set("destination", 2);
+            const auto second = x->render(3.0);
+            first.l.insert(first.l.end(), second.l.begin(), second.l.end());
+            first.r.insert(first.r.end(), second.r.begin(), second.r.end());
+            x->p->serviceLocations();
+            return first;
+        };
+        const auto one = run();
+        x->render(0.5);
+        // Locate back to bar 1, where the Destination automation reads Location 1.
+        x->playHead.position = 0;
+        x->set("destination", 1);
+        const auto two = run();
+        s.check(one.l == two.l && one.r == two.r, "Transport mode: a locate jumps to the Destination's Location, and the same automation plays the same journey");
+        // A start at Location 1 by Destination equals a world simply set to it.
+        auto y = std::make_unique<Host>(48000, 512);
+        y->playHead.bpm = 120;
+        y->set("playmode", float(PlayTransport));
+        worldA(*y);
+        y->set("seed", 4242);   // the World Seed is not part of a Location: x kept B's
+        y->set("traveltime", 2.0f);
+        y->set("destination", 1);
+        y->playHead.playing = true;
+        y->playHead.position = 0;
+        const auto direct = y->render(2.0);
+        const bool same = std::equal(direct.l.begin(), direct.l.end(), one.l.begin()) && std::equal(direct.r.begin(), direct.r.end(), one.r.begin());
+        s.check(same, "the world a locate jumps to is exactly the Location as saved");
+    }
+
+    // Journey Mode: a drawn walk from A to B, then kept where it stands.
+    {
+        auto x = locationHost();
+        x->set("journeyfrom", 0);
+        x->set("journeyto", 1);
+        x->set("journey", 0.0f);
+        x->set("traveltime", 1.0f);
+        x->set("journeymode", 1);
+        x->render(1.5);
+        s.check(x->p->travel.currentMode() == Travel::Journeying, "Journey Mode morphs between From and To");
+        Audio walk;
+        walk.rate = x->rate;
+        const int blocks = int(10.0 * x->rate / double(x->block));
+        for (int k = 0; k < blocks; ++k) {
+            x->set("journey", float(k) / float(blocks - 1));
+            x->processOne(x->block);
+            walk.l.insert(walk.l.end(), x->buffer.getReadPointer(0), x->buffer.getReadPointer(0) + x->block);
+            walk.r.insert(walk.r.end(), x->buffer.getReadPointer(1), x->buffer.getReadPointer(1) + x->block);
+        }
+        const auto [up, down] = levelSteps(walk, 0.0, 10.0);
+        const auto [upA, downA] = levelSteps(steadyA, 0.0, 4.0);
+        const auto [upB, downB] = levelSteps(steadyB, 0.0, 4.0);
+        s.metric("Journey 0 -> 1 over 10 s: largest 20 ms rise / fall", up, " dB");
+        s.metric("  fall", down, " dB");
+        s.check(up <= std::max(upA, upB) + 3.0 && down <= std::max(downA, downB) + 3.0 && quietest(walk, 0.0, 10.0) > -50.0,
+                "automating the Journey from 0 to 1 is smooth (no jumps or silence)", fmt(up) + " / " + fmt(down) + " dB");
+        x->set("journeymode", 0);
+        x->render(0.2);
+        x->p->serviceLocations();
+        x->render(0.1);
+        std::string first;
+        const int bad = locatedMismatches(*x, b.values, first);
+        s.check(bad == 0 && !x->p->travel.active(), "switching Journey Mode off keeps the world where the Journey stood (at To: Location 2)",
+                std::to_string(bad) + " differ, first " + first);
+    }
+
+    // Journey Path: the saved Locations in order, a leg a bar (2 s at 120 bpm), the
+    // journey (1 s) arriving on each downbeat; following the song position.
+    {
+        auto x = locationHost(true);
+        x->set("pathleg", 0);
+        x->set("pathend", 1);
+        x->set("traveltime", 1.0f);
+        x->set("pathmode", 1);
+        x->playHead.playing = true;
+        x->playHead.position = 0;
+        Audio walk;
+        walk.rate = x->rate;
+        std::vector<std::array<float, 3>> seen;   // from, to, progress every 0.25 s
+        for (int piece = 0; piece < 32; ++piece) {
+            const auto part = x->render(0.25);
+            walk.l.insert(walk.l.end(), part.l.begin(), part.l.end());
+            walk.r.insert(walk.r.end(), part.r.begin(), part.r.end());
+            seen.push_back({ float(x->p->travel.uiFrom.load()), float(x->p->travel.uiTo.load()), x->p->travel.uiProgress.load() });
+        }
+        // At 0.5 s: 1 -> 2 waiting; at 1.75 s on the way; at 2.5 s (the next leg) 2 -> 1 waiting (Loop).
+        const bool legs = seen[1][0] == 0 && seen[1][1] == 1 && seen[1][2] == 0.0f && seen[6][2] > 0.3f && seen[6][2] < 1.0f
+                          && seen[9][0] == 1 && seen[9][1] == 0 && seen[9][2] == 0.0f;
+        s.check(x->p->travel.currentMode() == Travel::Journeying && legs, "the Journey Path visits the saved Locations in order, a leg a bar, looping",
+                fmt(seen[1][0]) + ">" + fmt(seen[1][1]) + " " + fmt(seen[6][2]) + "; " + fmt(seen[9][0]) + ">" + fmt(seen[9][1]));
+        // (From 0.2 s: playback starts from silence.)
+        const auto [up, down] = levelSteps(walk, 0.2, 8.0);
+        const auto [upA, downA] = levelSteps(steadyA, 0.0, 4.0);
+        const auto [upB, downB] = levelSteps(steadyB, 0.0, 4.0);
+        s.metric("Journey Path: largest 20 ms rise / fall", up, " dB");
+        s.metric("  fall", down, " dB");
+        s.check(up <= std::max(upA, upB) + 3.0 && down <= std::max(downA, downB) + 3.0 && quietest(walk, 0.2, 8.0) > -50.0,
+                "the Path's journeys are smooth (no jumps or silence)", fmt(up) + " / " + fmt(down) + " dB");
+        // The same song position, the same Path (two replays after a locate, as a bounce
+        // after playback; the very first playback can differ slightly, see the DEVLOG).
+        x->playHead.position = 0;
+        const auto again = x->render(8.0);
+        x->playHead.position = 0;
+        const auto third = x->render(8.0);
+        s.check(again.l == third.l && again.r == third.r, "the Journey Path follows the song: playing from the same position sounds the same");
+        // One-way: it stays at the last Location; switching it off keeps it there.
+        x->set("pathend", 0);
+        x->playHead.position = 48000 * 10;
+        x->render(1.0);
+        const bool atEnd = x->p->travel.uiFrom.load() == 1 && x->p->travel.uiTo.load() == 1;
+        x->set("pathmode", 0);
+        x->render(0.2);
+        x->p->serviceLocations();
+        x->render(0.1);
+        std::string first;
+        const int bad = locatedMismatches(*x, b.values, first);
+        s.check(atEnd && bad == 0 && !x->p->travel.active(), "One-way stops at the last Location; switching the Path off keeps the world there",
+                std::to_string(bad) + " differ, first " + first);
+    }
+
+    // State: the Locations, their names and colours, and where the world stands.
+    {
+        h->p->locations.rename(0, "Frozen Gate");
+        h->p->locations.setColour(1, 5);
+        juce::MemoryBlock state;
+        h->p->getStateInformation(state);
+        Host y;
+        y.p->setStateInformation(state.getData(), int(state.getSize()));
+        const auto ya = y.p->locations.get(0), yb = y.p->locations.get(1);
+        int differ = 0;
+        for (int p = 0; p < PCount; ++p)
+            if (moveOf(p) != Move::Live) differ += (ya.values[std::size_t(p)] != a.values[std::size_t(p)]) + (yb.values[std::size_t(p)] != b.values[std::size_t(p)]);
+        const bool patternsBack = ya.patterns[0].element[CastlePlace::Bells].pattern.sameNotes(a.patterns[0].element[CastlePlace::Bells].pattern)
+                                  && yb.patterns[1].element[0].pattern.sameNotes(b.patterns[1].element[0].pattern) && yb.patterns[1].element[0].controls.edited;
+        s.check(ya.used && yb.used && !y.p->locations.used(2) && differ == 0 && patternsBack, "Locations survive a state round trip (worlds and patterns, exactly)",
+                std::to_string(differ) + " values differ");
+        s.check(ya.name == "Frozen Gate" && y.p->locations.colour(1) == locationColours[5] && y.p->locations.name(3) == "Location 4",
+                "with their names and colours");
+        y.render(1.0);
+        s.check(!y.p->travel.active() && y.get("destination") == 2.0f, "loading a project never starts a journey");
+        Host old;
+        const char* xml = "<WORLDBUILDER><PARAM id=\"temperature\" value=\"0.2\"/></WORLDBUILDER>";
+        juce::MemoryBlock legacy;
+        juce::AudioProcessor::copyXmlToBinary(*juce::parseXML(xml), legacy);
+        old.p->setStateInformation(legacy.getData(), int(legacy.getSize()));
+        s.check(!old.p->locations.used(0) && old.p->locations.name(0) == "Location 1", "a project from before Locations opens with empty slots");
+    }
+
+    // .world files: the whole world and its Locations; the session's own settings stay.
+    {
+        const auto text = h->p->exportWorld();
+        Host y;
+        y.set("master", -9.0f);
+        y.set("playmode", float(PlayFree));
+        y.set("quality", 2);
+        y.render(0.2);
+        const bool loaded = y.p->importWorld(text);
+        int differ = 0;
+        std::string first;
+        for (int p = 0; p < PCount; ++p) {
+            if (p == PPower || p == PMaster || p == PQuality || p == PPlayMode) continue;
+            if (std::abs(y.get(specs[std::size_t(p)].id) - h->get(specs[std::size_t(p)].id)) > 1.0e-5f)
+                if (differ++ == 0) first = specs[std::size_t(p)].id;
+        }
+        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wb-test.world");
+        file.replaceWithText(text);
+        s.check(loaded && differ == 0 && y.p->locations.used(1) && y.p->locations.name(0) == "Frozen Gate"
+                    && y.p->locations.get(1).patterns[1].element[0].pattern.sameNotes(b.patterns[1].element[0].pattern),
+                "a .world file carries the whole world, its patterns and its Locations", std::to_string(differ) + " differ, first " + first);
+        s.check(y.get("master") == -9.0f && juce::roundToInt(y.get("playmode")) == PlayFree && juce::roundToInt(y.get("quality")) == 2,
+                "loading a .world file keeps Master Level, Play Mode and Quality");
+        y.render(0.5);
+        s.check(!y.p->travel.active() && !y.p->importWorld("<NOT_A_WORLD/>") && !y.p->importWorld("garbage"), "it starts no journey; anything else is refused");
+        file.deleteFile();
+    }
+
+    // No allocation while journeys start, run, turn and arrive, or the Journey moves.
+    {
+        auto x = locationHost(true);
+        x->playHead.playing = true;
+        x->set("traveltime", 0.5f);
+        x->render(0.5);
+        allocationProbe::calls = 0;
+        allocationProbe::enabled = true;
+        for (int i = 0; i < 400; ++i) {
+            if (i == 10) x->set("destination", 2);
+            if (i == 30) x->set("destination", 1);
+            if (i == 150) x->set("journeymode", 1);
+            if (i > 150 && i < 300) x->set("journey", float(i - 150) / 150.0f);
+            if (i == 300) x->set("journeymode", 0);
+            if (i == 350) x->playHead.position = 48000;
+            x->processOne(i % 3 == 0 ? 512 : 100 + i % 200);
+        }
+        allocationProbe::enabled = false;
+        s.check(allocationProbe::calls == 0, "journeys perform no heap allocations on the audio thread", std::to_string(allocationProbe::calls) + " allocations");
+    }
+}
+
 // A short subset for a second architecture (x86_64 under Rosetta in macOS CI): the
 // default world, one Place from each category, and a state round trip. The Linux job
 // runs everything.
@@ -3448,7 +4036,10 @@ int main(int argc, char** argv) {
     if (run("slots")) testPlaceSlots(s);
     if (run("patterns")) testPatterns(s);
     if (run("playmode")) testPlayMode(s);
-    if (run("determinism")) testDeterminism(s);
+    if (run("determinism")) {
+        testDeterminism(s);
+        testFirstPlay(s);
+    }
     if (run("power")) testPowerAndMaster(s);
     if (run("tonal")) testTonalChanges(s);
     if (run("state")) testState(s);
@@ -3461,6 +4052,7 @@ int main(int argc, char** argv) {
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);
     if (run("overlays")) testOverlays(s, snapshot);
+    if (run("locations")) testLocations(s);
     if (run("smoke")) testSmoke(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;

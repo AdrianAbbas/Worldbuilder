@@ -229,7 +229,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     if (fresh) {
         for (std::size_t i = 0; i < smooth.size(); ++i) smooth[i].snap(targets[i]);
         for (int e = 0; e < placeElements; ++e) elementSmooth[std::size_t(e)].snap(target.element[std::size_t(e)]);
-        distance.snap(effectiveDistance(world, c.distance));
+        distance.snap(travelDistance(effectiveDistance(world, c.distance), c.travelFar));
         pan.snap(std::clamp(c.pan, -1.0f, 1.0f));
         fresh = false;
     }
@@ -284,13 +284,13 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     tiltSends(settings.tone, distance.value, n);
 
     // Distance and pan.
-    const float d = distance.next(effectiveDistance(world, c.distance));
+    const float d = distance.next(travelDistance(effectiveDistance(world, c.distance), c.travelFar));
     const float p = pan.next(std::clamp(c.pan, -1.0f, 1.0f));
     for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 1100.0f, std::pow(d, 1.6f)), rate);
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = current->spaceSend() * lerp(0.4f, 1.6f, d);
-    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + intensityDb(currentType, world.intensity)) * near : 0.0f;
+    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
     // The sends follow the slot's gain and pan; far away, more of each instrument
     // reaches its reverb and delay.
     const float sendDistance = 1.0f + 0.5f * d;

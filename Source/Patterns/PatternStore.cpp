@@ -109,10 +109,18 @@ void PatternStore::decodeNotes(const juce::String& text, pat::Pattern& p) {
 }
 
 juce::ValueTree PatternStore::toValueTree() const {
+    std::array<pat::SlotPatterns, placeSlots> slots;
+    {
+        const juce::ScopedLock sl(lock);
+        slots = model;
+    }
+    return toTree(slots);
+}
+
+juce::ValueTree PatternStore::toTree(const std::array<pat::SlotPatterns, placeSlots>& slots) {
     juce::ValueTree tree("Patterns");
-    const juce::ScopedLock sl(lock);
     for (int slot = 0; slot < placeSlots; ++slot) {
-        const auto& m = model[std::size_t(slot)];
+        const auto& m = slots[std::size_t(slot)];
         if (m.type == NoPlace) continue;
         juce::ValueTree s("Slot");
         s.setProperty("index", slot, nullptr);
@@ -148,6 +156,17 @@ juce::ValueTree PatternStore::toValueTree() const {
 }
 
 void PatternStore::fromValueTree(const juce::ValueTree& tree, const std::array<int, placeSlots>& types) {
+    const auto loaded = fromTree(tree, types);
+    const juce::ScopedLock sl(lock);
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        const auto revision = model[std::size_t(slot)].revision;
+        model[std::size_t(slot)] = loaded[std::size_t(slot)];
+        model[std::size_t(slot)].revision = revision + 1;
+        publish(slot);
+    }
+}
+
+std::array<pat::SlotPatterns, placeSlots> PatternStore::fromTree(const juce::ValueTree& tree, const std::array<int, placeSlots>& types) {
     std::array<pat::SlotPatterns, placeSlots> loaded;
     for (int slot = 0; slot < placeSlots; ++slot) loaded[std::size_t(slot)] = defaultsFor(types[std::size_t(slot)]);
     if (tree.isValid())
@@ -184,13 +203,7 @@ void PatternStore::fromValueTree(const juce::ValueTree& tree, const std::array<i
                 }
             }
         }
-    const juce::ScopedLock sl(lock);
-    for (int slot = 0; slot < placeSlots; ++slot) {
-        const auto revision = model[std::size_t(slot)].revision;
-        model[std::size_t(slot)] = loaded[std::size_t(slot)];
-        model[std::size_t(slot)].revision = revision + 1;
-        publish(slot);
-    }
+    return loaded;
 }
 
 } // namespace wb

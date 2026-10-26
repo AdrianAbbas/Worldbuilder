@@ -9,7 +9,7 @@
 
 namespace wb {
 
-enum class Kind { Float, Decibels, Bool, Choice, Int };
+enum class Kind { Float, Decibels, Bool, Choice, Int, Seconds };
 
 struct ParamSpec {
     const char* id;
@@ -42,6 +42,14 @@ inline constexpr const char* placeChoices = "Empty|Castle|Village|Spaceport|Fact
 inline constexpr int placeChoiceCount = 27;
 inline constexpr const char* characterChoices = "1|2|3";
 inline constexpr const char* playModeChoices = "Free|Transport";
+// Locations and Journeys (Milestone 9): eight Location slots.
+inline constexpr const char* destinationChoices = "-|1|2|3|4|5|6|7|8";
+inline constexpr const char* locationChoices = "1|2|3|4|5|6|7|8";
+inline constexpr const char* travelSyncChoices = "Seconds|1 bar|2 bars|4 bars|8 bars|16 bars";
+inline constexpr std::array<int, 6> travelSyncBars { 0, 1, 2, 4, 8, 16 };
+inline constexpr const char* pathLegChoices = "1 bar|2 bars|4 bars|8 bars|16 bars|32 bars";
+inline constexpr std::array<int, 6> pathLegBars { 1, 2, 4, 8, 16, 32 };
+inline constexpr const char* pathEndChoices = "One-way|Loop";
 enum PlayMode { PlayFree, PlayTransport };
 
 // Each of the four Place slots has these parameters, in this order.
@@ -64,6 +72,9 @@ enum P {
     PPlaceFirst = PLayerFirst + 3 * LayerCount,   // then PlaceParamCount per slot
     PPlayMode = PPlaceFirst + placeSlotCount * PlaceParamCount,
     PIntensity,   // Score Intensity (Milestone 7)
+    // Locations and Journeys (Milestone 9).
+    PDestination, PTravelTime, PTravelSync, PJourneyOn, PJourneyFrom, PJourneyTo, PJourney,
+    PPathOn, PPathLeg, PPathEnd,
     PCount
 };
 
@@ -146,6 +157,21 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { "playmode", "Play Mode", Kind::Choice, 0, 1, PlayTransport, playModeChoices },
     // Score Intensity: a calm bed at 0, every Place as set at 0.5, a climax at 1.
     { "intensity", "Score Intensity", Kind::Float, 0, 1, 0.5f },
+    // Locations: choosing a Destination travels there over the Travel Time (seconds, or
+    // bars of the host tempo). Journey Mode morphs between From and To at the Journey
+    // position instead, for drawing a walk through the world as automation.
+    { "destination", "Destination", Kind::Choice, 0, 8, 0, destinationChoices },
+    { "traveltime", "Travel Time", Kind::Seconds, 0.5f, 60, 4 },
+    { "travelsync", "Travel Sync", Kind::Choice, 0, 5, 0, travelSyncChoices },
+    { "journeymode", "Journey Mode", Kind::Bool, 0, 1, 0 },
+    { "journeyfrom", "Journey From", Kind::Choice, 0, 7, 0, locationChoices },
+    { "journeyto", "Journey To", Kind::Choice, 0, 7, 1, locationChoices },
+    { "journey", "Journey", Kind::Float, 0, 1, 0 },
+    // Journey Path: the saved Locations in order, one leg every so many bars of the
+    // song, arriving on the downbeat; then stop at the last, or loop.
+    { "pathmode", "Journey Path", Kind::Bool, 0, 1, 0 },
+    { "pathleg", "Path Leg", Kind::Choice, 0, 5, 2, pathLegChoices },
+    { "pathend", "Path End", Kind::Choice, 0, 1, 1, pathEndChoices },
 } };
 // clang-format on
 

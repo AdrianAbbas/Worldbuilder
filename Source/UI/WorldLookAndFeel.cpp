@@ -140,7 +140,7 @@ void WorldLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bo
 }
 
 juce::Font WorldLookAndFeel::getComboBoxFont(juce::ComboBox&) { return juce::Font(juce::FontOptions(13.0f)); }
-juce::Font WorldLookAndFeel::getTextButtonFont(juce::TextButton&, int) { return juce::Font(juce::FontOptions(13.0f, juce::Font::bold)); }
+juce::Font WorldLookAndFeel::getTextButtonFont(juce::TextButton&, int height) { return juce::Font(juce::FontOptions(height < 18 ? 9.5f : 13.0f, juce::Font::bold)); }
 
 juce::Label* WorldLookAndFeel::createSliderTextBox(juce::Slider& slider) {
     auto* label = LookAndFeel_V4::createSliderTextBox(slider);

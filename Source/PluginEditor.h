@@ -5,6 +5,7 @@
 // The full Living Globe and resizable layout arrive in Milestone 6.
 #include "PluginProcessor.h"
 #include "UI/CapturePanel.h"
+#include "UI/LocationBar.h"
 #include "UI/PatternEditor.h"
 #include "UI/PlaceArt.h"
 #include "UI/PlaceOverlays.h"
@@ -23,7 +24,7 @@ public:
     void mouseExit(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
-    static constexpr int baseWidth = 1160, baseHeight = 720;
+    static constexpr int baseWidth = 1160, baseHeight = 812;
 
     // For the tests: add a Place to the first empty slot (as a card click does) and
     // open a slot's detail panel.
@@ -33,6 +34,9 @@ public:
     void openPatterns(int slot, int element = -1);
     wb::ui::PatternEditor& patternEditor() { return *patterns; }
     wb::ui::CapturePanel& capturePanel() { return *capture; }
+    wb::ui::LocationBar& locationBar() { return *locationRow; }
+    // Where Location i's marker sits on the globe's orbit.
+    juce::Point<float> markerPosition(int index) const;
     // Runs the animation (theme, overlays) on by `seconds`, as the timer does.
     void settle(float seconds);
     wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
@@ -106,6 +110,10 @@ private:
     void paintGlobeFeatures(juce::Graphics&, juce::Rectangle<float> area, float alpha);
     juce::Point<float> landmarkPosition(int slot) const;
     int landmarkAt(juce::Point<float>) const;
+    // The Location markers around the globe, and the journey between them.
+    float markerAngle(int index) const;
+    int markerAt(juce::Point<float>) const;
+    void paintLocationMarkers(juce::Graphics&, float alpha);
 
     WorldbuilderProcessor& processor;
     wb::ui::WorldLookAndFeel lookAndFeel;
@@ -126,13 +134,14 @@ private:
     juce::TextButton dice { "New world" };
     std::unique_ptr<wb::ui::PatternEditor> patterns;
     std::unique_ptr<wb::ui::CapturePanel> capture;
+    std::unique_ptr<wb::ui::LocationBar> locationRow;
     juce::ComboBox playMode;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
     juce::ComboBox overlayChoice;
     std::unique_ptr<wb::ui::PlaceOverlays> overlays;
     std::vector<juce::Rectangle<int>> overlayKeepClear;
 
-    juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer;
+    juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, locationsPanel, footer;
     std::array<juce::Rectangle<int>, 4> groupAreas;
     juce::Rectangle<int> cardGrid, headerTitle, headerSubtitle, headerOpen, intensityLabel;
     struct FrameOutline {
@@ -155,6 +164,8 @@ private:
     juce::Rectangle<float> globeArea;
     float spin = 0, precipitation = 0, flash = 0;
     int boltSeed = 1, hoverCard = -1, dragLandmark = -1;
+    // The marker a journey on the globe set out from (-1: the top of the orbit).
+    int journeyStart = -1, journeySeen = -1;
     double fullMessageUntil = 0;
     std::array<float, wb::LayerCount> meters {};
     std::array<float, wb::placeSlotCount> placeMeters {};

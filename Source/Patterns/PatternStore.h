@@ -28,13 +28,16 @@ public:
 
     juce::ValueTree toValueTree() const;
     void fromValueTree(const juce::ValueTree& tree, const std::array<int, placeSlots>& types);
+    // The same for any four slots' patterns (Locations keep their own).
+    static juce::ValueTree toTree(const std::array<pat::SlotPatterns, placeSlots>& slots);
+    static std::array<pat::SlotPatterns, placeSlots> fromTree(const juce::ValueTree& tree, const std::array<int, placeSlots>& types);
+    static pat::SlotPatterns defaultsFor(int type);
 
     static juce::String encodeNotes(const pat::Pattern& p);
     static void decodeNotes(const juce::String& text, pat::Pattern& p);
 
 private:
     void publish(int slot);   // with the lock held
-    static pat::SlotPatterns defaultsFor(int type);
 
     WorldEngine& engine;
     juce::CriticalSection lock;

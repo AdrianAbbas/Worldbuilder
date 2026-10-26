@@ -1102,8 +1102,12 @@ public:
         for (auto& v : voice) {
             v.active = false;
             v.gain.snap(0);
-            for (auto& b : v.band) b.reset();
+            // As built, coefficients too: a sweep's first chunk plays before update()
+            // tunes its bands, so stale ones would make a restart differ from the
+            // first run.
+            for (auto& b : v.band) b = dsp::Svf {};
             v.target = 0;
+            v.pan = 0;
         }
         impact.reset();
         noiseAt = 0;

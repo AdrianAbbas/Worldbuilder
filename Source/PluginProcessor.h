@@ -1,6 +1,7 @@
 #pragma once
 #include "Parameters.h"
 #include "Capture/Capture.h"
+#include "Locations/LocationBank.h"
 #include "Patterns/PatternStore.h"
 #include "WorldEngine.h"
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -53,10 +54,34 @@ public:
     // The Place type in each slot, from the parameters.
     std::array<int, wb::placeSlots> slotTypes() const;
 
+    // Locations and Journeys: the audio thread's journeys and the eight Location slots.
+    wb::Travel travel;
+    wb::LocationBank locations { travel };
+    // Saves the world as it is set (parameters and patterns) into a Location slot.
+    void saveLocation(int index);
+    // Travels to a saved Location (sets the Destination; again if it already names it).
+    void travelTo(int index);
+    // Writes an arrived world into the parameters and patterns (the timer calls it; the
+    // tests call it directly).
+    void serviceLocations();
+    // A .world file: the whole world (parameters, patterns, Locations) as text, and
+    // loading one (Power, Master Level, Quality and Play Mode stay as they are).
+    juce::String exportWorld();
+    bool importWorld(const juce::String& text);
+    // The host's values for every parameter, clamped.
+    wb::WorldValues liveValues() const noexcept;
+
 private:
     wb::EngineControls readControls() const noexcept;
+    wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
+    wb::TravelInputs travelInputs(const wb::WorldValues& values) const noexcept;
     // A slot that holds another Place gets that Place's default patterns.
-    void timerCallback() override { patterns.syncTypes(slotTypes()); }
+    void timerCallback() override {
+        serviceLocations();
+        patterns.syncTypes(slotTypes());
+    }
+    static constexpr int travelPiece = 128;   // samples per piece while a journey is under way
+    uint32_t appliedArrival = 0;
 
     std::array<std::atomic<float>*, wb::PCount> raw {};
     double rate = 48000;

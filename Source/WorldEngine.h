@@ -28,6 +28,9 @@ struct EngineControls {
     float hostBpm = 0;   // 0 when the host gives no tempo: the world uses defaultBpm
     bool gate = true;    // Play Mode Transport: false while the host is stopped (the world fades out)
     std::array<PlaceSlotControls, placeSlots> places {};
+    // Each slot's patterns during a journey between Locations (nullptr: the editor's,
+    // from patternsIn).
+    std::array<const pat::SlotPatterns*, placeSlots> patterns {};
 };
 
 class WorldEngine {
@@ -45,6 +48,8 @@ public:
     void restart(uint64_t position, double ppq, const EngineControls& controls);
 
     static constexpr float defaultBpm = 96;
+    // The beat the next chunk starts on (audio thread).
+    double nextBeat() const { return beat; }
     void process(float* left, float* right, int n, const EngineControls& controls);
 
     // For the editor: per-layer and master peak meters, the smoothed world, power fade.
@@ -98,6 +103,8 @@ private:
     float gateRamp = 1, gateUp = 0, gateDown = 0;
     float masterPeak = 0;
     uint32_t seed = 0;
+    float seedGain = 1, seedStep = 0;
+    bool seedFresh = true;
     uint64_t clock = 0;   // absolute position of the next chunk to render
     int fifoRead = dsp::chunk;
     std::array<float, dsp::chunk> fifoL {}, fifoR {};

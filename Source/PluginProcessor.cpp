@@ -36,6 +36,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout WorldbuilderProcessor::makeL
             case Kind::Int:
                 layout.add(std::make_unique<juce::AudioParameterInt>(id, s.name, int(s.min), int(s.max), int(s.def)));
                 break;
+            case Kind::Seconds: {
+                juce::NormalisableRange<float> range(s.min, s.max);
+                range.setSkewForCentre(6.0f);
+                auto attributes = juce::AudioParameterFloatAttributes()
+                    .withLabel("s")
+                    .withStringFromValueFunction([](float v, int) { return juce::String(v, v < 10.0f ? 1 : 0); })
+                    .withValueFromStringFunction([](const juce::String& t) { return t.getFloatValue(); });
+                layout.add(std::make_unique<juce::AudioParameterFloat>(id, s.name, range, s.def, attributes));
+                break;
+            }
         }
     }
     return layout;
@@ -46,7 +56,7 @@ WorldbuilderProcessor::WorldbuilderProcessor()
       parameters(*this, nullptr, "WORLDBUILDER", makeLayout()) {
     for (std::size_t i = 0; i < specs.size(); ++i) raw[i] = parameters.getRawParameterValue(specs[i].id);
     patterns.syncTypes(slotTypes());
-    startTimerHz(5);
+    startTimerHz(10);
 }
 
 std::array<int, placeSlots> WorldbuilderProcessor::slotTypes() const {
@@ -56,12 +66,20 @@ std::array<int, placeSlots> WorldbuilderProcessor::slotTypes() const {
     return types;
 }
 
-EngineControls WorldbuilderProcessor::readControls() const noexcept {
-    const auto value = [this](int p) {
-        const float v = raw[std::size_t(p)]->load(std::memory_order_relaxed);
+WorldValues WorldbuilderProcessor::liveValues() const noexcept {
+    WorldValues v;
+    for (int p = 0; p < PCount; ++p) {
+        const float x = raw[std::size_t(p)]->load(std::memory_order_relaxed);
         const auto& s = specs[std::size_t(p)];
-        return std::isfinite(v) ? juce::jlimit(s.min, s.max, v) : s.def;
-    };
+        v[std::size_t(p)] = std::isfinite(x) ? juce::jlimit(s.min, s.max, x) : s.def;
+    }
+    return v;
+}
+
+EngineControls WorldbuilderProcessor::readControls() const noexcept { return controlsFor(liveValues()); }
+
+EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) const noexcept {
+    const auto value = [&values](int p) { return values[std::size_t(p)]; };
     EngineControls c;
     for (int w = 0; w < WorldControlCount; ++w) c.world[std::size_t(w)] = value(PTemperature + w);
     for (int l = 0; l < LayerCount; ++l) {
@@ -131,6 +149,7 @@ capture::Scene WorldbuilderProcessor::captureScene() {
 
 void WorldbuilderProcessor::prepareToPlay(double sampleRate, int) {
     rate = std::isfinite(sampleRate) ? juce::jlimit(8000.0, 384000.0, sampleRate) : 48000.0;
+    travel.prepare(rate);
     engine.prepare(rate, readControls());
     expectedHostPosition = -1;
     hostWasPlaying = false;
@@ -165,6 +184,9 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     bool transportMode = juce::roundToInt(raw[PPlayMode]->load(std::memory_order_relaxed)) == PlayTransport;
     bool hostHasTransport = false;
     bool playing = false;
+    bool restart = false;
+    uint64_t restartAt = 0;
+    double restartBeat = -1;
     if (auto* playHead = getPlayHead())
         if (const auto position = playHead->getPosition()) {
             hostHasTransport = position->getBpm().hasValue() || position->getPpqPosition().hasValue();
@@ -178,8 +200,10 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                         const auto at = uint64_t(std::max<int64_t>(0, *samples));
                         const double beat = ppq.hasValue() && std::isfinite(*ppq) && *ppq >= 0 ? *ppq : -1.0;
                         if (transportMode) {
-                            auto controls = readControls();
-                            engine.restart(at, beat, controls);
+                            // The world restarts below, once the Locations have said where it is.
+                            restart = true;
+                            restartAt = at;
+                            restartBeat = beat;
                         } else {
                             engine.resync(at, beat);
                         }
@@ -192,23 +216,133 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     gateOpen = !transportMode || playing;
     hostWasPlaying = playing;
 
+    // The world: the parameters, or a journey between Locations. While one is under way
+    // the block is rendered in short pieces so it glides.
+    const auto live = liveValues();
+    auto in = travelInputs(live);
+    std::array<const pat::SlotPatterns*, placeSlots> livePatterns {};
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        engine.patternsIn[std::size_t(slot)].update();
+        livePatterns[std::size_t(slot)] = &engine.patternsIn[std::size_t(slot)].read();
+    }
     float* left = buffer.getWritePointer(0);
     float* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
-    if (right != nullptr) {
-        engine.process(left, right, n, readControls());
-    } else {
-        // Mono output: render stereo in chunks through a small stack buffer.
-        std::array<float, 256> scratch {};
-        for (int start = 0; start < n; start += int(scratch.size())) {
-            const int count = std::min(int(scratch.size()), n - start);
-            engine.process(left + start, scratch.data(), count, readControls());
-            for (int i = 0; i < count; ++i) left[start + i] = 0.5f * (left[start + i] + scratch[std::size_t(i)]);
+    for (int done = 0; done < n;) {
+        // The Journey Path follows the song: the beat this piece starts on.
+        in.beat = restart && done == 0 ? (restartBeat >= 0 ? restartBeat : double(restartAt) / rate * in.bpm / 60.0) : engine.nextBeat();
+        const auto& world = travel.advance(live, livePatterns, in, restart && done == 0);
+        const int count = travel.active() ? std::min(n - done, travelPiece) : n - done;
+        auto controls = controlsFor(world.v);
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            controls.places[std::size_t(slot)].travelFar = world.far[std::size_t(slot)];
+            controls.patterns[std::size_t(slot)] = world.patterns[std::size_t(slot)];
         }
+        if (restart && done == 0) engine.restart(restartAt, restartBeat, controls);
+        if (right != nullptr) {
+            engine.process(left + done, right + done, count, controls);
+        } else {
+            // Mono output: render stereo in chunks through a small stack buffer.
+            std::array<float, 256> scratch {};
+            for (int start = done; start < done + count; start += int(scratch.size())) {
+                const int part = std::min(int(scratch.size()), done + count - start);
+                engine.process(left + start, scratch.data(), part, controls);
+                for (int i = 0; i < part; ++i) left[start + i] = 0.5f * (left[start + i] + scratch[std::size_t(i)]);
+            }
+        }
+        travel.step(count, in, live);
+        done += count;
     }
     for (int ch = 2; ch < buffer.getNumChannels(); ++ch) buffer.clear(ch, 0, n);
 
     const auto seconds = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin);
     cpuLoad.store(0.9f * cpuLoad.load() + 0.1f * float(seconds * rate / n), std::memory_order_relaxed);
+}
+
+TravelInputs WorldbuilderProcessor::travelInputs(const WorldValues& v) const noexcept {
+    TravelInputs in;
+    in.destination = juce::roundToInt(v[PDestination]);
+    in.seconds = v[PTravelTime];
+    in.syncBars = travelSyncBars[std::size_t(juce::jlimit(0, int(travelSyncBars.size()) - 1, juce::roundToInt(v[PTravelSync])))];
+    in.pathOn = v[PPathOn] > 0.5f;
+    in.journeyOn = v[PJourneyOn] > 0.5f || in.pathOn;
+    in.pathBars = pathLegBars[std::size_t(juce::jlimit(0, int(pathLegBars.size()) - 1, juce::roundToInt(v[PPathLeg])))];
+    in.pathLoop = juce::roundToInt(v[PPathEnd]) == 1;
+    in.from = juce::roundToInt(v[PJourneyFrom]);
+    in.to = juce::roundToInt(v[PJourneyTo]);
+    in.journey = v[PJourney];
+    const float bpm = hostBpm.load(std::memory_order_relaxed);
+    in.bpm = bpm >= 20.0f && bpm <= 999.0f ? double(bpm) : double(WorldEngine::defaultBpm);
+    return in;
+}
+
+void WorldbuilderProcessor::saveLocation(int index) {
+    patterns.syncTypes(slotTypes());
+    std::array<pat::SlotPatterns, locationSlots> slots;
+    for (int slot = 0; slot < placeSlots; ++slot) slots[std::size_t(slot)] = patterns.get(slot);
+    locations.save(index, liveValues(), slots);
+}
+
+void WorldbuilderProcessor::travelTo(int index) {
+    if (index < 0 || index >= locationCount || !locations.used(index)) return;
+    auto* destination = parameters.getParameter(specs[PDestination].id);
+    if (juce::roundToInt(raw[PDestination]->load()) != index + 1) {
+        destination->beginChangeGesture();
+        destination->setValueNotifyingHost(destination->convertTo0to1(float(index + 1)));
+        destination->endChangeGesture();
+    } else {
+        travel.request(index);
+    }
+}
+
+void WorldbuilderProcessor::serviceLocations() {
+    // A world arrived: write it into the parameters and the patterns, then let the
+    // parameters take over again.
+    travel.arrivalOut.update();
+    const auto& arrival = travel.arrivalOut.read();
+    if (arrival.serial == 0 || arrival.serial == appliedArrival) return;
+    appliedArrival = arrival.serial;
+    if (arrival.generation != travel.generation()) return;   // from before a load
+    for (int p = 0; p < PCount; ++p) {
+        if (moveOf(p) == Move::Live) continue;
+        auto* parameter = parameters.getParameter(specs[std::size_t(p)].id);
+        const float value = arrival.values[std::size_t(p)];
+        if (std::abs(raw[std::size_t(p)]->load() - value) > 1.0e-6f * std::max(1.0f, std::abs(value)))
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+    }
+    const auto types = slotTypes();
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        const auto& p = arrival.patterns[std::size_t(slot)];
+        if (p.type == types[std::size_t(slot)]) patterns.set(slot, p);
+    }
+    patterns.syncTypes(types);
+    travel.released.store(arrival.serial, std::memory_order_release);
+}
+
+juce::String WorldbuilderProcessor::exportWorld() {
+    juce::MemoryBlock state;
+    getStateInformation(state);
+    if (const auto xml = getXmlFromBinary(state.getData(), int(state.getSize()))) {
+        xml->setAttribute("worldFile", 1);
+        return xml->toString();
+    }
+    return {};
+}
+
+bool WorldbuilderProcessor::importWorld(const juce::String& text) {
+    const auto xml = juce::parseXML(text);
+    if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return false;
+    // The session's own settings stay as they are.
+    std::array<float, 4> kept {};
+    const std::array<int, 4> session { PPower, PMaster, PQuality, PPlayMode };
+    for (std::size_t i = 0; i < session.size(); ++i) kept[i] = raw[std::size_t(session[i])]->load();
+    juce::MemoryBlock block;
+    copyXmlToBinary(*xml, block);
+    setStateInformation(block.getData(), int(block.getSize()));
+    for (std::size_t i = 0; i < session.size(); ++i) {
+        auto* parameter = parameters.getParameter(specs[std::size_t(session[i])].id);
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(kept[i]));
+    }
+    return true;
 }
 
 juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new WorldbuilderEditor(*this); }
@@ -219,6 +353,10 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     patterns.syncTypes(slotTypes());
     state.removeChild(state.getChildWithName("Patterns"), nullptr);
     state.appendChild(patterns.toValueTree(), nullptr);
+    state.removeChild(state.getChildWithName("Locations"), nullptr);
+    auto locationTree = locations.toValueTree();
+    locationTree.setProperty("settled", travel.settledDestination.load(), nullptr);
+    state.appendChild(locationTree, nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
 }
 
@@ -259,6 +397,12 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     }
     // Patterns (Milestone 4 and later); older projects have none and keep the generated ones.
     patterns.fromValueTree(state.getChildWithName("Patterns"), slotTypes());
+    // Locations (Milestone 9). The world loaded is settled for the Destination it was
+    // saved with, so loading never starts a journey.
+    const auto locationTree = state.getChildWithName("Locations");
+    locations.fromValueTree(locationTree);
+    travel.settledDestination.store(int(locationTree.getProperty("settled", juce::roundToInt(raw[PDestination]->load()))), std::memory_order_relaxed);
+    travel.requestReset();
     // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
     // project stored Full, the old default, so those open with the new default (Off).
     const int overlays = int(state.getProperty("version", 0)) >= 3 ? int(state.getProperty("overlays", ui::defaultOverlayMode)) : ui::defaultOverlayMode;

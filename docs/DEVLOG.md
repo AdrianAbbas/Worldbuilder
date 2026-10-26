@@ -2695,12 +2695,12 @@ Milestones 7 and 8 are being tested by the developer in GarageBand while this ru
 Ticked when committed and pushed. A resumed session starts at the first unticked item.
 
 - [x] 0. CI speed-up: full suite only on Linux (sharded), macOS runs the universal build, a smoke group on arm64 and under Rosetta, auval, the AU harness and packaging; JUCE source cache and ccache in both jobs
-- [ ] 1. Location core: 8 slots (name, colour, snapshot of the world and its patterns), host parameters (Destination, Travel Time and Sync, Journey Mode, From, To, Journey), state; tests
-- [ ] 2. Travel: audio-thread travel and Journey morph (Places recede and approach, continuous parts morph, root, mood and seeds change at the far point), arrival written back to the parameters, Transport restarts; tests (no clicks, jumps or silence; arrival exact; deterministic; no allocation)
-- [ ] 3. Interface: the Location bar (save, rename, colour, travel), Travel Time and Sync, Journey controls; Location markers on the globe and the travel animation
-- [ ] 4. `.world` export and import
-- [ ] 5. Automation list, README and MANUAL_TEST, handoff, final push without `[skip ci]`
-- [ ] 6. (Stretch) Journey Path
+- [x] 1. Location core: 8 slots (name, colour, snapshot of the world and its patterns), host parameters (Destination, Travel Time and Sync, Journey Mode, From, To, Journey), state; tests
+- [x] 2. Travel: audio-thread travel and Journey morph (Places recede and approach, continuous parts morph, root, mood and seeds change at the far point), arrival written back to the parameters, Transport restarts; tests (no clicks, jumps or silence; arrival exact; deterministic; no allocation)
+- [x] 3. Interface: the Location bar (save, rename, colour, travel), Travel Time and Sync, Journey controls; Location markers on the globe and the travel animation
+- [x] 4. `.world` export and import
+- [x] 5. Automation list, README and MANUAL_TEST, handoff, final push without `[skip ci]`
+- [x] 6. (Stretch) Journey Path
 
 ### CI speed-up
 
@@ -2720,3 +2720,254 @@ universal build from scratch.
   ccache (`hendrikmuhs/ccache-action`, keyed per job; `CCACHE_BASEDIR` and
   `time_macros` sloppiness so hits survive across runs).
 - Not measured yet: the first run fills the caches; the gain shows from the second.
+
+### Decisions
+
+- **The parameters stay the live world.** A Location is a snapshot (every parameter it
+  holds, plus the four slots' patterns). A journey is computed on the audio thread from
+  snapshots and, while it lasts, overrides the parameters. On arrival the Location is
+  handed to the message thread, which writes it into the parameters and patterns (so
+  the knobs show it) and then releases the hold. The host sees one set of writes (the
+  parameters that differ, at most about 330) at arrival, like loading a preset; nothing
+  is written during the journey.
+  While a journey runs, turning a located knob does nothing until arrival (it is
+  then overwritten); Power, Master Level, Quality, Play Mode, the solos and the
+  Location controls themselves are not part of a Location and always work.
+- **What a Location holds:** the World Controls, Score Intensity, Space Mix, Width,
+  Root and Mood, the environment layers' levels and mutes, and for each of
+  the four slots its Place, Character, every setting (level, mute, distance, pan,
+  Activity, Tension, Sync, Density, Swing, Tone, Size, Variation, Seed), the six
+  instruments' levels, switches and effects, and the slot's patterns (edited notes,
+  randomness, Evolve, the instruments' mutes and solos). The Planet joins in
+  Milestone 10. **Not the World Seed:** reseeding the environment layers cannot glide
+  (their noise and gusts jump to other curves), so a journey had to dip them out and
+  back at the far point, a 60 ms gap the Path test measured as a 9 dB jump wherever the
+  environment carried the sound. It stays as set, like Quality; each Place's own seed
+  does travel (and changes smoothly).
+- **How the world moves** (`Source/Locations/Locations.h`, eased in and out over the
+  Travel Time):
+  - continuous values glide; levels blend as gains, a muted layer, Place or instrument
+    counting as silent (so a layer only in the destination fades in);
+  - choices change at the **far point**, the middle of the way: Root, Mood, the Place
+    seeds, Characters, effect types, Sync. The Tonal Bed glides to a new
+    root on its own (1.2 s) and the Places' voices already glide between Characters,
+    so these are smooth (tested: every one of them changes without a click);
+  - **slot by slot**: a slot with the same Place at both ends morphs its settings; a
+    slot whose Place changes sends the old one away (its distance rises to the
+    horizon: quieter, darker, narrower, more reverberant, and 33 dB down at the end)
+    over the first half, switches at the horizon (the slot's own 0.3 s fade, now
+    inaudible) and brings the new one in from there; a Place arriving in an empty slot
+    approaches over the whole way, one leaving recedes over the whole way. Places are
+    matched by slot, not by type: arriving must sound exactly like the Location as
+    saved, and a Place's generated patterns depend on its slot. Locations made from
+    one another (save, change, save) keep their Places in their slots and morph best;
+  - endpoints are exact (arriving gives the Location bit for bit) and a value equal at
+    both ends never drifts.
+- **Journeys** (`Source/Locations/Travel.*`): choosing a Destination (host parameter,
+  "-" or 1-8) starts one from the world exactly as it sounds now, so a new Destination
+  half way turns smoothly. Clicking the chip of the Location the Destination already
+  names travels there again. A Destination with nothing saved is ignored. Travel Sync
+  turns the Travel Time into 1-16 bars of the host tempo.
+- **Journey Mode** morphs between From and To at the Journey position (0-1), the same
+  rules as a journey but at a position drawn by automation (no easing: the curve is
+  the composer's). Switching it on travels to the morph over the Travel Time;
+  switching it off keeps the world where the Journey stands (written into the
+  parameters; a Place still on its way in or out first comes back to its place over
+  the Travel Time). While it is on, Destination changes are ignored.
+- **Transport mode** stays repeatable: a start or locate jumps straight to where the
+  world should be: the Journey morph in Journey Mode, or the Destination's Location
+  when the Destination differs from the one the world last settled for (so a
+  Destination automated over the song restarts at the right Location, while playing
+  again after tweaking a knob keeps the tweak). A journey under way at a locate
+  arrives at once. The settled Destination is saved with the project, so loading never
+  starts a journey: the first block after loading takes the parameters as they are (a
+  project saved during a journey opens at its Destination).
+- **Pieces:** while a journey or the Journey runs, the block is rendered in pieces of
+  128 samples, each with its own position, so a journey glides at any host block size.
+  Renders (CAPTURE) use the parameters: a render made during a journey renders the
+  world as set, not the journey.
+- **World Seed changes no longer click** (found by the far-point test before the seed
+  left the Locations; true of the "New world" dice and Seed automation): the environment layers'
+  noise and gusts jump to other curves when reseeded, so a new Seed now dips them out
+  over 30 ms (raised cosine), reseeds at silence and brings them back. A fresh world
+  (prepare, Transport restart) still takes its Seed at once. The automation audit now
+  includes a Seed step.
+- Loading a project, a host preset or a `.world` file stops any journey; an arrival
+  from before the load is never written back over it.
+- Eight Location colours (brass, cyan, rose, moss, violet, ember, teal, bone); names up
+  to 24 characters.
+
+### What was built
+
+- `Source/Locations/Locations.h`: what a Location holds (`moveOf`: live, glide, gain,
+  paired, switch, per parameter), `Sounding` (values, each slot's distance sent away and
+  patterns), `blendWorlds`, the easing, the eight colours.
+- `Source/Locations/Travel.{h,cpp}`: the audio thread's journeys: Destination changes,
+  interface requests, Journey Mode and the Journey Path, Transport restarts, holding an
+  arrival until it is written back, lock-free both ways (each Location in a triple
+  buffer; the arrival in another).
+- `Source/Locations/LocationBank.{h,cpp}`: the eight slots (name, colour, snapshot),
+  saved with the project (`<Locations settled="..."><Location index name colour used>
+  <Values temperature="0.5" .../><Patterns>...</Patterns></Location></Locations>`, the
+  values by parameter ID, so later versions can add parameters; a missing instrument
+  effect takes its Place's default).
+- `PatternStore::toTree`/`fromTree`: the pattern state for any four slots (Locations
+  reuse it).
+- The processor: `liveValues`, `controlsFor`, `saveLocation`, `travelTo`,
+  `serviceLocations` (on the timer, now 10 Hz), `exportWorld`/`importWorld`; the slots
+  get `travelFar` and the engine per-slot pattern overrides.
+- Parameters (appended, so saved projects keep theirs): Destination, Travel Time
+  (0.5-60 s, a new seconds display), Travel Sync (Seconds, 1-16 bars), Journey Mode,
+  Journey From, Journey To, Journey, Journey Path, Path Leg (1-32 bars), Path End
+  (One-way, Loop).
+
+### Interface
+
+- A **LOCATIONS** row between the panels and the footer (the editor grows from 720 to
+  812 px high):
+  - the title line: what the world is doing ("at Frozen Gate", "travelling to Ember
+    Market 40%", "Frozen Gate -> Ember Market 25%"), the **JOURNEY PATH** controls
+    (PATH, the leg length, One-way or Loop) and **SAVE .world** / **LOAD .world**;
+  - eight chips: a saved one shows its colour and name (click: travel; double-click:
+    rename; right-click or Alt-click: save here, travel here, rename, colour, clear); an
+    empty one is dashed ("+ SAVE": click to save the world there); the Location the
+    world stands at glows; a journey's destination fills along its bottom edge (in
+    Journey Mode, From empties as To fills). Saving is not offered while a journey or
+    the Journey runs (it would save the parameters, not what is heard);
+  - TRAVEL: the Travel Time slider with its value, and Travel Sync;
+  - JOURNEY: Journey Mode, From, To and the Journey slider.
+- **The globe:** the eight Locations as markers on a dashed orbit around it, from lower
+  left over the top to lower right (clear of LISTENER), with the names of saved ones at
+  the sides; click a marker to travel. On a journey a comet runs along the orbit from
+  where the world was to the destination and the globe turns faster (most in the
+  middle of the way); the globe's colours already follow the world as it sounds, so it
+  transforms on the way. Place landmarks and the theme change at arrival (the theme
+  glides over about a second).
+- The header reads Milestone 9. Short text buttons (under 18 px) use a 9.5 px font.
+
+### `.world` files
+
+SAVE .world writes the whole plugin state (parameters, patterns, the eight Locations,
+the settled Destination) as XML text, marked `worldFile="1"`, into
+Documents/WORLDBUILDER/Worlds by default; LOAD .world loads one through the normal
+state path but keeps the session's Power, Master Level, Quality and Play Mode. Anything
+that is not a WORLDBUILDER state is refused. A file dialog in sandboxed GarageBand is
+untested (the capture panel's save dialogs are untested there too).
+
+### Journey Path (the brief's stretch goal)
+
+PATH visits the saved Locations in slot order (empty slots skipped), one leg every Path
+Leg bars of the song: the world waits at a Location, then travels to the next over the
+Travel Time (at most the leg), arriving on the next leg's downbeat. Loop goes back to
+the first; One-way stays at the last. It follows the song's beat (in Transport mode the
+song position; in Free mode the world's own clock), so the same position always gives
+the same world, and it is built on the Journey morph: switching it on or off, or
+switching between it and From/To, travels or keeps the world like Journey Mode. A custom
+order of stops is not offered: reorder by saving the Locations into other slots.
+
+### A Transport determinism fix (pre-existing)
+
+The Path's repeat test found that five Places (Spaceport, Factory, Spaceship Interior,
+Sea Ship, Nebula) played differently on their first playback after loading than on
+every later one (from 0.001 to 4 s in, depending on the Character). All five, and no
+other Place, use the noise-sweep part (`NoisePart`): a sweep's first chunk plays before
+`update()` tunes its band filters, and `reset()` cleared the filters' state but not
+their coefficients, so a reused engine started each first sweep with the last run's
+tuning. `reset()` now returns the filters to their built state (the first-playback
+sound is unchanged). This also made Milestone 8's "render = playback" hold only for the
+first playback in those Places. New test (`determinism` group): every Place in every
+Character plays the same from bar 1 the second time as the first (78 of 78).
+
+A smaller first-playback difference remains in one case: Location A's Tavern (all six
+instruments together, never one alone) passing to the Megacity at a journey's far
+point played differently on the very first playback than on the replays (identical
+from the second on). It was not tracked down in this session; the Path test compares
+two replays. See the known issues.
+
+### Tests (Linux, GCC)
+
+New `locations` group (40 checks; it runs in the "rest" shard), with the two worlds of
+the test (A: frozen, magical, D minor, Castle / Tavern / - / Forest; B: scorching,
+stormy, futuristic, A Phrygian, Castle in another Character / Megacity / Nebula / -):
+- the parameters exist and are automatable; what is and is not part of a Location;
+- saving; arriving writes the Location into the parameters and patterns, exactly, and
+  releases the hold;
+- the journey A -> B (6 s): no 20 ms level jump beyond the two worlds' own (+3 dB), no
+  silence (quietest 100 ms -17 dBFS), finite and below the ceiling; the slot whose
+  Place changes plays the old one until the far point and the new one after, the old
+  one quieter by 10 dB or more at the far point and the new one approaching; arriving
+  and leaving Places approach and recede over the whole way;
+- deterministic; turning back half way is smooth and arrives;
+- what changes at the far point (Root, Mood, Characters, a Place seed, effect types,
+  Sync) changes without a click: the journey is sample-identical to staying put until
+  that moment, so the automation audit's click detector looks at the very moment they
+  part (it catches an unsmoothed 3 dB step in this world); all of them read -36 to
+  -106 dB against a limit of -20 dB;
+- an empty Location goes nowhere; Travel Sync of one bar takes 2 s at 120 bpm;
+- Transport mode: a locate jumps to the Destination's Location, the same automation
+  plays the same journey again, and the world a locate jumps to equals the Location
+  set directly;
+- Journey Mode: a 10 s automation sweep from 0 to 1 is smooth; switching it off keeps
+  the world at To;
+- Journey Path: the legs in order, looping; smooth; the same from the same position;
+  One-way stays at the last Location; switching it off keeps it there;
+- the Locations survive a state round trip exactly (worlds, patterns, names, colours);
+  loading never starts a journey; an old project opens with empty slots;
+- `.world` export and import (session settings kept, junk refused, no journey);
+- no heap allocation while journeys start, run, turn and arrive, the Journey moves and
+  the transport locates.
+
+Also: the `smoke` group (7 checks) for macOS CI; the `determinism` group's new
+first-playback test (78 Place / Character pairs); the automation audit now steps the
+World Seed and lists the Location parameters; the editor group checks the LOCATIONS row
+(chips, saving and travelling by click, the markers clear of every control, painting
+during a journey). The editor's flaky MIDI round-trip check (a drawn note landing on a
+generated one of the same pitch) now allows for doubled notes.
+
+Full suite (`scripts/run-tests-parallel.sh`): **3355 checks pass, 2 fail**: the two CPU
+budgets (four busy Places 18.4 %, budget 15 %; the instrument effects 8.9 %, budget
+8 %), which are this container (as in Milestone 8). Measured back to back on the same
+machine, the untouched Milestone 8 commit gives 16.5 % and this work 16.1 % on the
+Standard-quality check: Locations add nothing measurable when no journey runs. Linux
+CI is the reference. After the last interface change the editor, overlay and Location
+groups were re-run (345 checks, all pass).
+
+### Milestone 9 handoff
+
+**Done:** all of Milestone 9 (Direction Update 5), plus the CI speed-up.
+1. Eight Location slots (name, colour, a snapshot of the world and its patterns),
+   saved with the project and in `.world` files.
+2. Journeys over the Travel Time (or bars): Places recede and approach, continuous
+   parts morph, Root, Mood, Characters and Place seeds change at the far point;
+   automatable Destination; Transport mode stays repeatable; arrival shows in the knobs.
+3. Journey Mode (From, To, Journey) and the Journey Path (the brief's stretch goal).
+4. The LOCATIONS row and the Location markers on the globe, with the journey's comet.
+5. Fixes found on the way: World Seed changes no longer click; five Places' first
+   playback now equals later ones (`NoisePart` reset); a flaky editor check.
+
+**What to test first** (the Milestone 9 check in [MANUAL_TEST.md](MANUAL_TEST.md)):
+- whether a journey sounds like moving through a place (two Locations with different
+  Places, Characters, Root and Mood, 4-10 s); any clicks, jumps or gaps by ear;
+- Destination automation in GarageBand (steps at scene changes), starting playback in
+  the middle, and export; the Journey drawn as automation;
+- the Journey Path over a song section; SAVE/LOAD .world dialogs inside GarageBand;
+- the taller window (812 px) on a small screen.
+
+**Next:** Milestone 10, the visual revamp and planet types (add the Planet to the
+Locations: `moveOf` in `Source/Locations/Locations.h`, and to the automation list),
+then 11 pro features, presets and release (the factory presets get 2-4 Locations each).
+
+**Known issues / limits:**
+- Nothing has been heard on a Mac; everything is checked by measurement.
+- Places are matched by slot: a Place that moves to another slot between two
+  Locations recedes from one slot and approaches in the other.
+- The World Seed is not part of a Location (see Decisions).
+- During a journey, turning a knob that a Location holds does nothing until arrival
+  (the arrival then overwrites it); saving a Location is not offered meanwhile.
+- A render (CAPTURE) uses the parameters, not a journey under way or the Journey;
+  scene MIDI likewise.
+- One first-playback difference remains (Location A's full Tavern handing over to the
+  Megacity at a far point, in the Path test); replays are identical. Not found yet.
+- The Journey Path visits the Locations in slot order (no custom order).
+- The CPU budgets fail on this container (see Tests); carried over: the Place choice
+  grew to 27 entries in Milestone 7; the `push-access-check` branch can be deleted.

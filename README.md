@@ -7,8 +7,9 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 8 (26 Places of six instruments, each with its own instrument
-effects; Score Intensity; render to WAV and scene MIDI export).**
+**Status: Milestone 9 (26 Places of six instruments, each with its own instrument
+effects; Score Intensity; render to WAV and scene MIDI export; Locations and
+Journeys).**
 These work now:
 - **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
@@ -55,6 +56,9 @@ These work now:
   exports the patterns of every active instrument as one multi-track MIDI file. Both
   from bar 1 at the host's tempo, for 4 to 64 bars. See
   [Getting WORLDBUILDER into your song](#getting-worldbuilder-into-your-song).
+- **Locations and Journeys** (the LOCATIONS row): save up to eight complete worlds and
+  travel between them so it sounds like moving through a place, not a crossfade. See
+  [Locations and Journeys](#locations-and-journeys).
 - **Play Mode.** Transport (the default) plays only while the host plays, from silence
   and locked to the song position, so exports and bounces always contain it. Free
   plays all the time.
@@ -76,14 +80,49 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Now: Milestone 8, capture and export. Next (Direction Update 5): Locations and
-Journeys (9), the visual revamp and planet types (10), pro features, presets and
-release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
+Now: Milestone 9, Locations and Journeys. Next (Direction Update 5): the visual
+revamp and planet types (10), pro features, presets and release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
 plan is in [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) to
 [docs/DIRECTION_UPDATE_5.md](docs/DIRECTION_UPDATE_5.md); later files override earlier
 ones. How the instruments are modelled, and the acoustics data behind them:
 [docs/INSTRUMENT_NOTES.md](docs/INSTRUMENT_NOTES.md).
+
+## Locations and Journeys
+
+A **Location** is a complete world: the Places in their four slots with their
+Characters, settings, patterns and instrument effects, the World Controls, Score
+Intensity, the environment levels, Root and Mood. Power, Master Level, Quality,
+Play Mode and the World Seed are not part of a Location.
+
+- **Save:** click an empty chip in the LOCATIONS row (or right-click a chip, "Save the
+  world here"). Double-click a saved chip to rename it ("Frozen Gate", "Ember
+  Market"); right-click for its colour, to save over it or to clear it.
+- **Travel:** click a saved chip, or its marker on the globe's orbit. The world travels
+  there over the **Travel Time** (0.5-60 s, or 1-16 bars of the host tempo with Travel
+  Sync), eased in and out. On the way the World Controls and every Place's settings
+  glide; a Place that stays morphs; a Place that leaves recedes into the distance
+  (quieter, darker, more distant in the reverb) and a new one approaches from there;
+  Root, Mood, the Places' seeds and Characters change at the far point, the middle of the way. The
+  globe turns faster and a comet runs along the orbit; the destination chip fills.
+  Choosing another Location half way turns back smoothly. On arrival the knobs show
+  the Location, and you can carry on shaping it.
+- **Automate it:** **Destination** (a host parameter, - or 1-8) travels when it
+  changes, so draw steps in the automation lane to move between Locations at scene
+  changes (Travel Time is automatable too). In Transport mode, starting playback
+  anywhere puts the world straight at the Location the Destination names there, so
+  playback and bounces always match.
+- **Journey Mode:** switch on JOURNEY, choose **From** and **To**, and the **Journey**
+  slider (a host parameter, 0-100 %) morphs between them. Draw it as automation to walk
+  the listener from one place to the other in sync with picture. Switching Journey
+  Mode off keeps the world where the Journey stands.
+- **Places are matched by slot.** A slot with the same Place at both ends morphs it;
+  a slot whose Place changes sends one away and brings the other in. Build Locations
+  from each other (save, change, save the next) so the Places that should stay keep
+  their slots.
+- **.world files:** SAVE .world writes the whole world and its eight Locations to a
+  file (in Documents/WORLDBUILDER/Worlds by default); LOAD .world brings one back.
+  Locations are also saved with the project.
 
 ## Getting WORLDBUILDER into your song
 
@@ -127,7 +166,8 @@ Place (multi-output) arrive in a later milestone.
 parameter and responds smoothly when automated: Score Intensity, each Place's level,
 mute and solo, its Character, Activity, Tension, Tone, distance and pan, each
 instrument's level, switch and effects, the World Controls, Root and Mood, Master
-Level and Power (Locations and the Planet follow in later milestones). In GarageBand,
+Level and Power, and the Locations (Destination, Travel Time, Journey Mode, From, To
+and Journey; the Planet follows in Milestone 10). In GarageBand,
 show automation (A) and choose WORLDBUILDER's parameters on the track; in Logic, the
 same in the track's automation lane. Draw Score Intensity rising into a climax, bring a
 Place in by its level, or switch Characters at a scene change.

@@ -18,6 +18,9 @@ struct PlaceSlotControls {
     std::array<bool, placeElements> elementOn { true, true, true, true, true, true };
     // Each instrument's effects.
     std::array<dsp::ElementFxControls, placeElements> fx {};
+    // A journey between Locations sends the Place away (0: where the slot puts it, 1: at
+    // the horizon, nearly silent) as it leaves or arrives.
+    float travelFar = 0;
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -59,6 +62,9 @@ public:
     // The settings the Place sees for a slot's controls in a world. Public for the tests.
     static PlaceSettings settingsFor(const WorldFrame& world, const PlaceSlotControls& controls);
     static float effectiveDistance(const WorldFrame& world, float distance);
+    // The distance and extra gain of a Place sent `far` away by a journey.
+    static float travelDistance(float distance, float far) { return distance + (1.0f - distance) * dsp::clamp01(far); }
+    static float travelGain(float far) { return std::pow(1.0f - 0.92f * dsp::clamp01(far), 1.5f); }
 
 private:
     Place* engineFor(int type);

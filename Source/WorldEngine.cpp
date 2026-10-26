@@ -34,6 +34,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     width.setTime(0.1f, r);
     spaceMix.setTime(0.1f, r);
     powerStep = 1.0f / (2.0f * r);   // Power fades over 2 s
+    seedStep = 1.0f / (0.03f * r);   // a new Seed: the environment dips out and back over 30 ms each
     gateUp = 1.0f / (0.01f * r);     // Transport: in over 10 ms, out over 250 ms
     gateDown = 1.0f / (0.25f * r);
     reset(initial);
@@ -59,6 +60,8 @@ void WorldEngine::reset(const EngineControls& initial) {
     intensity.snap(clamp01(initial.intensity));
     world.intensity = intensity.value;
     seed = initial.seed + 1;   // forces setSeed on the first chunk
+    seedFresh = true;
+    seedGain = 1;
     // A freshly loaded world fades in, like switching Power on.
     powerRamp = 0;
     gateRamp = 1;
@@ -127,11 +130,19 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         return;
     }
 
-    if (controls.seed != seed) {
+    // A new Seed reseeds the environment layers, whose noise and gusts then follow
+    // other curves: they dip out over 30 ms, change at silence and come back, so the
+    // change never clicks (a fresh world takes its seed at once).
+    const bool reseed = controls.seed != seed;
+    if (reseed && seedFresh) {
         seed = controls.seed;
         for (auto* layer : layers)
             if (layer != nullptr) layer->setSeed(seed);
     }
+    seedFresh = false;
+    const float duckFrom = seedGain;
+    const float duckTo = controls.seed != seed ? std::max(0.0f, seedGain - seedStep * float(n)) : std::min(1.0f, seedGain + seedStep * float(n));
+    seedGain = duckTo;
     for (std::size_t i = 0; i < worldSmooth.size(); ++i) world.c[i] = worldSmooth[i].next(clamp01(finiteOr(controls.world[i], 0.5f)));
     world.intensity = intensity.next(clamp01(finiteOr(controls.intensity, 0.5f)));
     world.root = controls.root;
@@ -169,8 +180,10 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         layer->render(world, clock, layerL.data(), layerR.data(), n);
         const float send = layer->spaceSend(world) * distanceSend;
         float peak = layerPeak[li];
+        const bool ducking = duckFrom < 1.0f || duckTo < 1.0f;
         for (int i = 0; i < n; ++i) {
-            const float g = gain.next(target);
+            const float duck = ducking ? 0.5f - 0.5f * std::cos(pi * lerp(duckFrom, duckTo, float(i + 1) / float(n))) : 1.0f;
+            const float g = gain.next(target) * duck;
             const float l = finiteOr(layerL[std::size_t(i)]) * g, r = finiteOr(layerR[std::size_t(i)]) * g;
             peak = std::max(peak, std::max(std::abs(l), std::abs(r)));
             dryL[std::size_t(i)] += l;
@@ -181,6 +194,12 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         layerPeak[li] = peak;
     }
 
+    if (controls.seed != seed && duckTo <= 0.0f) {
+        seed = controls.seed;
+        for (auto* layer : layers)
+            if (layer != nullptr) layer->setSeed(seed);
+    }
+
     // Places: each slot renders its Place with level, distance and pan applied, and
     // its instruments feed the shared reverbs and delays.
     sharedFx.begin(n);
@@ -188,7 +207,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         const auto& pc = controls.places[si];
         const bool audible = !pc.mute && (!anySolo || pc.solo);
         patternsIn[si].update();
-        const bool sounding = slots[si].render(world, pc, patternsIn[si].read(), audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
+        const auto& slotPatterns = controls.patterns[si] != nullptr ? *controls.patterns[si] : patternsIn[si].read();
+        const bool sounding = slots[si].render(world, pc, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         slotBeat[si].store(slots[si].beat(), std::memory_order_relaxed);
         if (!sounding) continue;
         sharedFx.add(slots[si].sends(), slots[si].sendGainL(), slots[si].sendGainR(), n);

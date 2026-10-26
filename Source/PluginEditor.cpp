@@ -62,7 +62,7 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 8 PREVIEW";
+constexpr const char* headerText = "FILM-SCORING SOUNDSCAPE INSTRUMENT  -  MILESTONE 9 PREVIEW";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -240,6 +240,8 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     addAndMakeVisible(dice);
     capture = std::make_unique<ui::CapturePanel>(processor);
     addAndMakeVisible(*capture);
+    locationRow = std::make_unique<ui::LocationBar>(processor);
+    addAndMakeVisible(*locationRow);
 
     patterns = std::make_unique<ui::PatternEditor>(processor);
     patterns->onClose = [this] {
@@ -430,6 +432,9 @@ void WorldbuilderEditor::resized() {
     area.removeFromTop(6);
     footer = area.removeFromBottom(80);
     area.removeFromBottom(8);
+    locationsPanel = area.removeFromBottom(84);
+    area.removeFromBottom(8);
+    locationRow->setBounds(locationsPanel.reduced(12, 6));
     controlsPanel = area.removeFromLeft(300);
     area.removeFromLeft(12);
     auto right = area.removeFromRight(310);
@@ -630,7 +635,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     g.drawHorizontalLine(header.getBottom() + 2, float(header.getX()), float(header.getRight()));
 
     const bool detailOpen = detail.slot >= 0;
-    for (auto panel : { controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, footer }) {
+    for (auto panel : { controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, locationsPanel, footer }) {
         if ((detailOpen && (panel == globePanel || panel == cardsPanel)) || !g.clipRegionIntersects(panel.expanded(3))) continue;
         const auto r = panel.toFloat();
         // The frame's outlines (glow and edge), stroked once per size.
@@ -1089,6 +1094,7 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float> ar
     g.setColour(colours::dim);
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("LISTENER", juce::Rectangle<float>(80.0f, 14.0f).withCentre({ centre.x, area.getBottom() + 12.0f }), juce::Justification::centred, false);
+    paintLocationMarkers(g, alpha);
     // The air of the active Places drifts across the panel.
     for (int kind = 0; kind < int(particleAmount.size()); ++kind)
         ui::drawParticles(g, kind, globePanel.toFloat().reduced(6.0f), animTime, particleAmount[std::size_t(kind)] * alpha, themeGlow, 3);
@@ -1238,7 +1244,7 @@ void WorldbuilderEditor::updateTheme(float seconds, bool snap) {
 
 void WorldbuilderEditor::updateOverlayFrames() {
     if (overlays == nullptr) return;
-    std::vector<juce::Rectangle<int>> panels { controlsPanel, layersPanel, placesPanel, footer };
+    std::vector<juce::Rectangle<int>> panels { controlsPanel, layersPanel, placesPanel, locationsPanel, footer };
     if (detail.slot >= 0) {
         panels.push_back(detail.area);
     } else {
@@ -1255,7 +1261,10 @@ void WorldbuilderEditor::updateOverlayFrames() {
     for (const auto& area : groupAreas) keep.push_back(area.withHeight(18));
     keep.push_back(layersPanel.reduced(10, 6).withHeight(20));
     keep.push_back(placesPanel.reduced(10, 6).withHeight(20));
-    if (detail.slot < 0) keep.push_back(juce::Rectangle<float>(90.0f, 16.0f).withCentre({ globeArea.getCentreX(), globeArea.getBottom() + 12.0f }).toNearestInt());   // LISTENER
+    if (detail.slot < 0) {
+        keep.push_back(juce::Rectangle<float>(90.0f, 16.0f).withCentre({ globeArea.getCentreX(), globeArea.getBottom() + 12.0f }).toNearestInt());   // LISTENER
+        for (int i = 0; i < locationCount; ++i) keep.push_back(juce::Rectangle<float>(18.0f, 18.0f).withCentre(markerPosition(i)).toNearestInt());
+    }
     if (keep == overlayKeepClear) return;
     overlayKeepClear = keep;
     juce::RectangleList<int> clear;
@@ -1263,6 +1272,109 @@ void WorldbuilderEditor::updateOverlayFrames() {
     std::vector<juce::Rectangle<int>> open;
     if (!headerOpen.isEmpty()) open.push_back(headerOpen);
     overlays->setFrames(panels, open, clear);
+}
+
+// The Locations sit on an orbit around the globe, from lower left over the top to lower
+// right (the listener is below).
+float WorldbuilderEditor::markerAngle(int index) const {
+    return juce::degreesToRadians(210.0f - float(index) * 240.0f / float(locationCount - 1));
+}
+
+juce::Point<float> WorldbuilderEditor::markerPosition(int index) const {
+    const auto centre = globeArea.getCentre();
+    const float radius = globeArea.getWidth() * 0.5f + 13.0f, a = markerAngle(index);
+    return { centre.x + radius * std::cos(a), centre.y - radius * std::sin(a) };
+}
+
+int WorldbuilderEditor::markerAt(juce::Point<float> p) const {
+    for (int i = 0; i < locationCount; ++i)
+        if (p.getDistanceFrom(markerPosition(i)) < 9.0f) return i;
+    return -1;
+}
+
+void WorldbuilderEditor::paintLocationMarkers(juce::Graphics& g, float alpha) {
+    const auto centre = globeArea.getCentre();
+    const float radius = globeArea.getWidth() * 0.5f + 13.0f;
+    // The orbit.
+    {
+        juce::Path orbit;
+        orbit.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, juce::degreesToRadians(-120.0f), juce::degreesToRadians(120.0f), true);
+        juce::Path dashed;
+        const float dashes[] = { 2.0f, 5.0f };
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, orbit, dashes, 2);
+        g.setColour(colours::brass.withAlpha(0.28f * alpha));
+        g.fillPath(dashed);
+    }
+    const int mode = processor.travel.uiMode.load(std::memory_order_relaxed);
+    const int target = processor.travel.uiTarget.load(std::memory_order_relaxed);
+    const int arrived = processor.travel.uiArrived.load(std::memory_order_relaxed);
+    const float progress = processor.travel.uiProgress.load(std::memory_order_relaxed);
+    // Where a journey set out from: the Location the world stood at when it began.
+    const int journeyKey = mode == Travel::Travelling ? target : -2;
+    if (journeyKey != journeySeen) {
+        journeySeen = journeyKey;
+        if (mode == Travel::Travelling) journeyStart = arrived;
+    }
+    for (int i = 0; i < locationCount; ++i) {
+        const auto p = markerPosition(i);
+        const bool used = processor.locations.used(i);
+        const auto colour = juce::Colour(processor.locations.colour(i));
+        const bool here = (mode == Travel::Idle || mode == Travel::Holding) && arrived == i;
+        const auto dot = juce::Rectangle<float>(13.0f, 13.0f).withCentre(p);
+        if (used) {
+            g.setColour(colour.withAlpha((here ? 1.0f : 0.8f) * alpha));
+            g.fillEllipse(dot);
+            if (here) {
+                g.setColour(colour.withAlpha(0.35f * alpha));
+                g.drawEllipse(dot.expanded(3.0f), 2.0f);
+            }
+            // The name outside the orbit, to the side (none at the top, where it would crowd).
+            const float side = std::cos(markerAngle(i));
+            if (std::abs(side) > 0.3f) {
+                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                g.setColour(colours::parchment.withAlpha(0.8f * alpha));
+                const auto box = side < 0 ? juce::Rectangle<float>(p.x - 92.0f, p.y - 7.0f, 82.0f, 14.0f) : juce::Rectangle<float>(p.x + 10.0f, p.y - 7.0f, 82.0f, 14.0f);
+                g.drawText(processor.locations.name(i), box, side < 0 ? juce::Justification::centredRight : juce::Justification::centredLeft, true);
+            }
+        } else {
+            g.setColour(colours::dim.withAlpha(0.6f * alpha));
+            g.drawEllipse(dot.reduced(1.0f), 1.0f);
+        }
+        g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+        g.setColour((used ? colours::background : colours::dim).withAlpha(alpha));
+        g.drawText(juce::String(i + 1), dot, juce::Justification::centred, false);
+    }
+    // The journey: a comet along the orbit from where the world was to where it goes
+    // (in Journey Mode, between From and To at the Journey position).
+    float a0 = juce::degreesToRadians(90.0f), a1 = a0, t = 0.0f;
+    bool show = false;
+    if (mode == Travel::Travelling && target >= 0) {
+        a0 = journeyStart >= 0 ? markerAngle(journeyStart) : juce::degreesToRadians(90.0f);
+        a1 = markerAngle(target);
+        t = 0.5f - 0.5f * std::cos(juce::MathConstants<float>::pi * progress);
+        show = true;
+    } else if (mode == Travel::Journeying) {
+        const int from = processor.travel.uiFrom.load(std::memory_order_relaxed), to = processor.travel.uiTo.load(std::memory_order_relaxed);
+        a0 = markerAngle(std::max(0, from));
+        a1 = markerAngle(std::max(0, to));
+        t = progress;
+        show = from >= 0 && to >= 0;
+    }
+    if (show) {
+        const auto at = [&](float u) {
+            const float a = a0 + (a1 - a0) * juce::jlimit(0.0f, 1.0f, u);
+            return juce::Point<float>(centre.x + radius * std::cos(a), centre.y - radius * std::sin(a));
+        };
+        for (int k = 8; k >= 0; --k) {
+            const float u = t - float(k) * 0.025f;
+            if (u < 0.0f) continue;
+            const float size = 7.0f - 0.6f * float(k);
+            g.setColour(colours::cyan.withAlpha((0.9f - 0.09f * float(k)) * alpha));
+            g.fillEllipse(juce::Rectangle<float>(size, size).withCentre(at(u)));
+        }
+        g.setColour(juce::Colours::white.withAlpha(0.9f * alpha));
+        g.fillEllipse(juce::Rectangle<float>(3.5f, 3.5f).withCentre(at(t)));
+    }
 }
 
 juce::Point<float> WorldbuilderEditor::landmarkPosition(int slot) const {
@@ -1303,6 +1415,10 @@ void WorldbuilderEditor::showCategory(int c) {
 
 void WorldbuilderEditor::mouseDown(const juce::MouseEvent& e) {
     if (detail.slot >= 0 || patterns->isVisible()) return;
+    if (const int marker = markerAt(e.position); marker >= 0) {
+        if (processor.locations.used(marker)) processor.travelTo(marker);
+        return;
+    }
     if (const int chip = categoryAt(e.getPosition()); chip >= 0) {
         category = chip - 1;
         cardScroll = 0;
@@ -1418,6 +1534,9 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     if (animating && detail.slot < 0 && !patterns->isVisible()) repaint(cardsPanel);
     if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 8));
     spin += 0.004f + 0.02f * processor.engine.frame()[Activity];
+    // On a journey the globe turns faster, most in the middle of the way.
+    if (processor.travel.uiMode.load(std::memory_order_relaxed) == Travel::Travelling)
+        spin += 0.06f * std::sin(juce::MathConstants<float>::pi * processor.travel.uiProgress.load(std::memory_order_relaxed));
     if (spin > juce::MathConstants<float>::twoPi * 100.0f) spin = 0;
     precipitation += 0.05f + 0.06f * processor.engine.frame()[Weather];
     if (precipitation > 1000.0f) precipitation = 0;
