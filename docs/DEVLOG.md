@@ -5,9 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Current work: Milestone 9** (Locations and Journeys, Direction Update 5). Its progress
-checklist is at the top of the [Milestone 9 section](#milestone-9-locations-and-journeys-2026-10-25)
-at the end of this file; a resumed session continues from the first unticked item.
+**Milestone 9 is complete** (Locations and Journeys, Direction Update 5); its handoff is
+at the end of the [Milestone 9 section](#milestone-9-locations-and-journeys-2026-10-25).
+Next: Milestone 10 (visual revamp and planet types). A new milestone starts its own
+progress checklist; a resumed session continues from the first unticked item.
 
 ---
 
