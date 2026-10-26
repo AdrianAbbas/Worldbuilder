@@ -7,14 +7,19 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 11 (26 Places of six instruments, each with its own instrument
-effects; Score Intensity; render to WAV and scene MIDI export; Locations and
-Journeys; seven planet types with their own sound colour; the revamped globe and
-controls; and the Arrangement: a timeline of sections with an instrument grid,
-pattern variants A/B/C/Fill, Play Mode Arrangement, transitions between sections,
-templates and Auto-arrange, and game-audio export: the arrangement, its sections as
-seamless loops and stingers).**
+**Status: Milestone 12, feature-complete for release (26 Places of six instruments,
+each with its own instrument effects; Score Intensity; render to WAV and scene MIDI
+export; Locations and Journeys; seven planet types; the Arrangement with transitions,
+templates, Auto-arrange and game-audio export; and now separate outputs per Place, 24
+factory scenes and INSPIRE).** Milestone 13 (an 8-bit interface overhaul, Direction
+Update 7) is planned and not started.
 These work now:
+- **Scenes and INSPIRE** (the header): 24 factory scenes, each a ready-made film or game
+  moment with its Places, Planet, key, effects, Locations and an arrangement; INSPIRE
+  builds a new, musical world from the next World Seed. See
+  [Scenes and INSPIRE](#scenes-and-inspire).
+- **Separate outputs**: each Place slot also plays on its own stereo output in Logic.
+  See [Separate outputs in Logic Pro](#separate-outputs-in-logic-pro).
 - **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
   Ruins, Spaceship Interior, Biodome, Sea Ship, Suburbs, Mall, Military Camp, Beach,
@@ -98,13 +103,75 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Now: Milestone 10, the visual revamp and planet types. Next (Direction Update 5): pro
-features, presets and release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
-plan is in [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
+See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
+[docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) to
-[docs/DIRECTION_UPDATE_6.md](docs/DIRECTION_UPDATE_6.md); later files override earlier
+[docs/DIRECTION_UPDATE_7.md](docs/DIRECTION_UPDATE_7.md); later files override earlier
 ones. How the instruments are modelled, and the acoustics data behind them:
-[docs/INSTRUMENT_NOTES.md](docs/INSTRUMENT_NOTES.md).
+[docs/INSTRUMENT_NOTES.md](docs/INSTRUMENT_NOTES.md). The [control guide](#control-guide),
+[keyboard and mouse map](#keyboard-and-mouse) and [troubleshooting](#troubleshooting)
+are below.
+
+## Scenes and INSPIRE
+
+**Factory scenes** (the header, right of the title): **<** and **>** step through them,
+and the name in between opens a menu of all of them by world (Medieval & Fantasy,
+Sci-Fi, Modern, Nature). A scene is a complete film or game moment: two to four Places
+with their Characters, levels, distances and pans, the Planet, Root and Mood, the World
+Controls, every instrument's effects, two to four **Locations** to travel between, and an
+**arrangement** (a template, auto-arranged for its Places) whose calm sections sit at
+the first Location and whose climax travels to the last.
+
+| World | Scenes |
+|---|---|
+| Medieval & fantasy | Ambush at the Tavern, Siege of the Palace, Market at Dawn, Frozen Citadel, Dragon's Caldera, Drowned Temple, Haunted Moor, Royal Coronation |
+| Sci-fi | Docking at Orbital Station, Neon Rain Chase, First Contact, Into the Nebula, Abandoned Reactor, Alien Jungle, Asteroid Shift Change, Battle Stations, Void Between Stars |
+| Modern | Clockwork Metropolis, Storm at Sea, Dead Mall Nights |
+| Nature | Abandoned Mine, Desert Caravan, Elven Canopy, Summer by the Sea |
+
+- Loading a scene switches Play Mode to **Arrangement** (unless it is Free), so pressing
+  play in the host plays its sections and travels between its Locations. In Transport
+  mode you hear its first Location as it stands.
+- It keeps your session settings: Power, Master Level, Quality and Place Outputs.
+- **UNDO** (beside INSPIRE) brings back the world from before the last scene or
+  INSPIRE, including your arrangement, Locations and Play Mode.
+- A scene is a starting point: change anything, save it as a `.world` file or with the
+  project. The scene's name stays in the browser until you load another.
+
+**INSPIRE** moves the World Seed on and builds a random but musical world from it: two to
+four Places that belong together (one world, fantasy, sci-fi or modern, plus nature;
+now and then one from another world for a blend), their Characters, a Mood that suits
+them (often the first Place's own), a root, a Planet that fits (an ocean world for a
+beach or a ship, a desert world for the desert), World Controls near their defaults with
+the right Era, small changes to every instrument's reverb, delay and character amount,
+two or three Locations that rise in danger, and a template auto-arranged for them. The
+same World Seed always inspires the same world, so a seed you liked can be typed back
+in (INSPIRE uses the seed after the one shown). UNDO takes it back.
+
+## Separate outputs in Logic Pro
+
+WORLDBUILDER has a main stereo output and one stereo output per Place slot (Place 1-4),
+so each Place can have its own channel strip, effects and bounce.
+
+1. Insert WORLDBUILDER on a software instrument track as **Multi Output (5xStereo)**
+   (in the instrument slot: AU Instruments → Veil Audio → WORLDBUILDER → Multi Output).
+2. In the mixer, click the **+** under the instrument's channel strip to add aux
+   channels for outputs 3-4, 5-6, 7-8 and 9-10: those are Place 1, 2, 3 and 4.
+3. Choose **PLACE OUTPUTS** in the footer:
+   - **Copy** (the default): the main output keeps the full mix and each Place output
+     carries a copy of its Place. Use the aux strips for extra processing or to bounce
+     stems; mute the auxes when you want the main mix alone.
+   - **Split**: a Place that has its own output leaves the main mix. The main then
+     carries the environment layers, the Places without an output, and **all reverb and
+     delay returns** (the World Space, the per-instrument reverbs and delays and the
+     transitions are shared and stay on the main, like an aux return).
+4. A Place output carries the Place's dry sound: its instruments with their own
+   character effects, its level, distance, pan and arrangement, after Master Level and
+   Power, through its own safety limiter. The master's Planet colour, width and glue are
+   on the main only.
+
+**GarageBand** has only the main output, so the main always contains every Place, in
+Copy and in Split.
 
 ## Locations and Journeys
 
@@ -249,8 +316,8 @@ is not yet tested; saving always works.
 
 **Logic Pro:** Transport mode, then **Bounce in Place** (Track → Bounce and Replace, or
 Ctrl-B) or **File → Bounce → Project or Section**; or RENDER and drag the WAV or stems
-into the arrange area; or drag the MIDI onto the tracks area. Separate outputs per
-Place (multi-output) arrive in a later milestone.
+into the arrange area; or drag the MIDI onto the tracks area. For each Place on its own
+channel strip, see [Separate outputs in Logic Pro](#separate-outputs-in-logic-pro).
 
 **Automation replaces MIDI control.** Every control that shapes a cue is a host
 parameter and responds smoothly when automated: Score Intensity, each Place's level,
@@ -261,6 +328,133 @@ and Journey), the Planet and Planet Influence. In GarageBand,
 show automation (A) and choose WORLDBUILDER's parameters on the track; in Logic, the
 same in the track's automation lane. Draw Score Intensity rising into a climax, bring a
 Place in by its level, or switch Characters at a scene change.
+
+## Control guide
+
+**Header.** WORLDBUILDER; the scene browser (**<**, the scene menu, **>**), **INSPIRE**
+and **UNDO**; **ARRANGE** opens the arrangement timeline; **SCORE INTENSITY** (0 %
+calm bed, 50 % the Places as set, 100 % climax); **POWER** fades the world in or out
+over two seconds.
+
+**Left: World Controls**, shaping every layer and Place together.
+- Climate: **Temperature** (frozen to scorching), **Weather** (still to storm),
+  **Wetness** (arid to drenched).
+- Civilisation: **Population** (empty to crowded: how busy the Places are),
+  **Machinery** (none to industrial: straighter, more metallic), **Era** (ancient to
+  futuristic).
+- Mystery: **Magic** (mundane to arcane), **Life** (barren to teeming), **Danger**
+  (peaceful to hostile: darker harmony, tighter rhythm, more pressure).
+- Size: **Scale** (intimate to colossal: distance, reverb size, low weight),
+  **Activity** (calm to chaotic: event density and how fast the world evolves).
+
+**Centre.** The **Living Globe** shows the world: drag a Place's landmark to move it
+(pan and distance follow), double-click it for its detail panel; the Location markers
+on its orbit travel when clicked. **PLANET** and **INFLUENCE** in its corner. Below it,
+**ADD A PLACE**: the 26 Place cards (ALL, FANTASY, MODERN, SCI-FI, NATURE); click a card
+to add it to the first empty slot.
+
+**A Place's detail panel** (EDIT on its strip): **Character** (three per Place),
+**Activity**, **Tension**, **Tone**, **Size**, **Variation**, **Density**, **Swing**,
+**SYNC TO HOST** (or its own free tempo), **Seed** and New seed, its six instruments'
+levels and switches, the suggested Mood, and **PATTERNS** for the Pattern Editor.
+
+**Pattern Editor.** A tab per instrument, variants A, B, C and FILL, the piano roll with
+velocity and chance lanes, DRAW and SELECT, undo and redo, copy and paste, transpose,
+double and halve, lock, Generate, randomness (amount, what varies, Evolve), the
+instrument's level and effects (reverb and type, delay and type, character and amount,
+tone, width), MIDI import (drop a file) and DRAG MIDI / save.
+
+**Right.** **ENVIRONMENT**: Air, Water, Fire & Heat, Ice & Earth, Thunder and Tonal Bed,
+each with level, M (mute), S (solo) and a meter. **PLACES**: the four slots, each with
+level, distance, pan, M, S, EDIT and X (remove).
+
+**LOCATIONS row.** Eight Location chips (click an empty one to save, a saved one to
+travel), Travel Time and its sync, **JOURNEY** with From, To and the Journey slider,
+**PATH** with its leg length and end, **SAVE .world** and **LOAD .world**. See
+[Locations and Journeys](#locations-and-journeys).
+
+**Footer.** **ROOT** and **MOOD** (the key everything tonal follows), **QUALITY** (Eco,
+Standard, High), **PLAY MODE** (Free, Transport, Arrangement), **WORLD SEED** and **New
+world** (a random seed), the host tempo, **OVERLAYS** (Full, Subtle, Off), **PLACE
+OUTPUTS** (Copy, Split), **CAPTURE** (bars or Arrangement; Mix, Stems, Sections or
+Stingers; MIDI, RENDER and the WAV to drag or save), **Space Mix**, **Width**, **Master
+Level** and the master meter.
+
+Every knob, slider, switch and menu that shapes the sound is a host parameter: automate
+it in GarageBand (A on the track) or Logic.
+
+## Keyboard and mouse
+
+| Where | Action | Does |
+|---|---|---|
+| Any knob or slider | drag (up/right) | change the value |
+| | **Shift**-drag | fine control |
+| | double-click | back to the default |
+| | hover | tooltip with what it does |
+| Place card | click | add the Place to the first empty slot |
+| Globe | drag a landmark | move the Place (pan and distance) |
+| | double-click a landmark | open its detail panel |
+| | click a Location marker | travel there |
+| Location chip | click (empty) | save the world there |
+| | click (saved) | travel there |
+| | double-click | rename |
+| | right-click or **Alt**-click | menu: save over, colour, clear |
+| Pattern Editor grid | click (DRAW) | add a note |
+| | drag a note | move it; drag its end to lengthen |
+| | **Shift**-click | add to or remove from the selection |
+| | double-click a note | lock or unlock it |
+| | right-click or **Alt**-click a note | delete it |
+| | wheel / **Shift**-wheel / **Cmd**-wheel | scroll up and down / sideways / zoom |
+| Pattern Editor keys | **Delete**, **Backspace** | delete the selection |
+| | **Cmd-Z**, **Cmd-Shift-Z** or **Cmd-Y** | undo, redo |
+| | **Cmd-C**, **Cmd-V**, **Cmd-A** | copy, paste, select all |
+| | **Up**, **Down** | transpose the selection (or the whole pattern) one row |
+| | **L** | lock or unlock the selection |
+| ARRANGE timeline | drag a section | reorder it; drag its right edge to resize |
+| | right-click or **Alt**-click a section | menu: preview from here, duplicate, delete, plays, colour, every instrument on or off |
+| Instrument grid | click a cell | instrument on or off in that section |
+| | **Shift**-click a cell | step its pattern variant (A, B, C) |
+| | right-click or **Alt**-click a cell | its entry (on, off, enter halfway, fade in, fade out), pattern A/B/C, Fill |
+| ARRANGE keys | **Left**, **Right** | select the previous or next section |
+| | **Space** | PREVIEW from the selected section (host stopped) |
+| | **Delete**, **Backspace** | delete the section |
+| | **Cmd-D** | duplicate it |
+| | **Cmd-Z**, **Cmd-Shift-Z** or **Cmd-Y** | undo, redo |
+
+On Windows and Linux (the standalone app), Cmd is Ctrl.
+
+## Troubleshooting
+
+- **No sound in GarageBand, a grey slot or generic sliders.** macOS rejected the
+  download. Run `bash install-mac.sh` again from the unzipped folder (it removes the
+  quarantine flag, re-signs, refreshes the Audio Unit list and runs `auval`), then quit
+  and reopen GarageBand. `bash scripts/diagnose-mac.sh` (in this repository) prints
+  what macOS reports about the installed plug-in.
+- **Silent until I press play.** Play Mode Transport (the default) and Arrangement play
+  only while the host plays. Choose **Free** in the footer to hear it with the song
+  stopped, or use **PREVIEW** in ARRANGE.
+- **A loaded scene sounds the same all the way through.** Its arrangement plays in Play
+  Mode **Arrangement**; in Transport the world stays at the first Location.
+- **The export ends early in GarageBand.** In Play Mode Free, GarageBand exports only up
+  to the last region. Use Transport (or Arrangement), or RENDER and drag the WAV in.
+- **Too quiet or too loud.** Each Place's level and distance, the environment levels and
+  Master Level set the balance; a gentle glue compressor and a safety limiter (-1
+  dBFS) keep the output in range. Score Intensity also raises the level towards a
+  climax.
+- **CPU too high on a laptop.** Choose Quality **Eco**, use fewer Places (each plays six
+  instruments), or switch OVERLAYS **Off** (the default). Four busy Places at Standard
+  quality use about 20 % of one core in the Linux tests.
+- **Place outputs are silent in Logic.** Insert the Multi Output version and add the aux
+  channels (see [Separate outputs](#separate-outputs-in-logic-pro)); a slot with no
+  Place, or a muted one, is silent on its output.
+- **The Place outputs double the mix.** PLACE OUTPUTS is on Copy: the main keeps every
+  Place. Choose Split.
+- **A Location or scene does not travel.** Travelling needs a saved Location; while the
+  arrangement drives Locations (Play Mode Arrangement), the Destination and Journey
+  controls wait.
+- **Dragging a WAV or MIDI file out of the plugin does nothing.** Some hosts do not
+  accept files dragged from a plugin window. Click WAV or MIDI to save the file, then
+  drag it in from Finder.
 
 ## Install (macOS)
 

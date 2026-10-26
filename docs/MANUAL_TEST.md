@@ -671,3 +671,28 @@ Use an arrangement with a looping section (TEMPLATE → Exploration Loop is quic
 - [ ] MIDI with Arrangement selected: drag it onto the tracks area. Do the tracks enter
   and leave with the sections?
 
+
+## Milestone 12 check: separate outputs, scenes, INSPIRE
+
+First, the risk: WORLDBUILDER now has five output buses (main plus Place 1-4).
+
+- [ ] GarageBand still loads it on a software instrument track and plays (main output,
+  every Place audible), the interface appears, and an older project opens unchanged.
+- [ ] Scenes: **>** in the header loads "Ambush at the Tavern". Play Mode becomes
+  Arrangement; press play: do the sections build, and does it travel between its
+  Locations ("Lively Night" → "Brawl")? Try three or four more (Storm at Sea, Neon Rain
+  Chase, Into the Nebula, Market at Dawn). Do they sound like their names? Any too
+  loud or too quiet?
+- [ ] The scene menu (the name between < and >): every scene listed by world.
+- [ ] **UNDO** after a scene: is your world back (Places, arrangement, Locations, Play
+  Mode)?
+- [ ] **INSPIRE** a few times: are the worlds musical and different? Do the Places belong
+  together? UNDO after INSPIRE.
+- [ ] Shift-drag a knob: finer than a plain drag?
+
+**Logic Pro only** (separate outputs):
+- [ ] Insert WORLDBUILDER as **Multi Output (5xStereo)** and add the four aux channels.
+  With two Places, does each aux play its own Place?
+- [ ] PLACE OUTPUTS **Copy**: the main channel plays the full mix. **Split**: the Places
+  with their own outputs leave the main (their reverb stays there).
+- [ ] Bounce an aux (or record it): is it the Place alone?

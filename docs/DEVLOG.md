@@ -5,10 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 11 is complete** (the Arrangement, Direction Update 6: 11a, 11b and 11c).
-Next is Milestone 12 (pro features, presets and release). The checklist and handoff
-are in the
-[Milestone 11b and 11c section](#milestone-11b-and-11c-transitions-templates-auto-arrange-game-audio-export-2026-10-26)
+**Milestone 12 is complete** (separate outputs, Inspire, 24 factory scenes, release
+docs). Next is Milestone 13, the 8-bit interface overhaul of
+[Direction Update 7](DIRECTION_UPDATE_7.md), starting with the 13a style prototype,
+which stops for the developer's approval. The checklist and handoff are in the
+[Milestone 12 section](#milestone-12-separate-outputs-inspire-factory-scenes-release-docs-2026-10-26)
 at the end. A new milestone starts its own progress checklist; a resumed session
 continues from the first unticked item.
 
@@ -3659,3 +3660,191 @@ final DEVLOG.
 - Carried over from 11a: 4/4 only; patterns on the song's bar grid; an endless section
   makes later ones unreachable; the `push-access-check` branch can be deleted.
 
+
+---
+
+## Milestone 12: separate outputs, Inspire, factory scenes, release docs (2026-10-26)
+
+Direction Update 6 section 6 (the old Milestone 11 of Update 5): separate outputs per
+Place, Inspire (which also picks a template and auto-arranges), factory presets as
+complete arranged scenes, and the release docs. Direction Update 7 (added to `docs/` this
+session) makes Milestone 13, the 8-bit interface overhaul, the last milestone; it is
+not started. Working rules: push after each finished part with `[skip ci]`, the final
+push without it; small metric misses report-only after two attempts; the Linux suite
+passes before every push.
+
+### Progress checklist
+
+Ticked when committed and pushed. A resumed session starts at the first unticked item.
+
+- [x] 12.1 Separate outputs: four stereo Place outputs beside the main, Place Outputs Copy / Split, footer control; tests (`--only outputs`)
+- [x] 12.2 Inspire: a random, musical scene from the next World Seed (Places, Characters, Planet, key, World Controls, effects, Locations, a template auto-arranged); undoable; tests
+- [x] 12.3 Factory scenes: 24 arranged scenes with 2-4 Places, a Planet and 2-4 Locations each; the header's scene browser (< menu >), INSPIRE and UNDO; tests (`--only scenes`); snapshots
+- [x] 12.4 Release docs: README (status, scenes, outputs in Logic, control guide, keyboard and mouse map, troubleshooting), MANUAL_TEST, final handoff, final push without `[skip ci]`
+
+All four parts were finished and tested in one session and pushed together: 12.1-12.3
+in one commit with `[skip ci]` once the full suite passed on that build, 12.4 (this
+handoff) as the final push without it.
+
+### Decisions (12.1, separate outputs)
+
+- **Five output buses:** the main stereo output plus "Place 1" to "Place 4", stereo,
+  active by default (Logic's Multi Output). A host may disable any Place output; the
+  main may be stereo or mono. GarageBand uses only the main.
+- **What a Place output carries:** the slot's dry sound (its six instruments with their
+  own character effects, level, distance, pan, arrangement gains and journey distance),
+  then the Master Level, Power, the Transport gate, the arrangement's end fade and a
+  Drop's duck, through its own safety limiter. The **shared** effects (the World Space,
+  the per-instrument reverb and delay buses, the transition sounds) stay on the main:
+  splitting them per Place would mean four copies of every reverb and delay (CPU), so
+  they behave like an aux return. The Planet colour, width and glue are on the main only.
+- **Place Outputs: Copy (default) / Split**, a host parameter kept with the session (not
+  part of Locations or scenes, and a `.world` load keeps it). Copy: the main is
+  unchanged, sample for sample (tested). Split: a Place with an output the host has
+  enabled leaves the main dry mix, its sends still feed the shared effects. With no
+  Place outputs (GarageBand), Split changes nothing, so the main always keeps every
+  Place there.
+- **Cost:** a copy of the slot's chunk and a limiter per enabled output, only while a
+  host has Place outputs enabled; nothing otherwise.
+- **Risk:** the AU now declares five output elements. Untested on macOS: `auval`, the
+  harness (it configures and renders element 0 only) and GarageBand loading must be
+  checked on CI and by the developer.
+
+### Decisions (12.2 and 12.3, scenes and Inspire)
+
+- **One model for both** (`Source/Scenes/`): a Scene names up to four Places (Character,
+  level, distance, pan, Activity, Tension), Planet and Influence, Root and Mood, World
+  Controls, a template, a seed, two to four Locations (each can change Characters,
+  levels and World Controls) and World Control overrides for the peak sections. From it
+  come the parameter values (everything else at its default, each instrument's effects
+  at its Place's defaults), the Locations' values and the arrangement: the template,
+  Auto-arranged for its Places with the scene's seed, every section at a Location by
+  what it does (intro, wind-down, break, outro: the first; build and loop: the middle;
+  peak: the last; bridge and break with four Locations: the third).
+- **Loading a scene** keeps the session settings (Power, Master Level, Quality, Place
+  Outputs), switches Play Mode to Arrangement unless it is Free (Free users chose
+  free-running; Arrangement needs the transport), resets every slot's patterns to the
+  generated ones, replaces the eight Locations (named and coloured) and the arrangement
+  (one undo step there too), and remembers the scene's name in the state (the browser
+  shows it, also after reopening the project).
+- **UNDO** keeps the world before the last scene or INSPIRE as `.world` text and loads it
+  back (parameters, patterns, Locations, arrangement), then restores its Play Mode. One
+  level; a second scene replaces it.
+- **INSPIRE uses the World Seed:** it moves the seed on (`nextSeed`, a hash, 1-9999) and
+  builds `inspire(seed)`, so a seed always gives the same world and pressing again gives
+  a new one. Rules: a world (fantasy 34 %, sci-fi 30 %, modern 20 %, nature-led 16 %),
+  2-4 Places from that world plus nature (at most one from another world, 10 % per
+  pick, for a blend), random Characters, the first at 0 dB and close, the others -2.5 to
+  -6 dB and further; the first Place's suggested Mood 60 % of the time, otherwise a Mood
+  suited to the world (never Chromatic); a fitting Planet (Desert → Desert World, Beach
+  and Sea Ship → Ocean, Nebula → Gas Giant); World Controls near the defaults with the
+  world's Era and Magic; every instrument's reverb ×0.8-1.25, delay ×0.7-1.3 and character
+  amount ×0.8-1.2; a template by danger and world; two or three Locations (calm, rising,
+  climax) where Danger rises, the first Place's Character changes and, with three or
+  more Places, the last arrives after the first Location.
+- **24 factory scenes** (the brief's ten examples plus fourteen in the spirit of the
+  brief's original list): Ambush at the Tavern, Docking at Orbital Station, Siege of the
+  Palace, Neon Rain Chase, Abandoned Mine, First Contact, Market at Dawn, Storm at Sea,
+  Desert Caravan, Into the Nebula, Frozen Citadel, Clockwork Metropolis, Dragon's
+  Caldera, Drowned Temple, Haunted Moor, Elven Canopy, Abandoned Reactor, Alien Jungle,
+  Dead Mall Nights, Summer by the Sea, Asteroid Shift Change, Battle Stations, Royal
+  Coronation, Void Between Stars. Every template is used at least three times across
+  the set. The menu groups them by the world of their first Place.
+- **Header:** the subtitle text gave way to the scene browser (< name >), INSPIRE and
+  UNDO, between the title and ARRANGE.
+- **Shift-drag fine control** on every knob and slider (the brief asked for it in
+  Milestone 1; it had never been built): JUCE's velocity mode at 0.3 sensitivity while
+  Shift is held.
+
+### What was built
+
+- `WorldEngine`: per-slot dry copies, per-sample output gain, slot FIFOs and limiters,
+  `process(..., slotOut)`; `EngineControls::slotOut`, `splitOuts`.
+- `Parameters.h`: `placeouts` (Place Outputs, Copy / Split); Locations treat it as live.
+- The processor: five output buses, `isBusesLayoutSupported`, the Place outputs in
+  `processBlock`; `loadScene`, `loadFactoryScene`, `inspire`, `undoScene`, `sceneName`,
+  `factoryIndex`; the scene name in the state.
+- `Source/Scenes/Scenes.{h,cpp}`: the scene model, the 24 factory scenes, `inspire`,
+  `nextSeed`, `worldValues`, `locationValues`, `arrangement`, `locationFor`.
+- The editor: the scene browser, INSPIRE and UNDO in the header, PLACE OUTPUTS in the
+  footer, Shift-drag fine control.
+- Tests: `--only outputs`, `--only scenes`; `--snapshot-scenes dir`.
+- Docs: README (status, Scenes and INSPIRE, Separate outputs in Logic Pro, the control
+  guide, keyboard and mouse map, troubleshooting), MANUAL_TEST (Milestone 12 check),
+  `docs/DIRECTION_UPDATE_7.md`.
+
+### Tests (Linux, GCC)
+
+`--only outputs` (18 checks): the bus layouts (main and four stereo Place outputs; main
+alone; mono main; a mono Place output refused); with every output: Place 1 (Castle,
+-26.7 dB) and Place 2 (Village, -31.8 dB) on their own outputs, empty slots silent,
+below the ceiling; Copy: the main identical to a host with only the main (sample for
+sample); Split: the main 5.9 dB quieter with only Castle (its reverb returns stay),
+the Place output the same in Copy and Split; without Place outputs Split changes
+nothing; an output follows Master Level (-12 dB) and Power, a muted Place's output is
+silent; no heap allocation with outputs, Split and an arrangement.
+
+`--only scenes` (27 checks): 24 scenes, each with a unique name, 2-4 different Places,
+2-4 Locations that differ, a template, key and Planet; every scene loads (its Places,
+Locations, arrangement and name) and plays in Arrangement mode from the start and from
+its first peak within -48/-40 to -6 dB RMS, finite, below the ceiling (they measured
+-11 to -21 dB); session settings kept and Play Mode switched (Free left alone); UNDO
+brings back parameters, arrangement, Locations and Play Mode; the state round trip
+keeps the arrangement, Locations and name; Inspire: the same seed the same scene, 300
+seeds all valid (2-4 different Places, no Chromatic, Locations rising in danger), at
+most one Place from another world, 300 different scenes; INSPIRE moves the seed on,
+builds that seed's scene and undoes; six inspired worlds play within the loudness
+window; the interface (< > to the first and last scene, INSPIRE, UNDO, the controls
+fitting before ARRANGE, Shift-drag on every slider).
+
+The first runs found three things, all fixed: the scene name was not restored from a
+saved state; Inspire could pick two Places from other worlds (now at most one); and
+the Split threshold (6 dB) was a guess, Castle's reverb keeps it at 5.9 dB (now 4 dB).
+
+Full suite (`scripts/run-tests-parallel.sh`; `outputs` joins the "rest" shard and
+`scenes` the "places" shard) on the final build: **3587 checks pass, 0 fail** (rest
+1663, places 1118, instruments 391 + 380, CPU 35). CPU, report-only, on this container:
+four busy Places with every instrument effect 21.1 % of one core (11c: 20.2 %), Standard
+quality four busy Places 13.8 % (budget 15 % on the developer's Mac). Place outputs cost
+nothing unless a host enables them.
+
+Snapshots: `docs/snapshots/m12-header-scenes.png` (the header with a scene loaded),
+`m12-scene-storm-at-sea.png` (the whole interface, PLACE OUTPUTS in the footer),
+`m12-scene-arranged.png` (its arrangement with Location pins).
+
+### Milestone 12 handoff
+
+**Done:** all of Milestone 12 (Direction Update 6 section 6).
+1. Separate outputs per Place slot, Copy or Split.
+2. INSPIRE from the World Seed, undoable, with an auto-arranged template.
+3. 24 factory scenes as complete arranged scenes, with the header's scene browser.
+4. README: status, Scenes and INSPIRE, Separate outputs in Logic Pro, a control guide, the
+   keyboard and mouse map, troubleshooting; MANUAL_TEST's Milestone 12 check.
+
+**What to test first** ([MANUAL_TEST.md](MANUAL_TEST.md), Milestone 12):
+- that GarageBand still loads and plays it: the AU now has five output buses (the main
+  first). CI's `auval` and harness are the first check of that;
+- the scenes by ear: press > and play (Play Mode becomes Arrangement); any too loud,
+  too quiet, or not like its name;
+- INSPIRE a few times, and UNDO;
+- in Logic: Multi Output, four aux channels, Copy and Split.
+
+**Next:** Milestone 13 (Direction Update 7): the 8-bit interface overhaul. **13a first:**
+the pixel style for one knob, slider, button, toggle, tab, dropdown and six Place icons
+(Castle, Tavern, Forest, Spaceport, Cyberpunk Megacity, Nebula) in the fantasy, sci-fi
+and blend moods, snapshots to `docs/snapshots/pixel-prototype-*` and a side-by-side
+sheet, push, then **stop for the developer's approval** before 13b.
+
+**Known issues / limits:**
+- Nothing of Milestone 12 has been heard or seen on a Mac. The five output buses are the
+  main risk for GarageBand and `auval`; if they fail, the Place outputs can be reduced to
+  an optional build or the main-only layout restored without touching the rest.
+- A Place output is dry: the shared reverbs and delays, the transitions, the Planet
+  colour, width and glue stay on the main (Split leaves the returns there).
+- UNDO keeps one step (the world before the last scene or INSPIRE).
+- Loading a scene replaces all eight Locations and the arrangement; save a `.world` first
+  to keep yours (UNDO also brings them back).
+- The scene name stays in the browser after edits (it shows the scene last loaded).
+- Carried over: 4/4 only; the Riser and Reverse swell are their own small synth;
+  arrangement MIDI uses B/C/Fill as generated at the current settings; the
+  `push-access-check` branch can be deleted.
