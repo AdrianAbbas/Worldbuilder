@@ -780,6 +780,7 @@ void WorldbuilderEditor::layoutDetail() {
 
 //==============================================================================
 void WorldbuilderEditor::paint(juce::Graphics& g) {
+    paintStarted = juce::Time::getMillisecondCounterHiRes();
     // The world's colours: the active Places set the background and the glow (blended by
     // level, see updateTheme); the panels and controls are pixel art in the mood of the
     // world (pixel::theme(): fantasy, blend, sci-fi, neutral).
@@ -1407,7 +1408,31 @@ void WorldbuilderEditor::updateDetailLabels() {
 
 void WorldbuilderEditor::timerCallback() {
     if (!isShowing()) return;
-    stepAnimation(1.0f / 30.0f);
+    frameTick(juce::Time::getMillisecondCounterHiRes());
+}
+
+void WorldbuilderEditor::frameTick(double nowMs) {
+    // Slow frames for two seconds with the overlays on Full: drop them to Subtle.
+    if (overlays->mode() == ui::OverlaysFull && governor.slowFor(nowMs)) {
+        setOverlayMode(ui::OverlaysSubtle);
+        governor.resetSlow();
+        autoSubtle = true;
+    }
+    // Skipped ticks still move the animation on: the next drawn frame catches up.
+    double elapsed = 0;
+    const bool draw = governor.beginFrame(nowMs, elapsed);
+    owedSeconds += elapsed;
+    if (!draw) return;
+    stepAnimation(float(std::min(0.25, owedSeconds)));
+    owedSeconds = 0;
+}
+
+void WorldbuilderEditor::paintOverChildren(juce::Graphics&) {
+    // The whole frame (this editor and every component in it) has painted: its cost.
+    if (paintStarted < 0) return;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    governor.painted(now - paintStarted, now);
+    paintStarted = -1;
 }
 
 void WorldbuilderEditor::settle(float seconds) {
@@ -1430,11 +1455,13 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     if (const int stored = int(processor.parameters.state.getProperty("overlays", ui::defaultOverlayMode)); stored != overlays->mode()) setOverlayMode(stored);
     updateOverlayFrames();
     overlays->advance(seconds);
+    // Frames' worth of time (the governor may skip ticks; the motion keeps its speed).
+    const float frames = seconds * 30.0f;
     bool animating = false;
     for (int type = 0; type < PlaceTypeCount; ++type) {
         auto& h = hoverAmount[std::size_t(type)];
         const float target = hoverCard == type && detail.slot < 0 ? 1.0f : 0.0f;
-        h += 0.2f * (target - h);
+        h += std::min(1.0f, 0.2f * frames) * (target - h);
         if (std::abs(target - h) < 0.002f) h = target;
         animating |= h > 0.0f;
     }
@@ -1459,12 +1486,12 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         planetChoice.setVisible(globeShown);
         planetInfluence.setVisible(globeShown);
     }
-    if (dragLandmark < 0) spin += 0.004f + 0.02f * processor.engine.frame()[Activity];
+    if (dragLandmark < 0) spin += frames * (0.004f + 0.02f * processor.engine.frame()[Activity]);
     // On a journey the globe turns faster, most in the middle of the way.
     if (processor.travel.uiMode.load(std::memory_order_relaxed) == Travel::Travelling)
-        spin += 0.06f * std::sin(juce::MathConstants<float>::pi * processor.travel.uiProgress.load(std::memory_order_relaxed));
+        spin += frames * 0.06f * std::sin(juce::MathConstants<float>::pi * processor.travel.uiProgress.load(std::memory_order_relaxed));
     if (spin > juce::MathConstants<float>::twoPi * 100.0f) spin = 0;
-    precipitation += 0.05f + 0.06f * processor.engine.frame()[Weather];
+    precipitation += frames * (0.05f + 0.06f * processor.engine.frame()[Weather]);
     if (precipitation > 1000.0f) precipitation = 0;
     const float strike = processor.engine.lightning.load(std::memory_order_relaxed);
     if (strike > flash + 0.2f) ++boltSeed;

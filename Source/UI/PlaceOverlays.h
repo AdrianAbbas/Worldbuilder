@@ -58,7 +58,9 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    static constexpr int frameBand = 6;   // how far a decoration reaches inside a frame
+    static constexpr int frameBand = 6;
+    // At most this many rectangles repainted per frame (each can be a paint call).
+    static constexpr std::size_t maxRepaintRects = 12;   // how far a decoration reaches inside a frame
 
     // What a Place draws: its still parts once per layout, its moving parts each frame.
     struct Shape {
@@ -127,7 +129,12 @@ private:
     std::vector<juce::Rectangle<int>> panelList, openList;
     int overlayMode = OverlaysFull, frame = 0, areaVersion = 0;
     float time = 0;
-    bool shownLastFrame = false;
+    bool shownLastFrame = false, fadingNow = false;
+    // The still images combined at their strengths (when nothing fades).
+    juce::Image combined;
+    std::array<float, PlaceTypeCount> combinedStrength {};
+    float combinedScale = 0;
+    int combinedArea = -1;
 };
 
 } // namespace wb::ui

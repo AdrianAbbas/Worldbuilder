@@ -5,12 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 13 is complete** (13a prototype approved; 13b: the whole interface in the
-8-bit style, and the tiny-planet globe the developer asked for during 13b). The
-checklist and handoff are in the
-[Milestone 13b section](#milestone-13b-the-8-bit-interface-and-the-tiny-planet-2026-10-26)
-at the end. A new milestone starts its own progress checklist; a resumed session
-continues from the first unticked item.
+**Milestone 13 is complete.** After it, the developer tested in GarageBand on a MacBook Air
+and sent eight fixes; their checklist and handoff are in the
+[GarageBand fix round section](#garageband-fix-round-2026-10-26) at the end. A new
+milestone starts its own progress checklist; a resumed session continues from the first
+unticked item.
 
 ---
 
@@ -4179,3 +4178,67 @@ horizon, ships in orbit, a journey's comet.
   use the tiny (half-grid) text.
 - Tooltips, descriptions and status lines are a clean vector font by design.
 - Carried over: 4/4 only; the `push-access-check` branch can be deleted.
+
+---
+
+## GarageBand fix round (2026-10-26)
+
+The developer tested Milestone 13 in GarageBand on a MacBook Air and sent seven fixes,
+then an eighth during the session, to be done in order. Each is pushed with `[skip ci]`
+when it is done; the last push is without it. None of them was already fixed in this log
+(checked first: no earlier milestone mentions the freeze, the environment balance, an
+Environment master, levels after Inspire, the 16-bit look, the planet's speed, Forest
+water or a hurdy-gurdy rebuild).
+
+### Progress checklist
+
+- [x] 1. Freeze with 3+ Places and Overlays Full: frame governor, cheaper overlay frames, 60 s stress test
+- [ ] 2. Environment layers 10-15 dB under a typical Place; automatable Environment master; scenes and Inspire re-checked
+- [ ] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
+- [ ] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
+- [ ] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
+- [ ] 6. Forest planet: lakes, rivers and clearings
+- [ ] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
+- [ ] 8. Location labels in the sky: hidden by default, shown on hover or for a journey's ends, never overlapping
+
+### 1. The freeze
+
+**Cause.** Nothing on the audio thread waits on the interface: `processBlock` takes no
+lock (patterns, the arrangement and Locations reach it through lock-free triple
+buffers; meters and the travel state are atomics; the stores' critical sections are
+only taken on the message thread). The freeze is the message thread itself. Every
+30 Hz tick the editor asked for a frame whether or not the last one had been painted
+and whatever it cost: with 3-4 Places and Overlays on Full that is the globe, the
+strips, the meters, up to 40 overlay rectangles (each can be a separate paint in a
+host), a full-window repaint while any Place's colour fades, and every overlay's
+full-window still image composited separately at Retina scale. On a fanless MacBook Air
+the frames cost more than 33 ms, so the requests never drained and GarageBand's message
+thread (its whole interface) stopped responding. The caches were checked and are
+bounded (the sprite cache at 4096 sprites or 48 MB, the planet's skies at 64 and its
+rotated Place sprites at 512).
+
+**Fix** (`Source/UI/FrameGovernor.h`, `PluginEditor::frameTick`):
+- one frame at a time: a frame the host has not painted yet holds the next ticks back
+  (dropped after 400 ms if the host never paints it), so requests can never pile up;
+- late ticks (the message thread was busy) are skipped; the skipped time is added to the
+  next frame, so motion keeps its speed (the spin, the weather and the hover fades now
+  move per second, not per tick);
+- each frame's whole paint is timed (from the editor's `paint` to its
+  `paintOverChildren`); when the smoothed cost passes 11 ms, frames are spaced out (every
+  2nd, 3rd or 4th tick), so the editor takes at most about a third of the message thread;
+- frames slower than 16 ms for two seconds with Overlays on Full drop the overlays to
+  **Subtle** (once; the composer can choose Full again);
+- the overlays repaint at most 12 rectangles a frame (was 40), and while nothing fades
+  their still images are combined into one image (one draw per paint, however many
+  Places are showing).
+
+**Test** (`--only stress`, its own shard in `scripts/run-tests-parallel.sh`): the
+governor's rules; slow frames drop Full to Subtle; then **62 s of real time with four
+Places (Castle, Village, Spaceport, Megacity) on Full, the editor opened and closed every
+4 s, an audio thread rendering alongside**. It asserts frame time bounded (99 % of
+frames under 120 ms with the software renderer), no message-thread tick over 400 ms
+(editor creation included), the editor busy under 60 % of the message thread, memory
+not growing after warm-up, and the audio keeping up. This container: 16 opens, paint
+median 21 ms / 99th percentile 53 ms (software renderer), the editor busy 25 % of the
+time, memory 156.04 MB after warm-up and 156.07 MB at the end, audio blocks 3.3 ms at the
+99th percentile.

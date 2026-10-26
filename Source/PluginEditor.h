@@ -6,6 +6,7 @@
 #include "PluginProcessor.h"
 #include "UI/ArrangeView.h"
 #include "UI/CapturePanel.h"
+#include "UI/FrameGovernor.h"
 #include "UI/TinyPlanet.h"
 #include "UI/LocationBar.h"
 #include "UI/PatternEditor.h"
@@ -19,6 +20,7 @@ public:
     explicit WorldbuilderEditor(WorldbuilderProcessor&);
     ~WorldbuilderEditor() override;
     void paint(juce::Graphics&) override;
+    void paintOverChildren(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -47,6 +49,14 @@ public:
     juce::Point<float> markerPosition(int index) const;
     // Runs the animation (theme, overlays) on by `seconds`, as the timer does.
     void settle(float seconds);
+    // One tick of the animation timer at `nowMs` (the timer passes the real clock; the
+    // stress test passes its own). The governor decides whether it draws a frame.
+    void frameTick(double nowMs);
+    const wb::ui::FrameGovernor& frameGovernor() const { return governor; }
+    // True after slow frames dropped the overlays from Full to Subtle.
+    bool overlaysDroppedToSubtle() const { return autoSubtle; }
+    // For the tests: report a frame's paint cost as if it had taken `ms`.
+    void reportFrameCost(double ms, double nowMs) { governor.painted(ms, nowMs); }
     wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
     void setOverlayMode(int mode);
     // UI size: 0 = 100 %, 1 = 150 %, 2 = 200 % (kept with the project).
@@ -196,6 +206,9 @@ private:
     int shownPlanet = 0, previousPlanet = 0;
     float planetBlend = 1;   // 0..1: the crossfade from previousPlanet to shownPlanet
     std::unique_ptr<wb::ui::PlaceOverlays> overlays;
+    wb::ui::FrameGovernor governor;
+    double paintStarted = -1, owedSeconds = 0;
+    bool autoSubtle = false;
     std::vector<juce::Rectangle<int>> overlayKeepClear;
 
     juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, locationsPanel, footer;

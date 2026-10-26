@@ -17,10 +17,12 @@ rest="smoke,arrangement,transitions,gameaudio,outputs,locations,parameters,rates
 "$tests" --only "$rest" > "$logs/4-rest.txt" 2>&1 &
 wait
 "$tests" --only effects,realtime > "$logs/5-cpu.txt" 2>&1
+# The 60-second editor stress test (the GarageBand freeze), alone so it is not starved.
+"$tests" --only stress > "$logs/6-stress.txt" 2>&1
 
 passed=0
 failed=0
-for log in "$logs"/[1-5]-*.txt; do
+for log in "$logs"/[1-6]-*.txt; do
     line=$(grep -E '^[0-9]+ passed, [0-9]+ failed' "$log" | tail -1)
     if [[ -z "$line" ]]; then
         echo "$log: did not finish"

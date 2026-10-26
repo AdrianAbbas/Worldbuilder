@@ -335,6 +335,8 @@ void PlaceOverlays::advance(float seconds) {
         if (s > 0.0f && !still[std::size_t(type)].built) build(type);
     }
     shownLastFrame = show;
+    fadingNow = fading;
+    if (!show) combined = {};
     repainted.clear();
     if (fading) {
         repaint();
@@ -374,7 +376,7 @@ void PlaceOverlays::advance(float seconds) {
         add(now, within);
         moved[k] = std::move(now);
     }
-    while (dirty.size() > 40) {   // rarely: join the cheapest pair
+    while (dirty.size() > maxRepaintRects) {   // rarely: join the cheapest pair
         std::size_t bestA = 0, bestB = 1;
         int64_t bestCost = std::numeric_limits<int64_t>::max();
         for (std::size_t i = 0; i < dirty.size(); ++i)
@@ -461,9 +463,35 @@ void PlaceOverlays::paint(juce::Graphics& g) {
             st.imageScale = scale;
             st.imageArea = areaVersion;
         }
-        g.setOpacity(strength(type));
-        if (scale == 1.0f) g.drawImageAt(st.image, 0, 0);
-        else g.drawImageTransformed(st.image, juce::AffineTransform::scale(1.0f / scale));
+    }
+    // Steady (nothing fading): the still images are combined once into one, so a frame
+    // draws one image however many overlays are showing.
+    bool same = combined.isValid() && combinedScale == scale && combinedArea == areaVersion;
+    for (int type = NoPlace + 1; type < PlaceTypeCount && same; ++type) same = combinedStrength[std::size_t(type)] == strength(type);
+    if (!same && !fadingNow) {
+        combined = juce::Image(juce::Image::ARGB, juce::roundToInt(float(getWidth()) * scale), juce::roundToInt(float(getHeight()) * scale), true);
+        juce::Graphics cg(combined);
+        for (int i = 0; i < count; ++i) {
+            const int type = order[std::size_t(i)];
+            cg.setOpacity(strength(type));
+            cg.drawImageAt(still[std::size_t(type)].image, 0, 0);
+        }
+        for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) combinedStrength[std::size_t(type)] = strength(type);
+        combinedScale = scale;
+        combinedArea = areaVersion;
+        same = true;
+    }
+    if (same) {
+        g.setOpacity(1.0f);
+        if (scale == 1.0f) g.drawImageAt(combined, 0, 0);
+        else g.drawImageTransformed(combined, juce::AffineTransform::scale(1.0f / scale));
+    } else {
+        for (int i = 0; i < count; ++i) {
+            const int type = order[std::size_t(i)];
+            g.setOpacity(strength(type));
+            if (scale == 1.0f) g.drawImageAt(still[std::size_t(type)].image, 0, 0);
+            else g.drawImageTransformed(still[std::size_t(type)].image, juce::AffineTransform::scale(1.0f / scale));
+        }
     }
     // The moving parts, clipped to the drawable area (the part of it this paint covers).
     auto local = drawable;

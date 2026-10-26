@@ -17,6 +17,9 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
+#include <fstream>
+#include <thread>
+#include <unistd.h>
 #include <complex>
 #include <functional>
 #include <cstdlib>
@@ -6423,6 +6426,149 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
     return 0;
 }
 
+
+// The freeze found in GarageBand (3+ Places, overlays Full): the editor's animation
+// must never pile up on the message thread, nor make the audio thread wait.
+long residentKilobytes() {
+    std::ifstream statm("/proc/self/statm");
+    long pages = 0, resident = 0;
+    statm >> pages >> resident;
+    return resident * (sysconf(_SC_PAGESIZE) / 1024);
+}
+
+void testStress(Suite& s) {
+    s.section("stress: the frame governor");
+    {
+        ui::FrameGovernor g;
+        double t = 0, e = 0;
+        // One frame at a time: a frame the host has not painted holds the next ones back.
+        const bool first = g.beginFrame(t, e);
+        t += 33.3;
+        const bool second = g.beginFrame(t, e);
+        g.painted(5, t);
+        t += 33.3;
+        const bool third = g.beginFrame(t, e);
+        s.check(first && !second && third, "a frame not yet painted holds the next ones back (no pile-up)");
+        g.painted(5, t);
+        // A late tick (the message thread was busy) is skipped.
+        t += 300;
+        s.check(!g.beginFrame(t, e) && e > 0.2, "a late tick is skipped and the animation catches up", fmt(e) + " s");
+        // Costly frames are spaced out.
+        for (int i = 0; i < 40; ++i) {
+            t += 33.3;
+            if (g.beginFrame(t, e)) g.painted(30, t);
+        }
+        s.check(g.frameInterval() >= 3, "30 ms frames are spaced out to every third tick or less often", std::to_string(g.frameInterval()));
+        s.check(g.slowFor(t + 2100), "frames slow for two seconds are reported");
+    }
+    {
+        // The editor drops Full overlays to Subtle when frames stay slow.
+        Host h;
+        h.set(slotId(0, PlType), float(Castle));
+        h.set(slotId(1, PlType), float(Spaceport));
+        h.render(0.5);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->setOverlayMode(ui::OverlaysFull);
+        double t = 1000;
+        for (int i = 0; i < 120; ++i) {
+            view->frameTick(t);
+            view->reportFrameCost(40, t);
+            t += 1000.0 / 30.0;
+        }
+        s.check(view->overlaysDroppedToSubtle() && view->placeOverlays().mode() == ui::OverlaysSubtle, "slow frames drop the overlays from Full to Subtle");
+    }
+
+    s.section("stress: four Places, overlays Full, the editor opening and closing, 60 s");
+    Host h(48000, 512);
+    for (int slot = 0; slot < 4; ++slot) h.set(slotId(slot, PlType), float(std::array<int, 4> { Castle, Village, Spaceport, Megacity }[std::size_t(slot)]));
+    h.p->parameters.state.setProperty("overlays", int(ui::OverlaysFull), nullptr);
+    h.render(1.0);
+    // The audio thread: blocks back to back, timed.
+    std::atomic<bool> stop { false };
+    std::vector<double> blockMs;
+    blockMs.reserve(200000);
+    std::thread audio([&] {
+        while (!stop.load()) {
+            const double a = juce::Time::getMillisecondCounterHiRes();
+            h.processOne(512);
+            blockMs.push_back(juce::Time::getMillisecondCounterHiRes() - a);
+            std::this_thread::sleep_for(std::chrono::microseconds(5333));   // about half real time
+        }
+    });
+    const double begin = juce::Time::getMillisecondCounterHiRes();
+    const double length = 62000;
+    std::vector<double> tickMs, paintMs;
+    long memoryAfterWarmUp = 0, memoryPeak = 0;
+    int opened = 0;
+    int64_t drawn = 0, skipped = 0;
+    double busy = 0;
+    while (juce::Time::getMillisecondCounterHiRes() - begin < length) {
+        // Open the editor for 4 s, close it, open it again.
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        ++opened;
+        juce::Image target(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+        const double openedAt = juce::Time::getMillisecondCounterHiRes();
+        double next = openedAt;
+        while (juce::Time::getMillisecondCounterHiRes() - openedAt < 4000 && juce::Time::getMillisecondCounterHiRes() - begin < length) {
+            const double a = juce::Time::getMillisecondCounterHiRes();
+            const auto before = view->frameGovernor().drawn;
+            view->frameTick(a);
+            if (view->frameGovernor().drawn != before) {
+                // The host paints the frame (the software renderer, the whole editor).
+                const double p0 = juce::Time::getMillisecondCounterHiRes();
+                juce::Graphics g(target);
+                editor->paintEntireComponent(g, true);
+                paintMs.push_back(juce::Time::getMillisecondCounterHiRes() - p0);
+            }
+            const double work = juce::Time::getMillisecondCounterHiRes() - a;
+            tickMs.push_back(work);
+            busy += work;
+            next += 1000.0 / 30.0;
+            const double wait = next - juce::Time::getMillisecondCounterHiRes();
+            if (wait > 0) std::this_thread::sleep_for(std::chrono::microseconds(int64_t(wait * 1000.0)));
+            else next = juce::Time::getMillisecondCounterHiRes();
+        }
+        drawn += view->frameGovernor().drawn;
+        skipped += view->frameGovernor().skippedBusy + view->frameGovernor().skippedLate + view->frameGovernor().skippedBudget;
+        editor.reset();
+        const long kb = residentKilobytes();
+        if (juce::Time::getMillisecondCounterHiRes() - begin > 12000 && memoryAfterWarmUp == 0) memoryAfterWarmUp = kb;
+        memoryPeak = std::max(memoryPeak, kb);
+    }
+    stop = true;
+    audio.join();
+    const double elapsed = juce::Time::getMillisecondCounterHiRes() - begin;
+    const auto percentile = [](std::vector<double> v, double q) {
+        if (v.empty()) return 0.0;
+        std::sort(v.begin(), v.end());
+        return v[std::min(v.size() - 1, std::size_t(q * double(v.size())))];
+    };
+    const long memoryEnd = residentKilobytes();
+    s.metric("stress: run length", elapsed / 1000.0, " s");
+    s.metric("stress: editor opened and closed", opened);
+    s.metric("stress: frames drawn", double(drawn));
+    s.metric("stress: ticks skipped by the governor", double(skipped));
+    s.metric("stress: paint, median (ms)", percentile(paintMs, 0.5));
+    s.metric("stress: paint, 99th percentile (ms)", percentile(paintMs, 0.99));
+    s.metric("stress: message-thread work per tick, max (ms)", percentile(tickMs, 1.0));
+    s.metric("stress: message thread busy with the editor (%)", 100.0 * busy / elapsed);
+    s.metric("stress: audio block, 99th percentile (ms)", percentile(blockMs, 0.99));
+    s.metric("stress: audio block, max (ms)", percentile(blockMs, 1.0));
+    s.metric("stress: memory after warm-up (MB)", double(memoryAfterWarmUp) / 1024.0);
+    s.metric("stress: memory at the end (MB)", double(memoryEnd) / 1024.0);
+    s.metric("stress: sprite cache (MB)", double(ui::pixel::sharedCache().memory()) / 1048576.0);
+    s.check(elapsed >= 60000, "the stress test ran for at least 60 s", fmt(elapsed / 1000.0) + " s");
+    s.check(opened >= 12, "the editor opened and closed repeatedly", std::to_string(opened));
+    s.check(!paintMs.empty() && percentile(paintMs, 0.99) < 120.0, "frame time stays bounded (99 % of frames under 120 ms, software renderer)", fmt(percentile(paintMs, 0.99)) + " ms");
+    s.check(percentile(tickMs, 1.0) < 400.0, "the message thread never stalls (no tick over 400 ms, editor creation included)", fmt(percentile(tickMs, 1.0)) + " ms");
+    s.check(busy / elapsed < 0.6, "the editor leaves the message thread free most of the time", fmt(100.0 * busy / elapsed) + " %");
+    s.check(memoryAfterWarmUp > 0 && memoryEnd - memoryAfterWarmUp < 64 * 1024, "memory does not grow (under 64 MB after warm-up, sprite caches bounded)",
+            fmt(double(memoryEnd - memoryAfterWarmUp) / 1024.0) + " MB");
+    s.check(percentile(blockMs, 0.99) < 512.0 / 48.0, "the audio thread keeps up while the editor works (99 % of blocks within real time)", fmt(percentile(blockMs, 0.99)) + " ms");
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -6492,6 +6638,8 @@ int main(int argc, char** argv) {
     if (run("outputs")) testOutputs(s);
     if (run("scenes")) testScenes(s);
     if (run("pixel")) testPixel(s);
+    // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
+    if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }
