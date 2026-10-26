@@ -139,7 +139,7 @@ bool LocationBar::canSave() const {
 
 void LocationBar::paint(juce::Graphics& g) {
     const auto& pal = pixel::theme().colours;
-    pixel::drawText(g, "LOCATIONS", title.withTrimmedLeft(4).withWidth(116), pal.heading, juce::Justification::centredLeft, pixel::Font::Large);
+    pixel::drawText(g, "LOCATIONS", title.withTrimmedLeft(10).withWidth(116), pal.heading, juce::Justification::centredLeft, pixel::Font::Large);
     const int mode = processor.travel.uiMode.load(std::memory_order_relaxed);
     const int target = processor.travel.uiTarget.load(std::memory_order_relaxed);
     const int arrived = processor.travel.uiArrived.load(std::memory_order_relaxed);

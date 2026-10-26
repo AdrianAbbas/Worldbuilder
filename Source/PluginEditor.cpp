@@ -609,7 +609,7 @@ void WorldbuilderEditor::resized() {
         headerOpen = {};
     }
     area.removeFromTop(6);
-    footer = area.removeFromBottom(80);
+    footer = area.removeFromBottom(100);   // two rows, each a label above its control
     area.removeFromBottom(8);
     locationsPanel = area.removeFromBottom(84);
     area.removeFromBottom(8);
@@ -627,13 +627,18 @@ void WorldbuilderEditor::resized() {
     planetScene = pixel::snap(globePanel.reduced(4 * pixel::unit));
     globeArea = planetScene.toFloat();
     {
-        // The Planet in the globe panel's top right corner, clear of the Location orbit.
-        auto corner = globePanel.reduced(10, 8).removeFromRight(104);
+        // The Planet in the globe panel's top right corner, on a plate of its own (the sky
+        // and its clouds never run under the labels): each label on its own row, above
+        // its control, with room between.
+        planetPlate = juce::Rectangle<int>(planetScene.getRight() - 124, planetScene.getY(), 124, 92);
+        auto corner = planetPlate.reduced(8, 6);
         planetLabel = corner.removeFromTop(14);
+        corner.removeFromTop(2);
         planetChoice.setBounds(corner.removeFromTop(22));
-        corner.removeFromTop(4);
-        influenceLabel = corner.removeFromTop(13);
-        planetInfluence.setBounds(corner.removeFromTop(14));
+        corner.removeFromTop(8);
+        influenceLabel = corner.removeFromTop(14);
+        corner.removeFromTop(2);
+        planetInfluence.setBounds(corner.removeFromTop(16));
     }
 
     // World Controls: one row per group, title on top.
@@ -708,11 +713,14 @@ void WorldbuilderEditor::resized() {
     patterns->setBounds(controlsPanel.getUnion(globePanel).getUnion(cardsPanel));
     arrange->setBounds(patterns->getBounds());
 
-    // Footer: key and global settings, then the output knobs.
-    auto f = footer.reduced(12, 8);
-    auto settings = f.removeFromLeft(480);
-    auto top = settings.removeFromTop(settings.getHeight() / 2).withTrimmedTop(14);
-    auto bottom = settings.withTrimmedTop(14);
+    // Footer: key and global settings, then the output knobs. Two rows, each a 14 px
+    // label row, 2 px, then the 22 px controls; 8 px between the rows.
+    auto f = footer.reduced(12, 6);
+    f.removeFromLeft(6);   // clear of the frame's corner
+    auto settings = f.removeFromLeft(474);
+    auto top = settings.removeFromTop(40).withTrimmedTop(16).withHeight(22);
+    settings.removeFromTop(4);
+    auto bottom = settings.removeFromTop(40).withTrimmedTop(16).withHeight(22);
     root.setBounds(top.removeFromLeft(80).withSizeKeepingCentre(80, 22));
     top.removeFromLeft(10);
     mood.setBounds(top.removeFromLeft(140).withSizeKeepingCentre(140, 22));
@@ -728,12 +736,13 @@ void WorldbuilderEditor::resized() {
     {
         f.removeFromLeft(14);
         auto column = f.removeFromLeft(100);
-        overlayChoice.setBounds(column.removeFromTop(column.getHeight() / 2).withTrimmedTop(14).withSizeKeepingCentre(100, 22));
-        placeOuts.setBounds(column.withTrimmedTop(14).withSizeKeepingCentre(100, 20));
+        overlayChoice.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
+        column.removeFromTop(4);
+        placeOuts.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
     }
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })
-        knobFor[std::size_t(param)]->setBounds(f.removeFromRight(92).withSizeKeepingCentre(92, 66));
+        knobFor[std::size_t(param)]->setBounds(f.removeFromRight(92).withSizeKeepingCentre(92, 72));
     // Capture (render and scene MIDI) in the space between.
     f.removeFromLeft(14);
     capture->setBounds(f.withTrimmedRight(8).withWidth(std::min(f.getWidth() - 8, 214)));
@@ -843,15 +852,15 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     }
 
     for (std::size_t i = 0; i < groups.size(); ++i)
-        if (const auto title = groupAreas[i].withHeight(16).withTrimmedLeft(6); g.clipRegionIntersects(title))
+        if (const auto title = groupAreas[i].withHeight(16).withTrimmedLeft(12); g.clipRegionIntersects(title))
             pixel::drawText(g, groups[i].title, title, p.heading, juce::Justification::centredLeft, pixel::Font::Large);
-    if (const auto title = layersPanel.reduced(14, 8).withHeight(16); g.clipRegionIntersects(title))
+    if (const auto title = layersPanel.reduced(20, 8).withHeight(16); g.clipRegionIntersects(title))
         pixel::drawText(g, "ENVIRONMENT", title, p.heading, juce::Justification::centredLeft, pixel::Font::Large);
     if (g.clipRegionIntersects(environmentValue)) {
         const double db = environmentLevel.getValue();
         pixel::drawText(g, db <= -59.9 ? juce::String("OFF") : juce::String(db, 1) + " DB", environmentValue, p.ink, juce::Justification::centredRight, pixel::Font::Small);
     }
-    if (const auto title = placesPanel.reduced(14, 8).withHeight(16); g.clipRegionIntersects(title))
+    if (const auto title = placesPanel.reduced(20, 8).withHeight(16); g.clipRegionIntersects(title))
         pixel::drawText(g, "PLACES", title, p.heading, juce::Justification::centredLeft, pixel::Font::Large);
 
     for (int l = 0; l < LayerCount && g.clipRegionIntersects(layersPanel.reduced(ui::PlaceOverlays::frameBand)); ++l) {
@@ -869,10 +878,10 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     for (auto [component, text] : { std::pair<juce::Component*, const char*> { &root, "ROOT" }, { &mood, "MOOD" },
                                     { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" },
                                     { &overlayChoice, "OVERLAYS" }, { &placeOuts, "PLACE OUTPUTS" }, { &uiSize, "UI SIZE" } })
-        if (const auto label = component->getBounds().translated(0, -15).withHeight(14); g.clipRegionIntersects(label))
+        if (const auto label = component->getBounds().translated(0, -16).withHeight(14); g.clipRegionIntersects(label))
             pixel::drawText(g, text, label, p.heading, juce::Justification::centredLeft, pixel::Font::Small);
     if (const auto tempo = uiSize.getBounds().translated(uiSize.getWidth() + 10, 0).withWidth(80); g.clipRegionIntersects(tempo))
-        pixel::drawText(g, juce::String(processor.engine.frame().bpm, 1) + " BPM", tempo, p.inkDim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, juce::String(processor.engine.frame().bpm, 1) + " BPM", tempo, p.ink, juce::Justification::centredLeft, pixel::Font::Small);
     {
         // The master meter: a column of LEDs.
         const auto meter = juce::Rectangle<int>(footer.getRight() - 36, footer.getY() + 12, 12, footer.getHeight() - 24);
@@ -889,7 +898,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     } else {
         if (g.clipRegionIntersects(globePanel.reduced(ui::PlaceOverlays::frameBand))) {
             paintGlobe(g, globeArea);
-            pixel::drawText(g, "LIVING GLOBE", globePanel.reduced(14, 10).withHeight(16), p.ink, juce::Justification::centredLeft, pixel::Font::Large);
+            pixel::drawText(g, "LIVING GLOBE", globePanel.reduced(20, 10).withHeight(16), p.ink, juce::Justification::centredLeft, pixel::Font::Large);
             pixel::drawText(g, "PLANET", planetLabel, p.heading, juce::Justification::centredLeft, pixel::Font::Small);
             pixel::drawText(g, "INFLUENCE", influenceLabel, p.heading, juce::Justification::centredLeft, pixel::Font::Small);
             pixel::drawText(g, juce::String(juce::roundToInt(param(PPlanetInfluence) * 100.0f)) + "%", influenceLabel, p.accent, juce::Justification::centredRight,
@@ -942,7 +951,7 @@ void WorldbuilderEditor::paintPlaceStrips(juce::Graphics& g) {
 
 void WorldbuilderEditor::paintCards(juce::Graphics& g) {
     const auto& p = pixel::theme().colours;
-    const auto titleRow = cardsPanel.reduced(14, 6).withHeight(20);
+    const auto titleRow = cardsPanel.reduced(20, 6).withHeight(20);   // clear of the frame's corner
     if (juce::Time::getMillisecondCounterHiRes() < fullMessageUntil)
         pixel::drawText(g, "ALL FOUR SLOTS ARE IN USE", titleRow, p.peak, juce::Justification::centredLeft, pixel::Font::Large);
     else
@@ -1169,6 +1178,8 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float>) {
     pixel::draw(g, canvas, planetScene.getPosition());
     g.setOpacity(1.0f);
     pixel::frameArt(g, planetScene.expanded(pixel::unit), pal.outline);
+    // The Planet's plate: its labels and controls never sit on the moving sky.
+    pixel::blockArt(g, planetPlate, pal.panel, pal.panelLight, pal.panelDark, pal.outline);
     paintLocationMarkers(g, alpha);
 }
 
@@ -1295,6 +1306,7 @@ void WorldbuilderEditor::updateOverlayFrames() {
         if (c != overlays.get() && c->isVisible()) keep.push_back(c->getBounds().expanded(2));
     for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice, &placeOuts, &uiSize })
         keep.push_back(c->getBounds().translated(0, -16).withHeight(16));
+    if (detail.slot < 0) keep.push_back(planetPlate);
     keep.push_back(uiSize.getBounds().translated(uiSize.getWidth() + 6, 0).withWidth(90));   // tempo
     for (const auto& area : groupAreas) keep.push_back(area.withHeight(18));
     keep.push_back(layersPanel.reduced(10, 6).withHeight(20));

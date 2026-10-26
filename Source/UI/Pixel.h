@@ -73,9 +73,12 @@ void setTheme(const Mood& mood, int frame, int delights);
 
 // ---- Canvas and fonts --------------------------------------------------------------
 
-// The two original pixel fonts (capitals, digits, signs; proportional): Large is 5 x 7
-// for headings and button labels, Small is 3 x 5 for labels and numbers.
-enum class Font { Small, Large };
+// The two original 16-bit pixel fonts (capitals, digits, signs; proportional; see
+// PixelFont16.h): Small is 5 x 9 for labels, values and buttons, Large is 13 pixels tall
+// and bold for headings. Their pixels are half an art pixel (one logical pixel at
+// 100 %), so they are measured in art pixels here but drawn finer than the sprites.
+// Tiny is the Small letters at 7 rows (a classic 5 x 7), for rows too dense for Small.
+enum class Font { Small, Large, Tiny };
 
 // A sprite being drawn at source resolution. Positions are whole art pixels.
 class Canvas {
@@ -101,24 +104,52 @@ public:
     void paste(const Canvas& other, int x, int y);    // composites another sprite
     void paste(const juce::Image& image, int x, int y);
 
+    // In art pixels (text is drawn in half art pixels, rounded up), shadow excluded.
     static int textWidth(const juce::String& text, Font font = Font::Large);
-    static int textHeight(Font font = Font::Large) { return font == Font::Large ? 7 : 5; }
+    static int textHeight(Font font = Font::Large) { return font == Font::Large ? 7 : font == Font::Tiny ? 4 : 5; }
+    // In the fonts' own pixels (half an art pixel).
+    static int textWidthFine(const juce::String& text, Font font = Font::Large);
     void text(int x, int y, const juce::String& text, juce::Colour c, Font font = Font::Large);
     // Text with a one-pixel drop shadow (down-right), the 8-bit way of keeping it legible.
     void shadowText(int x, int y, const juce::String& text, juce::Colour c, juce::Colour shadow, Font font = Font::Large);
     void centredText(int y, const juce::String& text, juce::Colour c, juce::Colour shadow, Font font = Font::Large);
-
+    // Text at `size` font pixels per canvas pixel (0.5: the fonts' own size on an art
+    // grid canvas; 1: twice that, the title), lit: `light` on its top rows and `dark` on
+    // its bottom rows (transparent: one colour).
+    void styledText(int x, int y, const juce::String& text, juce::Colour c, juce::Colour shadow, Font font, float size,
+                    juce::Colour light = {}, juce::Colour dark = {});
+    // A canvas whose pixels are logical pixels (drawCachedSmall): its text is drawn at one
+    // font pixel per canvas pixel, the same size as on an art-grid canvas.
+    void setFineGrid(bool fine) { fineGrid = fine; }
     // The sprite at `scale` (an integer), nearest neighbour: every art pixel becomes a
     // scale x scale block of one colour.
     juce::Image scaled(int scale) const;
 
 private:
+    // Text is kept as runs and drawn when the canvas is scaled, finer than its pixels.
+    struct TextRun {
+        int x = 0, y = 0;   // canvas pixels
+        juce::String text;
+        juce::Colour colour, shadow, light, dark;
+        Font font = Font::Small;
+        float size = 0.5f;  // font pixels per canvas pixel
+        bool centred = false;   // across the canvas, on the font's own pixels
+    };
+    std::vector<TextRun> runs;
+    bool fineGrid = false;
+    void drawRuns(juce::Image& out, int scale) const;
+
     juce::Image image;
     int w = 0, h = 0;
 };
 
 // `text` cut to fit `width` art pixels (ending in ".." when it is cut).
 juce::String fitText(const juce::String& text, int width, Font font);
+
+// For the tests: draw sprites without their text (text is finer than the art grid,
+// so the whole-art-pixel checks look at the sprites alone). Clear the sprite cache
+// around a change.
+void setTextShown(bool shown);
 
 // ---- Drawing -----------------------------------------------------------------------
 
@@ -159,8 +190,7 @@ void blockArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour body, juce
 void drawText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour,
               juce::Justification justification = juce::Justification::centredLeft, Font font = Font::Small,
               juce::Colour shadow = juce::Colours::black.withAlpha(0.0f), bool shadowFromTheme = true);
-// Tiny text: the Small font at half the art grid (one logical pixel per art pixel), for
-// rows too tight for the Small font (dense grids). Whole device pixels at every size.
+// Tiny text: the Tiny font (5 x 7), for rows too tight for the Small font (dense grids).
 void drawTinyText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour,
                   juce::Justification justification = juce::Justification::centredLeft);
 // Its width in logical pixels.

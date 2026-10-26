@@ -4195,7 +4195,7 @@ water or a hurdy-gurdy rebuild).
 - [x] 1. Freeze with 3+ Places and Overlays Full: frame governor, cheaper overlay frames, 60 s stress test
 - [x] 2. Environment layers 10-15 dB under a typical Place; automatable Environment master; scenes and Inspire re-checked
 - [x] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
-- [ ] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
+- [x] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
 - [ ] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
 - [ ] 6. Forest planet: lakes, rivers and clearings
 - [ ] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
@@ -4303,3 +4303,58 @@ loudest moment is 40 dB down (Water silent) while the host plays 40 s of the
 arrangement (it travels between its Locations), in the ARRANGE preview, and in an
 8-bar render of the Environment stem. Run against the old code, it fails exactly as
 reported (every layer 0 dB down, Water sounding).
+
+### 4. From 8-bit to 16-bit: readability
+
+**Fonts** (`Source/UI/PixelFont16.h`, original, so no licence to carry; the brief allows
+OFL/CC0, but a downloaded TTF would have needed re-rasterising, and this environment
+cannot fetch most font sites anyway): **Small** is 5 x 9 capitals in an 8 x 12 cell
+(labels, values, buttons), **Large** the same letters stretched to 13 rows and made bold
+(an 8 x 16 cell, headings), **Tiny** the Small letters at 7 rows (a classic 5 x 7) for
+the dense ARRANGE rows only. Their pixels are **half an art pixel** (one logical pixel at
+100 %): one-pixel strokes and real curves instead of the old 3 x 5 and 5 x 7 blocks at
+twice the size. The title is Large at one font pixel per art pixel, lit from the top.
+
+**How text is drawn**: a `Canvas` now keeps its text as runs and draws them when it is
+scaled, finer than its art pixels, after everything else, so nothing (no scanline,
+sparkle or dither) is ever drawn over text. Text is crisp at every UI size: whole device
+pixels at 100 % and 200 % (and on Retina at 150 %); on a standard display at 150 % a
+font pixel alternates 1 and 2 device pixels (no blur, nearest neighbour).
+
+**Palette and shading**: faces (buttons, knobs, tabs, fields, menus) and panels are shaded
+with a 4 x 4 ordered dither in five bands, lit at the top and shaded at the bottom, with
+a slight hue shift (lights warmer, shades cooler) as SNES-era menus were. The sci-fi
+**scanlines are gone** everywhere (they lay over labels); the sci-fi look keeps its dot
+grid, LEDs and HUD brackets.
+
+**Labels given room**:
+- **Planet / Influence**: on a plate of their own in the globe's corner (the sky and its
+  clouds no longer run under them), each label on its own row above its control, with
+  8 px between them. "INFLUENCE" and its percentage share a row, apart.
+- **Footer** (ROOT ... OVERLAYS, WORLD SEED, UI SIZE, PLACE OUTPUTS): 100 px tall (was
+  80), two rows of a 14 px label, 2 px, then the 22 px control, 4 px between rows. The
+  second row's labels were drawn into the first row's controls.
+- **Environment**: its new master slider starts clear of the title.
+- **Panel headings** (CLIMATE, ENVIRONMENT, PLACES, LIVING GLOBE, ADD A PLACE, LOCATIONS)
+  moved in, clear of the fantasy frames' corner curls.
+- **ARRANGE**: a section's "N BARS" line sits under its name (the transition pills had
+  covered it); instrument rows use the Tiny face, so names no longer overlap.
+- The BPM readout is drawn in full ink (dim grey was low contrast).
+
+**Contrast** (tested at every point of the fantasy - blend - sci-fi axis, plain, half
+and fully modern, now including the dithered tones): text on faces at least 5.6:1, on
+the panel 9.8:1, headings on the dithered panel 6.4:1 (its lit top and shaded bottom),
+values 6.6:1.
+
+**Tests**: the whole-art-pixel checks (sprites at x2/x3/x4, real controls, the whole
+editor at 150 and 200 %) now look at the sprites with text set aside
+(`pixel::setTextShown(false)`, test only), and a new check renders the three faces at
+x2, x3 and x4 and requires only their ink, shadow and the face colour (nothing blended)
+in whole font pixels. The footer's panel rectangles in the tests follow the new layout.
+
+**Snapshots** (`docs/snapshots/`): `r16-before-editor-{fantasy,scifi,blend,neutral}.png`
+(this session's build before the change) and `r16-after-editor-*.png`; close-ups at 2x,
+before and after side by side: `r16-closeup-planet-corner.png`,
+`r16-closeup-footer.png`, `r16-closeup-environment-title.png`. Regenerate the after
+shots with `WorldbuilderTests --snapshot-pixel <dir>` (the files are named
+`pixel-13b-editor-*`).

@@ -1664,7 +1664,7 @@ void testEditor(Suite& s, const juce::String& snapshotPath) {
     {
         // CAPTURE: the footer's render and scene MIDI, as their buttons do it.
         auto& capture = world->capturePanel();
-        const auto footerTop = editor->getHeight() - 100;
+        const auto footerTop = editor->getHeight() - 112;   // the footer is 100 px tall, 10 from the bottom
         s.check(capture.isVisible() && capture.getY() > footerTop && capture.getRight() < editor->getWidth() - 300 && capture.getWidth() >= 180,
                 "the CAPTURE section sits in the footer, clear of the output knobs",
                 juce::String(capture.getBounds().toString()).toStdString());
@@ -5916,6 +5916,11 @@ void testPixel(Suite& s) {
             // Every point on the fantasy - blend - sci-fi axis, plain, half and fully modern.
             const auto p = px::palette(px::Mood { float(i % 65) / 64.0f, float(i / 65) * 0.5f });
             worstHeading = std::min(worstHeading, px::contrast(p.heading, p.panel));
+            // The 16-bit panels are dithered: lit at the top, shaded at the bottom.
+            const auto panelTop = p.panel.interpolatedWith(p.panelLight, 0.35f).interpolatedWith(juce::Colour(0xfffff0c0), 0.03f);
+            const auto panelBottom = p.panel.interpolatedWith(p.panelDark, 0.4f).interpolatedWith(juce::Colour(0xff203060), 0.05f);
+            worstHeading = std::min({ worstHeading, px::contrast(p.heading, panelTop), px::contrast(p.heading, panelBottom) });
+            worstPanel = std::min({ worstPanel, px::contrast(p.ink, panelTop), px::contrast(p.ink, panelBottom) });
             worst = std::min({ worst, px::contrast(p.ink, p.face), px::contrast(p.ink, p.faceLight) });
             worstOn = std::min(worstOn, px::contrast(p.inkOn, p.accent));
             worstPanel = std::min(worstPanel, px::contrast(p.ink, p.panel));
@@ -5982,8 +5987,11 @@ void testPixel(Suite& s) {
     }
 
     // Every sprite at integer scale: each art pixel a uniform block, the corner snapped
-    // to whole pixels even from a fractional position.
+    // to whole pixels even from a fractional position (the sprites alone: text is drawn
+    // finer, half an art pixel, and checked below).
     {
+        px::setTextShown(false);
+        px::sharedCache().clear();
         std::vector<std::pair<std::string, px::Canvas>> sprites;
         const juce::StringArray items { "MINOR", "PHRYGIAN", "LYDIAN" };
         for (float m : moods) {
@@ -6017,6 +6025,34 @@ void testPixel(Suite& s) {
                 }
             }
         s.check(exact, "every control sprite draws at x2, x3 and x4 with no partial pixels, snapped to whole pixels", failure);
+        px::setTextShown(true);
+        px::sharedCache().clear();
+        // The 16-bit text: crisp (only its own ink and shadow, nothing blended or blurred)
+        // and in whole font pixels (one at x2, two at x4) on a face of one colour.
+        bool crisp = true;
+        std::string where;
+        const auto ink = juce::Colour(0xfff0e8d0), shade = juce::Colour(0xff201028), face = juce::Colour(0xff503060);
+        for (auto font : { px::Font::Small, px::Font::Large, px::Font::Tiny })
+            for (int scale : { 2, 3, 4 }) {
+                px::Canvas k(60, 10);
+                k.fill(0, 0, 60, 10, face);
+                k.shadowText(1, 1, "QUALITY 120% W", ink, shade, font);
+                const auto out = k.scaled(scale);
+                for (int y = 0; y < out.getHeight(); ++y)
+                    for (int x = 0; x < out.getWidth(); ++x)
+                        if (const auto c = out.getPixelAt(x, y); c != ink && c != shade && c != face) {
+                            crisp = false;
+                            where = "font " + std::to_string(int(font)) + " x" + std::to_string(scale);
+                        }
+                if (scale == 4)   // two device pixels per font pixel: every 2 x 2 block one colour
+                    for (int y = 0; y + 1 < out.getHeight(); y += 2)
+                        for (int x = 0; x + 1 < out.getWidth(); x += 2)
+                            if (out.getPixelAt(x, y) != out.getPixelAt(x + 1, y + 1) || out.getPixelAt(x, y) != out.getPixelAt(x + 1, y)) {
+                                crisp = false;
+                                where = "font " + std::to_string(int(font)) + " x4 block " + std::to_string(x) + "," + std::to_string(y);
+                            }
+            }
+        s.check(crisp, "16-bit text is crisp: only its ink and shadow, in whole font pixels", where);
         bool decorated = true;
         for (float m : moods) {
             const auto p = px::palette(m);
@@ -6027,8 +6063,11 @@ void testPixel(Suite& s) {
         s.check(differ(px::button(px::palette(0), "PLAY", {}), px::button(px::palette(1), "PLAY", {})), "the same button looks different in fantasy and sci-fi");
     }
 
-    // Real JUCE controls through the PixelLookAndFeel: drawn on the grid, still working.
+    // Real JUCE controls through the PixelLookAndFeel: drawn on the grid (text aside),
+    // still working.
     {
+        px::setTextShown(false);
+        px::sharedCache().clear();
         bool grid = true, drawn = true;
         std::string failure;
         for (int scale : { 2, 3 })
@@ -6063,6 +6102,8 @@ void testPixel(Suite& s) {
                 }
             }
         s.check(grid, "knob, slider, button, toggle, dropdown and tabs render on the integer pixel grid (x2 and x3, every mood)", failure);
+        px::setTextShown(true);
+        px::sharedCache().clear();
         s.check(drawn, "each control draws inside its own bounds (its hit area)", failure);
 
         wb::ui::PixelLookAndFeel lnf;
@@ -6166,10 +6207,13 @@ void testPixel(Suite& s) {
         std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
         auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
         view->settle(1.0f);
-        const std::vector<std::pair<const char*, juce::Rectangle<int>>> panels { { "World Controls", { 16, 64, 292, 554 } }, { "Environment", { 842, 64, 302, 178 } },
-                                                                                 { "Places (right of the half-size icons)", { 892, 260, 252, 358 } }, { "cards", { 328, 404, 494, 214 } },
-                                                                                 { "globe", { 328, 64, 494, 322 } }, { "Locations", { 16, 634, 1128, 76 } },
-                                                                                 { "footer", { 16, 726, 1128, 72 } }, { "header", { 12, 12, 1136, 40 } } };
+        const std::vector<std::pair<const char*, juce::Rectangle<int>>> panels { { "World Controls", { 16, 64, 292, 534 } }, { "Environment", { 842, 64, 302, 178 } },
+                                                                                 { "Places (right of the half-size icons)", { 892, 260, 252, 338 } }, { "cards", { 328, 404, 494, 194 } },
+                                                                                 { "globe", { 328, 64, 494, 322 } }, { "Locations", { 16, 614, 1128, 76 } },
+                                                                                 { "footer", { 16, 706, 1128, 92 } }, { "header", { 12, 12, 1136, 40 } } };
+        // The sprites alone: text is drawn finer than the art grid (half an art pixel).
+        px::setTextShown(false);
+        px::sharedCache().clear();
         for (int block : { 3, 4 }) {
             const float scale = float(block) / float(px::unit);
             const auto shot = editor->createComponentSnapshot(editor->getLocalBounds(), true, scale);
@@ -6186,8 +6230,10 @@ void testPixel(Suite& s) {
                 std::string detail;
                 if (!onGrid(region, block, detail, 3)) failed += std::string(name) + " (" + detail + ") ";
             }
-            s.check(failed.empty(), "the whole interface draws on whole art pixels at " + std::to_string(block * 50) + " % UI size", failed);
+            s.check(failed.empty(), "the whole interface draws on whole art pixels at " + std::to_string(block * 50) + " % UI size (text aside)", failed);
         }
+        px::setTextShown(true);
+        px::sharedCache().clear();
     }
 
     // The prototype sheets build in every mood, with all elements on them.

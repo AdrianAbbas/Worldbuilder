@@ -696,7 +696,8 @@ void ArrangeView::paint(juce::Graphics& g) {
                 juce::String info = juce::String(s.bars) + " BARS";
                 if (s.endless()) info << " LOOP";
                 else if (s.repeats > 1) info << " X" << int(s.repeats);
-                pixel::drawText(g, info, text.removeFromBottom(12), pal.ink.withAlpha(0.75f), juce::Justification::centredLeft, pixel::Font::Small);
+                // Under the name: the bottom edge is the transition pills'.
+                pixel::drawText(g, info, text.removeFromTop(12), pal.ink.withAlpha(0.75f), juce::Justification::centredLeft, pixel::Font::Small);
             }
         }
         // Each boundary's transition, and each section's Location.

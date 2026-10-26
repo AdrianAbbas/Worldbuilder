@@ -4,10 +4,12 @@
 #include "../Places/Place.h"
 #include <cmath>
 
-// The control sprites of the 8-bit style, drawn at any size (in art pixels), and the
-// review sheets. Each mood shows its own decoration in proportion: fantasy sparkles,
-// little stars and mint curls; blend runes and neon; sci-fi scanlines, LEDs and HUD
-// brackets; neutral nothing but clean lines.
+// The control sprites of the 16-bit style, drawn at any size (in art pixels), and the
+// review sheets. Faces and panels are shaded with ordered dithering (lit and a little
+// warm at the top, shaded and a little cool at the bottom), as SNES-era menus were.
+// Each mood shows its own decoration in proportion: fantasy sparkles, little stars and
+// mint curls; blend runes and neon; sci-fi LEDs and HUD brackets; neutral nothing but
+// clean lines. Nothing is drawn over text (no scanlines).
 
 namespace wb::ui::pixel {
 
@@ -15,14 +17,47 @@ namespace {
 juce::Colour alpha(juce::Colour colour, float a) { return colour.withMultipliedAlpha(juce::jlimit(0.0f, 1.0f, a)); }
 juce::Colour or_(juce::Colour colour, juce::Colour fallback) { return colour.isTransparent() ? fallback : colour; }
 
-// A raised, bevelled box: outline with cut corners, a lit top-left edge, a shade along
-// the bottom and right. Pressed boxes swap light and shade.
+// The 4 x 4 ordered-dither threshold (0..1) at a pixel.
+float bayer4(int x, int y) {
+    static constexpr int m[16] { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+    return (float(m[(y & 3) * 4 + (x & 3)]) + 0.5f) / 16.0f;
+}
+
+// A vertical gradient over the opaque pixels of an area, from `top` through `middle` to
+// `bottom`, in five dithered bands (the 16-bit way to shade without banding).
+void ditherShade(Canvas& k, int x, int y, int w, int h, juce::Colour top, juce::Colour middle, juce::Colour bottom) {
+    if (w <= 0 || h <= 1) return;
+    for (int j = 0; j < h; ++j) {
+        const float t = float(j) / float(h - 1) * 4.0f;   // 0..4: five bands
+        for (int i = 0; i < w; ++i) {
+            if (k.get(x + i, y + j).getAlpha() < 255) continue;
+            int band = int(t);
+            if (t - float(band) > bayer4(x + i, y + j)) ++band;
+            band = std::min(band, 4);
+            const auto c = band < 2 ? top.interpolatedWith(middle, float(band) / 2.0f) : middle.interpolatedWith(bottom, float(band - 2) / 2.0f);
+            k.set(x + i, y + j, c);
+        }
+    }
+}
+
+// A face's highlight and shade, hue-shifted as 16-bit palettes were: lights a touch
+// warmer, shades a touch cooler.
+juce::Colour warmLight(juce::Colour body, juce::Colour light) { return body.interpolatedWith(light, 0.45f).interpolatedWith(juce::Colour(0xfffff0c0), 0.06f); }
+juce::Colour coolShade(juce::Colour body, juce::Colour shade) { return body.interpolatedWith(shade, 0.45f).interpolatedWith(juce::Colour(0xff203060), 0.08f); }
+
+// A raised, bevelled box: outline with cut corners, a dithered face (lit at the top,
+// shaded at the bottom), a lit top-left edge, a shade along the bottom and right.
+// Pressed boxes swap light and shade.
 void bevel(Canvas& k, int x, int y, int w, int h, juce::Colour light, juce::Colour body, juce::Colour shade, juce::Colour outline, bool pressed) {
     if (w < 3 || h < 3) {
         k.fill(x, y, w, h, body);
         return;
     }
     k.box(x, y, w, h, body, outline);
+    if (h > 5) {
+        if (pressed) ditherShade(k, x + 1, y + 1, w - 2, h - 2, coolShade(body, shade), body, body);
+        else ditherShade(k, x + 1, y + 1, w - 2, h - 2, warmLight(body, light), body, coolShade(body, shade));
+    }
     const auto top = pressed ? shade : light, bottom = pressed ? body : shade;
     k.hline(x + 1, x + w - 2, y + 1, top);
     k.vline(x + 1, y + 1, y + h - 2, top);
@@ -98,13 +133,10 @@ void rune(Canvas& k, int x, int y, juce::Colour colour, int which) {
         if (m[i] == '#') k.blend(x + i % 3, y + i / 3, colour);
 }
 
-// Scanlines over an area: every other row a little darker (sci-fi).
-void scanlines(Canvas& k, int x, int y, int w, int h, float amount, int frame) {
-    if (amount <= 0.01f) return;
-    for (int j = y + (frame & 1); j < y + h; j += 2)
-        for (int i = x; i < x + w; ++i)
-            if (k.get(i, j).getAlpha() > 0) k.blend(i, j, juce::Colours::black.withAlpha(0.22f * amount));
-}
+// Scanlines are gone with the 16-bit style (they lay over text and blurred small
+// labels); faces are shaded by dithering instead (bevel). Kept as a no-op so the sprites
+// that called it read the same.
+void scanlines(Canvas&, int, int, int, int, float, int) {}
 
 // What a hovered control shows, in proportion to the mood: a glow; sparkles and a star
 // (fantasy), brackets (sci-fi), glowing rune points (blend).
@@ -704,8 +736,11 @@ Canvas panel(const Palette& p, int width, int height, int frame, juce::Colour ti
     const auto light = tint.isTransparent() ? p.panelLight : p.panelLight.interpolatedWith(tint.brighter(0.2f), juce::jlimit(0.0f, 1.0f, tintAmount));
     const auto dark = p.panelDark;
     k.fill(0, 0, width, height, base);
+    // A soft dithered light from the top, as on a 16-bit menu window.
+    ditherShade(k, 0, 0, width, height, base.interpolatedWith(light, 0.35f).interpolatedWith(juce::Colour(0xfffff0c0), 0.03f), base,
+                base.interpolatedWith(dark, 0.4f).interpolatedWith(juce::Colour(0xff203060), 0.05f));
     // Fantasy: a mossy, speckled ground with little flowers and stars. Sci-fi: a dot
-    // grid with scanlines. Blend: circuit traces between runes, in the neon inlay.
+    // grid. Blend: circuit traces between runes, in the neon inlay.
     const float meadow = p.sparkle, grid = p.scanline, traces = p.runes;
     if (meadow > 0.05f) {
         juce::Random rnd(7);
@@ -722,7 +757,6 @@ Canvas panel(const Palette& p, int width, int height, int frame, juce::Colour ti
     if (grid > 0.05f) {
         for (int y = 3; y < height; y += 8)
             for (int x = 3; x < width; x += 8) k.blend(x, y, alpha(light.brighter(0.4f), grid));
-        for (int y = 0; y < height; y += 2) k.hline(0, width - 1, y, alpha(juce::Colours::black, grid * 0.18f));
     }
     if (traces > 0.05f) {
         juce::Random rnd(11);

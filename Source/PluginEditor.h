@@ -164,6 +164,7 @@ private:
     juce::Slider environmentLevel;
     std::unique_ptr<SliderAttachment> environmentAttachment;
     juce::Rectangle<int> environmentValue;
+    juce::Rectangle<int> planetPlate;   // the Planet and Influence controls' backing, over the sky
     std::array<PlaceStrip, wb::placeSlotCount> placeStrips;
     Detail detail;
     juce::ToggleButton power { "POWER" };

@@ -1,5 +1,6 @@
 #include "Pixel.h"
 #include "../Places/Place.h"
+#include "PixelFont16.h"
 #include <cmath>
 
 namespace wb::ui::pixel {
@@ -166,89 +167,64 @@ void setTheme(const Mood& mood, int frame, int delights) {
 // ---- The pixel fonts ---------------------------------------------------------------
 
 namespace {
-// Original glyphs drawn for this plugin ('#' ink), rows separated by '|'. Glyphs are
-// proportional: each is as wide as its widest row.
-struct Glyph {
-    char c;
-    const char* rows;
-};
-constexpr Glyph large[] {
-    { 'A', ".###.|#...#|#...#|#####|#...#|#...#|#...#" }, { 'B', "####.|#...#|#...#|####.|#...#|#...#|####." },
-    { 'C', ".###.|#...#|#....|#....|#....|#...#|.###." }, { 'D', "####.|#...#|#...#|#...#|#...#|#...#|####." },
-    { 'E', "#####|#....|#....|####.|#....|#....|#####" }, { 'F', "#####|#....|#....|####.|#....|#....|#...." },
-    { 'G', ".###.|#...#|#....|#.###|#...#|#...#|.####" }, { 'H', "#...#|#...#|#...#|#####|#...#|#...#|#...#" },
-    { 'I', "###|.#.|.#.|.#.|.#.|.#.|###" },              { 'J', "..###|...#.|...#.|...#.|#..#.|#..#.|.##.." },
-    { 'K', "#...#|#..#.|#.#..|##...|#.#..|#..#.|#...#" }, { 'L', "#....|#....|#....|#....|#....|#....|#####" },
-    { 'M', "#...#|##.##|#.#.#|#.#.#|#...#|#...#|#...#" }, { 'N', "#...#|##..#|#.#.#|#..##|#...#|#...#|#...#" },
-    { 'O', ".###.|#...#|#...#|#...#|#...#|#...#|.###." }, { 'P', "####.|#...#|#...#|####.|#....|#....|#...." },
-    { 'Q', ".###.|#...#|#...#|#...#|#.#.#|#..#.|.##.#" }, { 'R', "####.|#...#|#...#|####.|#.#..|#..#.|#...#" },
-    { 'S', ".####|#....|#....|.###.|....#|....#|####." }, { 'T', "#####|..#..|..#..|..#..|..#..|..#..|..#.." },
-    { 'U', "#...#|#...#|#...#|#...#|#...#|#...#|.###." }, { 'V', "#...#|#...#|#...#|#...#|#...#|.#.#.|..#.." },
-    { 'W', "#...#|#...#|#...#|#.#.#|#.#.#|#.#.#|.#.#." }, { 'X', "#...#|#...#|.#.#.|..#..|.#.#.|#...#|#...#" },
-    { 'Y', "#...#|#...#|.#.#.|..#..|..#..|..#..|..#.." }, { 'Z', "#####|....#|...#.|..#..|.#...|#....|#####" },
-    { '0', ".###.|#...#|#..##|#.#.#|##..#|#...#|.###." }, { '1', ".#.|##.|.#.|.#.|.#.|.#.|###" },
-    { '2', ".###.|#...#|....#|...#.|..#..|.#...|#####" }, { '3', "####.|....#|....#|.###.|....#|....#|####." },
-    { '4', "...#.|..##.|.#.#.|#..#.|#####|...#.|...#." }, { '5', "#####|#....|####.|....#|....#|#...#|.###." },
-    { '6', ".###.|#....|#....|####.|#...#|#...#|.###." }, { '7', "#####|....#|...#.|..#..|.#...|.#...|.#..." },
-    { '8', ".###.|#...#|#...#|.###.|#...#|#...#|.###." }, { '9', ".###.|#...#|#...#|.####|....#|....#|.###." },
-    { '.', "..|..|..|..|..|##|##" },                      { ',', "..|..|..|..|##|.#|#." },
-    { ':', "..|##|##|..|##|##|.." },                      { '-', "....|....|....|####|....|....|...." },
-    { '+', ".....|..#..|..#..|#####|..#..|..#..|....." }, { '/', "....#|....#|...#.|..#..|.#...|#....|#...." },
-    { '%', "##...|##..#|...#.|..#..|.#...|#..##|...##" }, { '<', "...#|..#.|.#..|#...|.#..|..#.|...#" },
-    { '>', "#...|.#..|..#.|...#|..#.|.#..|#..." },       { '!', "#|#|#|#|#|.|#" },
-    { '?', ".###.|#...#|....#|...#.|..#..|.....|..#.." }, { '\'', "#|#|.|.|.|.|." },
-    { '&', ".##..|#..#.|#.#..|.#...|#.#.#|#..#.|.##.#" }, { '#', ".#.#.|.#.#.|#####|.#.#.|#####|.#.#.|.#.#." },
-    { '(', ".#|#.|#.|#.|#.|#.|.#" },                      { ')', "#.|.#|.#|.#|.#|.#|#." },
-    { '=', "....|....|####|....|####|....|...." },        { '_', "....|....|....|....|....|....|####" },
-    { '"', "#.#|#.#|...|...|...|...|..." },               { '*', ".....|#.#.#|.###.|#####|.###.|#.#.#|....." },
-};
-constexpr Glyph small[] {
-    { 'A', ".#.|#.#|###|#.#|#.#" }, { 'B', "##.|#.#|##.|#.#|##." }, { 'C', ".##|#..|#..|#..|.##" }, { 'D', "##.|#.#|#.#|#.#|##." },
-    { 'E', "###|#..|##.|#..|###" }, { 'F', "###|#..|##.|#..|#.." }, { 'G', ".##|#..|#.#|#.#|.##" }, { 'H', "#.#|#.#|###|#.#|#.#" },
-    { 'I', "###|.#.|.#.|.#.|###" }, { 'J', "..#|..#|..#|#.#|.#." }, { 'K', "#.#|#.#|##.|#.#|#.#" }, { 'L', "#..|#..|#..|#..|###" },
-    { 'M', "#...#|##.##|#.#.#|#...#|#...#" }, { 'N', "#..#|##.#|#.##|#..#|#..#" }, { 'O', ".#.|#.#|#.#|#.#|.#." },
-    { 'P', "##.|#.#|##.|#..|#.." }, { 'Q', ".#.|#.#|#.#|##.|.##" }, { 'R', "##.|#.#|##.|#.#|#.#" }, { 'S', ".##|#..|.#.|..#|##." },
-    { 'T', "###|.#.|.#.|.#.|.#." }, { 'U', "#.#|#.#|#.#|#.#|###" }, { 'V', "#.#|#.#|#.#|#.#|.#." },
-    { 'W', "#...#|#...#|#.#.#|##.##|#...#" }, { 'X', "#.#|#.#|.#.|#.#|#.#" }, { 'Y', "#.#|#.#|.#.|.#.|.#." }, { 'Z', "###|..#|.#.|#..|###" },
-    { '0', "###|#.#|#.#|#.#|###" }, { '1', ".#.|##.|.#.|.#.|###" }, { '2', "##.|..#|.#.|#..|###" }, { '3', "##.|..#|.#.|..#|##." },
-    { '4', "#.#|#.#|###|..#|..#" }, { '5', "###|#..|##.|..#|##." }, { '6', ".##|#..|###|#.#|###" }, { '7', "###|..#|.#.|.#.|.#." },
-    { '8', "###|#.#|###|#.#|###" }, { '9', "###|#.#|###|..#|##." }, { '.', ".|.|.|.|#" }, { ',', "..|..|..|.#|#." },
-    { ':', ".|#|.|#|." }, { '-', "...|...|###|...|..." }, { '+', "...|.#.|###|.#.|..." }, { '/', "..#|..#|.#.|#..|#.." },
-    { '%', "#.#|..#|.#.|#..|#.#" }, { '<', "..#|.#.|#..|.#.|..#" }, { '>', "#..|.#.|..#|.#.|#.." }, { '!', "#|#|#|.|#" },
-    { '?', "##.|..#|.#.|...|.#." }, { '\'', "#|#|.|.|." }, { '(', ".#|#.|#.|#.|.#" }, { ')', "#.|.#|.#|.#|#." },
-    { '&', ".#.|#.#|.#.|#.#|.##" }, { '=', "...|###|...|###|..." }, { '_', "...|...|...|...|###" }, { '"', "#.#|#.#|...|...|..." },
-    { '#', "#.#|###|#.#|###|#.#" }, { '*', "#.#|.#.|###|.#.|#.#" },
-};
-
+// The 16-bit faces (PixelFont16.h): glyph rows as bit masks, in font pixels.
 struct Face {
-    // A glyph's rows as bit masks and its width; index by character.
     struct G {
-        uint8_t rows[7] {};
+        uint16_t rows[font16::largeHeight] {};
         uint8_t width = 0;
         bool present = false;
     };
     std::array<G, 128> glyphs {};
-    int height = 7, space = 3;
+    int height = font16::smallHeight, space = 3, gap = 1;
 };
-Face build(const Glyph* table, int count, int height, int space) {
+Face buildSmall() {
     Face f;
-    f.height = height;
-    f.space = space;
-    for (int i = 0; i < count; ++i) {
-        auto& g = f.glyphs[std::size_t(table[i].c)];
+    for (const auto& glyph : font16::small) {
+        auto& g = f.glyphs[std::size_t(glyph.c)];
         g.present = true;
         int row = 0, col = 0;
-        for (const char* r = table[i].rows; *r != 0; ++r) {
+        for (const char* r = glyph.rows; *r != 0; ++r) {
             if (*r == '|') { ++row; col = 0; continue; }
-            if (*r == '#') g.rows[row] |= uint8_t(1 << col);
+            if (*r == '#') g.rows[row] |= uint16_t(1 << col);
             g.width = uint8_t(std::max<int>(g.width, ++col));
         }
     }
     return f;
 }
+Face buildLarge(const Face& small) {
+    // Taller (rows doubled where letters run straight) and bold (one pixel wider).
+    Face f;
+    f.height = font16::largeHeight;
+    f.space = 4;
+    for (std::size_t c = 0; c < f.glyphs.size(); ++c) {
+        const auto& from = small.glyphs[c];
+        if (!from.present) continue;
+        auto& g = f.glyphs[c];
+        g.present = true;
+        g.width = uint8_t(from.width + 1);
+        for (int row = 0; row < f.height; ++row) {
+            const uint16_t bits = from.rows[font16::largeRowOf[row]];
+            g.rows[row] = uint16_t(bits | (bits << 1));
+        }
+    }
+    return f;
+}
+Face buildTiny(const Face& small) {
+    Face f;
+    f.height = font16::tinyHeight;
+    for (std::size_t c = 0; c < f.glyphs.size(); ++c) {
+        const auto& from = small.glyphs[c];
+        if (!from.present) continue;
+        auto& g = f.glyphs[c];
+        g = from;
+        for (int row = 0; row < f.height; ++row) g.rows[row] = from.rows[font16::tinyRowOf[row]];
+        for (int row = f.height; row < font16::largeHeight; ++row) g.rows[row] = 0;
+    }
+    return f;
+}
 const Face& faceFor(Font font) {
-    static const Face l = build(large, int(std::size(large)), 7, 3), s = build(small, int(std::size(small)), 5, 2);
-    return font == Font::Large ? l : s;
+    static const Face s = buildSmall(), l = buildLarge(s), t = buildTiny(s);
+    return font == Font::Large ? l : font == Font::Tiny ? t : s;
 }
 const Face::G* glyphFor(const Face& f, juce::juce_wchar ch) {
     ch = juce::CharacterFunctions::toUpperCase(ch);
@@ -258,8 +234,8 @@ const Face::G* glyphFor(const Face& f, juce::juce_wchar ch) {
     return g.present ? &g : nullptr;
 }
 int advanceOf(const Face& f, juce::juce_wchar ch) {
-    if (const auto* g = glyphFor(f, ch)) return g->width + 1;
-    return f.space + 1;
+    if (const auto* g = glyphFor(f, ch)) return g->width + f.gap;
+    return f.space + f.gap;
 }
 } // namespace
 
@@ -315,7 +291,19 @@ void Canvas::outlineBox(int x, int y, int width, int height, juce::Colour outlin
     vline(x, y + 1, y + height - 2, outlineColour);
     vline(x + width - 1, y + 1, y + height - 2, outlineColour);
 }
-void Canvas::paste(const Canvas& other, int x, int y) { paste(other.source(), x, y); }
+void Canvas::paste(const Canvas& other, int x, int y) {
+    paste(other.source(), x, y);
+    for (auto run : other.runs) {
+        if (run.centred) {
+            run.centred = false;
+            const float fineWidth = float(textWidthFine(run.text, run.font)) * run.size;
+            run.x = int(std::floor((float(other.w) - fineWidth) * 0.5f));
+        }
+        run.x += x;
+        run.y += y;
+        runs.push_back(std::move(run));
+    }
+}
 void Canvas::paste(const juce::Image& other, int x, int y) {
     if (!other.isValid()) return;
     juce::Image::BitmapData src(other, juce::Image::BitmapData::readOnly);
@@ -327,45 +315,91 @@ void Canvas::paste(const juce::Image& other, int x, int y) {
         }
 }
 
-int Canvas::textWidth(const juce::String& text, Font font) {
+int Canvas::textWidthFine(const juce::String& text, Font font) {
     const auto& f = faceFor(font);
     int width = 0;
     for (auto it = text.getCharPointer(); !it.isEmpty();) width += advanceOf(f, it.getAndAdvance());
-    return std::max(0, width - 1);
+    return std::max(0, width - f.gap);
 }
 
-void Canvas::text(int x, int y, const juce::String& text, juce::Colour colour, Font font) {
-    const auto& f = faceFor(font);
-    for (auto it = text.getCharPointer(); !it.isEmpty();) {
-        const auto ch = it.getAndAdvance();
-        if (const auto* g = glyphFor(f, ch)) {
-            for (int row = 0; row < f.height; ++row)
-                for (int col = 0; col < g->width; ++col)
-                    if (g->rows[row] & (1 << col)) blend(x + col, y + row, colour);
-        }
-        x += advanceOf(f, ch);
-    }
+int Canvas::textWidth(const juce::String& text, Font font) { return (textWidthFine(text, font) + 1) / 2; }
+
+void Canvas::styledText(int x, int y, const juce::String& s, juce::Colour colour, juce::Colour shadow, Font font, float size, juce::Colour light, juce::Colour dark) {
+    if (s.isEmpty()) return;
+    runs.push_back({ x, y, s, colour, shadow, light, dark, font, fineGrid ? 2.0f * size : size });
 }
+void Canvas::text(int x, int y, const juce::String& s, juce::Colour colour, Font font) { styledText(x, y, s, colour, {}, font, 0.5f); }
 void Canvas::shadowText(int x, int y, const juce::String& s, juce::Colour colour, juce::Colour shadow, Font font) {
-    if (shadow.getAlpha() > 0) text(x + 1, y + 1, s, shadow, font);
-    text(x, y, s, colour, font);
+    styledText(x, y, s, colour, shadow, font, 0.5f);
 }
 void Canvas::centredText(int y, const juce::String& s, juce::Colour colour, juce::Colour shadow, Font font) {
-    shadowText((w - textWidth(s, font)) / 2, y, s, colour, shadow, font);
+    // Centred on the font's own pixels, not the art grid.
+    styledText(0, y, s, colour, shadow, font, 0.5f);
+    if (!runs.empty()) runs.back().centred = true;
+}
+
+namespace {
+bool textShown = true;
+}
+void setTextShown(bool shown) { textShown = shown; }
+
+void Canvas::drawRuns(juce::Image& out, int scale) const {
+    if (runs.empty() || !textShown) return;
+    juce::Image::BitmapData dst(out, juce::Image::BitmapData::readWrite);
+    const auto plot = [&](float x0, float y0, float side, juce::Colour c) {
+        const int px0 = juce::roundToInt(x0), py0 = juce::roundToInt(y0);
+        const int px1 = std::max(px0 + 1, juce::roundToInt(x0 + side)), py1 = std::max(py0 + 1, juce::roundToInt(y0 + side));
+        for (int j = std::max(0, py0); j < std::min(out.getHeight(), py1); ++j)
+            for (int i = std::max(0, px0); i < std::min(out.getWidth(), px1); ++i) {
+                const auto under = dst.getPixelColour(i, j);
+                dst.setPixelColour(i, j, c.getAlpha() == 255 || under.getAlpha() == 0 ? c : under.overlaidWith(c));
+            }
+    };
+    for (const auto& run : runs) {
+        const auto& f = faceFor(run.font);
+        const float side = float(scale) * run.size;   // device pixels per font pixel
+        const float originX = run.centred ? std::floor((float(w * scale) - float(textWidthFine(run.text, run.font)) * side) * 0.5f / side) * side
+                                          : float(run.x * scale);
+        const float originY = float(run.y * scale);
+        for (int pass = run.shadow.getAlpha() > 0 ? 0 : 1; pass < 2; ++pass) {
+            float x = originX;
+            for (auto it = run.text.getCharPointer(); !it.isEmpty();) {
+                const auto ch = it.getAndAdvance();
+                if (const auto* g = glyphFor(f, ch))
+                    for (int row = 0; row < f.height; ++row) {
+                        auto colour = run.colour;
+                        if (run.light.getAlpha() > 0 && row < f.height / 3) colour = run.light;
+                        else if (run.dark.getAlpha() > 0 && row >= f.height - f.height / 3) colour = run.dark;
+                        if (pass == 0) colour = run.shadow;
+                        const float off = pass == 0 ? side : 0.0f;
+                        for (int col = 0; col < g->width; ++col)
+                            if (g->rows[row] & (1 << col)) plot(x + float(col) * side + off, originY + float(row) * side + off, side, colour);
+                    }
+                x += float(advanceOf(f, ch)) * side;
+            }
+        }
+    }
 }
 
 juce::Image Canvas::scaled(int scale) const {
     scale = std::max(1, scale);
-    if (scale == 1) return image.createCopy();
+    if (scale == 1) {
+        auto copy = image.createCopy();
+        drawRuns(copy, 1);
+        return copy;
+    }
     juce::Image out(juce::Image::ARGB, w * scale, h * scale, false);
-    juce::Image::BitmapData src(image, juce::Image::BitmapData::readOnly);
-    juce::Image::BitmapData dst(out, juce::Image::BitmapData::writeOnly);
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x) {
-            const auto colour = src.getPixelColour(x, y);
-            for (int j = 0; j < scale; ++j)
-                for (int i = 0; i < scale; ++i) dst.setPixelColour(x * scale + i, y * scale + j, colour);
-        }
+    {
+        juce::Image::BitmapData src(image, juce::Image::BitmapData::readOnly);
+        juce::Image::BitmapData dst(out, juce::Image::BitmapData::writeOnly);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                const auto colour = src.getPixelColour(x, y);
+                for (int j = 0; j < scale; ++j)
+                    for (int i = 0; i < scale; ++i) dst.setPixelColour(x * scale + i, y * scale + j, colour);
+            }
+    }
+    drawRuns(out, scale);
     return out;
 }
 
@@ -468,30 +502,19 @@ void drawCachedSmall(juce::Graphics& g, const juce::String& key, juce::Point<int
 }
 
 void drawTitle(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Colour light, juce::Colour shadow) {
-    const int w = Canvas::textWidth(text) + 2, h = Canvas::textHeight() + 2;
-    if (w * unit * 2 > area.getWidth()) {
-        // Too long for the double size: Large text at the art grid.
+    // The Large font at one font pixel per art pixel (twice its size), lit from the top.
+    const int w = Canvas::textWidthFine(text, Font::Large) + 1, h = faceFor(Font::Large).height + 1;
+    if (w * unit > area.getWidth()) {
+        // Too long for the double size: Large text at its own size.
         drawText(g, text, area, colour, juce::Justification::centredLeft, Font::Large, shadow);
         return;
     }
-    const float physical = g.getInternalContext().getPhysicalPixelScaleFactor();
-    const int block = std::max(1, juce::roundToInt(float(unit * 2) * physical));
     const auto key = "title/" + text + colour.toString() + light.toString() + shadow.toString();
-    const auto& image = sharedCache().get(key + "@" + juce::String(block), [&] {
+    drawCached(g, key, { area.getX(), area.getCentreY() - h * unit / 2 }, [&] {
         Canvas k(w, h);
-        // A shadow, then the letters: lit in the top rows, a darker base.
-        k.text(1, 1, text, shadow);
-        Canvas letters(w, h);
-        letters.text(0, 0, text, colour);
-        for (int y = 0; y < h; ++y)
-            for (int x = 0; x < w; ++x)
-                if (letters.get(x, y).getAlpha() > 0) k.set(x, y, y < 2 ? light : y > 4 ? colour.darker(0.25f) : colour);
-        return k.scaled(block);
+        k.styledText(0, 0, text, colour, shadow, Font::Large, 1.0f, light, colour.darker(0.25f));
+        return k;
     });
-    const int x = snap(area.getX()), y = snap(area.getCentreY() - h * unit);
-    juce::Graphics::ScopedSaveState save(g);
-    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
-    g.drawImageTransformed(image, juce::AffineTransform::translation(std::round(float(x) * physical), std::round(float(y) * physical)).scaled(1.0f / physical));
 }
 
 int textWidthLogical(const juce::String& text, Font font) { return Canvas::textWidth(text, font) * unit; }
@@ -518,20 +541,7 @@ void drawText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> 
 }
 
 void drawTinyText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Justification justification) {
-    if (text.isEmpty() || colour.getAlpha() == 0) return;
-    const auto shown = fitText(text, std::max(0, area.getWidth()), Font::Small);
-    if (shown.isEmpty()) return;
-    const int w = Canvas::textWidth(shown, Font::Small), h = Canvas::textHeight(Font::Small);
-    int x = area.getX(), y = area.getY();
-    if (justification.testFlags(juce::Justification::horizontallyCentred)) x += (area.getWidth() - w) / 2;
-    else if (justification.testFlags(juce::Justification::right)) x = area.getRight() - w;
-    if (justification.testFlags(juce::Justification::verticallyCentred)) y += (area.getHeight() - h) / 2;
-    else if (justification.testFlags(juce::Justification::bottom)) y = area.getBottom() - h;
-    drawCachedSmall(g, "tiny/" + juce::String::toHexString(int(colour.getARGB())) + "/" + shown, { x, y }, [&] {
-        Canvas k(w, h);
-        k.text(0, 0, shown, colour, Font::Small);
-        return k;
-    });
+    drawText(g, text, area, colour, justification, Font::Tiny, juce::Colours::transparentBlack, false);
 }
 
 const juce::Image& SpriteCache::get(const juce::String& key, const std::function<juce::Image()>& make) {

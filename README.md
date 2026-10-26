@@ -11,7 +11,7 @@ recordings.
 each with its own instrument effects; Score Intensity; render to WAV and scene MIDI
 export; Locations and Journeys; seven planet types; the Arrangement with transitions,
 templates, Auto-arrange and game-audio export; and now separate outputs per Place, 24
-factory scenes and INSPIRE), now with the 8-bit interface of Milestone 13:** pixel-art
+factory scenes and INSPIRE), now with the 16-bit pixel interface:** pixel-art
 controls, icons and text in moods that follow the world (whimsical fantasy, neon sci-fi,
 the "magitech" blend, neutral modern), a pixel-art tiny planet for the Living Globe, and
 a UI size of 100, 150 or 200 %.
@@ -98,11 +98,12 @@ These work now:
   Machinery makes them straighter and more metallic, Life more human, and Danger
   darker.
 - the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
-- **The interface** (Milestone 13): 8-bit pixel art throughout, drawn on whole pixels
-  at every UI size. Its **mood follows the active Places**: fantasy and nature Places
+- **The interface** (Milestone 13, made 16-bit after the GarageBand test): pixel art
+  throughout, drawn on whole pixels at every UI size, with fine 16-bit pixel fonts
+  (one-pixel strokes) and dithered shading. Its **mood follows the active Places**: fantasy and nature Places
   make it whimsical and storybook (berry and gold, mint curls, sparkles and little
   stars on an enchanted meadow), sci-fi Places futuristic (dark metal, neon LEDs,
-  scanlines, HUD brackets), both together "magitech" (wooden frames with neon inlays,
+  a dot grid, HUD brackets), both together "magitech" (wooden frames with neon inlays,
   circuit runes), and modern Places pull it toward a clean, neutral graphite; it
   changes smoothly as Places come and go. Pixel knobs with gem, rune or LED rings, the
   large Score Intensity dial, sprite sliders (horizontal and vertical), bevelled
