@@ -7,6 +7,11 @@
 // - RENDER: renders the bars offline, faster than real time, on a background thread
 //   (click again to cancel). The plugin keeps playing meanwhile;
 // - WAV: the last render. Drag it into the host, or click to save it.
+// Milestone 11c: BARS also offers ARRANGEMENT (the whole arrangement, as the host plays
+// it in Arrangement mode), and the mode menu SECTIONS (each section as its own file for a
+// game engine, loop sections seamless: Tavern_Intro.wav, Tavern_Loop.wav...) and
+// STINGERS (each section's ending and transition as a one-shot). MIDI then follows the
+// arrangement.
 #include "../PluginProcessor.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -23,6 +28,14 @@ public:
     bool stems() const;
     void setBars(int bars);
     void setStems(bool on);
+    // Milestone 11c.
+    enum Mode { MixMode = 1, StemsMode, SectionsMode, StingersMode };
+    static constexpr int arrangementId = 1;   // BARS: the arrangement
+    void setArrangement(bool on);
+    void setMode(int m);
+    int currentMode() const;
+    // Whether renders and MIDI follow the arrangement now.
+    bool followsArrangement() const;
     // Starts a render of the current world (cancels one that is running).
     void startRender();
     void cancelRender();

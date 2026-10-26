@@ -1,4 +1,5 @@
 #include "ArrangementStore.h"
+#include "../DSP/Planet.h"
 
 namespace wb {
 
@@ -180,6 +181,20 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
         x.setProperty("start", s.intensityStart, nullptr);
         x.setProperty("end", s.intensityEnd, nullptr);
         x.setProperty("cells", encodeCells(s.cells), nullptr);
+        // Milestone 11b: written only when set, so older readers and files stay as they were.
+        if (s.transition != TransCut) {
+            x.setProperty("transition", int(s.transition), nullptr);
+            x.setProperty("transitionLength", int(s.transitionLength), nullptr);
+        }
+        if (s.location >= 0) x.setProperty("location", int(s.location), nullptr);
+        if (s.planet >= 0) x.setProperty("planet", int(s.planet), nullptr);
+        juce::StringArray world;
+        bool overrides = false;
+        for (auto w : s.world) {
+            world.add(juce::String(int(w)));
+            overrides |= w >= 0;
+        }
+        if (overrides) x.setProperty("world", world.joinIntoString(","), nullptr);
         tree.appendChild(x, nullptr);
     }
     return tree;
@@ -203,6 +218,12 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.intensityStart = number(x, "start", 0.5f, 0, 1);
         s.intensityEnd = number(x, "end", 0.5f, 0, 1);
         decodeCells(x.getProperty("cells").toString(), s.cells);
+        s.transition = uint8_t(int(number(x, "transition", 0, 0, float(TransitionCount - 1))));
+        s.transitionLength = uint8_t(int(number(x, "transitionLength", 1, 1, float(maxTransitionLength))));
+        s.location = int8_t(int(number(x, "location", -1, -1, 7)));
+        s.planet = int8_t(int(number(x, "planet", -1, -1, float(dsp::PlanetTypeCount - 1))));
+        const auto world = juce::StringArray::fromTokens(x.getProperty("world").toString(), ",", "");
+        for (int w = 0; w < world.size() && w < WorldControlCount; ++w) s.world[std::size_t(w)] = int8_t(juce::jlimit(-1, 100, world[w].getIntValue()));
         a.sections[std::size_t(a.count++)] = s;
     }
     a.end = uint8_t(int(number(tree, "end", 0, 0, float(EndCount - 1))));

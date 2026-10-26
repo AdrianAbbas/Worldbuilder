@@ -26,6 +26,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     space.prepare(rate);
     sharedFx.prepare(r);
     planet.prepare(r);
+    transitionVoice.prepare(r);
     glue.prepare(r);
     limiter.prepare(r);
     for (auto& s : worldSmooth) s.setTime(0.25f, controlRate);
@@ -78,6 +79,10 @@ void WorldEngine::reset(const EngineControls& initial) {
     arranged = arr::State {};
     arranging = false;
     endGain = 1;
+    transitionVoice.reset();
+    for (auto& f : sweep) f.reset();
+    sweeping = false;
+    duckGain = 1;
 }
 
 void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& controls) {
@@ -93,7 +98,25 @@ void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& c
         intensity.snap(arrangedIntensity(controls));
         world.intensity = intensity.value;
         endGain = arranged.endGain;
+        duckGain = arranged.duck;
+        // The section's overrides hold from the first sample.
+        for (std::size_t i = 0; i < worldSmooth.size(); ++i)
+            if (arranged.world[i] >= 0.0f) {
+                worldSmooth[i].snap(arranged.world[i]);
+                world.c[i] = worldSmooth[i].value;
+            }
+        if (arranged.planet >= 0) planet.reset(arranged.planet, controls.planetInfluence);
     }
+}
+
+bool WorldEngine::isRhythm(int type, int element) {
+    if (type <= NoPlace || type >= PlaceTypeCount || element < 0 || element >= placeElements) return false;
+    const auto& spec = placeInfo(type).element[std::size_t(element)];
+    if (spec.kind == Kit) return true;
+    // A Place without a kit: its pulse-like melodic parts.
+    bool kit = false;
+    for (const auto& e : placeInfo(type).element) kit |= e.kind == Kit;
+    return !kit && !spec.sustained && (spec.icon == IconPulse || spec.icon == IconHandDrum || spec.icon == IconShaker || spec.icon == IconSnare);
 }
 
 float WorldEngine::arrangedIntensity(const EngineControls& controls) const {
@@ -195,7 +218,11 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     const float duckFrom = seedGain;
     const float duckTo = controls.seed != seed ? std::max(0.0f, seedGain - seedStep * float(n)) : std::min(1.0f, seedGain + seedStep * float(n));
     seedGain = duckTo;
-    for (std::size_t i = 0; i < worldSmooth.size(); ++i) world.c[i] = worldSmooth[i].next(clamp01(finiteOr(controls.world[i], 0.5f)));
+    for (std::size_t i = 0; i < worldSmooth.size(); ++i) {
+        // A section's World Control override (the arrangement) replaces the setting.
+        const float set = arranging && arranged.world[i] >= 0.0f ? arranged.world[i] : controls.world[i];
+        world.c[i] = worldSmooth[i].next(clamp01(finiteOr(set, 0.5f)));
+    }
     world.intensity = intensity.next(arrangedIntensity(controls));
     world.root = controls.root;
     world.mood = controls.mood;
@@ -264,9 +291,13 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         if (arranging) {
             // The section's instrument grid: gains and pattern variants.
             PlaceSlotControls arrangedControls = pc;
+            arrangedControls.ringOut = arranged.ringOut;
             for (int e = 0; e < placeElements; ++e) {
                 arrangedControls.arrange[std::size_t(e)] = arranged.gain[si][std::size_t(e)];
                 arrangedControls.variant[std::size_t(e)] = arranged.variant[si][std::size_t(e)];
+                // A Drum fill transition: the rhythm instruments that play take their Fills.
+                if (arranged.drumFill && arranged.gain[si][std::size_t(e)] > 0.0f && isRhythm(pc.type, e))
+                    arrangedControls.variant[std::size_t(e)] = uint8_t(pat::VariantFill);
             }
             sounding = slots[si].render(world, arrangedControls, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         } else {
@@ -287,6 +318,24 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         }
         placePeak[si] = peak;
     }
+    // The transitions' own sounds (tuned to the world), into the dry mix and the World Space.
+    if (arranging || !transitionVoice.silent()) {
+        std::fill(layerL.begin(), layerL.begin() + n, 0.0f);
+        std::fill(layerR.begin(), layerR.begin() + n, 0.0f);
+        const double perSample = double(bpm) / 60.0 / rate;
+        const float dt = arranged.transitionLength > 0 ? float(perSample / arranged.transitionLength) : 0.0f;
+        const float since = float(arranged.sinceStart * 60.0 / double(bpm));
+        transitionVoice.render(arranging ? arranged.transition : arr::TransCut, arranging ? arranged.transitionT : -1.0f, dt,
+                               arranging ? arranged.arrived : arr::TransCut, since, world.root, world.mood, layerL.data(), layerR.data(), n);
+        const float send = arranged.transition == arr::TransReverse ? 0.9f : 0.5f;
+        for (int i = 0; i < n; ++i) {
+            const auto k = std::size_t(i);
+            dryL[k] += layerL[k];
+            dryR[k] += layerR[k];
+            sendL[k] += layerL[k] * send;
+            sendR[k] += layerR[k] * send;
+        }
+    }
     beat += double(bpm) / 60.0 * double(n) / rate;
 
     space.update(world);
@@ -296,7 +345,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     sharedFx.process(fxL.data(), fxR.data(), n, bpm);
 
     // The Planet's colour (it glides to a new planet or Influence on its own).
-    planet.update(controls.planet, controls.planetInfluence, double(clock) / rate);
+    planet.update(arranging && arranged.planet >= 0 ? arranged.planet : controls.planet, controls.planetInfluence, double(clock) / rate);
     const float planetSpace = planet.space(), planetWidth = planet.width();
 
     const float masterTarget = dbToGain(std::clamp(controls.masterDb, -60.0f, 6.0f));
@@ -308,11 +357,33 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     const float endFrom = endGain, endTo = arranging ? arranged.endGain : 1.0f;
     endGain = endTo;
     const bool ending = endFrom < 1.0f || endTo < 1.0f;
+    // A Drop's silence, and the Filter sweep (closing into a boundary, opening after it).
+    const float dropFrom = duckGain, dropTo = arranging ? arranged.duck : 1.0f;
+    duckGain = dropTo;
+    const bool dropping = dropFrom < 1.0f || dropTo < 1.0f;
+    const float cutoff = arranging ? dsp::TransitionVoice::sweepCutoff(arranged.transition, arranged.transitionT, arranged.arrived, arranged.sinceStart) : 0.0f;
+    if (cutoff > 0.0f) {
+        for (auto& f : sweep) f.set(cutoff, 1.1f, float(rate));
+        sweeping = true;
+    } else if (sweeping) {
+        // Fully open again: the filter leaves the path.
+        for (auto& f : sweep) f.reset();
+        sweeping = false;
+    }
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);
         float l = distance[0].lp(dryL[k]) * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f * planetSpace + fxL[k];
         float r = distance[1].lp(dryR[k]) * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f * planetSpace + fxR[k];
+        if (sweeping) {
+            l = sweep[0].tick(l).lp;
+            r = sweep[1].tick(r).lp;
+        }
+        if (dropping) {
+            const float d = lerp(dropFrom, dropTo, float(i + 1) / float(n));
+            l *= d;
+            r *= d;
+        }
         planet.process(l, r, clock + uint64_t(i));
 
         const float w = width.next(widthTarget) * planetWidth;

@@ -79,6 +79,13 @@ WorldValues WorldbuilderProcessor::liveValues() const noexcept {
 EngineControls WorldbuilderProcessor::readControls() const noexcept { return controlsFor(liveValues()); }
 
 EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) const noexcept {
+    auto c = controlsFromValues(values);
+    c.hostBpm = hostBpm.load(std::memory_order_relaxed);
+    c.gate = gateOpen;
+    return c;
+}
+
+EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& values) noexcept {
     const auto value = [&values](int p) { return values[std::size_t(p)]; };
     EngineControls c;
     for (int w = 0; w < WorldControlCount; ++w) c.world[std::size_t(w)] = value(PTemperature + w);
@@ -131,8 +138,6 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
             fx.width = field(fxField(e, FxWidth));
         }
     }
-    c.hostBpm = hostBpm.load(std::memory_order_relaxed);
-    c.gate = gateOpen;
     return c;
 }
 
@@ -146,6 +151,21 @@ capture::Scene WorldbuilderProcessor::captureScene() {
     scene.controls.gate = true;
     patterns.syncTypes(slotTypes());
     for (int slot = 0; slot < placeSlots; ++slot) scene.patterns[std::size_t(slot)] = patterns.get(slot);
+    // The arrangement, and what its sections' Locations need (Milestone 11c).
+    scene.arrangement = arrangement.get();
+    scene.values = liveValues();
+    auto all = std::make_shared<std::array<LocationData, locationCount>>();
+    for (int i = 0; i < locationCount; ++i) {
+        const auto location = locations.get(i);
+        auto& data = (*all)[std::size_t(i)];
+        data.used = location.used;
+        data.values = location.values;
+        data.patterns = location.patterns;
+    }
+    scene.locations = std::move(all);
+    scene.travel = travelInputs(scene.values);
+    scene.travel.bpm = scene.bpm;
+    scene.controlsOf = &WorldbuilderProcessor::controlsFromValues;
     return scene;
 }
 
@@ -237,6 +257,10 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     // Play Mode Arrangement (with the host playing) and the preview follow the arrangement.
     engine.arrangementIn.update();
     const arr::Arrangement* arranged = (transportMode && mode == PlayArrangement && playing) || previewing ? &engine.arrangementIn.read() : nullptr;
+    // Its sections' Locations: while the host plays or is stopped in Arrangement mode
+    // (the world stays where the song stopped), and during the preview.
+    const arr::Arrangement* located = (transportMode && mode == PlayArrangement) || previewing ? &engine.arrangementIn.read() : nullptr;
+    if (located != nullptr && !located->usesLocations()) located = nullptr;
 
     // The world: the parameters, or a journey between Locations. While one is under way
     // the block is rendered in short pieces so it glides.
@@ -252,6 +276,16 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     for (int done = 0; done < n;) {
         // The Journey Path follows the song: the beat this piece starts on.
         in.beat = restart && done == 0 ? (restartBeat >= 0 ? restartBeat : double(restartAt) / rate * in.bpm / 60.0) : engine.nextBeat();
+        if (located != nullptr) {
+            // The journey to the next section's Location takes the Travel Time and arrives
+            // on its first downbeat.
+            const double travelBeats = in.syncBars > 0 ? 4.0 * double(in.syncBars) : double(in.seconds) * in.bpm / 60.0;
+            float position = 0;
+            located->locationAt(in.beat, travelBeats, in.from, in.to, position);
+            in.journey = position;
+            in.arranged = in.journeyOn = true;
+            in.pathOn = false;
+        }
         const auto& world = travel.advance(live, livePatterns, in, restart && done == 0);
         const int count = travel.active() ? std::min(n - done, travelPiece) : n - done;
         auto controls = controlsFor(world.v);

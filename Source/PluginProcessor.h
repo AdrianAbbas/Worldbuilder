@@ -87,6 +87,10 @@ public:
 private:
     wb::EngineControls readControls() const noexcept;
     wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
+public:
+    // The engine controls a world's parameter values make (no tempo or transport).
+    static wb::EngineControls controlsFromValues(const wb::WorldValues& values) noexcept;
+private:
     wb::TravelInputs travelInputs(const wb::WorldValues& values) const noexcept;
     // A slot that holds another Place gets that Place's default patterns.
     void timerCallback() override {

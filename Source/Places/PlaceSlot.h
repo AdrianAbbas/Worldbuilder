@@ -26,6 +26,8 @@ struct PlaceSlotControls {
     // without an arrangement) and the pattern variant it plays (A, B, C or Fill).
     std::array<float, placeElements> arrange { 1, 1, 1, 1, 1, 1 };
     std::array<uint8_t, placeElements> variant {};
+    // A stinger's ring-out (renders): what rings keeps ringing, no new notes start.
+    bool ringOut = false;
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the

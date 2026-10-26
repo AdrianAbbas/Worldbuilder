@@ -75,27 +75,36 @@ private:
 };
 
 //==============================================================================
-// Renders every pass of a scene into the work folder, one after the other.
+// Renders every job (a pass of the bars, or a game file) into the work folder, one
+// after the other.
 class CapturePanel::Worker final : public juce::Thread {
 public:
-    Worker(capture::Scene s, std::vector<capture::Pass> p, int b, juce::Array<juce::File> f)
-        : juce::Thread("WORLDBUILDER render"), scene(std::move(s)), passes(std::move(p)), bars(b), files(std::move(f)) {}
+    struct Job {
+        capture::Pass pass;
+        capture::GameFile game;   // section -1 and kind Whole without an arrangement: the bars
+        bool arranged = false;
+    };
+    Worker(capture::Scene s, std::vector<Job> j, int b, juce::Array<juce::File> f)
+        : juce::Thread("WORLDBUILDER render"), scene(std::move(s)), jobs(std::move(j)), bars(b), files(std::move(f)) {}
     void run() override {
-        for (std::size_t i = 0; i < passes.size() && !threadShouldExit(); ++i) {
+        for (std::size_t i = 0; i < jobs.size() && !threadShouldExit(); ++i) {
             current.store(int(i));
             partial.store(0);
-            if (!capture::renderToWav(scene, passes[i], bars, files[int(i)], &cancel, &partial)) {
+            const auto& job = jobs[i];
+            const bool ok = job.arranged ? capture::renderGameFileToWav(scene, job.game, job.pass, files[int(i)], &cancel, &partial)
+                                         : capture::renderToWav(scene, job.pass, bars, files[int(i)], &cancel, &partial);
+            if (!ok) {
                 failed.store(!cancel.load());
                 break;
             }
         }
         finished.store(true);
     }
-    float progress() const { return (float(current.load()) + partial.load()) / float(std::max<std::size_t>(1, passes.size())); }
+    float progress() const { return (float(current.load()) + partial.load()) / float(std::max<std::size_t>(1, jobs.size())); }
     bool succeeded() const { return finished.load() && !cancel.load() && !failed.load(); }
 
     capture::Scene scene;
-    std::vector<capture::Pass> passes;
+    std::vector<Job> jobs;
     int bars;
     juce::Array<juce::File> files;
     std::atomic<bool> cancel { false }, finished { false }, failed { false };
@@ -106,14 +115,21 @@ public:
 //==============================================================================
 CapturePanel::CapturePanel(WorldbuilderProcessor& p) : processor(p) {
     for (int b : capture::barChoices) barChoice.addItem(juce::String(b) + " bars", b);
+    barChoice.addSeparator();
+    barChoice.addItem("Arrangement", arrangementId);
     barChoice.setSelectedId(8, juce::dontSendNotification);
-    barChoice.setTooltip("How many bars to render or export, from bar 1, at the host's tempo (4/4).");
+    barChoice.setTooltip("How many bars to render or export, from bar 1, at the host's tempo (4/4); or the whole Arrangement, "
+                         "as the host plays it in Play Mode Arrangement.");
     addAndMakeVisible(barChoice);
-    mode.addItem("Mix", 1);
-    mode.addItem("Stems", 2);
-    mode.setSelectedId(1, juce::dontSendNotification);
+    mode.addItem("Mix", MixMode);
+    mode.addItem("Stems", StemsMode);
+    mode.addItem("Sections", SectionsMode);
+    mode.addItem("Stingers", StingersMode);
+    mode.setSelectedId(MixMode, juce::dontSendNotification);
     mode.setTooltip("Mix: one WAV of the whole world. Stems: one WAV per Place, plus the environment layers, "
-                    "each through the master section (they add up to about the mix).");
+                    "each through the master section (they add up to about the mix). Sections: each section of the arrangement as its "
+                    "own file for a game engine (Tavern_Intro.wav...), a section that repeats or loops as a seamless loop. Stingers: each "
+                    "section's ending and transition as a short one-shot cue that rings out.");
     addAndMakeVisible(mode);
 
     midi = std::make_unique<Chip>();
@@ -161,16 +177,25 @@ CapturePanel::~CapturePanel() {
     }
 }
 
-int CapturePanel::bars() const { return std::max(1, barChoice.getSelectedId()); }
-bool CapturePanel::stems() const { return mode.getSelectedId() == 2; }
+int CapturePanel::bars() const {
+    const int id = barChoice.getSelectedId();
+    return id <= arrangementId ? 8 : id;
+}
+bool CapturePanel::stems() const { return mode.getSelectedId() == StemsMode; }
 void CapturePanel::setBars(int b) { barChoice.setSelectedId(b, juce::dontSendNotification); }
-void CapturePanel::setStems(bool on) { mode.setSelectedId(on ? 2 : 1, juce::dontSendNotification); }
+void CapturePanel::setStems(bool on) { mode.setSelectedId(on ? StemsMode : MixMode, juce::dontSendNotification); }
+void CapturePanel::setArrangement(bool on) { barChoice.setSelectedId(on ? arrangementId : 8, juce::dontSendNotification); }
+void CapturePanel::setMode(int m) { mode.setSelectedId(std::clamp(m, int(MixMode), int(StingersMode)), juce::dontSendNotification); }
+int CapturePanel::currentMode() const { return std::max(int(MixMode), mode.getSelectedId()); }
+bool CapturePanel::followsArrangement() const { return barChoice.getSelectedId() == arrangementId || currentMode() >= SectionsMode; }
 
 juce::File CapturePanel::workFolder() {
     return juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("WORLDBUILDER").getChildFile("Capture");
 }
 
-juce::File CapturePanel::tempMidiFile() const { return workFolder().getChildFile("WORLDBUILDER scene " + juce::String(bars()) + " bars.mid"); }
+juce::File CapturePanel::tempMidiFile() const {
+    return workFolder().getChildFile(followsArrangement() ? juce::String("WORLDBUILDER arrangement.mid") : "WORLDBUILDER scene " + juce::String(bars()) + " bars.mid");
+}
 
 bool CapturePanel::writeSceneMidi(const juce::File& file) {
     const auto scene = processor.captureScene();
@@ -184,7 +209,8 @@ bool CapturePanel::writeSceneMidi(const juce::File& file) {
     file.deleteFile();
     juce::FileOutputStream out(file);
     if (!out.openedOk()) return false;
-    const bool ok = capture::sceneMidi(tracks, bars(), scene.bpm).writeTo(out, 1);
+    const bool arranged = followsArrangement() && scene.arrangement.count > 0;
+    const bool ok = (arranged ? capture::arrangementMidi(scene, tracks) : capture::sceneMidi(tracks, bars(), scene.bpm)).writeTo(out, 1);
     out.flush();
     status = ok ? juce::String(int(tracks.size())) + " MIDI tracks" : juce::String("MIDI not written");
     repaint();
@@ -193,7 +219,14 @@ bool CapturePanel::writeSceneMidi(const juce::File& file) {
 
 void CapturePanel::startRender() {
     cancelRender();
-    const auto scene = processor.captureScene();
+    auto scenePointer = std::make_unique<capture::Scene>(processor.captureScene());
+    const auto& scene = *scenePointer;
+    const bool arranged = followsArrangement();
+    if (arranged && scene.arrangement.count <= 0) {
+        status = "No sections to render";
+        repaint();
+        return;
+    }
     auto list = capture::passes(scene, stems());
     if (list.empty()) {
         status = "Nothing audible";
@@ -207,10 +240,29 @@ void CapturePanel::startRender() {
     wav->active = false;
     wav->repaint();
     juce::Array<juce::File> files;
-    const auto stem = "WORLDBUILDER " + juce::String(bars()) + " bars";
-    for (const auto& pass : list)
-        files.add(folder.getChildFile(juce::File::createLegalFileName(list.size() == 1 && pass.name == "Mix" ? stem : stem + " - " + pass.name) + ".wav"));
-    worker = std::make_unique<Worker>(scene, std::move(list), bars(), files);
+    std::vector<Worker::Job> jobs;
+    if (!arranged) {
+        const auto stem = "WORLDBUILDER " + juce::String(bars()) + " bars";
+        for (const auto& pass : list) {
+            files.add(folder.getChildFile(juce::File::createLegalFileName(list.size() == 1 && pass.name == "Mix" ? stem : stem + " - " + pass.name) + ".wav"));
+            jobs.push_back({ pass, {}, false });
+        }
+    } else if (currentMode() >= SectionsMode) {
+        // Game files: the mix of each section, or each stinger.
+        const auto mix = capture::passes(scene, false).front();
+        for (const auto& game : capture::gameFiles(scene, currentMode() == StingersMode)) {
+            files.add(folder.getChildFile(juce::File::createLegalFileName(game.name) + ".wav"));
+            jobs.push_back({ mix, game, true });
+        }
+    } else {
+        capture::GameFile whole;
+        whole.name = capture::sceneName(scene) + "_Arrangement";
+        for (const auto& pass : list) {
+            files.add(folder.getChildFile(juce::File::createLegalFileName(list.size() == 1 && pass.name == "Mix" ? whole.name : whole.name + "_" + pass.name.removeCharacters(" ")) + ".wav"));
+            jobs.push_back({ pass, whole, true });
+        }
+    }
+    worker = std::make_unique<Worker>(std::move(*scenePointer), std::move(jobs), bars(), files);
     worker->startThread(juce::Thread::Priority::low);
     status = {};
     render->text = "CANCEL";
@@ -252,7 +304,7 @@ void CapturePanel::finishRender() {
     worker->stopThread(10000);
     const bool ok = worker->succeeded();
     if (ok) rendered = worker->files;
-    status = ok ? (rendered.size() == 1 ? juce::String("Rendered") : juce::String(rendered.size()) + " stems") : juce::String("Render failed");
+    status = ok ? (rendered.size() == 1 ? juce::String("Rendered") : juce::String(rendered.size()) + " files") : juce::String("Render failed");
     worker.reset();
     render->text = "RENDER";
     render->icon = Icon::Render;
@@ -290,13 +342,13 @@ void CapturePanel::saveRender() {
             repaint();
         });
     } else {
-        chooser = std::make_unique<juce::FileChooser>("Choose a folder for the stems", documents);
+        chooser = std::make_unique<juce::FileChooser>("Choose a folder for the files", documents);
         chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [this](const juce::FileChooser& c) {
             const auto folder = c.getResult();
             if (folder == juce::File()) return;
             bool ok = true;
             for (const auto& f : rendered) ok = f.copyFileTo(folder.getChildFile(f.getFileName())) && ok;
-            status = ok ? juce::String(rendered.size()) + " stems saved" : juce::String("Not saved");
+            status = ok ? juce::String(rendered.size()) + " files saved" : juce::String("Not saved");
             repaint();
         });
     }

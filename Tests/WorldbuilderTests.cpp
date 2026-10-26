@@ -11,6 +11,7 @@
 #include "DSP/Planet.h"
 #include "PluginProcessor.h"
 #include "Patterns/PatternMidi.h"
+#include "Arrangement/Templates.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -4496,6 +4497,661 @@ void testArrangement(Suite& s) {
     }
 }
 
+namespace transitionTest {
+void testInterface(Suite& s) {
+    s.section("transitions: interface");
+    Host h;
+    h.set("p2_type", float(Tavern));
+    h.render(0.3);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    view->arrangeButton().onClick();
+    view->settle(0.1f);
+    auto& arrange = view->arrangeView();
+    arrange.applyTemplate(arr::BossFight);
+    auto a = h.p->arrangement.get();
+    bool arranged = false;
+    for (int i = 0; i < a.count; ++i)
+        for (const auto& c : a.sections[std::size_t(i)].cells[0]) arranged |= c.entry != arr::EntryOn;
+    s.check(a.count == 5 && std::string(a.sections[0].nameText()) == "Approach" && arranged && a.sections[0].transition != arr::TransCut,
+            "TEMPLATE replaces the sections with Boss Fight, auto-arranged");
+    h.p->arrangement.undo();
+    s.check(h.p->arrangement.get().count == 0, "and undoes in one step");
+    h.p->arrangement.redo();
+    arrange.refresh();
+    arrange.select(1);
+    arrange.setTransition(arr::TransFilter, 2);
+    arrange.setLocation(3);
+    arrange.setPlanet(dsp::IceGiant);
+    arrange.setWorldOverride(Danger, 100);
+    a = h.p->arrangement.get();
+    const auto& sec = a.sections[1];
+    s.check(sec.transition == arr::TransFilter && sec.transitionLength == 2 && sec.location == 3 && sec.planet == dsp::IceGiant && sec.world[Danger] == 100,
+            "the inspector sets the transition, Location, Planet and a World override");
+    // Auto-arrange keeps the Location and the overrides, and fills the grid again.
+    auto cleared = a;
+    for (auto& row : cleared.sections[2].cells)
+        for (auto& c : row) c.entry = arr::EntryOff;
+    h.p->arrangement.set(cleared);
+    arrange.refresh();
+    arrange.autoArrange();
+    a = h.p->arrangement.get();
+    int on = 0;
+    for (const auto& c : a.sections[2].cells[1]) on += c.entry != arr::EntryOff ? 1 : 0;
+    s.check(on > 0 && a.sections[1].location == 3 && a.sections[1].world[Danger] == 100, "AUTO-ARRANGE fills the grid again and keeps Locations and overrides");
+    // Paints with transitions and Locations on the timeline (a crash or assertion would show).
+    editor->createComponentSnapshot(editor->getLocalBounds());
+}
+} // namespace transitionTest
+
+//==============================================================================
+// Milestone 11b: transitions, section Locations and overrides, templates, Auto-arrange.
+void testTransitions(Suite& s) {
+    using namespace arrangeTest;
+    s.section("transitions: model");
+    {
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Build", 4, 0, 0.2f);
+        a.sections[0].transition = arr::TransCrossfade;
+        a.sections[0].transitionLength = 2;
+        a.sections[1] = arr::makeSection("Climax", 4, 1, 0.9f);
+        a.sections[1].repeats = 2;
+        a.sections[1].transition = arr::TransDrop;
+        a.sections[1].transitionLength = 2;
+        a.count = 2;
+        const auto at = [&](double bar) { return a.evaluate(bar * arr::beatsPerBar); };
+        s.check(at(1.9).transitionT < 0 && std::abs(at(2.0).transitionT) < 1.0e-4f && std::abs(at(3.0).transitionT - 0.5f) < 1.0e-4f
+                    && at(3.0).transition == arr::TransCrossfade,
+                "a transition runs over the section's last bars");
+        s.check(at(4.5).arrived == arr::TransCrossfade && at(8.5).arrived == arr::TransCut, "the next section knows how it was reached (not on a repeat)");
+        s.check(at(11.0).transitionT < 0 && at(5.5).transitionT < 0, "End: stop has no transition, nor a repeat");
+        a.end = arr::EndLoop;
+        a.loopTo = 0;
+        s.check(std::abs(at(11.5).transitionT - 0.0f) < 1.0e-4f && at(11.5).transition == arr::TransDrop && at(11.9).duck < 0.2f && at(12.01).arrived == arr::TransDrop,
+                "looping back plays the transition too; a Drop lasts beats and ducks the world");
+        s.check(at(12.0).duck < 0.2f && at(12.1).duck > 0.99f, "and after a Drop the world comes back on the downbeat");
+        // Crossfade: off -> on fades in early (with the next variant), on -> off fades out.
+        a.sections[0].cells[0][0].entry = arr::EntryOff;
+        a.sections[1].cells[0][0].variant = pat::VariantB;
+        a.sections[1].cells[0][1].entry = arr::EntryOff;
+        s.check(at(1.0).gain[0][0] == 0 && std::abs(at(3.0).gain[0][0] - 0.5f) < 0.01f && at(3.0).variant[0][0] == pat::VariantB && at(3.9).gain[0][0] > 0.95f,
+                "a Crossfade fades an entering instrument in (its next variant)");
+        s.check(at(1.0).gain[0][1] == 1 && std::abs(at(3.0).gain[0][1] - 0.5f) < 0.01f && at(3.95).gain[0][1] < 0.02f, "and a leaving one out");
+        s.check(std::abs(at(3.0).intensity - 0.55f) < 0.02f, "and glides Score Intensity to the next section's start", fmt(at(3.0).intensity));
+        // Drum fill.
+        a.sections[0].transition = arr::TransDrumFill;
+        a.sections[0].transitionLength = 1;
+        s.check(at(3.5).drumFill && !at(2.5).drumFill, "a Drum fill in the last bar");
+        s.check(arr::transitionBeats(arr::TransDrop, 3) == 3.0 && arr::transitionBeats(arr::TransRiser, 3) == 12.0, "lengths: bars, a Drop beats");
+        // A transition never longer than the section.
+        a.sections[0].bars = 1;
+        a.sections[0].transition = arr::TransRiser;
+        a.sections[0].transitionLength = 4;
+        s.check(std::abs(at(0.5).transitionT - 0.5f) < 1.0e-4f, "a transition is at most its section's length");
+    }
+    {
+        // Locations: inherited, timed to arrive on the section's downbeat.
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 4, 0);
+        a.sections[1] = arr::makeSection("Build", 4, 1);
+        a.sections[1].location = 2;
+        a.sections[2] = arr::makeSection("Climax", 4, 2);
+        a.sections[3] = arr::makeSection("Outro", 4, 3);
+        a.sections[3].location = 5;
+        a.count = 4;
+        int from = 0, to = 0;
+        float position = 0;
+        const auto where = [&](double bar, double travelBeats) {
+            a.locationAt(bar * arr::beatsPerBar, travelBeats, from, to, position);
+            return std::to_string(from) + ">" + std::to_string(to) + "@" + fmt(position);
+        };
+        where(1.0, 8.0);
+        s.check(from == -1 && to == -1 && a.usesLocations(), "before any Location the world is as set");
+        const auto mid = where(3.0, 8.0);
+        const bool halfway = from == -1 && to == 2 && std::abs(position - 0.5f) < 1.0e-4f;
+        const auto arrived = where(4.0, 8.0);
+        s.check(halfway && from == 2 && to == 2, "the journey to a section's Location arrives on its first downbeat", mid + ", " + arrived);
+        where(9.0, 8.0);
+        s.check(from == 2 && to == 2 && a.locationOf(2) == 2, "a section without one stays where the world is");
+        where(11.0, 100.0);
+        s.check(from == 2 && to == 5 && std::abs(position - 0.75f) < 1.0e-4f, "a journey is at most the section long", where(11.0, 100.0));
+        // Overrides.
+        a.sections[2].planet = dsp::Ocean;
+        a.sections[2].world[Temperature] = 90;
+        const auto st = a.evaluate(9.0 * arr::beatsPerBar);
+        s.check(st.planet == dsp::Ocean && std::abs(st.world[Temperature] - 0.9f) < 1.0e-4f && st.world[Weather] < 0 && a.evaluate(1.0).planet == -1,
+                "a section's Planet and World Control overrides hold while it plays");
+    }
+    {
+        // Templates.
+        const std::array<std::vector<int>, arr::TemplateCount> lengths { { { 8, 16, 16, 16, 8 }, { 8, 32, 8 }, { 4, 8, 16, 8, 16, 4 }, { 8, 16, 4, 16, 8 },
+                                                                            { 8, 8, 8, 8 }, { 16, 16, 8, 16 } } };
+        bool all = true;
+        std::string text;
+        for (int t = 0; t < arr::TemplateCount; ++t) {
+            const auto a = arr::makeTemplate(t);
+            bool ok = a.count == int(lengths[std::size_t(t)].size());
+            for (int i = 0; ok && i < a.count; ++i) ok = a.sections[std::size_t(i)].bars == lengths[std::size_t(t)][std::size_t(i)];
+            if (!ok) text += std::string(arr::templateNames[std::size_t(t)]) + " ";
+            all &= ok;
+        }
+        s.check(all, "the six templates have their sections and lengths", text);
+        const auto town = arr::makeTemplate(arr::TownTheme), arc = arr::makeTemplate(arr::ClassicArc);
+        s.check(town.end == arr::EndLoop && town.loopTo == 0 && arc.end == arr::EndStop, "Town Theme loops; Classic Arc stops");
+        s.check(arr::kindOf(arc, 0) == arr::KindIntro && arr::kindOf(arc, 1) == arr::KindBuild && arr::kindOf(arc, 2) == arr::KindPeak
+                    && arr::kindOf(arc, 3) == arr::KindCalm && arr::kindOf(arc, 4) == arr::KindOutro,
+                "section kinds come from their names");
+        s.check(arr::roleOf(Castle, 0) == arr::RoleBed && arr::roleOf(Castle, 3) == arr::RoleRhythm && arr::roleOf(Factory, 5) == arr::RoleBass
+                    && arr::roleOf(Castle, 1) == arr::RoleAccent && arr::roleOf(Forest, 5) == arr::RoleTexture,
+                "instrument roles (bed, rhythm, bass, accent, texture)");
+    }
+    {
+        // Auto-arrange: Castle and Tavern in a Classic Arc.
+        std::array<int, placeSlots> types {};
+        types[0] = Castle;
+        types[1] = Tavern;
+        const auto a = arr::autoArrange(arr::makeTemplate(arr::ClassicArc), types, 7);
+        const auto playing = [&](int section, int slot = -1) {
+            int on = 0;
+            const auto st = a.evaluate((double(a.startOf(section)) + 0.75 * a.sections[std::size_t(section)].bars) * arr::beatsPerBar);
+            for (int k = 0; k < placeSlots; ++k)
+                if (types[std::size_t(k)] != NoPlace && (slot < 0 || slot == k))
+                    for (int e = 0; e < placeElements; ++e) on += st.gain[std::size_t(k)][std::size_t(e)] > 0.5f ? 1 : 0;
+            return on;
+        };
+        const std::array<int, 5> counts { playing(0), playing(1), playing(2), playing(3), playing(4) };
+        std::string text;
+        for (int c : counts) text += std::to_string(c) + " ";
+        s.check(counts[0] < counts[1] && counts[1] < counts[2] && counts[2] == 12 && counts[3] < counts[2] && counts[4] < counts[3] && counts[0] > 0,
+                "Auto-arrange: a sparse intro, a build, everything at the climax, thinning out", "instruments playing: " + text);
+        bool intro = true;
+        for (int e = 0; e < placeElements; ++e) {
+            const auto& c = a.sections[0].cells[0][std::size_t(e)];
+            const int role = arr::roleOf(Castle, e);
+            if ((role == arr::RoleBed || role == arr::RoleTexture) != (c.entry == arr::EntryOn) && !(role == arr::RoleMelody && c.entry == arr::EntryFadeIn)) intro = false;
+            if (a.sections[0].cells[1][std::size_t(e)].entry != arr::EntryOff) intro = false;
+        }
+        s.check(intro, "the intro is the first Place's beds; the second Place joins later");
+        // The build: drones and bass from the start, rhythm halfway, melody fading in or halfway.
+        bool order = true;
+        for (int e = 0; e < placeElements; ++e) {
+            const int role = arr::roleOf(Castle, e), entry = a.sections[1].cells[0][std::size_t(e)].entry;
+            if (role <= arr::RoleBass && entry != arr::EntryOn) order = false;
+            if (role == arr::RoleRhythm && entry != arr::EntryHalfway) order = false;
+            if (role == arr::RoleMelody && entry != arr::EntryFadeIn && entry != arr::EntryHalfway) order = false;
+        }
+        s.check(order, "instruments enter by role during the build (drone, bass, then rhythm, then melody)");
+        s.check(a.sections[1].transition == arr::TransRiser || a.sections[1].transition == arr::TransDrumFill, "into the climax: a riser or a drum fill",
+                arr::transitionNames[a.sections[1].transition]);
+        s.check(a.sections[4].transition == arr::TransCut && a.sections[2].cells[0][3].variant == pat::VariantB, "no transition at the end; busier variants at the climax");
+        s.check(arr::autoArrange(arr::makeTemplate(arr::ClassicArc), types, 7) == a, "the same World Seed gives the same arrangement");
+        int differ = 0;
+        for (uint32_t seed = 1; seed <= 6; ++seed) differ += arr::autoArrange(arr::makeTemplate(arr::ClassicArc), types, seed) == a ? 0 : 1;
+        s.check(differ >= 3, "other seeds choose differently", std::to_string(differ) + " of 6");
+        // Every template, with one Place of each category: something always plays; the
+        // user's sections keep their names, lengths and Locations.
+        bool sound = true;
+        for (int t = 0; t < arr::TemplateCount; ++t)
+            for (int type : { Castle, City, Spaceport, Forest, Nebula }) {
+                std::array<int, placeSlots> one {};
+                one[0] = type;
+                auto tmpl = arr::makeTemplate(t);
+                tmpl.sections[0].location = 3;
+                const auto x = arr::autoArrange(tmpl, one, 3);
+                for (int i = 0; i < x.count; ++i) sound &= [&] {
+                    for (const auto& c : x.sections[std::size_t(i)].cells[0])
+                        if (c.entry != arr::EntryOff) return true;
+                    return false;
+                }();
+                sound &= x.count == tmpl.count && x.sections[0].location == 3 && x.sections[0].bars == tmpl.sections[0].bars;
+            }
+        s.check(sound, "every template auto-arranges with an instrument in every section and keeps the sections");
+    }
+    s.section("transitions: state");
+    {
+        Host a;
+        auto arrangement = arr::makeTemplate(arr::Battle);
+        arrangement.sections[0].transition = arr::TransReverse;
+        arrangement.sections[0].transitionLength = 3;
+        arrangement.sections[1].transition = arr::TransDrop;
+        arrangement.sections[1].transitionLength = 2;
+        arrangement.sections[2].location = 4;
+        arrangement.sections[3].planet = dsp::LavaWorld;
+        arrangement.sections[3].world[Danger] = 100;
+        arrangement.sections[3].world[Wetness] = 0;
+        a.p->arrangement.set(arrangement);
+        juce::MemoryBlock state;
+        a.p->getStateInformation(state);
+        Host b;
+        b.p->setStateInformation(state.getData(), int(state.getSize()));
+        s.check(b.p->arrangement.get() == arrangement, "transitions, Locations, Planet and World overrides survive a state round trip");
+        const auto world = a.p->exportWorld();
+        Host c;
+        c.p->importWorld(world);
+        s.check(c.p->arrangement.get() == arrangement, "and a .world file");
+        a.p->arrangement.set(arr::autoArrange(arrangement, a.p->slotTypes(), 1));
+        a.p->arrangement.undo();
+        s.check(a.p->arrangement.get() == arrangement, "Auto-arrange undoes in one step");
+    }
+
+    s.section("transitions: playback");
+    // Castle at 120 bpm: two 2-bar sections (a bar is 2 s), the boundary at 4 s; with each
+    // transition, against the same with a Cut.
+    const auto twoParts = [](int transition, int length) {
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Build", 2, 0, 0.5f);
+        a.sections[0].transition = uint8_t(transition);
+        a.sections[0].transitionLength = uint8_t(length);
+        a.sections[1] = arr::makeSection("Climax", 2, 1, 0.5f);
+        a.count = 2;
+        return a;
+    };
+    const auto renderWith = [](const arr::Arrangement& a, double seconds, int64_t from = 0) {
+        Host h;
+        h.p->arrangement.set(a);
+        h.set("p1_activity", 0.7f);
+        play(h, from);
+        return h.render(seconds);
+    };
+    const auto cut = renderWith(twoParts(arr::TransCut, 1), 6.0);
+    {
+        bool safe = true;
+        std::string text;
+        for (int t = arr::TransCrossfade; t < arr::TransitionCount; ++t) {
+            const auto audio = renderWith(twoParts(t, 1), 6.0);
+            const auto st = measure(audio, 0.5);
+            const auto env = envelopeDb(audio, 0.02, 1.0);
+            double jump = 0;
+            for (std::size_t i = 1; i < env.size(); ++i) jump = std::max(jump, env[i] - env[i - 1]);
+            // A Drop's return on the downbeat is a deliberate hit: up to the sub hit's own rise.
+            const double limit = t == arr::TransDrop ? 30.0 : 9.0;
+            const bool ok = st.finite && st.peak < 1.0 && jump < limit;
+            safe &= ok;
+            text += std::string(arr::transitionNames[std::size_t(t)]) + " " + fmt(jump) + " dB, peak " + fmt(st.peak) + "; ";
+        }
+        s.check(safe, "every transition is finite, below the ceiling and without a level spike", text);
+    }
+    {
+        // What each one does in the last bar (2-4 s) and just after (4-5 s).
+        const auto cutAfter = measure(cut, 4.0, 4.6);
+        const auto riser = renderWith(twoParts(arr::TransRiser, 1), 6.0);
+        const auto r = measure(riser, 3.0, 4.0), c = measure(cut, 3.0, 4.0);
+        s.check(r.highDb > c.highDb + 3.0 && r.rmsDb > c.rmsDb + 0.5, "a Riser rises into the boundary (brighter, louder)",
+                fmt(r.highDb - c.highDb) + " dB highs, " + fmt(r.rmsDb - c.rmsDb) + " dB level");
+        const auto swell = measure(renderWith(twoParts(arr::TransReverse, 1), 6.0), 3.3, 4.0), cs = measure(cut, 3.3, 4.0);
+        s.check(swell.rmsDb > cs.rmsDb + 1.0, "a Reverse swell swells up to the downbeat", fmt(swell.rmsDb - cs.rmsDb) + " dB");
+        const auto filter = renderWith(twoParts(arr::TransFilter, 1), 6.0);
+        // Above 1.5 kHz through a steep high-pass (measure()'s one-pole bands let the
+        // Castle's strong lows leak into its "highs").
+        const auto above = [](const Audio& audio, double from, double to) {
+            std::array<dsp::Svf, 2> hp;
+            for (auto& f : hp) f.set(1500.0f, 0.7f, float(audio.rate));
+            double sum = 0;
+            const auto begin = std::size_t(from * audio.rate), end = std::min(audio.l.size(), std::size_t(to * audio.rate));
+            for (std::size_t i = 0; i < end; ++i) {
+                const float x = hp[1].tick(hp[0].tick(0.5f * (audio.l[i] + audio.r[i])).hp).hp;
+                if (i >= begin) sum += double(x) * double(x);
+            }
+            return 10.0 * std::log10(sum / double(std::max<std::size_t>(end - begin, 1)) + 1.0e-24);
+        };
+        const double closed = above(filter, 3.5, 4.0) - above(cut, 3.5, 4.0), open = above(filter, 4.6, 5.5) - above(cut, 4.6, 5.5);
+        s.check(closed < -15.0 && std::abs(open) < 3.0, "a Filter sweep closes the mix into the boundary and opens again after",
+                fmt(closed) + " dB above 1.5 kHz before, " + fmt(open) + " after");
+
+        const auto drop = renderWith(twoParts(arr::TransDrop, 1), 6.0);
+        const auto dw = measure(drop, 3.65, 4.0), cw = measure(cut, 3.65, 4.0), dh = measure(drop, 4.0, 4.6);
+        s.check(dw.rmsDb < cw.rmsDb - 10.0 && dh.lowDb > cutAfter.lowDb + 3.0, "a Drop: silence before the downbeat, a sub hit on it",
+                fmt(dw.rmsDb - cw.rmsDb) + " dB in the drop, " + fmt(dh.lowDb - cutAfter.lowDb) + " dB lows after");
+    }
+    {
+        // Crossfade: an instrument off in the Build and on in the Climax starts before the boundary.
+        auto a = twoParts(arr::TransCrossfade, 1);
+        for (int e = 1; e < placeElements; ++e) a.sections[0].cells[0][std::size_t(e)].entry = arr::EntryOff;
+        Host h;
+        h.p->arrangement.set(a);
+        h.set("p1_activity", 0.9f);
+        h.set("p1_density", 0.9f);
+        play(h);
+        h.render(5.0);
+        int64_t first = -1;
+        for (const auto& ev : events(h))
+            if (ev.element != 0 && (first < 0 || int64_t(ev.clock) < first)) first = int64_t(ev.clock);
+        s.check(first >= 96000 - 48 && first < 4 * 48000, "a Crossfade brings the next section's instruments in during its bars",
+                fmt(double(first) / 48000.0) + " s");
+        // Drum fill: the Castle's timpani play their Fill in the last bar.
+        Host d;
+        auto fill = twoParts(arr::TransDrumFill, 1);
+        d.p->arrangement.set(fill);
+        play(d);
+        d.render(3.0);
+        s.check(d.p->engine.arrangeState().drumFill && d.p->engine.placeSlot(0).playingPattern(3) != nullptr
+                    && d.p->engine.placeSlot(0).playingPattern(3) == &d.p->engine.placeSlot(0).generatedPattern(3, pat::VariantFill),
+                "a Drum fill plays the rhythm instruments' Fills");
+    }
+    {
+        // Deterministic inside a transition: starting there twice gives the same.
+        const auto x = renderWith(twoParts(arr::TransRiser, 2), 2.0, 3 * 48000), y = renderWith(twoParts(arr::TransRiser, 2), 2.0, 3 * 48000);
+        s.check(x.l == y.l && x.r == y.r, "playback from inside a transition is the same every time");
+        Host h;
+        auto a = twoParts(arr::TransRiser, 1);
+        a.sections[1].transition = arr::TransFilter;
+        a.end = arr::EndLoop;
+        h.p->arrangement.set(a);
+        h.set("p2_type", float(Tavern));
+        play(h);
+        h.render(0.5);
+        allocationProbe::calls = 0;
+        allocationProbe::enabled = true;
+        for (int i = 0; i < 1000; ++i) h.processOne(512);
+        allocationProbe::enabled = false;
+        s.check(allocationProbe::calls == 0, "no heap allocation while transitions play", std::to_string(allocationProbe::calls) + " allocations");
+    }
+    {
+        // Section Locations: Location 1 cold, Location 2 hot; the Build is at 2. The journey
+        // takes one bar (Travel Sync 1 bar) and arrives on the Build's downbeat.
+        Host h;
+        h.set("temperature", 0.1f);
+        h.p->saveLocation(0);
+        h.set("temperature", 0.9f);
+        h.p->saveLocation(1);
+        h.set("temperature", 0.5f);
+        h.set("travelsync", 1.0f);
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0);
+        a.sections[0].location = 0;
+        a.sections[1] = arr::makeSection("Build", 2, 1);
+        a.sections[1].location = 1;
+        a.count = 2;
+        h.p->arrangement.set(a);
+        play(h);
+        h.render(1.5);
+        const float start = h.p->engine.frame()[Temperature];
+        h.render(1.4);   // 2.9 s: the journey has started (it starts at 2 s)
+        const float during = h.p->engine.frame()[Temperature];
+        h.render(2.0);   // 4.9 s: arrived
+        const float after = h.p->engine.frame()[Temperature];
+        s.check(std::abs(start - 0.1f) < 0.02f && during > 0.15f && during < 0.85f && std::abs(after - 0.9f) < 0.03f,
+                "a section's Location: the world travels there, arriving on its downbeat", fmt(start) + " -> " + fmt(during) + " -> " + fmt(after));
+        s.check(std::abs(h.get("temperature") - 0.5f) < 1.0e-4f, "the parameters stay as set (nothing is written back)");
+        // Starting in the Build is at its Location at once.
+        Host k;
+        k.set("temperature", 0.1f);
+        k.p->saveLocation(0);
+        k.set("temperature", 0.9f);
+        k.p->saveLocation(1);
+        k.set("temperature", 0.5f);
+        k.p->arrangement.set(a);
+        play(k, 5 * 48000);
+        k.render(0.3);
+        s.check(std::abs(k.p->engine.frame()[Temperature] - 0.9f) < 0.03f, "starting in a section is at its Location at once", fmt(k.p->engine.frame()[Temperature]));
+        // Play Mode back to Free: the parameters are the world again.
+        k.set("playmode", float(PlayFree));
+        k.render(1.5);
+        s.check(std::abs(k.p->engine.frame()[Temperature] - 0.5f) < 0.03f, "leaving Arrangement mode returns to the parameters", fmt(k.p->engine.frame()[Temperature]));
+    }
+    {
+        // Overrides: a hot, Ocean-planet Climax in a cold Rocky world.
+        Host h;
+        h.set("temperature", 0.1f);
+        h.set("planetinfluence", 1.0f);
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0);
+        a.sections[1] = arr::makeSection("Climax", 2, 1);
+        a.sections[1].world[Temperature] = 80;
+        a.sections[1].planet = dsp::Ocean;
+        a.count = 2;
+        a.end = arr::EndLoop;
+        a.loopTo = 1;
+        h.p->arrangement.set(a);
+        play(h);
+        h.render(3.0);
+        const float cold = h.p->engine.frame()[Temperature];
+        const float dryChorus = h.p->engine.planetColour().current().chorus;
+        h.render(4.0);
+        s.check(std::abs(cold - 0.1f) < 0.02f && std::abs(h.p->engine.frame()[Temperature] - 0.8f) < 0.02f, "a World Control override holds in its section",
+                fmt(cold) + " -> " + fmt(h.p->engine.frame()[Temperature]));
+        s.check(dryChorus < 0.05f && h.p->engine.planetColour().current().chorus > 0.3f, "and a Planet override (Ocean's chorus)",
+                fmt(dryChorus) + " -> " + fmt(h.p->engine.planetColour().current().chorus));
+    }
+}
+
+//==============================================================================
+// Milestone 11c: rendering the arrangement, game files, stingers, arrangement MIDI.
+void testGameAudio(Suite& s) {
+    using namespace arrangeTest;
+    s.section("game audio: the arrangement rendered");
+    // Castle at 120 bpm (a bar is 2 s): Intro 2 bars (drone and harp), Build 2 with a
+    // Riser into the Climax 2, End: stop.
+    const auto three = [] {
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0, 0.3f);
+        for (int e = 0; e < placeElements; ++e) a.sections[0].cells[0][std::size_t(e)].entry = e == 0 || e == 4 ? arr::EntryOn : arr::EntryOff;
+        a.sections[0].transition = arr::TransCrossfade;
+        a.sections[1] = arr::makeSection("Build", 2, 1, 0.6f);
+        a.sections[1].transition = arr::TransRiser;
+        a.sections[2] = arr::makeSection("Climax", 2, 2, 0.9f);
+        a.count = 3;
+        return a;
+    };
+    {
+        arr::Arrangement a = three();
+        s.check(capture::arrangementBars(a) == 8.0, "an arrangement renders its bars plus End: stop's two-bar fade");
+        a.end = arr::EndLoop;
+        s.check(capture::arrangementBars(a) == 6.0, "and once through when it loops");
+        a.sections[1].repeats = 0;
+        s.check(capture::arrangementBars(a) == 4.0, "and up to one pass of an endless section");
+    }
+    const auto renderAll = [](capture::Scene& scene, const capture::GameFile& file) {
+        Audio out;
+        out.rate = scene.sampleRate;
+        const auto pass = capture::passes(scene, false).front();
+        capture::renderGameFile(scene, file, pass, [&](const float* l, const float* r, int n) {
+            out.l.insert(out.l.end(), l, l + n);
+            out.r.insert(out.r.end(), r, r + n);
+            return true;
+        });
+        return out;
+    };
+    {
+        // A render of the arrangement equals the host playing it in Arrangement mode.
+        Host h;
+        h.p->arrangement.set(three());
+        h.set("p1_activity", 0.7f);
+        h.render(0.05);   // the host's tempo (120 bpm) reaches the plugin
+        auto scene = h.p->captureScene();
+        capture::GameFile whole;
+        const auto rendered = renderAll(scene, whole);
+        play(h);
+        const auto played = h.render(double(rendered.l.size()) / 48000.0);
+        double worst = 0;
+        for (std::size_t i = 0; i < rendered.l.size(); ++i) worst = std::max(worst, double(std::abs(rendered.l[i] - played.l[i])));
+        s.check(rendered.l.size() == std::size_t(8 * 96000) && worst < 1.0e-4, "rendering the arrangement matches playback in Arrangement mode",
+                std::to_string(rendered.l.size()) + " samples, " + fmt(toDb(worst)) + " dB worst difference");
+        s.check(measure(rendered, 15.98).rmsDb < -60.0, "and ends faded out (End: stop)", fmt(measure(rendered, 15.98).rmsDb) + " dB in the last 20 ms");
+    }
+    {
+        // With section Locations: the journeys render as they play.
+        Host h;
+        h.set("temperature", 0.1f);
+        h.p->saveLocation(0);
+        h.set("temperature", 0.9f);
+        h.set("weather", 0.8f);
+        h.p->saveLocation(1);
+        h.set("temperature", 0.5f);
+        h.set("weather", 0.3f);
+        auto a = three();
+        a.sections[0].location = 0;
+        a.sections[2].location = 1;
+        h.p->arrangement.set(a);
+        h.render(0.05);   // the host's tempo (120 bpm) reaches the plugin
+        auto scene = h.p->captureScene();
+        capture::GameFile whole;
+        const auto rendered = renderAll(scene, whole);
+        play(h);
+        const auto played = h.render(double(rendered.l.size()) / 48000.0);
+        double worst = 0;
+        for (std::size_t i = 0; i < rendered.l.size(); ++i) worst = std::max(worst, double(std::abs(rendered.l[i] - played.l[i])));
+        Host plain;
+        plain.p->arrangement.set(three());
+        plain.render(0.05);
+        auto plainScene = plain.p->captureScene();
+        const auto without = renderAll(plainScene, whole);
+        s.check(worst < 1.0e-4 && difference(measure(rendered, 9.0, 12.0), measure(without, 9.0, 12.0)) > 1.0,
+                "with section Locations too (the journey is in the render)", fmt(toDb(worst)) + " dB worst difference");
+    }
+    s.section("game audio: sections, loops and stingers");
+    {
+        Host h;
+        h.set("p1_type", float(Tavern));
+        auto a = arr::makeTemplate(arr::TownTheme);
+        for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].bars = 2;
+        h.p->arrangement.set(a);
+        h.render(0.05);   // the host's tempo (120 bpm) reaches the plugin
+        auto scene = h.p->captureScene();
+        const auto files = capture::gameFiles(scene, false);
+        std::string names;
+        for (const auto& f : files) names += f.name.toStdString() + " ";
+        s.check(files.size() == 4 && files[0].name == "Tavern_A" && files[1].name == "Tavern_B" && files[2].name == "Tavern_A_2" && files[3].name == "Tavern_C",
+                "section files are named for game engines", names);
+        const auto stingers = capture::gameFiles(scene, true);
+        s.check(stingers.size() == 4 && stingers[1].name == "Tavern_B_Stinger" && stingers[1].kind == capture::GameFile::Stinger, "and stingers");
+    }
+    {
+        // Exploration-loop style: Intro 2, Loop 2 bars played twice, Outro 2.
+        Host h;
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0, 0.3f);
+        a.sections[1] = arr::makeSection("Loop", 2, 1, 0.6f);
+        a.sections[1].repeats = 2;
+        a.sections[2] = arr::makeSection("Outro", 2, 2, 0.2f);
+        a.count = 3;
+        h.p->arrangement.set(a);
+        h.render(0.05);   // the host's tempo (120 bpm) reaches the plugin
+        auto scene = h.p->captureScene();
+        const auto files = capture::gameFiles(scene, false);
+        s.check(files.size() == 3 && files[1].kind == capture::GameFile::Loop && files[0].kind == capture::GameFile::Section && files[1].name == "Castle_Loop",
+                "a section that repeats is a loop");
+        // The Intro file is the start of the arrangement, exactly two bars long.
+        const auto intro = renderAll(scene, files[0]);
+        capture::GameFile whole;
+        const auto all = renderAll(scene, whole);
+        bool same = intro.l.size() == std::size_t(2 * 96000);
+        for (std::size_t i = 0; same && i < intro.l.size(); ++i) same = intro.l[i] == all.l[i];
+        s.check(same, "a section file is exactly its bars, as the arrangement plays them");
+        const auto outro = renderAll(scene, files[2]);
+        s.check(outro.l.size() == std::size_t(4 * 96000) && measure(outro, 7.98).rmsDb < -60.0, "the last section keeps End: stop's fade-out");
+        // The loop: two bars, seamless.
+        const auto loop = renderAll(scene, files[1]);
+        const std::size_t n = loop.l.size();
+        double seam = 0, inside = 0;
+        for (std::size_t i = 1; i < n; ++i) inside = std::max(inside, double(std::max(std::abs(loop.l[i] - loop.l[i - 1]), std::abs(loop.r[i] - loop.r[i - 1]))));
+        seam = std::max(std::abs(loop.l[0] - loop.l[n - 1]), std::abs(loop.r[0] - loop.r[n - 1]));
+        Audio wrapped;
+        wrapped.rate = 48000;
+        wrapped.l.assign(loop.l.end() - 4800, loop.l.end());
+        wrapped.r.assign(loop.r.end() - 4800, loop.r.end());
+        wrapped.l.insert(wrapped.l.end(), loop.l.begin(), loop.l.begin() + 4800);
+        wrapped.r.insert(wrapped.r.end(), loop.r.begin(), loop.r.begin() + 4800);
+        const auto env = envelopeDb(wrapped, 0.01);
+        double jump = 0;
+        for (std::size_t i = 1; i < env.size(); ++i) jump = std::max(jump, std::abs(env[i] - env[i - 1]));
+        s.check(n == std::size_t(2 * 96000) && seam <= inside && jump < 6.0, "a loop's end joins its start without a click or a level jump",
+                fmt(toDb(seam)) + " dB step at the seam, " + fmt(toDb(inside)) + " inside; " + fmt(jump) + " dB largest 10 ms change around it");
+        s.check(measure(loop, 0.0, 0.05).rmsDb > -60.0, "and its start carries what rings over from its end");
+        // A stinger: the Intro's last bar, then it rings out to silence.
+        const auto st = capture::gameFiles(scene, true);
+        const auto stinger = renderAll(scene, st[0]);
+        s.check(stinger.l.size() == std::size_t(4 * 96000) && measure(stinger, 7.98).rmsDb < -60.0 && measure(stinger, 2.0, 2.5).rmsDb > -50.0
+                    && measure(stinger, 0.0).finite && measure(stinger, 0.0).peak < 1.0,
+                "a stinger is its section's ending, ringing out to silence", fmt(measure(stinger, 2.0, 2.5).rmsDb) + " dB as it rings");
+        arr::Arrangement ring = a;
+        ring.count = 1;
+        ring.end = arr::EndRingOut;
+        const auto r1 = ring.evaluate(2.5 * 4), r2 = ring.evaluate(4.0 * 4), r3 = ring.evaluate(5.1 * 4);
+        s.check(r1.ringOut && r1.gain[0][0] == 1 && r1.endGain == 1 && r2.endGain < 0.6f && r2.endGain > 0.4f && r3.endGain == 0,
+                "a ring-out keeps the instruments without new notes, and fades from one to three bars after");
+    }
+    s.section("game audio: arrangement MIDI");
+    {
+        Host h;
+        auto el = notesPerBar(1, 0);
+        el.alt[0] = notesPerBar(4, 0).pattern;
+        el.setEdited(pat::VariantB, true);
+        h.p->patterns.setElement(0, Castle, 4, el);
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0);
+        a.sections[0].cells[0][4].entry = arr::EntryOff;
+        a.sections[1] = arr::makeSection("Build", 2, 1);
+        a.sections[1].cells[0][4].variant = pat::VariantB;
+        a.sections[2] = arr::makeSection("Outro", 2, 2);
+        a.sections[2].cells[0][4].entry = arr::EntryFadeOut;
+        a.count = 3;
+        h.p->arrangement.set(a);
+        h.render(0.05);   // the host's tempo (120 bpm) reaches the plugin
+        auto scene = h.p->captureScene();
+        const auto tracks = capture::sceneTracks(scene);
+        const auto midi = capture::arrangementMidi(scene, tracks);
+        const juce::MidiMessageSequence* harp = nullptr;
+        for (int t = 1; t < midi.getNumTracks(); ++t) {
+            const auto* track = midi.getTrack(t);
+            for (int k = 0; k < track->getNumEvents(); ++k)
+                if (track->getEventPointer(k)->message.isTrackNameEvent() && track->getEventPointer(k)->message.getTextFromTextMetaEvent().contains("Harp")) harp = track;
+        }
+        std::array<int, 6> perBar {};
+        std::array<float, 6> velocity {};
+        if (harp != nullptr)
+            for (int k = 0; k < harp->getNumEvents(); ++k) {
+                const auto& m = harp->getEventPointer(k)->message;
+                if (!m.isNoteOn()) continue;
+                const auto bar = std::size_t(m.getTimeStamp() / double(pat::ticksPerBeat * 4));
+                if (bar < perBar.size()) {
+                    ++perBar[bar];
+                    velocity[bar] = std::max(velocity[bar], m.getFloatVelocity());
+                }
+            }
+        std::string text;
+        for (int c : perBar) text += std::to_string(c) + " ";
+        s.check(harp != nullptr && perBar[0] == 0 && perBar[1] == 0 && perBar[2] == 4 && perBar[3] == 4 && perBar[4] == 1 && perBar[5] == 1,
+                "scene MIDI follows the arrangement: silent where off, the section's variant where on", "Harp notes per bar: " + text);
+        s.check(velocity[5] < velocity[4] && velocity[4] < velocity[3] + 1.0e-6f, "and fades as velocity", fmt(velocity[3]) + " " + fmt(velocity[4]) + " " + fmt(velocity[5]));
+        s.check(midi.getLastTimestamp() <= 6.0 * 4 * pat::ticksPerBeat + 1 && midi.getNumTracks() == int(tracks.size()) + 1, "one track per instrument, as long as the arrangement");
+    }
+    s.section("game audio: CAPTURE");
+    {
+        Host h;
+        h.set("p1_type", float(Tavern));
+        auto a = arr::makeTemplate(arr::ExplorationLoop);
+        for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].bars = 1;
+        h.p->arrangement.set(arr::autoArrange(a, h.p->slotTypes(), 1));
+        h.render(0.3);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        auto& capture = view->capturePanel();
+        capture.setArrangement(true);
+        capture.setMode(ui::CapturePanel::SectionsMode);
+        capture.startRender();
+        bool ok = capture.waitForRender(60000) && capture.renderedFiles().size() == 3;
+        for (const auto& f : capture.renderedFiles()) ok = ok && f.existsAsFile() && f.getSize() > 10000;
+        s.check(ok && capture.renderedFiles()[1].getFileName() == "Tavern_Loop.wav", "SECTIONS renders a file per section (Tavern_Intro, Tavern_Loop, Tavern_Outro)",
+                capture.renderedFiles().isEmpty() ? std::string() : capture.renderedFiles()[1].getFileName().toStdString());
+        capture.setMode(ui::CapturePanel::StingersMode);
+        capture.startRender();
+        s.check(capture.waitForRender(60000) && capture.renderedFiles().size() == 3 && capture.renderedFiles()[2].getFileName() == "Tavern_Outro_Stinger.wav",
+                "STINGERS renders each section's stinger");
+        capture.setMode(ui::CapturePanel::MixMode);
+        capture.startRender();
+        s.check(capture.waitForRender(60000) && capture.renderedFiles().size() == 1 && capture.renderedFiles()[0].getFileName() == "Tavern_Arrangement.wav",
+                "ARRANGEMENT with Mix renders the whole arrangement");
+        const auto midi = capture.tempMidiFile();
+        s.check(capture.writeSceneMidi(midi) && midi.getFileName() == "WORLDBUILDER arrangement.mid", "and MIDI follows it");
+        for (const auto& f : capture.renderedFiles()) f.deleteFile();
+        midi.deleteFile();
+        h.p->arrangement.set({});
+        capture.startRender();
+        s.check(!capture.rendering(), "without sections nothing renders from the arrangement");
+    }
+}
+
 void testSmoke(Suite& s) {
     s.section("smoke: default world, one Place per category, state round trip");
     {
@@ -4796,6 +5452,21 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
         v.view->settle(0.1f);
         save(v.image().getClippedImage(editorArea), "arrange");
         save(v.image().getClippedImage(header), "header-arrange");
+        // Milestone 11b: a Battle template, auto-arranged, with a Location.
+        v.h.p->saveLocation(2);
+        auto& arrange = v.view->arrangeView();
+        arrange.applyTemplate(arr::Battle);
+        arrange.select(2);
+        arrange.setLocation(2);
+        arrange.select(1);
+        v.view->settle(0.1f);
+        save(v.image().getClippedImage(editorArea), "arrange-battle");
+        // Milestone 11c: CAPTURE from the arrangement, as game files.
+        v.view->arrangeButton().onClick();
+        v.view->capturePanel().setArrangement(true);
+        v.view->capturePanel().setMode(ui::CapturePanel::SectionsMode);
+        v.view->settle(0.1f);
+        save(v.image().getClippedImage(bottom), "bottom-arrangement");
     }
     const std::vector<std::pair<const char*, std::vector<std::pair<const char*, float>>>> worlds {
         { "globe-frozen", { { "temperature", 0.05f }, { "weather", 0.2f } } },
@@ -4884,6 +5555,11 @@ int main(int argc, char** argv) {
     if (run("smoke")) testSmoke(s);
     if (run("planet")) testPlanet(s);
     if (run("arrangement")) testArrangement(s);
+    if (run("transitions")) {
+        testTransitions(s);
+        transitionTest::testInterface(s);
+    }
+    if (run("gameaudio")) testGameAudio(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

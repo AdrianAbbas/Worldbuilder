@@ -52,6 +52,12 @@ void Travel::locationState(int location, const WorldValues& live, Sounding& s) c
 }
 
 void Travel::journeyPlace(const TravelInputs& in, int& from, int& to, float& position) const {
+    if (in.arranged) {
+        from = std::clamp(in.from, -1, locationCount - 1);
+        to = std::clamp(in.to, -1, locationCount - 1);
+        position = easeTravel(std::isfinite(in.journey) ? std::clamp(in.journey, 0.0f, 1.0f) : 0.0f);
+        return;
+    }
     if (!in.pathOn) {
         from = std::clamp(in.from, 0, locationCount - 1);
         to = std::clamp(in.to, 0, locationCount - 1);
@@ -202,6 +208,15 @@ const Sounding& Travel::advance(const WorldValues& live, const std::array<const 
         mode = Idle;
     }
     if (!started || restart) morphIn = in;
+    if (in.arranged != wasArranged) {
+        wasArranged = in.arranged;
+        if (!in.arranged) {
+            // The arrangement stopped driving the world: the parameters take over again.
+            if (mode == Journeying || (mode == Travelling && target == ToJourney)) mode = in.journeyOn ? Journeying : Idle;
+            wasJourney = in.journeyOn;
+            journeyKey = keyOf(in);
+        }
+    }
     if (!started) {
         // The first block after loading: the parameters already hold the world.
         started = true;

@@ -1,4 +1,5 @@
 #include "ArrangeView.h"
+#include "../Arrangement/Templates.h"
 #include "PlaceArt.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
@@ -22,6 +23,12 @@ void presetFor(arr::Section& s, int preset) {
     s.intensityStart = p.start;
     s.intensityEnd = p.end;
     s.curve = p.curve;
+}
+
+// Short marks for the timeline's boundaries.
+constexpr std::array<const char*, arr::TransitionCount> transitionMarks { "", "XFADE", "RISER", "FILL", "DROP", "SWELL", "SWEEP" };
+juce::String lengthText(int kind, int length) {
+    return juce::String(length) + (kind == arr::TransDrop ? (length == 1 ? " beat" : " beats") : (length == 1 ? " bar" : " bars"));
 }
 
 juce::String repeatsText(int repeats) { return repeats == 0 ? juce::String("Loop (endless)") : (repeats == 1 ? juce::String("Once") : juce::String(repeats) + " times"); }
@@ -125,10 +132,64 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
     endSlider.setDoubleClickReturnValue(true, 0.5);
     lengthSlider.setDoubleClickReturnValue(true, 8);
 
+    // Milestone 11b: templates, Auto-arrange, transitions, Locations, overrides.
+    templateChoice.setTextWhenNothingSelected("TEMPLATE");
+    for (int t = 0; t < arr::TemplateCount; ++t) templateChoice.addItem(arr::templateNames[std::size_t(t)], t + 1);
+    templateChoice.setTooltip("Start from a template (Classic Arc, Exploration Loop, Battle, Boss Fight, Town Theme, Cinematic Reveal): it replaces "
+                              "the sections and arranges them for the active Places. Undoable.");
+    templateChoice.onChange = [this] {
+        if (updating) return;
+        const int id = templateChoice.getSelectedId();
+        if (id > 0) applyTemplate(id - 1);
+        const juce::ScopedValueSetter<bool> guard(updating, true);
+        templateChoice.setSelectedId(0, juce::dontSendNotification);
+    };
+    addAndMakeVisible(templateChoice);
+    autoButton.setTooltip("Auto-arrange: fills the instrument grid, pattern variants, Score Intensity ramps and transitions for these sections and "
+                          "the active Places (sparse intros, instruments entering by role in build-ups, everything at a climax, thinning out "
+                          "after). Section names say what each one is. Uses the World Seed; undoable.");
+    autoButton.onClick = [this] { autoArrange(); };
+    addAndMakeVisible(autoButton);
+
+    for (int t = 0; t < arr::TransitionCount; ++t) transitionChoice.addItem(arr::transitionNames[std::size_t(t)], t + 1);
+    transitionChoice.setTooltip("How this section hands over to the next one: Cut; Crossfade (instruments leaving fade out, those entering fade in); "
+                                "Riser; Drum fill (the rhythm instruments play their Fills); Drop (silence, then a sub hit on the downbeat); "
+                                "Reverse swell; Filter sweep (the mix closes down and opens again).");
+    transitionChoice.onChange = [this] {
+        if (updating || selectedIndex < 0) return;
+        setTransition(transitionChoice.getSelectedId() - 1, shown.sections[std::size_t(selectedIndex)].transitionLength);
+    };
+    addAndMakeVisible(transitionChoice);
+    transitionLengthChoice.setTooltip("The transition's length: bars (beats of silence for a Drop). At most the section's length.");
+    transitionLengthChoice.onChange = [this] {
+        if (updating || selectedIndex < 0) return;
+        setTransition(shown.sections[std::size_t(selectedIndex)].transition, transitionLengthChoice.getSelectedId());
+    };
+    addAndMakeVisible(transitionLengthChoice);
+    locationChoice.setTooltip("A Location for the section: the world travels there (over the Travel Time, at most the section before) and arrives on "
+                              "its first downbeat. Sections after it stay there until another one names a Location.");
+    locationChoice.onChange = [this] {
+        if (updating) return;
+        setLocation(locationChoice.getSelectedId() - 2);
+    };
+    addAndMakeVisible(locationChoice);
+    planetChoice.addItem("Planet as set", 1);
+    for (int i = 0; i < dsp::PlanetTypeCount; ++i) planetChoice.addItem(dsp::planetNames[std::size_t(i)], i + 2);
+    planetChoice.setTooltip("A Planet for this section only (its sound colour crossfades in), or the Planet as set.");
+    planetChoice.onChange = [this] {
+        if (updating) return;
+        setPlanet(planetChoice.getSelectedId() - 2);
+    };
+    addAndMakeVisible(planetChoice);
+    worldButton.setTooltip("World Control overrides for this section only (e.g. Danger up in the Combat).");
+    worldButton.onClick = [this] { showWorldMenu(); };
+    addAndMakeVisible(worldButton);
+
     shown = processor.arrangement.get();
     shownRevision = processor.arrangement.revision();
     shownTypes = processor.slotTypes();
     selectedIndex = shown.count > 0 ? 0 : -1;
+    refreshLocations();
     refreshInspector();
     startTimerHz(30);
 }
@@ -211,12 +272,93 @@ void ArrangeView::startPreview(int section) {
     select(section);
 }
 
+void ArrangeView::applyTemplate(int which) {
+    const auto tree = arr::makeTemplate(which);
+    const auto seed = uint32_t(juce::roundToInt(processor.parameters.getRawParameterValue(specs[PSeed].id)->load()));
+    processor.arrangement.set(arr::autoArrange(tree, processor.slotTypes(), seed));
+    shown = processor.arrangement.get();
+    shownRevision = processor.arrangement.revision();
+    select(0);
+    layoutTimeline();
+}
+
+void ArrangeView::autoArrange() {
+    if (shown.count <= 0) return;
+    const auto seed = uint32_t(juce::roundToInt(processor.parameters.getRawParameterValue(specs[PSeed].id)->load()));
+    processor.arrangement.set(arr::autoArrange(processor.arrangement.get(), processor.slotTypes(), seed));
+    shown = processor.arrangement.get();
+    shownRevision = processor.arrangement.revision();
+    refreshInspector();
+    repaint();
+}
+
+void ArrangeView::setTransition(int kind, int length) {
+    edit([&](arr::Section& s) {
+        s.transition = uint8_t(std::clamp(kind, 0, arr::TransitionCount - 1));
+        s.transitionLength = uint8_t(std::clamp(length, 1, arr::maxTransitionLength));
+    });
+    refreshInspector();
+}
+
+void ArrangeView::setLocation(int location) {
+    edit([&](arr::Section& s) { s.location = int8_t(std::clamp(location, -1, locationCount - 1)); });
+}
+
+void ArrangeView::setPlanet(int planet) {
+    edit([&](arr::Section& s) { s.planet = int8_t(std::clamp(planet, -1, dsp::PlanetTypeCount - 1)); });
+}
+
+void ArrangeView::setWorldOverride(int control, int percent) {
+    if (control < 0 || control >= WorldControlCount) return;
+    edit([&](arr::Section& s) { s.world[std::size_t(control)] = int8_t(std::clamp(percent, -1, 100)); });
+    refreshInspector();
+}
+
+void ArrangeView::showWorldMenu() {
+    if (selectedIndex < 0 || selectedIndex >= shown.count) return;
+    const auto& sec = shown.sections[std::size_t(selectedIndex)];
+    juce::PopupMenu m;
+    m.addSectionHeader("World Controls in " + juce::String::fromUTF8(sec.nameText()));
+    static constexpr std::array<int, 5> steps { 0, 25, 50, 75, 100 };
+    for (int w = 0; w < WorldControlCount; ++w) {
+        juce::PopupMenu sub;
+        const int now = sec.world[std::size_t(w)];
+        sub.addItem(1000 + w * 10, "As set", true, now < 0);
+        for (std::size_t k = 0; k < steps.size(); ++k) sub.addItem(1000 + w * 10 + 1 + int(k), juce::String(steps[k]) + "%", true, now == steps[k]);
+        const juce::String name = specs[std::size_t(PTemperature + w)].name;
+        m.addSubMenu(now < 0 ? name : name + "  " + juce::String(now) + "%", sub);
+    }
+    m.addSeparator();
+    m.addItem(1, "Clear every override");
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&worldButton), [this](int r) {
+        if (r == 1) {
+            for (int w = 0; w < WorldControlCount; ++w) setWorldOverride(w, -1);
+        } else if (r >= 1000) {
+            const int w = (r - 1000) / 10, k = (r - 1000) % 10;
+            setWorldOverride(w, k == 0 ? -1 : steps[std::size_t(k - 1)]);
+        }
+    });
+}
+
+void ArrangeView::refreshLocations() {
+    shownLocations = processor.locations.revision();
+    const juce::ScopedValueSetter<bool> guard(updating, true);
+    const int id = locationChoice.getSelectedId();
+    locationChoice.clear(juce::dontSendNotification);
+    locationChoice.addItem("No Location", 1);
+    for (int i = 0; i < locationCount; ++i)
+        locationChoice.addItem(juce::String(i + 1) + " " + processor.locations.name(i) + (processor.locations.used(i) ? "" : " (empty)"), i + 2);
+    locationChoice.setSelectedId(std::max(id, 1), juce::dontSendNotification);
+}
+
 //==============================================================================
 void ArrangeView::refreshInspector() {
     const juce::ScopedValueSetter<bool> guard(updating, true);
     const bool any = selectedIndex >= 0 && selectedIndex < shown.count;
-    for (auto* c : std::initializer_list<juce::Component*> { &nameChoice, &repeatsChoice, &curveChoice, &lengthSlider, &startSlider, &endSlider, &duplicateButton, &deleteButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &nameChoice, &repeatsChoice, &curveChoice, &lengthSlider, &startSlider, &endSlider, &duplicateButton,
+                                                             &deleteButton, &transitionChoice, &transitionLengthChoice, &locationChoice, &planetChoice, &worldButton })
         c->setEnabled(any);
+    autoButton.setEnabled(shown.count > 0);
     if (any) {
         const auto& s = shown.sections[std::size_t(selectedIndex)];
         nameChoice.setText(juce::String::fromUTF8(s.nameText()), juce::dontSendNotification);
@@ -228,6 +370,19 @@ void ArrangeView::refreshInspector() {
         lengthSlider.setValue(s.bars, juce::dontSendNotification);
         startSlider.setValue(s.intensityStart, juce::dontSendNotification);
         endSlider.setValue(s.intensityEnd, juce::dontSendNotification);
+        // The transition (none at the end, or before a repeat of itself).
+        const bool handover = shown.transitionAfter(selectedIndex);
+        transitionChoice.setSelectedId(s.transition + 1, juce::dontSendNotification);
+        transitionChoice.setEnabled(handover);
+        transitionLengthChoice.clear(juce::dontSendNotification);
+        for (int n = 1; n <= arr::maxTransitionLength; ++n) transitionLengthChoice.addItem(lengthText(s.transition, n), n);
+        transitionLengthChoice.setSelectedId(std::clamp<int>(s.transitionLength, 1, arr::maxTransitionLength), juce::dontSendNotification);
+        transitionLengthChoice.setEnabled(handover && s.transition != arr::TransCut);
+        locationChoice.setSelectedId(s.location + 2, juce::dontSendNotification);
+        planetChoice.setSelectedId(s.planet + 2, juce::dontSendNotification);
+        int overrides = 0;
+        for (auto w : s.world) overrides += w >= 0 ? 1 : 0;
+        worldButton.setButtonText(overrides > 0 ? "WORLD (" + juce::String(overrides) + ")" : juce::String("WORLD"));
     }
     endChoice.clear(juce::dontSendNotification);
     endChoice.addItem("End: stop", 1);
@@ -269,6 +424,10 @@ void ArrangeView::timerCallback() {
         if (drag == Drag::None) refreshInspector();
         layout = true;
     }
+    if (processor.locations.revision() != shownLocations) {
+        refreshLocations();
+        refreshInspector();
+    }
     const auto types = processor.slotTypes();
     if (types != shownTypes) {
         shownTypes = types;
@@ -308,7 +467,7 @@ void ArrangeView::layoutRows() {
     int active = 0;
     for (int t : shownTypes) active += t != NoPlace ? 1 : 0;
     if (active == 0) return;
-    const int rowHeight = std::clamp((gridArea.getHeight() - headerRow * active) / (placeElements * active), 11, 22);
+    const int rowHeight = std::clamp((gridArea.getHeight() - headerRow * active) / (placeElements * active), 9, 22);
     int y = gridArea.getY();
     for (int slot = 0; slot < placeSlots; ++slot) {
         if (shownTypes[std::size_t(slot)] == NoPlace) continue;
@@ -386,12 +545,27 @@ void ArrangeView::resized() {
         addButton.setBounds(t.removeFromLeft(90).reduced(2, 1));
         duplicateButton.setBounds(t.removeFromLeft(100).reduced(2, 1));
         deleteButton.setBounds(t.removeFromLeft(80).reduced(2, 1));
+        t.removeFromLeft(14);
+        templateChoice.setBounds(t.removeFromLeft(150).reduced(2, 1));
+        autoButton.setBounds(t.removeFromLeft(118).reduced(2, 1));
         endChoice.setBounds(t.removeFromRight(210).reduced(2, 1));
     }
     r.removeFromTop(6);
-    inspectorArea = r.removeFromTop(40);
+    inspectorArea = r.removeFromTop(78);
     {
-        auto t = inspectorArea.withTrimmedTop(14);
+        auto rows2 = inspectorArea;
+        auto t = rows2.removeFromTop(40).withTrimmedTop(14);
+        auto u = rows2.withTrimmedTop(13);
+        const auto put = [&u](juce::Component& c, int w) {
+            c.setBounds(u.removeFromLeft(w).reduced(2, 1));
+            u.removeFromLeft(8);
+        };
+        put(transitionChoice, 128);
+        put(transitionLengthChoice, 84);
+        u.removeFromLeft(10);
+        put(locationChoice, 160);
+        put(planetChoice, 116);
+        put(worldButton, std::max(70, std::min(110, u.getWidth() - 4)));
         const auto place = [&t](juce::Component& c, int w) {
             c.setBounds(t.removeFromLeft(w).reduced(2, 1));
             t.removeFromLeft(8);
@@ -456,6 +630,11 @@ void ArrangeView::paint(juce::Graphics& g) {
     above(startSlider, "INTENSITY " + juce::String(juce::roundToInt(startSlider.getValue() * 100.0)) + "%");
     above(endSlider, "TO " + juce::String(juce::roundToInt(endSlider.getValue() * 100.0)) + "%");
     above(curveChoice, "CURVE");
+    above(transitionChoice, "INTO NEXT");
+    above(transitionLengthChoice, "LENGTH");
+    above(locationChoice, "LOCATION");
+    above(planetChoice, "PLANET");
+    above(worldButton, "OVERRIDES");
     if (swatches[0].getWidth() > 0) {
         g.drawText("COLOUR", swatches[0].translated(0, -13).withHeight(12).withWidth(80), juce::Justification::centredLeft, false);
         for (int i = 0; i < arr::colourCount; ++i) {
@@ -546,6 +725,35 @@ void ArrangeView::paint(juce::Graphics& g) {
                 if (s.endless()) info << "  loop";
                 else if (s.repeats > 1) info << "  x" << int(s.repeats);
                 g.drawText(info, text.removeFromBottom(12.0f), juce::Justification::centredLeft, true);
+            }
+        }
+        // Milestone 11b: each boundary's transition, and each section's Location.
+        g.setFont(font(8.0f, true));
+        for (int i = 0; i < shown.count; ++i) {
+            const auto& s = shown.sections[std::size_t(i)];
+            const auto b = sectionBounds(i).toFloat().reduced(0.0f, 3.0f);
+            if (b.getWidth() <= 0) continue;
+            if (s.transition != arr::TransCut && shown.transitionAfter(i)) {
+                // A shaded span over the transition's length, and its mark at the boundary.
+                const double beats = std::min(arr::transitionBeats(s.transition, s.transitionLength), double(s.bars) * arr::beatsPerBar);
+                const float w = float(beats / arr::beatsPerBar * pxPerBar);
+                g.setColour(colours::cyan.withAlpha(0.16f));
+                g.fillRect(juce::Rectangle<float>(b.getRight() - w, b.getY(), w, b.getHeight()));
+                const juce::String mark = transitionMarks[std::size_t(s.transition)];
+                const float mw = float(mark.length()) * 5.4f + 8.0f;
+                const auto pill = juce::Rectangle<float>(b.getRight() - mw * 0.5f, b.getBottom() - 11.0f, mw, 11.0f);
+                g.setColour(colours::background.withAlpha(0.9f));
+                g.fillRoundedRectangle(pill, 3.0f);
+                g.setColour(colours::cyan);
+                g.drawRoundedRectangle(pill, 3.0f, 0.8f);
+                g.drawText(mark, pill, juce::Justification::centred, false);
+            }
+            if (s.location >= 0 && b.getWidth() > 18.0f) {
+                const auto pin = juce::Rectangle<float>(b.getRight() - 22.0f, b.getY() + 2.0f, 20.0f, 11.0f);
+                g.setColour(juce::Colour(processor.locations.colour(s.location)).withAlpha(0.9f));
+                g.fillRoundedRectangle(pin, 3.0f);
+                g.setColour(colours::background);
+                g.drawText("L" + juce::String(s.location + 1), pin, juce::Justification::centred, false);
             }
         }
         // Where a dragged section would go.
@@ -641,9 +849,9 @@ void ArrangeView::paint(juce::Graphics& g) {
                     g.setColour(colours::parchment.withAlpha(0.75f));
                     g.fillRect(juce::Rectangle<float>(b.getRight() - w, b.getY(), w, b.getHeight()).reduced(0.5f, 1.5f));
                 }
-                if (cell.entry != arr::EntryOff && b.getWidth() >= 12.0f && b.getHeight() >= 9.0f) {
+                if (cell.entry != arr::EntryOff && b.getWidth() >= 12.0f && b.getHeight() >= 7.0f) {
                     g.setColour(colours::background.withAlpha(0.9f));
-                    g.setFont(font(std::min(10.0f, b.getHeight() - 1.0f), true));
+                    g.setFont(font(std::min(10.0f, b.getHeight() + 0.5f), true));
                     g.drawText(arr::variantNames[std::size_t(std::min<int>(cell.variant, 2))], b.withTrimmedLeft(3.0f), juce::Justification::centredLeft, false);
                 }
                 const bool hover = i == hoverCellSection && row.slot == hoverCellSlot && row.element == hoverCellElement;

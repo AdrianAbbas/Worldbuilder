@@ -5,12 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 11a is complete** (the Arrangement, Direction Update 6, which inserts a
-new Milestone 11 and moves pro features, presets and release to Milestone 12). Its
-checklist and handoff are in the
-[Milestone 11a section](#milestone-11a-arrangement-timeline-sections-grid-variants-2026-10-26)
-at the end. A new milestone starts its own progress checklist; a resumed session
-continues from the first unticked item.
+**Milestone 11b/11c is in progress** (the Arrangement, Direction Update 6). The live
+checklist is in the
+[Milestone 11b and 11c section](#milestone-11b-and-11c-transitions-templates-auto-arrange-game-audio-export-2026-10-26)
+at the end; a resumed session continues from its first unticked item.
 
 ---
 
@@ -3400,3 +3398,212 @@ following the arrangement. Then Milestone 12 (multi-out, Inspire, presets, relea
   environment layers (wind, rain...) are not in the grid.
 - Carried over: the first-playback difference in the Path test, Places matched by slot,
   the `push-access-check` branch can be deleted.
+
+---
+
+## Milestone 11b and 11c: transitions, templates, Auto-arrange, game-audio export (2026-10-26)
+
+Direction Update 6, the rest of Milestone 11: 11b (transitions per boundary, templates,
+Auto-arrange, and the two section options 11a left: a section's Location and its Planet
+/ World Control overrides) and 11c (game-audio export and polish). Milestone 11a was
+tested by the developer in GarageBand: arrangements work. Unattended overnight run:
+decisions are recorded here. Working rules: push after each finished part with
+`[skip ci]`, the final push of 11c without it; small metric misses report-only after two
+attempts; the Linux suite passes before every push.
+
+### Progress checklist
+
+Ticked when committed and pushed. A resumed session starts at the first unticked item.
+
+- [ ] 11b.1 Model and engine: transitions (Cut, Crossfade 1-4 bars, Riser, Drum fill, Drop, Reverse swell, Filter sweep), a section's Location (journey timed to arrive on its downbeat) and its Planet / World Control overrides, the six templates and Auto-arrange (World Seed); state; tests (`--only transitions`)
+- [ ] 11b.2 ARRANGE view: TEMPLATE menu and AUTO-ARRANGE (undoable), the inspector's INTO NEXT / LENGTH / LOCATION / PLANET / WORLD controls, transition and Location marks on the timeline; snapshots; tests
+- [ ] 11b.3 README, MANUAL_TEST, handoff for 11b
+- [ ] 11c.1 Render the arrangement (full mix or stems per Place) from CAPTURE
+- [ ] 11c.2 Render sections separately, seamless loop sections (tail wrapped into the start), game-engine names (`Tavern_Intro.wav`...)
+- [ ] 11c.3 Stingers: one-shot cues from a section's ending or a transition
+- [ ] 11c.4 Scene MIDI export follows the arrangement (variants and on/off per section)
+- [ ] 11c.5 Polish, README, MANUAL_TEST, final handoff, final push without `[skip ci]`
+
+### Decisions (11b)
+
+- **A transition belongs to the section it leaves** ("INTO NEXT"), with a length of 1-4
+  bars (a Drop: 1-4 beats of silence). It runs over the section's last bars, at most the
+  section's length, and only when a different section follows: none before a repeat of
+  itself, none at the end with End: stop, one when End: loop goes back. Like everything
+  in the arrangement it is a function of the song position (`Arrangement::evaluate`
+  reports the transition under way, how far it is, and the one that led into the
+  section), so a start or locate inside a transition sounds the same every time.
+- **Crossfade** blends the instrument grid itself: over its bars, instruments leaving
+  fade out (raised cosine), instruments entering fade in playing their next-section
+  variant, those in both keep their variant until the downbeat; Score Intensity glides
+  to the next section's start value.
+- **Drum fill** gives the Places' rhythm instruments (kits; in a Place without a kit, its
+  pulse-like parts) their Fill variant over the transition's bars, whatever their cells
+  say. **Riser** also lifts Score Intensity by up to 0.12 towards the downbeat.
+- **Riser, Reverse swell and the Drop's sub hit are a small synth** (`DSP/Transitions.h`):
+  noise through a rising band-pass plus the chord (root, fifth, octave of the Mood)
+  gliding up an octave; the chord in soft saws swelling and opening into the downbeat;
+  an octave pitch-drop into the root, two-second decay, softly saturated. They go into
+  the dry mix and the World Space reverb (the swell twice as much), so they sit in the
+  world's space. "Use the Places' own instruments" is met by Drum fill and Crossfade
+  (the Places' instruments) and by the tuning and reverb; the riser and swell are not
+  played by the Places' instruments. Envelopes glide over 6 ms: nothing clicks.
+- **Drop:** the instruments stop (their 250 ms exit fade) and the whole world ducks to
+  15 % over the first 15 % of the drop; it comes back over 0.05 beat on the downbeat.
+- **Filter sweep:** a 12 dB/octave low-pass on the master mix (before the Planet colour,
+  glue and limiter) closes from 18 kHz to 320 Hz over the transition and opens again over
+  the first beat after. Outside a sweep it is out of the path.
+- **A section's Location** is reached by the Travel engine's Journey morph (Milestone 9):
+  while the arrangement drives the world (Play Mode Arrangement, playing or stopped, or
+  the preview) and any section names a Location, the processor feeds Travel a journey
+  from the Location the world is at (the section's own, or the last one named before it;
+  none: the world as set) to the next section's, over the Travel Time (at most the
+  section's last pass), arriving on the downbeat. The Destination, Journey and Path
+  controls wait meanwhile. Nothing is written back into the parameters: leaving
+  Arrangement mode returns the world to them at once (the engine's 0.25 s smoothing).
+- **Planet and World Control overrides** hold while their section plays (World Controls
+  through the usual 0.25 s smoothing; the Planet crossfades on its own); a start inside
+  the section snaps them, like the intensity.
+- **Templates** are the six of Direction Update 6. Exploration Loop's Loop plays twice
+  (so the Outro is reached in a DAW); set it to Loop (endless) for a game. Town Theme
+  loops back to its first A.
+- **Auto-arrange** reads what each section is from its name (intro, build, peak,
+  wind-down, break, outro, loop, bridge; e.g. Tension is a build, Combat and Phase 2
+  peaks, Victory and Defeat outros, Transition a break), or from where it sits and its
+  intensity. Each instrument has a role from its Place's specs (bed, texture, bass,
+  rhythm, melody, accent). Intro: the first Place's beds and textures (sometimes a
+  melody fading in, C). Build: beds and bass from the start, rhythm halfway, melody
+  fading in or halfway, accents sometimes halfway. Peak: everything, rhythm and accents
+  on B (busier), melody and bass on A or B. Wind-down: beds and bass, rhythm fading out,
+  melody on C. Break: beds, maybe a melody on C. Outro: beds (fading out at the very end),
+  textures fading out. Loop: everything, accents on C. Bridge: B and C variants. Places
+  after the first join a step later. Rhythm instruments play Fills before a peak, loop
+  or bridge. Ramps and curves per kind (later peaks climb higher). Transitions by the
+  pair of kinds (e.g. build to peak: Riser or Drum fill; peak to wind-down: Crossfade or
+  Filter sweep; peak to break: Drop or Filter sweep). The World Seed picks between
+  the two good choices at each point; names, lengths, plays, colours, Locations,
+  overrides and the End are kept. One undo step.
+- **The inspector grew a second row** (INTO NEXT, LENGTH, LOCATION, PLANET, WORLD), so
+  the grid's rows go down to 9 px with four Places (all 24 rows fit; the variant letters
+  still show).
+
+### What was built (11b)
+
+- `Arrangement.h`: `Transition`, `transitionBeats`, the Section fields (transition,
+  transitionLength, location, planet, world), `nextOf`, `transitionAfter`, `locationOf`,
+  `usesLocations`, `locationAt`; State's transition, transitionT, arrived, sinceStart,
+  drumFill, duck, planet, world.
+- `Templates.{h,cpp}`: the six templates, roles, kinds, `autoArrange`.
+- `DSP/Transitions.h`: the transition voice and the sweep cutoff.
+- `WorldEngine`: the transition voice, the Filter sweep and the Drop's duck on the
+  master, Drum fill variants (`isRhythm`), the overrides.
+- `Travel`: an arranged journey (`TravelInputs::arranged`: from/to may be the world as
+  set; leaving it writes nothing back); the processor feeds it per piece.
+- `ArrangementStore`: the new fields in the state (written only when set).
+- `ArrangeView`: TEMPLATE, AUTO-ARRANGE, the inspector's second row, the WORLD menu,
+  transition spans and marks and Location pins on the timeline.
+
+### Tests (11b, `--only transitions`, 51 checks)
+
+The model (windows, arrival, no transition before a repeat or at End: stop, looping
+back, the Drop's duck and return, Crossfade gains, variants and intensity, Drum fill,
+lengths, clamping to the section), Locations (inherited, timed arrival, clamped to the
+section) and overrides, the six templates' sections and lengths, kinds and roles,
+Auto-arrange (more instruments from intro to climax and fewer after, the second Place
+joining later, entry by role in the build, the transition into the climax, the same
+seed the same result and other seeds different, every template with one Place of each
+category keeps something playing in every section and keeps the sections), state and
+`.world` round trips, Auto-arrange undoing in one step; playback (Castle at 120 bpm):
+every transition finite, below the ceiling and without a level spike (largest 20 ms
+rise 2.5-4.1 dB; a Drop's return on the downbeat up to 24 dB, it is a hit), a Riser
+brighter and louder into the boundary, a Reverse swell louder, a Filter sweep more than
+15 dB down above 1.5 kHz before the boundary and back within 3 dB after, a Drop more
+than 10 dB quieter before the downbeat with more low end after, a Crossfade bringing
+instruments in early, a Drum fill playing the rhythm Fill, the same audio from inside a
+transition twice, no heap allocation; section Locations (travel, timed arrival, the
+parameters untouched, a start inside a section at its Location at once, leaving
+Arrangement mode back to the parameters), a World override and a Planet override; the
+interface (TEMPLATE, undo, the inspector's controls, AUTO-ARRANGE keeping Locations and
+overrides).
+
+Two first attempts measured wrongly and were changed: the Filter sweep's "highs" from
+`measure()`'s one-pole band split read only 7 dB down on the bass-heavy Castle (now a
+steep 1.5 kHz high-pass in the test); and the Riser was too quiet against a full Castle
+(+1.5 dB highs), so its level was doubled (now clearly audible, still below the ceiling).
+
+Snapshot: `docs/snapshots/m11b-arrange-battle.png` (Battle template with four Places, a
+Location on Combat).
+
+### Decisions (11c)
+
+- **CAPTURE's BARS menu gained "Arrangement"** and its mode menu **Sections** and
+  **Stingers** (both always from the arrangement). Arrangement + Mix or Stems renders
+  the whole arrangement; MIDI follows the arrangement whenever the render does.
+- **Rendering the arrangement equals Play Mode Arrangement playback from bar 1** (tested
+  sample for sample at 512-sample blocks), including the sections' Locations: the
+  render runs its own Travel with the scene's Locations and the processor's own mapping
+  from values to controls (`controlsFromValues`, now static), in the same 128-sample
+  pieces. Without section Locations a render uses the parameters as set (the
+  Destination and Journey controls are not rendered, as in Milestone 8's renders).
+  Length: every section once through, an endless section one pass (it ends the render),
+  plus End: stop's two-bar fade.
+- **Sections:** each reachable section as its own file, named `<Place>_<Section>.wav`
+  after the first audible Place (`Tavern_Intro.wav`; a repeated name gets `_2`). A
+  section is rendered from its own start, all its passes, exactly its length on the
+  timeline, so the files chain back to back; the last one keeps End: stop's fade. A
+  section that repeats or loops endlessly is a **seamless loop**: one pass, rendered as
+  its second pass (the render warms up through the first, so the file's start carries
+  what rings over from its end: reverb, delays, releases), with its first quarter beat
+  crossfaded (raised cosine) from the music that follows its end. Looping the file is
+  then continuous: the end runs into what really follows it, which fades into the
+  file's own start (only the free-running environment layers and the randomness differ
+  there). Tested: no larger sample step at the seam than inside the file, no level jump.
+  The loop is held in memory while it renders (a 32-bar loop at 120 bpm is about 25 MB).
+- **Stingers:** each section's ending (its last bar, or its transition's length up to
+  two bars) and then a ring-out: `EndRingOut`, an End used only by renders, keeps the
+  instruments as the end left them but starts no new notes (`PlaceSlotControls::ringOut`),
+  lets the section's transition land (a Drop's sub hit, a sweep's reopening) and fades
+  the world from one to three bars after the end. Named `<Place>_<Section>_Stinger.wav`.
+- **Arrangement MIDI:** each instrument's track holds the notes of each variant where
+  the arrangement plays that variant (a note is kept when the arrangement, evaluated at
+  its start, has the instrument at more than 5 % gain on that variant, including Fills
+  and Drum fills), with fades as velocity. Patterns are the ones generated at the
+  scene's settings (the engine regenerates B, C and Fill as intensity moves, so the
+  audio may differ in detail); Location patterns are not followed.
+
+### What was built (11c)
+
+- `Capture`: `Scene` carries the arrangement, the parameter values, the eight Locations
+  (shared, about 2 MB), the travel inputs and `controlsOf`; `renderArranged`,
+  `arrangementBars`, `samplesFor`, `GameFile`, `sceneName`, `gameFiles`, `stingerBars`,
+  `renderGameFile`, `renderGameFileToWav`, `arrangementMidi`; `Pass::stem`.
+- `Arrangement.h`: `EndRingOut` (renders only) and the ring-out state; `changeAfter`,
+  `transitionAfter` and `locate` treat it as an end.
+- `PlaceSlotControls::ringOut` (no new notes); the engine passes it on.
+- The processor: `controlsFromValues` (static), `captureScene` fills the new fields.
+- `CapturePanel`: BARS → Arrangement, modes Sections and Stingers, a job list in the
+  render worker, arrangement MIDI.
+
+### Tests (11c, `--only gameaudio`, 23 checks)
+
+The arrangement's render length (End: stop's fade, a loop, an endless section); the
+render equal to Arrangement-mode playback sample for sample (worst difference below
+-80 dB), with and without section Locations (and the Locations audibly in it); ending
+faded out; file names for game engines (Town Theme's repeated A as `_2`), stingers'
+names; a repeating section is a loop; a section file is exactly its bars and equal to
+the arrangement's start; the last section keeps the fade-out; the loop is exactly one
+pass, its seam no sharper than its inside and without a level jump, its start not
+silent; a stinger's length, its ring-out audible and ending in silence; the ring-out
+model; arrangement MIDI (silent where off, the section's variant where on, fades as
+velocity, one track per instrument as long as the arrangement); CAPTURE's Sections,
+Stingers, Arrangement Mix and MIDI through the panel, and nothing rendered without
+sections.
+
+Three checks first measured the fade-out over a window where it is still under way (it
+reaches zero exactly at the file's end) and one used the wrong bar for the ring-out's
+midpoint; the tests were corrected. One setup error: the test host had not played a
+block, so the scene took the default 96 bpm instead of the host's 120.
+
+Snapshot: `docs/snapshots/m11c-capture-arrangement.png` (the footer with Arrangement and
+Sections).
+

@@ -9,6 +9,7 @@
 #include "DSP/Master.h"
 #include "DSP/Planet.h"
 #include "DSP/ThunderLayer.h"
+#include "DSP/Transitions.h"
 #include "DSP/TonalBed.h"
 #include "DSP/WaterLayer.h"
 #include "DSP/WorldSpace.h"
@@ -89,6 +90,8 @@ public:
     std::atomic<double> arrangeBar { 0 };
     // Set while the Pattern Editor shows variants: every variant is generated.
     std::array<std::atomic<bool>, placeSlots> showVariants {};
+    // Whether a Place's instrument is a rhythm part (a Drum fill transition plays its Fill).
+    static bool isRhythm(int type, int element);
     // For the tests: the arrangement state of the last chunk.
     const arr::State& arrangeState() const { return arranged; }
 
@@ -130,6 +133,11 @@ private:
     bool seedFresh = true;
     arr::State arranged;
     bool arranging = false;
+    // The transitions' sounds and the Filter sweep on the master.
+    dsp::TransitionVoice transitionVoice;
+    std::array<dsp::Svf, 2> sweep;
+    bool sweeping = false;
+    float duckGain = 1;
     float endGain = 1;
     float arrangedIntensity(const EngineControls& controls) const;
     uint64_t clock = 0;   // absolute position of the next chunk to render

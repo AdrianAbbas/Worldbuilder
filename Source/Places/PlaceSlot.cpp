@@ -309,7 +309,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         else if (want > g) g = std::min(want, g + arrangeUp * float(n));
         else g = std::max(want, g - arrangeDown * float(n));
         settings.element[k] *= g;
-        settings.notes[k] = want > 0.0f;
+        settings.notes[k] = want > 0.0f && !c.ringOut;
     }
 
     // The beat: the host's (or the world's default tempo), or the Place's own free tempo.

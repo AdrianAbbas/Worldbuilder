@@ -12,6 +12,11 @@
 //   halfway, fade in, fade out, variant, Fill).
 // - PREVIEW plays the arrangement from the selected section while the host is
 //   stopped; the playhead and the current section show while it, or the host, plays.
+// - Milestone 11b: TEMPLATE replaces the sections with a ready-made cue and arranges
+//   it; AUTO-ARRANGE fills the grid, variants, ramps and transitions for the active
+//   Places (World Seed). The selected section's INTO NEXT transition and its length,
+//   its LOCATION (the world travels there, arriving on its downbeat), PLANET and WORLD
+//   Control overrides. The timeline marks each boundary's transition and each Location.
 // Every edit can be undone.
 #include "../PluginProcessor.h"
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -50,6 +55,13 @@ public:
     // A plain click on a cell (on / off), as the mouse does.
     void clickCell(int section, int slot, int element, bool shift = false);
     void setCell(int section, int slot, int element, const arr::Cell& cell);
+    // Milestone 11b (the buttons; also used by the tests).
+    void applyTemplate(int which);
+    void autoArrange();
+    void setTransition(int kind, int length);
+    void setLocation(int location);
+    void setPlanet(int planet);
+    void setWorldOverride(int control, int percent);
 
 private:
     void timerCallback() override;
@@ -64,6 +76,8 @@ private:
     void showSectionMenu(int index);
     void showCellMenu(int section, int slot, int element);
     void showRowMenu(int slot, int element);
+    void showWorldMenu();
+    void refreshLocations();
     void startPreview(int section);
     // The grid's rows: a header per active slot, then its six instruments.
     struct Row {
@@ -93,6 +107,9 @@ private:
     juce::TextButton undoButton { "UNDO" }, redoButton { "REDO" }, back { "BACK" };
     juce::ToggleButton previewButton { "PREVIEW" };
     juce::ComboBox endChoice, nameChoice, repeatsChoice, curveChoice;
+    juce::ComboBox templateChoice, transitionChoice, transitionLengthChoice, locationChoice, planetChoice;
+    juce::TextButton autoButton { "AUTO-ARRANGE" }, worldButton { "WORLD" };
+    uint32_t shownLocations = 0;
     juce::Slider lengthSlider, startSlider, endSlider;
     std::array<juce::Rectangle<int>, arr::colourCount> swatches;
     juce::Rectangle<int> titleArea, toolbarArea, inspectorArea, ruler, timeline, gridArea, labelColumn, statusArea, emptyArea;

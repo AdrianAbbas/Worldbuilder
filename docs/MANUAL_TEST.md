@@ -629,3 +629,45 @@ Load the CI build in GarageBand. Add three or four Places first.
 - [ ] Pattern Editor: tabs A, B, C, FILL. Are the generated B (busier), C (sparser) and
   Fill useful starting points? Edit B: A stays as it was.
 - [ ] Save and reopen the project: arrangement, variants and grid come back.
+
+## Milestone 11b check: transitions, templates, Auto-arrange
+
+Load the CI build in GarageBand with two or three Places, Play Mode Arrangement.
+
+**Templates and Auto-arrange**
+- [ ] ARRANGE → TEMPLATE → Classic Arc: five sections appear, already arranged. Play from
+  bar 1: a sparse intro, instruments entering through the Build, everything in the
+  Climax, thinning out after. Musical? UNDO brings back what was there.
+- [ ] Try Battle, Boss Fight, Town Theme (loops back to A) and Cinematic Reveal.
+- [ ] Rename your own sections (e.g. "Combat") and press AUTO-ARRANGE: sensible?
+  Change the Seed (footer) and AUTO-ARRANGE again: a different take?
+
+**Transitions** (INTO NEXT on a section; listen across its boundary)
+- [ ] Crossfade 2 bars: instruments leaving fade out, entering ones fade in, no bump.
+- [ ] Riser and Reverse swell: in key? Too loud or too quiet against the Places?
+- [ ] Drum fill: the rhythm instruments fill the last bar.
+- [ ] Drop 1 and 2 beats: silence, then the sub hit on the downbeat. Clicks?
+- [ ] Filter sweep: closes down, opens on the next section. Clicks?
+
+**Locations and overrides**
+- [ ] Save two contrasting Locations. Give the Build Location 1 and the Climax Location 2:
+  the world travels and arrives on the Climax's downbeat (Travel Time sets how long).
+  Your knobs are unchanged afterwards; leaving Arrangement mode returns to them.
+- [ ] A section with PLANET Ocean and WORLD Danger 100 %: only while it plays.
+- [ ] Start playback inside a transition or a journey: same every time? A bounce matches?
+- [ ] Save and reopen the project: transitions, Locations and overrides come back.
+
+## Milestone 11c check: game-audio export
+
+Use an arrangement with a looping section (TEMPLATE → Exploration Loop is quick).
+
+- [ ] CAPTURE: BARS → Arrangement, Mix, RENDER. Drag the WAV to bar 1: does it match
+  GarageBand playing the project in Play Mode Arrangement (including a section Location)?
+- [ ] Stems from the arrangement: one file per Place plus the environment.
+- [ ] Sections: three files (`<Place>_Intro`, `_Loop`, `_Outro`). Put them back to back on
+  a track: do they join? Loop `_Loop.wav` in GarageBand (cycle): seamless, no click or
+  level bump at the loop point?
+- [ ] Stingers: a file per section ending, ringing out to silence. Useful as cues?
+- [ ] MIDI with Arrangement selected: drag it onto the tracks area. Do the tracks enter
+  and leave with the sections?
+

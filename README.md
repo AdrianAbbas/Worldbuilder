@@ -7,11 +7,13 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 11a (26 Places of six instruments, each with its own instrument
+**Status: Milestone 11 (26 Places of six instruments, each with its own instrument
 effects; Score Intensity; render to WAV and scene MIDI export; Locations and
 Journeys; seven planet types with their own sound colour; the revamped globe and
 controls; and the Arrangement: a timeline of sections with an instrument grid,
-pattern variants A/B/C/Fill and Play Mode Arrangement).**
+pattern variants A/B/C/Fill, Play Mode Arrangement, transitions between sections,
+templates and Auto-arrange, and game-audio export: the arrangement, its sections as
+seamless loops and stingers).**
 These work now:
 - **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
@@ -167,6 +169,31 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
   loops back to a section you choose (the End menu).
 - **PREVIEW** plays the arrangement from the selected section while the host is
   stopped; click another section to jump there.
+- **Transitions** (INTO NEXT, for the selected section): how it hands over to the next
+  one. **Cut**; **Crossfade** over 1-4 bars (instruments leaving fade out, those
+  entering fade in, and Score Intensity glides across); **Riser** (noise and the chord
+  rising into the downbeat); **Drum fill** (the Places' rhythm instruments play their
+  Fill patterns); **Drop** (1-4 beats of silence, then a sub hit on the downbeat);
+  **Reverse swell** (the chord swelling up into the downbeat); **Filter sweep** (the
+  whole mix closes down, then opens again over the first beat). The sounds are tuned
+  to Root and Mood and go through the world's reverb. The timeline marks each one.
+- **LOCATION:** a section can name one of the eight Locations. The world travels there
+  over the Travel Time (at most the section before it) and arrives on the section's
+  first downbeat; later sections stay there until another names a Location. While the
+  arrangement drives the Locations, the Destination and Journey controls wait, and
+  nothing is written into your knobs: leaving Arrangement mode returns to them.
+- **PLANET** and **WORLD** (overrides): a section can have its own Planet and its own
+  values for any World Control (e.g. Danger 100 % in the Combat), only while it plays.
+- **TEMPLATE** starts from a ready-made cue and arranges it for your Places: Classic Arc
+  (8 Intro / 16 Build / 16 Climax / 16 Wind-down / 8 Outro), Exploration Loop (8 / 32
+  Loop, played twice / 8; set the Loop to Loop (endless) for a game), Battle, Boss Fight,
+  Town Theme (8 A / 8 B / 8 A / 8 C, looping) and Cinematic Reveal.
+- **AUTO-ARRANGE** fills the grid, pattern variants, intensity ramps and transitions for
+  the sections you have and the active Places: sparse beds in an intro, instruments
+  entering by role in a build-up (drones and pads, then bass, rhythm, melody, accents),
+  everything at a climax, thinning out in a wind-down. It reads what each section is
+  from its name (Intro, Build, Climax, Break, Outro, Loop, Bridge, and words like
+  Tension, Combat, Phase, Reveal, Victory). It uses the World Seed and undoes in one step.
 - Automating Score Intensity still works: it adds on top of the sections' ramps (50 %
   adds nothing).
 - Bars are 4/4. The arrangement is saved with the project and in `.world` files.
@@ -196,6 +223,22 @@ record. Three ways to get it onto the timeline:
    plugin's playing and are not written). Use it to double a part with another
    instrument, or edit it and drop it back onto a Pattern Editor tab. The single
    pattern DRAG MIDI in the Pattern Editor still works too.
+
+**From the arrangement** (CAPTURE, BARS: **Arrangement**):
+- **Mix** or **Stems** renders the whole arrangement exactly as the host plays it in Play
+  Mode Arrangement from bar 1 (sections, transitions, Locations and overrides), every
+  section once through, with End: stop's fade-out.
+- **Sections** renders each section as its own file for a game engine, named after the
+  first Place: `Tavern_Intro.wav`, `Tavern_Loop.wav`, `Tavern_Outro.wav`. Each file is
+  exactly its section's length, so they chain back to back. A section that plays more
+  than once, or loops endlessly, becomes a **seamless loop**: one pass whose start
+  already carries the reverb and echoes from its end, so it loops without a gap or a
+  click.
+- **Stingers** renders each section's ending (its last bar or its transition, up to two
+  bars) ringing out to silence, as one-shot cues for game events
+  (`Tavern_Victory_Stinger.wav`).
+- **MIDI** then follows the arrangement: each instrument plays where its sections have it
+  on, with their variants and Fills, fades as velocity.
 
 **GarageBand** has no bounce-in-place, and in Play Mode Free it exports a song only up
 to its last region. So: keep Play Mode on Transport and Share → Export Song, or RENDER

@@ -33,6 +33,10 @@ struct TravelInputs {
     bool pathOn = false, pathLoop = true;
     int pathBars = 4;
     double beat = 0;
+    // The Arrangement (Milestone 11b): its sections' Locations drive a Journey from `from`
+    // to `to` (-1: the world as set) at `journey` (0..1, eased here). Leaving it lets the
+    // parameters be the world again without writing anything back.
+    bool arranged = false;
 };
 
 // A world that arrived, for the message thread to write back into the parameters.
@@ -126,12 +130,12 @@ private:
     std::atomic<uint32_t> requestSerial { 0 }, resetSerial { 0 };
     uint32_t seenReset = 0;
     std::atomic<int> requestTarget { 0 };
-    bool wasJourney = false, started = false;
+    bool wasJourney = false, started = false, wasArranged = false;
     int journeyKey = -1;
     // The inputs the Journey morph is computed from: last block's while this block's
     // changes are handled (so leaving or changing a morph starts from where it stood).
     TravelInputs morphIn;   // which morph (the Path, or From and To): a change travels to the new one
-    static int keyOf(const TravelInputs& in) { return in.pathOn ? 1000 : in.from * locationCount + in.to; }
+    static int keyOf(const TravelInputs& in) { return in.arranged ? 2000 : in.pathOn ? 1000 : in.from * locationCount + in.to; }
 };
 
 } // namespace wb

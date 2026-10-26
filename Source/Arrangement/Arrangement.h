@@ -33,8 +33,27 @@ enum Curve : uint8_t { CurveLinear, CurveEaseIn, CurveEaseOut, CurveSwell, Curve
 inline constexpr std::array<const char*, CurveCount> curveNames { "Linear", "Ease in", "Ease out", "Swell" };
 
 // After the last section: stop (the instruments stop and the world fades out over two
-// bars), or loop back to a section.
-enum End : uint8_t { EndStop, EndLoop, EndCount };
+// bars), or loop back to a section. EndRingOut is for renders only (stingers, never
+// saved): no new notes after the end, but what rings keeps ringing (its last transition
+// lands too), and the world fades out from one to three bars after it.
+enum End : uint8_t { EndStop, EndLoop, EndCount, EndRingOut = EndCount };
+
+// Transitions (Milestone 11b): how a section hands over to the next one, at its end.
+// Crossfade: over its last 1-4 bars the instruments leaving fade out, those entering
+// fade in (playing their next-section variant) and Score Intensity glides to the next
+// section's start. Riser: a rising swell of noise and the chord over its last 1-4 bars.
+// Drum fill: the rhythm instruments play their Fill over its last 1-4 bars. Drop: the
+// world falls silent for the last 1-4 beats, then a sub hit lands on the downbeat.
+// Reverse swell: the chord swells up into the downbeat over 1-4 bars. Filter sweep: the
+// whole mix closes down over 1-4 bars and opens again over the first beat after.
+enum Transition : uint8_t { TransCut, TransCrossfade, TransRiser, TransDrumFill, TransDrop, TransReverse, TransFilter, TransitionCount };
+inline constexpr std::array<const char*, TransitionCount> transitionNames { "Cut", "Crossfade", "Riser", "Drum fill", "Drop", "Reverse swell", "Filter sweep" };
+constexpr int maxTransitionLength = 4;
+// The transition's length in beats: bars, except a Drop (beats of silence).
+inline double transitionBeats(int kind, int length) {
+    const double n = double(std::clamp(length, 1, maxTransitionLength));
+    return kind == TransDrop ? n : n * 4.0;
+}
 
 // Pattern variants: each instrument has A, B and C, and a Fill.
 using pat::VariantA, pat::VariantB, pat::VariantC, pat::VariantFill;
@@ -66,6 +85,13 @@ struct Section {
     uint8_t curve = CurveLinear;
     float intensityStart = 0.5f, intensityEnd = 0.5f;
     Grid cells {};
+    // Milestone 11b: the transition into the next section and its length (bars; beats
+    // for a Drop); the Location to be at (-1: stay where the world is; the journey
+    // arrives on the section's first downbeat); the Planet (-1: as set) and World Control
+    // overrides (-1: as set, else 0-100 %) while the section plays.
+    uint8_t transition = TransCut, transitionLength = 1;
+    int8_t location = -1, planet = -1;
+    std::array<int8_t, WorldControlCount> world { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 
     void setName(const char* text) {
         name.fill(0);
@@ -78,7 +104,8 @@ struct Section {
     bool operator==(const Section& o) const {
         return std::strncmp(name.data(), o.name.data(), std::size_t(nameLength)) == 0 && colour == o.colour && bars == o.bars
                && repeats == o.repeats && curve == o.curve && intensityStart == o.intensityStart && intensityEnd == o.intensityEnd
-               && cells == o.cells;
+               && cells == o.cells && transition == o.transition && transitionLength == o.transitionLength && location == o.location
+               && planet == o.planet && world == o.world;
     }
 };
 
@@ -117,6 +144,7 @@ struct Position {
     bool ended = false;        // after the last section (End: stop)
     double beyond = 0;         // bars after the end
     int startBar = 0;          // where the section starts on the timeline (first pass)
+    bool looped = false;       // reached through End: loop (the section before it is the last one)
 };
 
 // What the arrangement plays at a song position.
@@ -128,6 +156,19 @@ struct State {
     bool fillBar = false;      // the last bar before a section change
     std::array<std::array<float, placeElements>, placeSlots> gain {};
     std::array<std::array<uint8_t, placeElements>, placeSlots> variant {};
+    // Transitions: the one under way into the next section (transitionT 0..1 across its
+    // length; -1: none) and the one that led into this section (`arrived`, with
+    // `sinceStart` beats into the section; Cut when it was a repeat or the first).
+    uint8_t transition = TransCut, arrived = TransCut;
+    float transitionT = -1;
+    double transitionLength = 0;   // beats
+    double sinceStart = 0;
+    bool drumFill = false;     // the rhythm instruments play their Fills (the engine picks them)
+    bool ringOut = false;      // End: ring out (renders): no new notes
+    float duck = 1;            // a Drop's silence (the whole world)
+    // Overrides while the section plays.
+    int planet = -1;
+    std::array<float, WorldControlCount> world {};   // < 0: as set
 };
 
 struct Arrangement {
@@ -177,13 +218,14 @@ struct Arrangement {
                     p.bar = into - double(p.pass) * length;
                     p.lastPass = !endlessHere && p.pass >= int(s.repeats) - 1;
                     p.startBar = int(start);
+                    p.looped = pass > 0;
                     return p;
                 }
                 start += span;
             }
             // After the last section.
             const double total = start;
-            if (end == EndStop || pass > 0) {
+            if (end != EndLoop || pass > 0) {
                 const auto& last = sections[std::size_t(count - 1)];
                 p.section = count - 1;
                 p.pass = std::max<int>(last.repeats, 1) - 1;
@@ -208,13 +250,60 @@ struct Arrangement {
     // change follows, so its last bar plays the Fills.
     bool changeAfter(int index) const {
         if (index + 1 < count) return true;
-        if (end == EndStop) return true;
+        if (end != EndLoop) return true;
         return loopTarget() != index;
+    }
+    // The section that follows `index` (-1: the end, End: stop).
+    int nextOf(int index) const {
+        if (index + 1 < count) return index + 1;
+        return end == EndLoop ? loopTarget() : -1;
+    }
+    // Whether a transition plays at the end of `index`: a different section follows.
+    bool transitionAfter(int index) const {
+        if (end == EndRingOut && index == count - 1) return !sections[std::size_t(index)].endless();
+        const int next = nextOf(index);
+        return next >= 0 && next != index && !sections[std::size_t(index)].endless();
+    }
+    // The Location the world is at in section `index`: its own, or the last one set
+    // before it (-1: none, the world as set).
+    int locationOf(int index) const {
+        for (int i = std::min(index, count - 1); i >= 0; --i)
+            if (sections[std::size_t(i)].location >= 0) return sections[std::size_t(i)].location;
+        return -1;
+    }
+    bool usesLocations() const {
+        for (int i = 0; i < count; ++i)
+            if (sections[std::size_t(i)].location >= 0) return true;
+        return false;
+    }
+    // The journey between Locations at a song position: from `from` to `to` (-1: the
+    // world as set) at `position` (0..1, not eased). A journey to the next section's
+    // Location takes travelBeats (at most the section's last pass) and arrives on its
+    // first downbeat.
+    void locationAt(double beat, double travelBeats, int& from, int& to, float& position) const {
+        from = to = -1;
+        position = 0;
+        if (count <= 0) return;
+        const auto at = locate(beat);
+        from = to = locationOf(at.section);
+        if (at.ended || !at.lastPass || !transitionAfter(at.section)) return;
+        const int next = nextOf(at.section);
+        // Looping back: the loop target's Location is its own, or the one it inherits.
+        const int there = locationOf(next);
+        if (there == from) return;
+        const auto& s = sections[std::size_t(at.section)];
+        const double passBeats = double(std::max<int>(s.bars, 1)) * beatsPerBar;
+        const double length = std::clamp(travelBeats, 1.0e-3, passBeats);
+        const double remaining = passBeats - at.bar * beatsPerBar;
+        if (remaining > length) return;
+        to = there;
+        position = float(std::clamp(1.0 - remaining / length, 0.0, 1.0));
     }
 
     State evaluate(double beat) const {
         State st;
         for (auto& row : st.gain) row.fill(1.0f);
+        st.world.fill(-1.0f);
         st.active = count > 0;
         if (!st.active) return st;
         st.at = locate(beat);
@@ -222,6 +311,34 @@ struct Arrangement {
         const double bars = double(std::max<int>(s.bars, 1));
         const float t = float(std::clamp(st.at.bar / bars, 0.0, 1.0));
         st.intensity = intensityAt(s, st.at.ended ? 1.0f : t);
+        st.planet = s.planet;
+        for (int w = 0; w < WorldControlCount; ++w)
+            if (s.world[std::size_t(w)] >= 0) st.world[std::size_t(w)] = float(std::min<int>(s.world[std::size_t(w)], 100)) / 100.0f;
+        // The transition that led here: on the first pass, from the section before it.
+        st.sinceStart = st.at.bar * beatsPerBar;
+        if (!st.at.ended && st.at.pass == 0) {
+            const int previous = st.at.section > 0 && !(st.at.looped && st.at.section == loopTarget()) ? st.at.section - 1
+                                 : st.at.looped && st.at.section == loopTarget()                     ? count - 1
+                                                                                                    : -1;
+            if (previous >= 0 && previous != st.at.section && transitionAfter(previous)) st.arrived = sections[std::size_t(previous)].transition;
+        }
+        if (st.at.ended && end == EndRingOut) {
+            // A stinger's ring-out: as the end left it, without new notes; the last
+            // transition lands; the world fades out from one to three bars after the end.
+            State last = evaluate(double(totalBars()) * beatsPerBar - 1.0e-6);
+            last.at = st.at;
+            last.ringOut = true;
+            last.transition = TransCut;
+            last.transitionT = -1;
+            last.drumFill = false;
+            last.duck = 1;
+            last.arrived = s.transition;
+            last.sinceStart = st.at.beyond * beatsPerBar;
+            if (last.arrived == TransDrop) last.duck = float(std::clamp(last.sinceStart / 0.05, 0.0, 1.0)) * 0.85f + 0.15f;
+            const float fade = dsp::clamp01(float((st.at.beyond - 1.0) / 2.0));
+            last.endGain = 0.5f + 0.5f * std::cos(dsp::pi * fade);
+            return last;
+        }
         if (st.at.ended) {
             // The instruments stop; the world (reverbs, environment) fades out over two bars.
             for (auto& row : st.gain) row.fill(0.0f);
@@ -247,8 +364,53 @@ struct Arrangement {
                 st.variant[std::size_t(slot)][std::size_t(e)] =
                     st.fillBar && cell.fill ? uint8_t(VariantFill) : uint8_t(std::min<int>(cell.variant, VariantC));
             }
+        // The transition into the next section, over its last beats.
+        if (st.at.lastPass && s.transition != TransCut && transitionAfter(st.at.section)) {
+            const double length = std::min(transitionBeats(s.transition, s.transitionLength), bars * beatsPerBar);
+            const double remaining = (bars - st.at.bar) * beatsPerBar;
+            if (remaining <= length) {
+                st.transition = s.transition;
+                st.transitionT = float(std::clamp(1.0 - remaining / length, 0.0, 1.0));
+                st.transitionLength = length;
+                const int next = nextOf(st.at.section);
+                transitionInto(st, sections[std::size_t(next >= 0 ? next : st.at.section)]);
+            }
+        }
+        // The first beat after a Drop: the world comes back over a few milliseconds.
+        if (st.arrived == TransDrop) st.duck = std::min(st.duck, float(std::clamp(st.sinceStart / 0.05, 0.0, 1.0)) * 0.85f + 0.15f);
         return st;
     }
+
+private:
+    // What a transition under way does to the instruments and the intensity.
+    static void transitionInto(State& st, const Section& next) {
+        const float t = st.transitionT;
+        switch (st.transition) {
+            case TransCrossfade: {
+                const float u = 0.5f - 0.5f * std::cos(dsp::pi * t);
+                for (int slot = 0; slot < placeSlots; ++slot)
+                    for (int e = 0; e < placeElements; ++e) {
+                        const auto& cell = next.cells[std::size_t(slot)][std::size_t(e)];
+                        // How the instrument starts the next section.
+                        const float there = cell.entry == EntryOn || cell.entry == EntryFadeOut ? 1.0f : 0.0f;
+                        float& g = st.gain[std::size_t(slot)][std::size_t(e)];
+                        if (g <= 0.0f && there > 0.0f) st.variant[std::size_t(slot)][std::size_t(e)] = uint8_t(std::min<int>(cell.variant, VariantC));
+                        g = dsp::lerp(g, there, u);
+                    }
+                st.intensity = dsp::lerp(st.intensity, next.intensityStart, u);
+                break;
+            }
+            case TransRiser: st.intensity = dsp::clamp01(st.intensity + 0.12f * t * t); break;
+            case TransDrumFill: st.drumFill = true; break;
+            case TransDrop:
+                // Silence: the instruments stop and the world ducks away over the first 15 %.
+                for (auto& row : st.gain) row.fill(0.0f);
+                st.duck = 1.0f - 0.85f * dsp::smoothstep(0.0f, 0.15f, t);
+                break;
+            default: break;
+        }
+    }
+public:
 };
 
 } // namespace wb::arr
