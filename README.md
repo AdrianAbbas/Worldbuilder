@@ -7,9 +7,10 @@ a forge, a city at night, a forest or a cavern, over a living environment of win
 water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
 recordings.
 
-**Status: Milestone 9 (26 Places of six instruments, each with its own instrument
+**Status: Milestone 10 (26 Places of six instruments, each with its own instrument
 effects; Score Intensity; render to WAV and scene MIDI export; Locations and
-Journeys).**
+Journeys; seven planet types with their own sound colour; the revamped globe and
+controls).**
 These work now:
 - **Places**, the centrepiece. Up to four play at once. All 26 are built: Castle,
   Village, Spaceport, Factory / Forge, City, Forest, Alien Hive, Temple, Cavern / Mine,
@@ -59,6 +60,17 @@ These work now:
 - **Locations and Journeys** (the LOCATIONS row): save up to eight complete worlds and
   travel between them so it sounds like moving through a place, not a crossfade. See
   [Locations and Journeys](#locations-and-journeys).
+- **Planet** (the PLANET menu by the globe): Rocky, Ocean, Ice Giant, Gas Giant,
+  Desert World, Lava World or Forest World. Each one changes the globe (cratered rock,
+  oceans under moving clouds, banded ice with rings, a storm-swirled giant with rings,
+  dunes, glowing cracks, green continents) and gives the whole world a sound colour:
+  Rocky is dry and close, Ocean has a watery, rolling movement, Ice Giant a cold
+  crystalline shimmer, Gas Giant a vast swirling space and deep sub, Desert a dusty
+  high cut and width, Lava heat haze, saturation and rumble, Forest a soft, damped air.
+  **INFLUENCE** sets how strong the colour is (35 % by default, subtle; 0 % is none).
+  A new planet crossfades in about a second and a half. Both are automatable and are
+  part of a Location. Projects saved before Milestone 10 open with Influence at 0 %, so
+  they sound as they did.
 - **Play Mode.** Transport (the default) plays only while the host plays, from silence
   and locked to the song position, so exports and bounces always contain it. Free
   plays all the time.
@@ -72,7 +84,10 @@ These work now:
   Machinery makes them straighter and more metallic, Life more human, and Danger
   darker.
 - the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
-- **The interface**: a Place selector of 26 illustrated cards (all, or by category:
+- **The interface**: a textured, lit planet that turns under its clouds, with an
+  atmosphere, rings on the giants and city lights on its night side (from the populated
+  Places); raised, bevelled buttons, toggles, tabs and cards that glow on hover and
+  light up when on, with one set of vector icons; a Place selector of 26 illustrated cards (all, or by category:
   Fantasy, Modern, Sci-Fi, Nature) that come alive on hover; Place strips; a detail
   panel with header art and an icon per instrument; the Pattern Editor with a tab per
   instrument; landmarks on the globe that you can drag to move a Place. The colours,
@@ -80,8 +95,8 @@ These work now:
   them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
   dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
 
-Now: Milestone 9, Locations and Journeys. Next (Direction Update 5): the visual
-revamp and planet types (10), pro features, presets and release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
+Now: Milestone 10, the visual revamp and planet types. Next (Direction Update 5): pro
+features, presets and release (11). See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The
 plan is in [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
 [docs/DIRECTION_UPDATE.md](docs/DIRECTION_UPDATE.md) to
 [docs/DIRECTION_UPDATE_5.md](docs/DIRECTION_UPDATE_5.md); later files override earlier
@@ -167,7 +182,7 @@ parameter and responds smoothly when automated: Score Intensity, each Place's le
 mute and solo, its Character, Activity, Tension, Tone, distance and pan, each
 instrument's level, switch and effects, the World Controls, Root and Mood, Master
 Level and Power, and the Locations (Destination, Travel Time, Journey Mode, From, To
-and Journey; the Planet follows in Milestone 10). In GarageBand,
+and Journey), the Planet and Planet Influence. In GarageBand,
 show automation (A) and choose WORLDBUILDER's parameters on the track; in Logic, the
 same in the track's automation lane. Draw Score Intensity rising into a climax, bring a
 Place in by its level, or switch Characters at a scene change.

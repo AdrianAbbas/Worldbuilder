@@ -5,11 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 10 is in progress** (visual revamp and planet types, Direction Update 5);
-its progress checklist is at the top of the
-[Milestone 10 section](#milestone-10-visual-revamp-and-planet-types-2026-10-26). A resumed
-session continues from the first unticked item. Milestone 9's handoff is at the end of
-the [Milestone 9 section](#milestone-9-locations-and-journeys-2026-10-25).
+**Milestone 10 is complete** (visual revamp and planet types, Direction Update 5); its
+handoff is at the end of the
+[Milestone 10 section](#milestone-10-visual-revamp-and-planet-types-2026-10-26). Next:
+Milestone 11 (pro features, presets and release). A new milestone starts its own
+progress checklist; a resumed session continues from the first unticked item.
 
 ---
 
@@ -2989,8 +2989,8 @@ Ticked when committed and pushed. A resumed session starts at the first unticked
 - [x] 0. CPU budget checks report-only (the developer measures CPU on the Mac); `--snapshots` review images, "before" set in `docs/snapshots/`
 - [x] 1. Planet types and their sound colours: Planet and Planet Influence parameters, the master colour, crossfade, state, Locations, tests
 - [x] 2. Globe revamp: textured, lit planet per type (layered shading, atmosphere, clouds, rings, night-side lights), Planet controls by the globe; before/after snapshots
-- [ ] 3. Buttons, toggles, menus, tabs, icons and Place cards restyle (overlays unchanged); before/after snapshots
-- [ ] 4. Final: full suite, README/MANUAL_TEST, handoff, final push without `[skip ci]`
+- [x] 3. Buttons, toggles, menus, tabs, icons and Place cards restyle (overlays unchanged); before/after snapshots
+- [x] 4. Final: full suite, README/MANUAL_TEST, handoff, final push without `[skip ci]`
 
 ### CPU budgets are report-only
 
@@ -3090,3 +3090,106 @@ colour): Rocky -0.5, Ocean -0.4, Ice +0.3, Gas +0.6, Desert +0.8, Lava -0.4, For
 Snapshots: `docs/snapshots/before-globe-*.png` (Milestone 9) and `after-globe-*.png`
 (the frozen, scorching, stormy and city worlds, and `after-globe-planet-*` for each
 planet).
+
+### Buttons, icons, tabs and Place cards (step 3)
+
+`Source/UI/Style.*` holds what every control now shares:
+- **Surfaces** (`drawSurface`): raised, with a drop shadow, a vertical gradient, a lit top
+  bevel and an outline; on hover a soft glow in the control's colour; pressed, it sinks
+  (inner shadow, no drop shadow); on, it lights up in its colour with a gloss band.
+  **Wells** (`drawWell`) are the recessed version, for menus, value bars and grooves.
+- **Icons** (`drawIcon`): one original set of 32 stroked vector icons on a 24-unit grid,
+  the same stroke weight everywhere (power, dice, sliders, close, piano roll, save, load,
+  waveform, MIDI socket, drag out, import, path, journey, undo, redo, copy, paste, clear,
+  generate, up, down, lock, pencil, pointer, back, magnet, note, sync, double, half,
+  chords, octave). A button takes one with `setIcon`; the look and feel draws it before
+  the text, or leaves it out when the button is too narrow for both (the text always
+  stays).
+
+Restyled with them (sizes and positions unchanged, except the detail panel's buttons):
+- the look and feel: buttons, toggles (M/S, Power, Characters, instrument switches,
+  SYNC, the Pattern Editor's switches), menus (a well with a raised chevron cap; cyan
+  glow on hover), popup menus and tooltips, faders (a recessed groove, a lit brass fill
+  and a machined thumb), value bars (Seed), knobs (a brass bezel, a machined face with a
+  sheen, tick marks, a glowing value arc, an engraved pointer with a lit tip);
+- the category chips (raised pills, lit when chosen, hover glow), the **Place cards**
+  (a shadow that deepens as the card lifts, a glow in the Place's colour on hover, a
+  glass sheen, a bevelled frame, a dark glass name plate with a line of the Place's
+  colour, a raised count badge), the Place strips (raised, glowing while their panel is
+  open), the Location chips, the CAPTURE chips (with MIDI, waveform and drag-out
+  icons), the Pattern Editor's instrument tabs and DRAG MIDI;
+- icons on POWER, New world, New seed, USE (mood), PATTERNS, the strips' remove button
+  (now a close icon), PATH, JOURNEY, SAVE/LOAD .world, BACK and the Pattern Editor's
+  tools where they fit.
+- The detail panel's CLOSE became a square close button (tooltip "Close this Place's
+  panel"), which leaves room for PATTERNS and USE (mood) with their icons and gives the
+  Place's name more room than before.
+- The overlays are unchanged.
+
+Snapshots: `docs/snapshots/after-*.png` beside `before-*.png` (`full-default`,
+`full-world`, `header`, `controls`, `cards`, `cards-scifi`, `strips`, `detail`,
+`patterns`, `bottom`, and the globe set).
+
+### Globe cost and a fix (during step 3)
+
+- **Cost.** The first version took 8.7 ms per frame at 290 px on this (busy) container.
+  Now: the frame loop works in fixed point (turning and wrapping are integer adds and
+  masks), reads float colour maps, takes cloud cover from a 256-entry table and folds the
+  world's grade and Power into one gain and offset; a single planet is written straight
+  into the image (the crossfade buffer is used only during a crossfade); the rings are
+  one gradient-filled half annulus under an elliptical transform (they were 16 strokes);
+  the atmosphere glow is seven thin rings around the disc (a full radial gradient fill
+  over the panel cost 1.2 ms on its own). Measured (report only, `planet` group): about
+  2.6 ms per frame for Rocky and 3.0 ms for the Gas Giant at 290 px, so about 8 % of
+  one core of this container at 30 fps, while other tests were running. The animation
+  already stops when the editor is hidden. How much this is on the developer's Mac
+  needs measuring there (MANUAL_TEST); if it is too much, the next step is turning the
+  planet at 15 fps (the frame is reused between).
+- **Fix.** JUCE's `drawImage` takes the opacity of the last colour set: after the far
+  half of the rings (or the new atmosphere rings), the planet was blitted at that
+  colour's low alpha, so the giants looked veiled in the step 2 snapshots. The opacity is
+  now reset before the blit, and a new check compares the editor's on-screen pixels at
+  the globe with the planet's frame. The `after-globe-*` snapshots were rendered again.
+
+### Tests (Linux, GCC)
+
+- Steps 0-1, full suite (`scripts/run-tests-parallel.sh`, the planet sound in): every
+  shard passes (instruments 391 + 380, places 1092, rest 1500, CPU group 35;
+  0 failed). The CPU metrics are report-only now.
+- Steps 2-3 change only the interface: the "rest" groups (editor, overlays, Locations,
+  planet, smoke, automation, state and the others) on the final build: 1505 pass, 0 fail.
+
+### Milestone 10 handoff
+
+**Done:** all of Milestone 10 (Direction Update 5).
+1. CPU budget checks are report-only.
+2. **Planet** (Rocky, Ocean, Ice Giant, Gas Giant, Desert, Lava, Forest: all seven)
+   with a sound colour on the master, **Planet Influence** (35 % by default),
+   crossfades, automation, state, Locations; old projects keep their sound.
+3. **The globe**: a textured, lit planet per type with clouds, atmosphere, rings,
+   night-side city lights and glowing cracks; PLANET and INFLUENCE by the globe.
+4. **The controls**: raised, bevelled buttons, toggles, menus, tabs, chips, cards and
+   knobs with hover glow and lit states; one set of 32 vector icons. Overlays unchanged.
+5. `--snapshots` and `docs/snapshots/before-*` / `after-*` for review by eye.
+
+**What to test first** (the Milestone 10 check in [MANUAL_TEST.md](MANUAL_TEST.md)):
+- each planet's sound colour at 35 % and 100 % (too strong, too weak, unpleasant?) and
+  the crossfade between planets; an old project sounds unchanged;
+- the look against the snapshots; icons readable at 100 %;
+- **the editor's CPU on the MacBook Air** with the window open (the globe now renders
+  a textured planet at 30 fps; see "Globe cost").
+
+**Next:** Milestone 11: separate outputs per Place, Inspire (it can pick a planet),
+20+ factory scene presets (each with a planet and 2-4 Locations), README and release.
+
+**Known issues / limits:**
+- Nothing has been heard or seen on a Mac; the planets' colours were tuned by
+  measurement (band levels, width, level within about 1 dB of each other).
+- The globe's frame cost (about 2.6-3 ms here) is the largest per-frame cost in the
+  editor; measure on the Mac.
+- The Pattern Editor's tool buttons are too narrow for an icon beside their text, so
+  they keep text only (by design: the text stays when both do not fit).
+- The planet shows its own surface; the Places' marks (fields, forests, dunes...) are
+  drawn over it as before, which can read oddly on a giant (fields on a gas giant).
+- Carried over from Milestone 9: the first-playback difference in the Path test,
+  Places matched by slot, the `push-access-check` branch.

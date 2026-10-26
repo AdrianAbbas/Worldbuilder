@@ -572,3 +572,31 @@ the footer; the globe has eight markers on an orbit around it.
 - [ ] SAVE .world, change everything, LOAD .world: the world and its Locations come
   back; Master Level and Play Mode stay as they were. Do the file dialogs open inside
   sandboxed GarageBand?
+
+## Milestone 10 check: planet types and the new look
+
+Load the CI build in GarageBand.
+
+**Planet sound**
+- [ ] A world with two or three Places. PLANET menu (top right of the globe): step
+  through the seven planets at INFLUENCE 35 %. Is each a subtle but real colour, and
+  does each change crossfade smoothly (no click, no jump)?
+- [ ] INFLUENCE 100 %: Rocky dry and close; Ocean watery and rolling; Ice Giant bright
+  and shimmering; Gas Giant vast, swirling, with deep sub and a slow swell; Desert dusty
+  and wide; Lava hot, saturated, rumbling; Forest soft and damped. Is any too much, too
+  little, or unpleasant? (Tested by measurement only: each within about 1 dB of the
+  others in level.)
+- [ ] Automate Planet Influence and the Planet: smooth?
+- [ ] Open a project saved with Milestone 9: it should sound exactly as before
+  (Influence 0 %).
+- [ ] Save two Locations on different planets and travel: the planet changes half way.
+
+**The look** (compare with `docs/snapshots/before-*` and `after-*`)
+- [ ] The globe on each planet: rich enough? Rings on Ice and Gas Giants, clouds, city
+  lights on the night side (add City or Village and raise Population), lava glowing.
+- [ ] Buttons, toggles, menus, tabs and cards: raised, glowing on hover, lit when on;
+  icons readable at 100 %; nothing cut off. The Place card hover lift and glow.
+- [ ] CPU: the globe now draws a textured planet every frame (30 fps, about 66 000
+  pixels). Is the editor still light on the MacBook Air with the window open (Activity
+  Monitor, GarageBand's CPU meter), compared with Milestone 9?
+
