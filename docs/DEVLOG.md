@@ -5,13 +5,12 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 13a (the 8-bit style prototype) is done and waits for the developer's
-approval.** Milestones 1-12 are complete. Next is 13b, the full 8-bit overhaul of
-[Direction Update 7](DIRECTION_UPDATE_7.md), **only after the developer approves or
-redirects the 13a look**. The checklist and handoff are in the
-[Milestone 13a section](#milestone-13a-8-bit-style-prototype-2026-10-26) at the end. A
-new milestone starts its own progress checklist; a resumed session continues from the
-first unticked item.
+**Milestone 13 is complete** (13a prototype approved; 13b: the whole interface in the
+8-bit style, and the tiny-planet globe the developer asked for during 13b). The
+checklist and handoff are in the
+[Milestone 13b section](#milestone-13b-the-8-bit-interface-and-the-tiny-planet-2026-10-26)
+at the end. A new milestone starts its own progress checklist; a resumed session
+continues from the first unticked item.
 
 ---
 
@@ -3867,7 +3866,7 @@ interface uses the new style yet (that is 13b).
 - [x] 13a.4 Six Place icons, 32 x 32, 3-4 frame idle animations; `assets/pixel/` replacement pipeline
 - [x] 13a.5 `PixelLookAndFeel` (real JUCE controls in the style); tests (`--only pixel`)
 - [x] 13a.6 Snapshots `docs/snapshots/pixel-prototype-*`, the side-by-side sheet; push without `[skip ci]`; **stop for approval**
-- [ ] 13b Full overhaul (Direction Update 7 section 2) — not started, waits for approval
+- [x] 13b Full overhaul (Direction Update 7 section 2): approved and done, see below
 
 ### Decisions
 
@@ -3978,3 +3977,205 @@ delights; before/after draw time of the whole editor.
   will be snapped to the grid in 13b.
 - Carried over from Milestone 12: nothing of Milestone 12 has been checked on a Mac yet
   (five output buses, scenes, INSPIRE); the `push-access-check` branch can be deleted.
+
+---
+
+## Milestone 13b: the 8-bit interface and the tiny planet (2026-10-26)
+
+Direction Update 7 section 2, after the developer approved 13a with this feedback:
+**fantasy a little more whimsical rather than medieval**; the pixel style on the whole
+interface, including **all 27 Place icons, vertical sliders, meters, the Score
+Intensity knob and a neutral look for modern Places**. During the session the developer
+added: **the Living Globe as a pixel-art tiny planet** (a large planet cropped by the
+panel, its curved horizon across the middle, a pixel sky with weather and day/night,
+Places upright on the horizon turning with the spin and going over it, a terrain and
+sky per planet type, Locations as stars or moons, a journey as a comet, cached and
+cheap, snapshots `docs/snapshots/tiny-planet-*`), and then: **anything in space is in
+orbit or in space**.
+
+### Progress checklist
+
+- [x] 13b.1 Pixel core: moods with a neutral weight, the whimsical fantasy keyframe, the neutral (modern) keyframe, a heading colour; two original pixel fonts (5 x 7 Large, 3 x 5 Small, proportional); text, title and tiny text; device-scale-aware drawing; sprite cache with a memory budget
+- [x] 13b.2 Sprites at any size: knob, Score Intensity dial, slider (horizontal and vertical, thickness to fit), value bar, button (icon, accent, text fitting), toggle and switch, tab, chip, dropdown, field, LED meter, Place card, strip, badge, Location marker, panel
+- [x] 13b.3 27 Place icons (all 26 Places and the empty slot) with 2-4 frame idle animations; the tool (32) and instrument (40) icon sets
+- [x] 13b.4 `PixelLookAndFeel` for every JUCE control (it replaces `WorldLookAndFeel` in the editor); popup menus, tooltips, scroll bars, tab bars
+- [x] 13b.5 The editor: header, panels, World Controls, environment strips and meters, Place strips, cards and chips, the detail panel, Locations bar, footer and Capture; Pattern Editor (grid, notes, lanes, tabs); ARRANGE (timeline, sections, transitions, grid)
+- [x] 13b.6 UI SIZE 100 / 150 / 200 %; every control on the art grid; the small delights follow OVERLAYS
+- [x] 13b.7 The tiny-planet globe (replaces `GlobeRenderer`), orbiting and space Places
+- [x] 13b.8 Tests, snapshots, README, MANUAL_TEST, this handoff; final push without `[skip ci]`
+
+Pushed once, at the end, without `[skip ci]` (the parts were committed locally as they
+were finished; the full suite ran on the final build before the push).
+
+### Decisions
+
+- **Moods are two numbers now**: the fantasy (0) - blend (0.5) - sci-fi (1) axis from
+  the non-modern Places (nature leans fantasy, 0.15), and a **neutral** weight, the
+  modern Places' share of the presence. Four keyframes: fantasy, magitech, sci-fi and
+  neutral; the palette is the axis mix, then mixed toward neutral by its weight. Moods
+  move in 1/64 steps, so the sprite cache stays bounded.
+- **Whimsical fantasy** (the feedback): storybook rather than medieval. Berry-painted
+  faces, sunny gold trim, mint curls at frame corners, an enchanted teal-green meadow
+  with little flowers and stars, sparkles and five-pixel stars on hover; the fantasy
+  icons got candy colours (pink and lilac roofs, a teal pennant and a star on the
+  Castle, a mushroom house in the Village, a lilac-thatched Tavern, onion domes on the
+  Palace, a floating wisp in the Ruins, glowing crystals in the Cavern, a crab on the
+  Beach).
+- **Neutral (modern Places)**: clean graphite faces, brushed aluminium rims, a coral
+  signal light, no decoration. Modern icons are drawn clean and flat (a glass city, a
+  saw-tooth factory, a suburban house with a picket fence, a mall with a blinking sign,
+  a sailing ship, a camp with a flag).
+- **A heading colour** per mood (gold, wood-light, bright cyan, aluminium): the first
+  full-editor snapshots showed sci-fi headings in gunmetal on a dark panel, unreadable.
+  Every title and label uses it; at least 7.5:1 against the panel in every mood.
+- **The art grid is 2 logical pixels.** Every component is snapped to it
+  (`pixel::snapChildren` at the end of each `resized`), every sprite and art-grid
+  rectangle lands on it, so 150 % and 200 % (via `AudioProcessorEditor::setScaleFactor`)
+  are whole 3- and 4-device-pixel blocks. Small icons (the Place strips, the Pattern
+  Editor's title, ARRANGE rows) and tiny text use the half grid: one logical pixel per art
+  pixel, still whole device pixels (rounded down at 150 %).
+- **Fonts**: two original pixel fonts drawn for this plugin, capitals, digits and signs,
+  proportional: Large (5 x 7) for headings and buttons, Small (3 x 5) for labels and
+  values. Sentences (descriptions, tooltips, the Pattern Editor and ARRANGE status
+  lines, the effect line) stay in a clean vector font, as Direction Update 7 allows for
+  small text. No third-party font, so no licence to carry. The title is Large at twice
+  the grid; it falls back to the art grid when it does not fit.
+- **Tool and instrument icons are rasterised from the plugin's own vector icons**:
+  drawn four times larger, reduced to one bit per art pixel (40 % coverage), a one-pixel
+  shadow. One consistent set of 72, made once per size and colour; any can be replaced
+  by a PNG in `assets/pixel/`.
+- **Big, changing areas draw rectangles on the art grid**, not sprites: the piano roll,
+  the lanes, the ARRANGE timeline and grid (`fillArt`, `frameArt`, `blockArt`).
+  Exact at every UI size and nearly free.
+- **The theme is process-wide but each editor sets its own** at the start of its paint;
+  the cache key names the look (a hash, not a counter), so two open windows in
+  different moods both keep their sprites.
+- **Delights follow OVERLAYS** (Direction Update 7): Full animates (twinkles, scanline
+  flicker, icon idle animations, hover sparkles and brackets); Subtle keeps hover
+  decoration but stills the animation (only the hovered card's icon moves); Off keeps
+  only the hover glow. OVERLAYS is Off by default, so a new instance shows the style
+  without the animation.
+- **Fixed-colour accents map to the mood**: the old vector style passed brass, cyan and
+  danger as "on" colours; the LookAndFeel turns them into the mood's accent, inlay and
+  peak. Place accents (Character buttons, strips, tabs) are kept.
+- **Removed**: `WorldLookAndFeel` stays only as the "before" in the draw-time test;
+  `GlobeRenderer` is gone (the tiny planet replaces it); the vector globe features and
+  particles over the globe are no longer drawn (the planet shows the Places themselves).
+
+### The tiny planet (`Source/UI/TinyPlanet.{h,cpp}`)
+
+- **Geometry**: a planet of radius 0.82 x the scene's width, its top across the middle
+  of the panel, cropped by the panel's bottom and sides. Drawn at art resolution into a
+  canvas the size of the globe panel (249 x 157 art pixels), then shown on the art grid.
+- **Surface**: each pixel samples the planet at its longitude (turning with the spin)
+  and depth below the horizon, in four dithered depth bands, limb-darkened at the sides
+  and shaded at night. Per type: **Rocky** craters (foreshortened toward the horizon) and
+  boulders; **Ocean** drifting wave crests, round islands, an island skyline; **Ice
+  Giant** snow, ice cracks, sparkles, ice spikes; **Gas Giant** swirling bands, a great
+  storm, **rings arcing across the sky**; **Desert** ripples and a dune skyline; **Lava**
+  basalt with pulsing glowing cracks and a volcano; **Forest** bushes and a treeline. A
+  planet change crossfades by an ordered dither (Bayer 4 x 4).
+- **Sky** (cached per planet, size, day step and danger step, and the mood): six dithered
+  bands from the planet's day sky to the interface's own darks at night, a sun by day,
+  redder with Danger. Per frame: twinkling stars at night, an **aurora** with Magic at
+  night, drifting clouds (Weather, Wetness), **rain**, **snow**, a **lightning** flash and
+  bolt (the engine's strikes).
+- **Day and night** follow the turning planet: a day is two turns (`cos(turn / 2)`).
+- **Places** stand on the horizon at their Pan (pan -1..1 is -1..1 radian of longitude;
+  the slots' default pans spread them), turn with the planet (its turn is 0.3 x the
+  editor's spin, so a turn takes about a minute at the default Activity) and are drawn
+  only within 0.78 rad of the top, shrinking (to 0.35) and fading into the haze toward
+  the edges, smaller and hazier when far (Distance), dimmer at night. Each is the
+  Place's own pixel icon, **rotated to follow the curve** by nearest-neighbour sampling
+  at the art grid (so it stays crisp pixel art), cached per 2 degrees, 1/16 scale and
+  dim step. Their idle animations keep playing.
+- **In orbit or in space** (the developer's follow-up): Spaceship, Space Station,
+  Starship Bridge and Asteroid Mining Colony **orbit** above the horizon (a lower ring
+  than the sky arc, 1.8 x faster than the planet turns, a gentle bob, mostly upright),
+  hidden while behind the planet; the Nebula hangs **out in space**, high in the sky,
+  drifting slowly, behind the clouds. Every other Place, the Spaceport included, stands
+  on the ground.
+- **Locations**: an arc in the sky concentric with the horizon; even slots are stars,
+  odd ones moons, unsaved ones a faint point; the one the world stands at has a halo.
+  Names alternate above and below the arc. **A journey is a comet** along the arc from
+  where the world was to where it goes (or between From and To in Journey Mode), with a
+  fading tail.
+- **Mouse**: click a star or moon to travel; drag a Place sideways for Pan and up or down
+  for Distance (relative to where the drag began; the planet holds still while
+  dragging); double-click for its detail panel.
+- **Cost**: about 1.9 ms per frame on this container (Rocky 1.89, Gas Giant 1.78 ms;
+  5-6 % of one core at 30 fps, report-only), only while the globe shows; the sky and the
+  Place sprites are cached.
+
+### Tests (Linux, GCC)
+
+`--only pixel` (40 checks), beyond 13a's: contrast at every point of the axis, plain,
+half and fully modern (ink on faces at least 5.6:1, headings on the panel 7.5:1); the
+mood of mixes (fantasy, sci-fi, blend, presence-weighted, neutral by the modern share,
+nature leaning fantasy); all 27 icons present and animated; every sprite whole blocks at
+x2, x3 and x4 from odd positions; real controls on the grid at x2 and x3; **the whole
+editor at 150 % and 200 % UI size is whole art-pixel blocks in every panel** (World
+Controls, Environment, Places, cards, the tiny planet, Locations, footer, header; the
+Places' half-size icons excepted; three colour levels of tolerance for JUCE's scaled
+image rounding); drag, double-click reset, tooltips; draw time (report-only).
+
+Changed: the planet tests now check the tiny planet (each type in its own colours, the
+frame on screen, its cost); the theme test now expects Castle + Spaceport to have the
+blend's own look (Direction Update 7's magitech) rather than a mix between the two.
+
+Full suite (`scripts/run-tests-parallel.sh`): **3627 checks pass, 0 fail** (rest 1703,
+places, instruments 391 + 380, CPU 35). Two paint-only fixes followed (the detail
+title's fallback when long, the CHARACTER label's font); on that final build the UI and
+editor groups with scenes (every group but the instrument and Place shards, which no
+interface code touches) ran again: **1729 pass, 0 fail**. CPU, report-only: Standard
+quality four busy Places 17.9 % on this container (no audio code changed).
+
+**Draw time** (report-only, this container): the six prototype controls painted, vector
+0.65 ms, pixel 0.16 ms; **the whole editor, one animation frame and its paint: 44 ms
+before (Milestone 12, vector, the shaded planet) and 21-27 ms after** (the tiny planet
+included).
+
+### Snapshots (`docs/snapshots/`)
+
+- `pixel-13b-editor-fantasy.png`, `-blend.png`, `-scifi.png`, `-neutral.png`: **the whole
+  interface in each mood** (Castle, Tavern, Forest; Castle, Spaceport, Temple;
+  Spaceport, Megacity, Nebula; City, Mall, Suburbs).
+- `pixel-13b-sheet.png`: every control in the four moods side by side (`-fantasy`,
+  `-blend`, `-scifi` alone); `pixel-13b-mood-sweep.png`: one button, knob, card, meter,
+  toggle and slider from 0 to 100 % sci-fi, half modern and modern;
+  `pixel-13b-controls-200.png`: at 200 %; `pixel-13b-sheet-frame1..3`: the animation.
+- `pixel-13b-icons.png`: the 27 Place icons, every frame, each in its world's mood;
+  `pixel-13b-tool-icons.png`: the tool and instrument icons.
+- `tiny-planet-rocky`, `-ocean`, `-icegiant`, `-gasgiant`, `-desert`, `-lava`, `-forest`:
+  each planet type with Places that suit it and its weather; `tiny-planet-night`
+  (stars, aurora), `-storm` (rain, lightning), `-journey` (the comet);
+  `tiny-planet-sheet.png`: all seven.
+- `m13b-patterns`, `m13b-arrange-battle`, `m13b-detail`, `m13b-cards`, `m13b-strips`,
+  `m13b-header`, `m13b-bottom-arrangement`: the Pattern Editor, ARRANGE, a detail panel
+  and parts of the editor.
+
+Regenerate: `WorldbuilderTests --snapshot-pixel docs/snapshots`, `--snapshot-planets
+docs/snapshots`, `--snapshots <dir> m13b`.
+
+### Milestone 13 handoff
+
+**Done:** all of Milestone 13 (Direction Update 7) and the tiny-planet globe.
+
+**What to test first** ([MANUAL_TEST.md](MANUAL_TEST.md), Milestone 13): that GarageBand
+loads it and the interface is sharp; the moods with different Places; that every
+control still works; UI SIZE 150 and 200 % (the window should grow; untested on a Mac);
+the tiny planet with each Planet type, weather, day and night, Places turning over the
+horizon, ships in orbit, a journey's comet.
+
+**Known issues / limits:**
+- Nothing of Milestones 12 and 13 has been seen on a Mac. UI SIZE uses JUCE's
+  `setScaleFactor`, which the AU wrapper honours when it sizes the window; if GarageBand
+  does not resize, that is the first thing to look at.
+- Small text is a 3 x 5 pixel font: compact but small at 100 % on a non-Retina screen.
+  Labels that do not fit end in ".." (some Location names, long Character names).
+- The tiny planet turns, so Places spend part of each turn over the horizon (as asked).
+  Pan sets where a Place stands; the sound's pan does not follow the visual turn.
+- Dense piano-roll rows (12 px) carry their note names tightly; very small ARRANGE rows
+  use the tiny (half-grid) text.
+- Tooltips, descriptions and status lines are a clean vector font by design.
+- Carried over: 4/4 only; the `push-access-check` branch can be deleted.

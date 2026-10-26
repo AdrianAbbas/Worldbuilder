@@ -1051,7 +1051,7 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     g.drawFittedText("Place " + juce::String(d.slot + 1) + "  -  " + placeInfo(type).description, title.withTrimmedTop(50).withTrimmedRight(4).withRight(d.area.getRight() - 90),
                      juce::Justification::centredLeft, 2);
 
-    pixel::drawText(g, "CHARACTER", d.characterArea.withWidth(90), p.heading, juce::Justification::centredLeft, pixel::Font::Large);
+    pixel::drawText(g, "CHARACTER", d.characterArea.withWidth(90), p.heading, juce::Justification::centredLeft, pixel::Font::Small);
     pixel::drawText(g, "RHYTHM", d.rhythmArea.withHeight(14), p.heading, juce::Justification::centredLeft, pixel::Font::Large);
     pixel::drawText(g, "SEED", d.seed.getBounds().translated(0, -15).withHeight(14), p.heading, juce::Justification::centredLeft, pixel::Font::Small);
     pixel::drawText(g, "ELEMENTS", d.elementsArea.withHeight(14), p.heading, juce::Justification::centredLeft, pixel::Font::Large);

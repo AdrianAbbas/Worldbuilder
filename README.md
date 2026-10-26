@@ -11,8 +11,10 @@ recordings.
 each with its own instrument effects; Score Intensity; render to WAV and scene MIDI
 export; Locations and Journeys; seven planet types; the Arrangement with transitions,
 templates, Auto-arrange and game-audio export; and now separate outputs per Place, 24
-factory scenes and INSPIRE).** Milestone 13 (an 8-bit interface overhaul, Direction
-Update 7) is planned and not started.
+factory scenes and INSPIRE), now with the 8-bit interface of Milestone 13:** pixel-art
+controls, icons and text in moods that follow the world (whimsical fantasy, neon sci-fi,
+the "magitech" blend, neutral modern), a pixel-art tiny planet for the Living Globe, and
+a UI size of 100, 150 or 200 %.
 These work now:
 - **Scenes and INSPIRE** (the header): 24 factory scenes, each a ready-made film or game
   moment with its Places, Planet, key, effects, Locations and an arrangement; INSPIRE
@@ -40,7 +42,10 @@ These work now:
     incense; crystals and dripping water; neon storefronts; barbed wire and sandbags;
     drifting sand and lanterns; chandeliers and velvet drapes...), blended when
     several play. Overlays:
-    Full, Subtle or **Off (the default)**.
+    Full, Subtle or **Off (the default)**. The same setting runs the interface's small
+    delights: sparkles, little stars, scanline flicker and HUD brackets on hovered
+    controls, and the Place icons' idle animations (Full: always; Subtle: still, the
+    hovered card moves; Off: none).
   - Controls: Activity, Tension, Tone, Size, Variation, Density, Swing, Sync (to the
     host tempo, or the Place's own free tempo) and a Seed.
   - Each slot also has level, distance and pan.
@@ -69,9 +74,10 @@ These work now:
   travel between them so it sounds like moving through a place, not a crossfade. See
   [Locations and Journeys](#locations-and-journeys).
 - **Planet** (the PLANET menu by the globe): Rocky, Ocean, Ice Giant, Gas Giant,
-  Desert World, Lava World or Forest World. Each one changes the globe (cratered rock,
-  oceans under moving clouds, banded ice with rings, a storm-swirled giant with rings,
-  dunes, glowing cracks, green continents) and gives the whole world a sound colour:
+  Desert World, Lava World or Forest World. Each one changes the tiny planet's horizon
+  and sky (craters; waves and islands; snow and ice spikes; swirling bands with rings
+  arcing across the sky; dunes; glowing cracks and a volcano; trees) and gives the
+  whole world a sound colour:
   Rocky is dry and close, Ocean has a watery, rolling movement, Ice Giant a cold
   crystalline shimmer, Gas Giant a vast swirling space and deep sub, Desert a dusty
   high cut and width, Lava heat haze, saturation and rumble, Forest a soft, damped air.
@@ -92,16 +98,24 @@ These work now:
   Machinery makes them straighter and more metallic, Life more human, and Danger
   darker.
 - the shared World Space reverb; Power, Master Level, Width, Seed and Quality;
-- **The interface**: a textured, lit planet that turns under its clouds, with an
-  atmosphere, rings on the giants and city lights on its night side (from the populated
-  Places); raised, bevelled buttons, toggles, tabs and cards that glow on hover and
-  light up when on, with one set of vector icons; a Place selector of 26 illustrated cards (all, or by category:
-  Fantasy, Modern, Sci-Fi, Nature) that come alive on hover; Place strips; a detail
-  panel with header art and an icon per instrument; the Pattern Editor with a tab per
-  instrument; landmarks on the globe that you can drag to move a Place. The colours,
-  light and particles of the interface follow the active Places, and the globe shows
-  them (fields, orbits, city lights, oceans, dunes...). Finished artwork can be
-  dropped in per Place (see [assets/places/README.md](assets/places/README.md)).
+- **The interface** (Milestone 13): 8-bit pixel art throughout, drawn on whole pixels
+  at every UI size. Its **mood follows the active Places**: fantasy and nature Places
+  make it whimsical and storybook (berry and gold, mint curls, sparkles and little
+  stars on an enchanted meadow), sci-fi Places futuristic (dark metal, neon LEDs,
+  scanlines, HUD brackets), both together "magitech" (wooden frames with neon inlays,
+  circuit runes), and modern Places pull it toward a clean, neutral graphite; it
+  changes smoothly as Places come and go. Pixel knobs with gem, rune or LED rings, the
+  large Score Intensity dial, sprite sliders (horizontal and vertical), bevelled
+  buttons and toggles, tabs, menus, LED meters, one pixel icon set for every tool and
+  instrument, and 27 animated pixel Place icons (a waving flag, a swinging tavern sign,
+  a flickering thruster...). Two original pixel fonts (no third-party font); sentences
+  such as descriptions and tooltips stay in a clean font. **The Living Globe is a tiny
+  planet**: its curved horizon across the panel, a pixel sky with sun, clouds, rain,
+  snow, lightning and an aurora with Magic, day turning to night as it spins; the Places
+  stand on the horizon (ships, stations and the asteroid colony in orbit, the Nebula out
+  in space), turn with it and go over the horizon; the Locations are stars and moons in
+  the sky. **UI SIZE** (footer): 100, 150 or 200 %. Hand-drawn pixel art can replace
+  any icon (see [assets/pixel/README.md](assets/pixel/README.md)).
 
 See [docs/DEVLOG.md](docs/DEVLOG.md) for progress and known limits. The plan is in
 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and
@@ -183,13 +197,13 @@ Play Mode and the World Seed are not part of a Location.
 - **Save:** click an empty chip in the LOCATIONS row (or right-click a chip, "Save the
   world here"). Double-click a saved chip to rename it ("Frozen Gate", "Ember
   Market"); right-click for its colour, to save over it or to clear it.
-- **Travel:** click a saved chip, or its marker on the globe's orbit. The world travels
+- **Travel:** click a saved chip, or its star or moon in the planet's sky. The world travels
   there over the **Travel Time** (0.5-60 s, or 1-16 bars of the host tempo with Travel
   Sync), eased in and out. On the way the World Controls and every Place's settings
   glide; a Place that stays morphs; a Place that leaves recedes into the distance
   (quieter, darker, more distant in the reverb) and a new one approaches from there;
   Root, Mood, the Places' seeds and Characters change at the far point, the middle of the way. The
-  globe turns faster and a comet runs along the orbit; the destination chip fills.
+  planet turns faster and a comet crosses the sky to the destination; its chip fills.
   Choosing another Location half way turns back smoothly. On arrival the knobs show
   the Location, and you can carry on shaping it.
 - **Automate it:** **Destination** (a host parameter, - or 1-8) travels when it
@@ -347,9 +361,10 @@ over two seconds.
 - Size: **Scale** (intimate to colossal: distance, reverb size, low weight),
   **Activity** (calm to chaotic: event density and how fast the world evolves).
 
-**Centre.** The **Living Globe** shows the world: drag a Place's landmark to move it
-(pan and distance follow), double-click it for its detail panel; the Location markers
-on its orbit travel when clicked. **PLANET** and **INFLUENCE** in its corner. Below it,
+**Centre.** The **Living Globe** is a tiny planet showing the world: its Places stand
+on the horizon (or orbit it) and turn with it; drag a Place along the horizon for its
+pan and up or down for its distance, double-click it for its detail panel; click a
+Location's star or moon in the sky to travel there. **PLANET** and **INFLUENCE** in its corner. Below it,
 **ADD A PLACE**: the 26 Place cards (ALL, FANTASY, MODERN, SCI-FI, NATURE); click a card
 to add it to the first empty slot.
 
@@ -375,7 +390,8 @@ travel), Travel Time and its sync, **JOURNEY** with From, To and the Journey sli
 
 **Footer.** **ROOT** and **MOOD** (the key everything tonal follows), **QUALITY** (Eco,
 Standard, High), **PLAY MODE** (Free, Transport, Arrangement), **WORLD SEED** and **New
-world** (a random seed), the host tempo, **OVERLAYS** (Full, Subtle, Off), **PLACE
+world** (a random seed), **UI SIZE** (100, 150, 200 %), the host tempo, **OVERLAYS**
+(Full, Subtle, Off: the Place overlays and the interface's small delights), **PLACE
 OUTPUTS** (Copy, Split), **CAPTURE** (bars or Arrangement; Mix, Stems, Sections or
 Stingers; MIDI, RENDER and the WAV to drag or save), **Space Mix**, **Width**, **Master
 Level** and the master meter.
@@ -392,9 +408,9 @@ it in GarageBand (A on the track) or Logic.
 | | double-click | back to the default |
 | | hover | tooltip with what it does |
 | Place card | click | add the Place to the first empty slot |
-| Globe | drag a landmark | move the Place (pan and distance) |
-| | double-click a landmark | open its detail panel |
-| | click a Location marker | travel there |
+| Globe (tiny planet) | drag a Place | sideways: pan; up and down: distance |
+| | double-click a Place | open its detail panel |
+| | click a Location's star or moon | travel there |
 | Location chip | click (empty) | save the world there |
 | | click (saved) | travel there |
 | | double-click | rename |

@@ -696,3 +696,26 @@ First, the risk: WORLDBUILDER now has five output buses (main plus Place 1-4).
 - [ ] PLACE OUTPUTS **Copy**: the main channel plays the full mix. **Split**: the Places
   with their own outputs leave the main (their reverb stays there).
 - [ ] Bounce an aux (or record it): is it the Place alone?
+
+## Milestone 13 check: the 8-bit interface and the tiny planet
+
+Nothing in the sound changed; this is about the look and that every control still works.
+
+- [ ] GarageBand loads it and the interface appears in the pixel style (no blurry or
+  half pixels on your screen).
+- [ ] The mood follows the Places: add Castle and Tavern (whimsical, berry and gold),
+  then swap to Spaceport and Megacity (neon sci-fi), then Castle with Spaceport (the
+  "magitech" blend), then City and Mall (neutral graphite). Does it change smoothly?
+- [ ] Every control works as before: drag knobs and sliders (Shift for fine), double-click
+  to reset, menus, M and S, EDIT, X, the Pattern Editor and ARRANGE, tooltips.
+- [ ] Readable at 100 %: the labels, values and knob names. Anything too small?
+- [ ] UI SIZE 150 % and 200 %: the window grows and stays sharp. (Untested on a Mac:
+  if the window does not resize in GarageBand, say so.)
+- [ ] OVERLAYS Full: sparkles, stars, scanlines and brackets on hovered controls, icons
+  animate (flag, tavern sign, thruster). Subtle: only the hovered card moves. Off: still.
+- [ ] The tiny planet: switch PLANET through all seven. Horizon and sky right for each?
+  Do the Places stand on the horizon and turn with it (ships and stations in orbit, the
+  Nebula in the sky)? Weather (rain, snow, lightning), day and night, an aurora with
+  Magic. Drag a Place sideways (pan) and up and down (distance).
+- [ ] Locations: save two and travel: a comet crosses the sky between their stars/moons.
+- [ ] CPU: about the same or lower than Milestone 12 with the interface open?

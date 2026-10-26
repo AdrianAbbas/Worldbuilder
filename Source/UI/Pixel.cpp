@@ -469,6 +469,11 @@ void drawCachedSmall(juce::Graphics& g, const juce::String& key, juce::Point<int
 
 void drawTitle(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Colour light, juce::Colour shadow) {
     const int w = Canvas::textWidth(text) + 2, h = Canvas::textHeight() + 2;
+    if (w * unit * 2 > area.getWidth()) {
+        // Too long for the double size: Large text at the art grid.
+        drawText(g, text, area, colour, juce::Justification::centredLeft, Font::Large, shadow);
+        return;
+    }
     const float physical = g.getInternalContext().getPhysicalPixelScaleFactor();
     const int block = std::max(1, juce::roundToInt(float(unit * 2) * physical));
     const auto key = "title/" + text + colour.toString() + light.toString() + shadow.toString();
