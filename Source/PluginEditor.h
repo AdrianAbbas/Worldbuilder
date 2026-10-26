@@ -54,6 +54,15 @@ public:
     // The globe's planet renderer (its last frame) and the Planet it shows.
     const wb::ui::GlobeRenderer& globeRenderer() const { return globe; }
     int shownPlanetType() const { return shownPlanet; }
+    // Scenes (Milestone 12): the header's scene browser, INSPIRE and UNDO.
+    void loadScene(int index);
+    void inspire();
+    void undoScene();
+    juce::Button& inspireButton() { return inspireToggle; }
+    juce::Button& sceneUndoButton() { return sceneUndo; }
+    juce::Button& sceneNameButton() { return sceneMenu; }
+    juce::Button& scenePrevButton() { return scenePrev; }
+    juce::Button& sceneNextButton() { return sceneNext; }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -145,6 +154,10 @@ private:
     std::unique_ptr<wb::ui::PatternEditor> patterns;
     std::unique_ptr<wb::ui::ArrangeView> arrange;
     juce::TextButton arrangeToggle { "ARRANGE" };
+    juce::TextButton scenePrev { "<" }, sceneNext { ">" }, sceneMenu, inspireToggle { "INSPIRE" }, sceneUndo { "UNDO" };
+    // After a scene loads: the strips, the panels and the ARRANGE view show it.
+    void sceneChanged();
+    void showSceneMenu();
     // The globe and the cards are covered (by the Pattern Editor or the ARRANGE view).
     bool covered() const;
     std::unique_ptr<wb::ui::CapturePanel> capture;
@@ -152,6 +165,9 @@ private:
     juce::ComboBox playMode;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> playModeAttachment;
     juce::ComboBox overlayChoice;
+    // Separate outputs (Milestone 12): Copy or Split.
+    juce::ComboBox placeOuts;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> placeOutsAttachment;
     // The Planet, by the globe (Milestone 10).
     juce::ComboBox planetChoice;
     juce::Slider planetInfluence;

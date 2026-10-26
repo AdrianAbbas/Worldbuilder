@@ -4,6 +4,7 @@
 #include "Capture/Capture.h"
 #include "Locations/LocationBank.h"
 #include "Patterns/PatternStore.h"
+#include "Scenes/Scenes.h"
 #include "WorldEngine.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -84,6 +85,21 @@ public:
     // The host's values for every parameter, clamped.
     wb::WorldValues liveValues() const noexcept;
 
+    // Scenes (Milestone 12): loads a whole scene (parameters, patterns, Locations and the
+    // arrangement); the world before it can be brought back with undoScene(). The session
+    // settings (Power, Master Level, Quality, Place Outputs) stay; Play Mode becomes
+    // Arrangement unless it is Free.
+    void loadScene(const wb::scenes::Scene& scene);
+    bool loadFactoryScene(int index);
+    // Inspire: moves the World Seed on and builds a random, musical scene from it.
+    void inspire();
+    bool undoScene();
+    bool canUndoScene() const { return !sceneUndo.isEmpty(); }
+    // The name of the scene loaded last (empty: none, or the world was edited since...
+    // the editor only shows it).
+    juce::String sceneName() const;
+    int factoryIndex() const;   // -1: not a factory scene
+
 private:
     wb::EngineControls readControls() const noexcept;
     wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
@@ -99,6 +115,8 @@ private:
     }
     static constexpr int travelPiece = 128;   // samples per piece while a journey is under way
     uint32_t appliedArrival = 0;
+    juce::String sceneUndo;   // the world before the last scene load or Inspire (a .world text)
+    void setValue(int param, float value);
 
     std::array<std::atomic<float>*, wb::PCount> raw {};
     double rate = 48000;

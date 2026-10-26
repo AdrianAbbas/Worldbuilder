@@ -52,7 +52,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout WorldbuilderProcessor::makeL
 }
 
 WorldbuilderProcessor::WorldbuilderProcessor()
-    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor(BusesProperties()
+                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                         // Separate outputs (Milestone 12): one stereo output per Place slot.
+                         .withOutput("Place 1", juce::AudioChannelSet::stereo(), true)
+                         .withOutput("Place 2", juce::AudioChannelSet::stereo(), true)
+                         .withOutput("Place 3", juce::AudioChannelSet::stereo(), true)
+                         .withOutput("Place 4", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "WORLDBUILDER", makeLayout()) {
     for (std::size_t i = 0; i < specs.size(); ++i) raw[i] = parameters.getRawParameterValue(specs[i].id);
     patterns.syncTypes(slotTypes());
@@ -105,6 +111,7 @@ EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& valu
     c.mood = juce::roundToInt(value(PMood));
     c.planet = juce::roundToInt(value(PPlanet));
     c.planetInfluence = value(PPlanetInfluence);
+    c.splitOuts = juce::roundToInt(value(PPlaceOuts)) == 1;
     for (int slot = 0; slot < placeSlots; ++slot) {
         auto& pc = c.places[std::size_t(slot)];
         const auto field = [&](int f) { return value(placeParam(slot, f)); };
@@ -184,7 +191,13 @@ void WorldbuilderProcessor::reset() {}
 bool WorldbuilderProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::disabled()) return false;
     const auto out = layouts.getMainOutputChannelSet();
-    return out == juce::AudioChannelSet::stereo() || out == juce::AudioChannelSet::mono();
+    if (out != juce::AudioChannelSet::stereo() && out != juce::AudioChannelSet::mono()) return false;
+    // The Place outputs: each stereo, or switched off by the host.
+    for (int bus = 1; bus < layouts.outputBuses.size(); ++bus) {
+        const auto set = layouts.getChannelSet(false, bus);
+        if (set != juce::AudioChannelSet::stereo() && set != juce::AudioChannelSet::disabled()) return false;
+    }
+    return true;
 }
 
 void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
@@ -272,7 +285,22 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         livePatterns[std::size_t(slot)] = &engine.patternsIn[std::size_t(slot)].read();
     }
     float* left = buffer.getWritePointer(0);
-    float* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
+    const int mainChannels = getBusCount(false) > 0 ? getChannelCountOfBus(false, 0) : buffer.getNumChannels();
+    float* right = buffer.getNumChannels() > 1 && mainChannels > 1 ? buffer.getWritePointer(1) : nullptr;
+    // The Place outputs the host has (Logic's multi-output instrument; a host with only
+    // the main output, like GarageBand, has none, and the main keeps the full mix).
+    std::array<float*, 2 * placeSlots> slotOut {};
+    std::array<bool, placeSlots> hasOut {};
+    bool anyOut = false;
+    for (int slot = 0; slot < placeSlots && right != nullptr; ++slot) {
+        const int bus = slot + 1;
+        if (bus >= getBusCount(false) || !getBus(false, bus)->isEnabled() || getChannelCountOfBus(false, bus) != 2) continue;
+        const int first = getChannelIndexInProcessBlockBuffer(false, bus, 0);
+        if (first + 1 >= buffer.getNumChannels()) continue;
+        slotOut[std::size_t(2 * slot)] = buffer.getWritePointer(first);
+        slotOut[std::size_t(2 * slot + 1)] = buffer.getWritePointer(first + 1);
+        hasOut[std::size_t(slot)] = anyOut = true;
+    }
     for (int done = 0; done < n;) {
         // The Journey Path follows the song: the beat this piece starts on.
         in.beat = restart && done == 0 ? (restartBeat >= 0 ? restartBeat : double(restartAt) / rate * in.bpm / 60.0) : engine.nextBeat();
@@ -294,8 +322,13 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             controls.places[std::size_t(slot)].travelFar = world.far[std::size_t(slot)];
             controls.patterns[std::size_t(slot)] = world.patterns[std::size_t(slot)];
         }
+        controls.slotOut = hasOut;
         if (restart && done == 0) engine.restart(restartAt, restartBeat, controls);
-        if (right != nullptr) {
+        if (right != nullptr && anyOut) {
+            std::array<float*, 2 * placeSlots> outs {};
+            for (std::size_t c = 0; c < outs.size(); ++c) outs[c] = slotOut[c] != nullptr ? slotOut[c] + done : nullptr;
+            engine.process(left + done, right + done, count, controls, outs.data());
+        } else if (right != nullptr) {
             engine.process(left + done, right + done, count, controls);
         } else {
             // Mono output: render stereo in chunks through a small stack buffer.
@@ -309,7 +342,12 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         travel.step(count, in, live);
         done += count;
     }
-    for (int ch = 2; ch < buffer.getNumChannels(); ++ch) buffer.clear(ch, 0, n);
+    // Channels nothing wrote (a mono main's second channel, Place outputs not in use).
+    for (int ch = std::max(1, mainChannels); ch < buffer.getNumChannels(); ++ch) {
+        bool written = false;
+        for (const float* p : slotOut) written |= p != nullptr && p == buffer.getReadPointer(ch);
+        if (!written) buffer.clear(ch, 0, n);
+    }
 
     const auto seconds = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin);
     cpuLoad.store(0.9f * cpuLoad.load() + 0.1f * float(seconds * rate / n), std::memory_order_relaxed);
@@ -397,8 +435,8 @@ bool WorldbuilderProcessor::importWorld(const juce::String& text) {
     const auto xml = juce::parseXML(text);
     if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return false;
     // The session's own settings stay as they are.
-    std::array<float, 4> kept {};
-    const std::array<int, 4> session { PPower, PMaster, PQuality, PPlayMode };
+    std::array<float, 5> kept {};
+    const std::array<int, 5> session { PPower, PMaster, PQuality, PPlayMode, PPlaceOuts };
     for (std::size_t i = 0; i < session.size(); ++i) kept[i] = raw[std::size_t(session[i])]->load();
     juce::MemoryBlock block;
     copyXmlToBinary(*xml, block);
@@ -408,6 +446,78 @@ bool WorldbuilderProcessor::importWorld(const juce::String& text) {
         parameter->setValueNotifyingHost(parameter->convertTo0to1(kept[i]));
     }
     return true;
+}
+
+void WorldbuilderProcessor::setValue(int p, float value) {
+    auto* parameter = parameters.getParameter(specs[std::size_t(p)].id);
+    const float normalised = parameter->convertTo0to1(value);
+    if (std::abs(parameter->getValue() - normalised) < 1.0e-7f) return;
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost(normalised);
+    parameter->endChangeGesture();
+}
+
+void WorldbuilderProcessor::loadScene(const scenes::Scene& scene) {
+    sceneUndo = exportWorld();
+    auto session = liveValues();
+    if (juce::roundToInt(session[PPlayMode]) != PlayFree) session[PPlayMode] = float(PlayArrangement);
+    const auto world = scenes::worldValues(scene, session);
+    // No journey under way or waiting: the scene's Locations are reached by its arrangement.
+    for (int p = 0; p < PCount; ++p) setValue(p, world[std::size_t(p)]);
+    patterns.syncTypes(slotTypes());
+    std::array<pat::SlotPatterns, locationSlots> fresh {};
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        fresh[std::size_t(slot)] = PatternStore::defaultsFor(slotTypes()[std::size_t(slot)]);
+        patterns.set(slot, fresh[std::size_t(slot)]);
+    }
+    for (int i = 0; i < locationCount; ++i) {
+        if (i >= scene.locationCount) {
+            locations.clear(i);
+            continue;
+        }
+        const auto& l = scene.locations[std::size_t(i)];
+        locations.save(i, scenes::locationValues(scene, i, world), fresh);
+        locations.rename(i, l.name);
+        locations.setColour(i, l.colour);
+    }
+    arrangement.set(scenes::arrangement(scene), true);
+    parameters.state.setProperty("scene", juce::String(scene.name), nullptr);
+}
+
+bool WorldbuilderProcessor::loadFactoryScene(int index) {
+    if (index < 0 || index >= scenes::factoryCount()) return false;
+    loadScene(scenes::factory(index));
+    return true;
+}
+
+void WorldbuilderProcessor::inspire() {
+    const auto seed = scenes::nextSeed(uint32_t(juce::roundToInt(raw[PSeed]->load())));
+    loadScene(scenes::inspire(seed));
+}
+
+bool WorldbuilderProcessor::undoScene() {
+    if (sceneUndo.isEmpty()) return false;
+    const auto text = sceneUndo;
+    sceneUndo.clear();
+    // The Play Mode the scene chose goes back too.
+    const float mode = raw[PPlayMode]->load();
+    if (!importWorld(text)) return false;
+    if (const auto xml = juce::parseXML(text))
+        for (auto* child : xml->getChildWithTagNameIterator("PARAM"))
+            if (child->getStringAttribute("id") == specs[PPlayMode].id) {
+                setValue(PPlayMode, float(child->getDoubleAttribute("value", mode)));
+                break;
+            }
+    return true;
+}
+
+juce::String WorldbuilderProcessor::sceneName() const { return parameters.state.getProperty("scene").toString(); }
+
+int WorldbuilderProcessor::factoryIndex() const {
+    const auto name = sceneName();
+    for (int i = 0; i < scenes::factoryCount(); ++i)
+        if (name == juce::String(scenes::factory(i).name)) return i;
+    return -1;
 }
 
 juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new WorldbuilderEditor(*this); }
@@ -478,6 +588,8 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     // project stored Full, the old default, so those open with the new default (Off).
     const int overlays = int(state.getProperty("version", 0)) >= 3 ? int(state.getProperty("overlays", ui::defaultOverlayMode)) : ui::defaultOverlayMode;
     parameters.state.setProperty("overlays", juce::jlimit(0, ui::OverlayModeCount - 1, overlays), nullptr);
+    // The scene loaded last (Milestone 12), for the scene browser.
+    parameters.state.setProperty("scene", state.getProperty("scene").toString(), nullptr);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

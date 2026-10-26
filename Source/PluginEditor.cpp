@@ -56,7 +56,6 @@ juce::Colour blend(const juce::Colour* c, const float* w, int n) {
     return juce::Colour::fromFloatRGBA(r / total, g / total, b / total, 1.0f);
 }
 
-constexpr const char* headerText = "FILM & GAME SCORING INSTRUMENT  -  MILESTONE 11";
 
 // Short names for the category chips.
 constexpr std::array<const char*, PlaceCategoryCount + 1> chipNames { "ALL", "FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -76,6 +75,16 @@ const char* slotTooltip(int field) {
 } // namespace
 
 //==============================================================================
+namespace {
+// Shift-drag: fine control on every knob and slider (a slow, velocity-sensitive drag).
+void enableFineDrag(juce::Component& root) {
+    for (auto* child : root.getChildren()) {
+        if (auto* slider = dynamic_cast<juce::Slider*>(child)) slider->setVelocityModeParameters(0.3, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
+        enableFineDrag(*child);
+    }
+}
+} // namespace
+
 WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcessorEditor(p), processor(p) {
     setLookAndFeel(&lookAndFeel);
 
@@ -228,6 +237,11 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     setupCombo(mood, PMood, moodAttachment);
     setupCombo(quality, PQuality, qualityAttachment);
     setupCombo(playMode, PPlayMode, playModeAttachment);
+    setupCombo(placeOuts, PPlaceOuts, placeOutsAttachment);
+    placeOuts.setTooltip("Place outputs (Logic's multi-output instrument): each Place slot also plays on its own stereo output. "
+                         "Copy: the main output keeps the full mix. Split: a Place with its own output leaves the main mix "
+                         "(its reverb and delay returns stay on the main). GarageBand has only the main output, which always "
+                         "keeps every Place.");
     playMode.setTooltip("Transport: plays only while the host plays, from silence and locked to the song position, so bounces and exports "
                         "always contain it. Arrangement: as Transport, playing the ARRANGE section at the song position. "
                         "Free: plays all the time (GarageBand exports only up to the last region).");
@@ -267,6 +281,32 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     arrangeToggle.onClick = [this] { arrange->isVisible() ? closeArrange() : openArrange(); };
     addAndMakeVisible(arrangeToggle);
 
+    // Scenes: the factory scenes (previous, the menu, next), INSPIRE and its UNDO.
+    scenePrev.setTooltip("The previous factory scene");
+    sceneNext.setTooltip("The next factory scene");
+    sceneMenu.setTooltip("Factory scenes: ready-made film and game moments, each with its Places, Planet, effects, Locations and an "
+                         "arrangement. Play Mode Arrangement plays its sections and travels between its Locations.");
+    inspireToggle.setTooltip("INSPIRE: a random but musical world from the next World Seed (Places that belong together, Characters, "
+                             "Planet, key, effects, Locations and an arranged template). UNDO brings the world before it back.");
+    sceneUndo.setTooltip("Undo the last scene or INSPIRE: the world before it comes back");
+    inspireToggle.setColour(juce::TextButton::buttonOnColourId, ui::colours::brass);
+    ui::setIcon(inspireToggle, ui::Icon::Generate);
+    ui::setIcon(sceneUndo, ui::Icon::Undo);
+    scenePrev.onClick = [this] {
+        const int at = processor.factoryIndex();
+        loadScene(at < 0 ? scenes::factoryCount() - 1 : (at + scenes::factoryCount() - 1) % scenes::factoryCount());
+    };
+    sceneNext.onClick = [this] {
+        const int at = processor.factoryIndex();
+        loadScene(at < 0 ? 0 : (at + 1) % scenes::factoryCount());
+    };
+    sceneMenu.onClick = [this] { showSceneMenu(); };
+    inspireToggle.onClick = [this] { inspire(); };
+    sceneUndo.onClick = [this] { undoScene(); };
+    for (auto* b : { &scenePrev, &sceneNext, &sceneMenu, &inspireToggle, &sceneUndo }) addAndMakeVisible(*b);
+    sceneUndo.setEnabled(processor.canUndoScene());
+    sceneMenu.setButtonText(processor.sceneName().isEmpty() ? juce::String("Scenes...") : processor.sceneName());
+
     setupCombo(planetChoice, PPlanet, planetAttachment);
     planetChoice.setTooltip("Planet: the globe's look and a sound colour on the whole world (Rocky: dry and close; Ocean: watery movement; "
                             "Ice Giant: cold shimmer; Gas Giant: vast and swirling; Desert: dusty and wide; Lava: hot and saturated; Forest: soft and damped)");
@@ -296,6 +336,7 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     setSize(baseWidth, baseHeight);
     refreshPlaceStrips();
     updateTheme(0.0f, true);
+    enableFineDrag(*this);
     startTimerHz(30);
 }
 
@@ -356,6 +397,56 @@ int WorldbuilderEditor::addPlace(int type) {
     return -1;
 }
 
+void WorldbuilderEditor::loadScene(int index) {
+    if (!processor.loadFactoryScene(index)) return;
+    sceneChanged();
+}
+
+void WorldbuilderEditor::inspire() {
+    processor.inspire();
+    sceneChanged();
+}
+
+void WorldbuilderEditor::undoScene() {
+    if (processor.undoScene()) sceneChanged();
+}
+
+void WorldbuilderEditor::sceneChanged() {
+    closeDetail();
+    if (patterns->isVisible()) patterns->setVisible(false);
+    refreshPlaceStrips();
+    if (arrange->isVisible()) arrange->refresh();
+    const auto name = processor.sceneName();
+    sceneMenu.setButtonText(name.isEmpty() ? juce::String("Scenes...") : name);
+    sceneUndo.setEnabled(processor.canUndoScene());
+    repaint();
+}
+
+void WorldbuilderEditor::showSceneMenu() {
+    // The factory scenes by their first Place's world.
+    juce::PopupMenu menu;
+    const int at = processor.factoryIndex();
+    for (int category : { int(MedievalFantasy), int(SciFi), int(Modern), int(Nature) }) {
+        juce::PopupMenu sub;
+        for (int i = 0; i < scenes::factoryCount(); ++i) {
+            const auto& scene = scenes::factory(i);
+            if (placeInfo(scene.slots[0].type).category != category) continue;
+            sub.addItem(i + 1, scene.name, true, i == at);
+        }
+        if (sub.getNumItems() > 0) menu.addSubMenu(juce::String(categoryNames[std::size_t(category)]).toLowerCase().replace("&", "and").toUpperCase(), sub);
+    }
+    menu.addSeparator();
+    menu.addItem(1000, "INSPIRE (a new world from the next World Seed)");
+    menu.addItem(1001, "Undo the last scene", processor.canUndoScene());
+    juce::Component::SafePointer<WorldbuilderEditor> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&sceneMenu), [safe](int result) {
+        if (safe == nullptr || result <= 0) return;
+        if (result == 1000) safe->inspire();
+        else if (result == 1001) safe->undoScene();
+        else safe->loadScene(result - 1);
+    });
+}
+
 void WorldbuilderEditor::setOverlayMode(int mode) {
     mode = juce::jlimit(0, ui::OverlayModeCount - 1, mode);
     overlays->setMode(mode);
@@ -366,6 +457,7 @@ void WorldbuilderEditor::setOverlayMode(int mode) {
 bool WorldbuilderEditor::covered() const { return patterns->isVisible() || arrange->isVisible(); }
 
 void WorldbuilderEditor::openArrange() {
+    enableFineDrag(*arrange);
     closeDetail();
     if (patterns->isVisible()) patterns->setVisible(false);
     arrange->refresh();
@@ -391,6 +483,7 @@ void WorldbuilderEditor::openPatterns(int slot, int element) {
     closeDetail();
     closeArrange();
     patterns->setVisible(true);
+    enableFineDrag(*patterns);
     patterns->toFront(false);
     overlays->toFront(false);
     patterns->open(slot, element);
@@ -473,15 +566,23 @@ void WorldbuilderEditor::resized() {
         // The header's text, and the open space between it and POWER (the overlays may use it).
         const auto width = [](const juce::Font& font, const char* text) { return juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, text)) + 8; };
         headerTitle = header.withTrimmedLeft(4).withWidth(width(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f), "WORLDBUILDER"));
-        headerSubtitle = juce::Rectangle<int>(header.getX() + 300, header.getCentreY() - 9,
-                                              width(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f), headerText), 18);
+        juce::ignoreUnused(width);
         // Score Intensity: its label and a large knob, clear of POWER.
         const auto block = header.withRight(power.getX() - 48).withLeft(power.getX() - 48 - 170);
         knobFor[std::size_t(PIntensity)]->setBounds(block.withLeft(block.getRight() - 46).withSizeKeepingCentre(46, 46));
         intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(116, 30);
         arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 24 - 108, header.getCentreY() - 13, 108, 26));
-        headerOpen = header.withLeft(headerSubtitle.getRight() + 16).withRight(arrangeToggle.getX() - 12);
-        if (headerOpen.getWidth() < 60) headerOpen = {};
+        // The scene browser, INSPIRE and UNDO, right of the title.
+        auto row = juce::Rectangle<int>(headerTitle.getRight() + 14, header.getCentreY() - 13, arrangeToggle.getX() - 18 - headerTitle.getRight() - 14, 26);
+        sceneUndo.setBounds(row.removeFromRight(66));
+        row.removeFromRight(4);
+        inspireToggle.setBounds(row.removeFromRight(94));
+        row.removeFromRight(10);
+        scenePrev.setBounds(row.removeFromLeft(24));
+        sceneNext.setBounds(row.removeFromRight(24));
+        sceneMenu.setBounds(row.reduced(3, 0));
+        headerSubtitle = {};
+        headerOpen = {};
     }
     area.removeFromTop(6);
     footer = area.removeFromBottom(80);
@@ -596,6 +697,7 @@ void WorldbuilderEditor::resized() {
         f.removeFromLeft(14);
         auto column = f.removeFromLeft(100);
         overlayChoice.setBounds(column.removeFromTop(column.getHeight() / 2).withTrimmedTop(14).withSizeKeepingCentre(100, 22));
+        placeOuts.setBounds(column.withTrimmedTop(14).withSizeKeepingCentre(100, 20));
     }
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })
@@ -682,11 +784,6 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
         g.setFont(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)).withExtraKerningFactor(0.18f));
         g.drawText("WORLDBUILDER", header.withTrimmedLeft(4), juce::Justification::centredLeft, false);
     }
-    if (g.clipRegionIntersects(headerSubtitle)) {
-        g.setColour(colours::dim);
-        g.setFont(juce::Font(juce::FontOptions(12.0f)).withExtraKerningFactor(0.08f));
-        g.drawText(headerText, header.withTrimmedLeft(300).withTrimmedRight(110), juce::Justification::centredLeft, false);
-    }
     if (g.clipRegionIntersects(intensityLabel)) {
         g.setColour(colours::brass);
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)).withExtraKerningFactor(0.1f));
@@ -754,7 +851,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     g.setColour(colours::brass.withAlpha(0.8f));
     for (auto [component, text] : { std::pair<juce::Component*, const char*> { &root, "ROOT" }, { &mood, "MOOD" },
                                     { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" },
-                                    { &overlayChoice, "OVERLAYS" } })
+                                    { &overlayChoice, "OVERLAYS" }, { &placeOuts, "PLACE OUTPUTS" } })
         if (const auto label = component->getBounds().translated(0, -15).withHeight(14); g.clipRegionIntersects(label))
             g.drawText(text, label, juce::Justification::centredLeft, false);
     if (const auto tempo = dice.getBounds().translated(dice.getWidth() + 14, 0).withWidth(90); g.clipRegionIntersects(tempo)) {
@@ -1342,7 +1439,7 @@ void WorldbuilderEditor::updateOverlayFrames() {
     std::vector<juce::Rectangle<int>> keep { headerTitle, headerSubtitle, intensityLabel };
     for (auto* c : getChildren())
         if (c != overlays.get() && c->isVisible()) keep.push_back(c->getBounds().expanded(2));
-    for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice })
+    for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice, &placeOuts })
         keep.push_back(c->getBounds().translated(0, -16).withHeight(16));
     keep.push_back(dice.getBounds().translated(dice.getWidth() + 10, 0).withWidth(100));   // tempo
     for (const auto& area : groupAreas) keep.push_back(area.withHeight(18));
@@ -1608,6 +1705,12 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     animTime += seconds;
     if (animTime > 3600.0f) animTime = 0;
     refreshPlaceStrips();
+    {
+        // A project or .world loaded by the host: the scene browser follows.
+        const auto name = processor.sceneName().isEmpty() ? juce::String("Scenes...") : processor.sceneName();
+        if (sceneMenu.getButtonText() != name) sceneMenu.setButtonText(name);
+        if (sceneUndo.isEnabled() != processor.canUndoScene()) sceneUndo.setEnabled(processor.canUndoScene());
+    }
     updateTheme(seconds);
     // The whole interface repaints while the Places' colours are moving.
     if (themeMoving) repaint();

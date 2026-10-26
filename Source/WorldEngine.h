@@ -40,6 +40,11 @@ struct EngineControls {
     // (nullptr, or no sections: none). Its Score Intensity is the section's, plus the
     // Score Intensity parameter's offset from its middle (automation adds on top).
     const arr::Arrangement* arrangement = nullptr;
+    // Separate outputs (Milestone 12): the slots whose Place also plays on its own output
+    // (the host has that output bus), and Split: such a Place leaves the main mix (its
+    // reverb and delay sends stay there, the shared effects are returns on the main).
+    std::array<bool, placeSlots> slotOut {};
+    bool splitOuts = false;
 };
 
 class WorldEngine {
@@ -60,6 +65,11 @@ public:
     // The beat the next chunk starts on (audio thread).
     double nextBeat() const { return beat; }
     void process(float* left, float* right, int n, const EngineControls& controls);
+    // As process(), also writing each slot's own output: slotOut[2 * s] and [2 * s + 1]
+    // (nullptr: that slot has none). A Place's output carries its dry sound (its own
+    // instruments' character effects, level, distance and pan) after the master level
+    // and fades, through its own safety limiter.
+    void process(float* left, float* right, int n, const EngineControls& controls, float* const* slotOut);
 
     // For the editor: per-layer and master peak meters, the smoothed world, power fade.
     std::array<std::atomic<float>, LayerCount> layerMeter {};
@@ -100,6 +110,8 @@ private:
     // lines, so sections, entrances, variants and Fills change on the exact sample.
     void fillChunk(const EngineControls& controls);
     void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls);
+    // The slot outputs of the chunk just rendered (at `offset` in the FIFO).
+    void renderSlotOuts(int offset, int n, const EngineControls& controls);
 
     double rate = 48000;
     AirLayer air;
@@ -146,6 +158,14 @@ private:
 
     // Chunk scratch: one layer's output, the dry bus and the reverb send bus.
     std::array<float, dsp::chunk> layerL {}, layerR {}, dryL {}, dryR {}, sendL {}, sendR {};
+    // Separate outputs: each slot's dry sound this chunk, the master gain and fades per
+    // sample (applied to the slot outputs as to the main), the slots' FIFOs and limiters.
+    std::array<std::array<float, dsp::chunk>, 2 * placeSlots> slotDry {};
+    std::array<bool, placeSlots> slotSounding {};
+    std::array<float, dsp::chunk> outGain {};
+    std::array<std::array<float, dsp::chunk>, 2 * placeSlots> slotFifo {};
+    std::array<dsp::SafetyLimiter, placeSlots> slotLimiter;
+    bool slotOutsWanted = false;
 };
 
 } // namespace wb

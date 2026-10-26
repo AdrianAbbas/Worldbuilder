@@ -29,6 +29,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     transitionVoice.prepare(r);
     glue.prepare(r);
     limiter.prepare(r);
+    for (auto& l : slotLimiter) l.prepare(r);
     for (auto& s : worldSmooth) s.setTime(0.25f, controlRate);
     // Score Intensity glides (a cue builds, it never jumps).
     intensity.setTime(0.5f, controlRate);
@@ -52,6 +53,8 @@ void WorldEngine::reset(const EngineControls& initial) {
     for (auto& f : distance) f.reset();
     glue.reset();
     limiter.reset();
+    for (auto& l : slotLimiter) l.reset();
+    for (auto& f : slotFifo) f.fill(0.0f);
     planet.reset(initial.planet, initial.planetInfluence);
     for (std::size_t i = 0; i < worldSmooth.size(); ++i) {
         worldSmooth[i].snap(clamp01(initial.world[i]));
@@ -131,6 +134,7 @@ void WorldEngine::fillChunk(const EngineControls& controls) {
         arranging = false;
         arranged = arr::State {};
         renderChunk(fifoL.data(), fifoR.data(), chunk, clock, controls);
+        renderSlotOuts(0, chunk, controls);
         return;
     }
     arranging = true;
@@ -144,6 +148,7 @@ void WorldEngine::fillChunk(const EngineControls& controls) {
         if (until < double(n)) n = std::clamp(int(std::floor(until + 1.0e-9)), 1, n);
         arranged = a->evaluate(beat + perSample);
         renderChunk(fifoL.data() + done, fifoR.data() + done, n, clock + uint64_t(done), controls);
+        renderSlotOuts(done, n, controls);
         done += n;
     }
     const auto& at = arranged.at;
@@ -164,7 +169,32 @@ void WorldEngine::resync(uint64_t position, double ppq) {
         if (layer != nullptr) layer->resync(clock);
 }
 
-void WorldEngine::process(float* left, float* right, int n, const EngineControls& controls) {
+void WorldEngine::process(float* left, float* right, int n, const EngineControls& controls) { process(left, right, n, controls, nullptr); }
+
+void WorldEngine::renderSlotOuts(int offset, int n, const EngineControls& controls) {
+    if (!slotOutsWanted) return;
+    for (std::size_t s = 0; s < slots.size(); ++s) {
+        auto& l = slotFifo[2 * s];
+        auto& r = slotFifo[2 * s + 1];
+        if (!controls.slotOut[s] || !slotSounding[s]) {
+            std::fill(l.begin() + offset, l.begin() + offset + n, 0.0f);
+            std::fill(r.begin() + offset, r.begin() + offset + n, 0.0f);
+            continue;
+        }
+        for (int i = 0; i < n; ++i) {
+            const auto k = std::size_t(i);
+            float a = slotDry[2 * s][k] * outGain[k], b = slotDry[2 * s + 1][k] * outGain[k];
+            slotLimiter[s].process(a, b);
+            l[std::size_t(offset + i)] = finiteOr(a);
+            r[std::size_t(offset + i)] = finiteOr(b);
+        }
+    }
+}
+
+void WorldEngine::process(float* left, float* right, int n, const EngineControls& controls, float* const* slotOut) {
+    slotOutsWanted = false;
+    if (slotOut != nullptr)
+        for (int s = 0; s < placeSlots; ++s) slotOutsWanted |= controls.slotOut[std::size_t(s)] && slotOut[2 * s] != nullptr;
     layerPeak.fill(0);
     placePeak.fill(0);
     masterPeak = 0;
@@ -181,6 +211,17 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
         const int count = std::min(chunk - fifoRead, n - done);
         std::copy_n(fifoL.data() + fifoRead, count, left + done);
         std::copy_n(fifoR.data() + fifoRead, count, right + done);
+        if (slotOut != nullptr)
+            for (std::size_t s = 0; s < slots.size(); ++s) {
+                if (slotOut[2 * s] == nullptr || slotOut[2 * s + 1] == nullptr) continue;
+                if (slotOutsWanted) {
+                    std::copy_n(slotFifo[2 * s].data() + fifoRead, count, slotOut[2 * s] + done);
+                    std::copy_n(slotFifo[2 * s + 1].data() + fifoRead, count, slotOut[2 * s + 1] + done);
+                } else {
+                    std::fill_n(slotOut[2 * s] + done, count, 0.0f);
+                    std::fill_n(slotOut[2 * s + 1] + done, count, 0.0f);
+                }
+            }
         fifoRead += count;
         done += count;
     }
@@ -200,6 +241,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     if ((!controls.power && powerRamp <= 0.0f) || (!controls.gate && gateRamp <= 0.0f) || (arranging && endGain <= 0.0f && arranged.endGain <= 0.0f)) {
         std::fill(left, left + n, 0.0f);
         std::fill(right, right + n, 0.0f);
+        slotSounding.fill(false);
         // The song goes on: an arrangement keeps following it.
         if (arranging) beat += double(bpm) / 60.0 * double(n) / rate;
         return;
@@ -304,15 +346,24 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             sounding = slots[si].render(world, pc, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         }
         slotBeat[si].store(slots[si].beat(), std::memory_order_relaxed);
+        slotSounding[si] = sounding;
         if (!sounding) continue;
         sharedFx.add(slots[si].sends(), slots[si].sendGainL(), slots[si].sendGainR(), n);
         const float send = slots[si].spaceSend() * distanceSend;
+        // Its own output: a copy of its dry sound; with Split it leaves the main dry mix
+        // (its sends still feed the World Space and the shared effects).
+        const bool own = slotOutsWanted && controls.slotOut[si];
+        const float toMain = own && controls.splitOuts ? 0.0f : 1.0f;
+        if (own) {
+            std::copy_n(layerL.data(), n, slotDry[2 * si].data());
+            std::copy_n(layerR.data(), n, slotDry[2 * si + 1].data());
+        }
         float peak = placePeak[si];
         for (int i = 0; i < n; ++i) {
             const float l = layerL[std::size_t(i)], r = layerR[std::size_t(i)];
             peak = std::max(peak, std::max(std::abs(l), std::abs(r)));
-            dryL[std::size_t(i)] += l;
-            dryR[std::size_t(i)] += r;
+            dryL[std::size_t(i)] += l * toMain;
+            dryR[std::size_t(i)] += r * toMain;
             sendL[std::size_t(i)] += l * send;
             sendR[std::size_t(i)] += r * send;
         }
@@ -402,6 +453,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         const float g = master.next(masterTarget) * fade;
         l *= g;
         r *= g;
+        // The slot outputs take the same level, fades and Drop.
+        outGain[k] = g * (dropping ? lerp(dropFrom, dropTo, float(i + 1) / float(n)) : 1.0f);
 
         limiter.process(l, r);
         l = finiteOr(l);

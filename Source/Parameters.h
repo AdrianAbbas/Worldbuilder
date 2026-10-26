@@ -52,6 +52,9 @@ inline constexpr const char* pathLegChoices = "1 bar|2 bars|4 bars|8 bars|16 bar
 inline constexpr std::array<int, 6> pathLegBars { 1, 2, 4, 8, 16, 32 };
 inline constexpr const char* pathEndChoices = "One-way|Loop";
 // Planet types (Milestone 10), in dsp::PlanetType order.
+// Separate outputs (Milestone 12): Copy keeps every Place in the main mix as well;
+// Split takes a Place with its own output out of the main mix.
+inline constexpr const char* placeOutChoices = "Copy|Split";
 inline constexpr const char* planetChoices = "Rocky|Ocean|Ice Giant|Gas Giant|Desert World|Lava World|Forest World";
 enum PlayMode { PlayFree, PlayTransport, PlayArrangement };
 
@@ -80,6 +83,8 @@ enum P {
     PPathOn, PPathLeg, PPathEnd,
     // The Planet (Milestone 10).
     PPlanet, PPlanetInfluence,
+    // Separate outputs (Milestone 12).
+    PPlaceOuts,
     PCount
 };
 
@@ -182,6 +187,10 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     // Planet Influence.
     { "planet", "Planet", Kind::Choice, 0, 6, 0, planetChoices },
     { "planetinfluence", "Planet Influence", Kind::Float, 0, 1, 0.35f },
+    // Separate outputs: each Place slot also plays on its own stereo output (Logic's
+    // multi-output instrument). Copy: the main output keeps the full mix. Split: a Place
+    // that has its own output leaves the main mix (its reverb and delay stay there).
+    { "placeouts", "Place Outputs", Kind::Choice, 0, 1, 0, placeOutChoices },
 } };
 // clang-format on
 

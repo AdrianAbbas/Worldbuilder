@@ -40,7 +40,7 @@ enum class Move {
 inline Move moveOf(int p) {
     // The World Seed stays too: reseeding the environment layers cannot glide (their
     // noise and gusts jump to other curves), so a journey would dip them out and back.
-    if (p == PPower || p == PMaster || p == PQuality || p == PPlayMode || p == PSeed || (p >= PDestination && p <= PPathEnd)) return Move::Live;
+    if (p == PPower || p == PMaster || p == PQuality || p == PPlayMode || p == PPlaceOuts || p == PSeed || (p >= PDestination && p <= PPathEnd)) return Move::Live;
     if (p >= PLayerFirst && p < PPlaceFirst) {
         const int field = (p - PLayerFirst) % 3;
         return field == 0 ? Move::Gain : field == 1 ? Move::Paired : Move::Live;

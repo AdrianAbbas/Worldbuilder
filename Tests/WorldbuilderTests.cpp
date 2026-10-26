@@ -439,7 +439,9 @@ void testParameters(Suite& s) {
     auto pHolder = std::make_unique<WorldbuilderProcessor>();   // large: on the heap
     auto& p = *pHolder;
     s.check(int(p.getParameters().size()) == PCount, "every spec is a host parameter", std::to_string(p.getParameters().size()));
-    s.check(p.getTotalNumInputChannels() == 0 && p.getTotalNumOutputChannels() == 2, "instrument: no input, stereo output");
+    s.check(p.getTotalNumInputChannels() == 0 && p.getChannelCountOfBus(false, 0) == 2, "instrument: no input, stereo main output");
+    s.check(p.getBusCount(false) == 1 + placeSlots && p.getTotalNumOutputChannels() == 2 + 2 * placeSlots,
+            "and one stereo output per Place slot (Milestone 12)", std::to_string(p.getBusCount(false)) + " buses");
     s.check(p.acceptsMidi(), "accepts MIDI");
 }
 
@@ -5393,6 +5395,398 @@ void testPlanet(Suite& s) {
     }
 }
 
+
+//==============================================================================
+// Milestone 12: separate outputs, scenes and Inspire.
+namespace proTest {
+// The main output and each Place output of a host with every output bus.
+struct Outs {
+    Audio main;
+    std::array<Audio, placeSlots> place;
+};
+Outs renderOuts(Host& h, double seconds) {
+    Outs o;
+    o.main.rate = h.rate;
+    for (auto& a : o.place) a.rate = h.rate;
+    const auto total = std::size_t(seconds * h.rate);
+    while (o.main.l.size() < total) {
+        const int n = int(std::min<std::size_t>(std::size_t(h.block), total - o.main.l.size()));
+        h.processOne(n);
+        const auto add = [&](Audio& a, int left) {
+            const float* l = h.buffer.getReadPointer(left);
+            const float* r = h.buffer.getReadPointer(left + 1);
+            a.l.insert(a.l.end(), l, l + n);
+            a.r.insert(a.r.end(), r, r + n);
+        };
+        add(o.main, 0);
+        for (int slot = 0; slot < placeSlots; ++slot)
+            if (h.buffer.getNumChannels() >= 4 + 2 * slot) add(o.place[std::size_t(slot)], 2 + 2 * slot);
+    }
+    return o;
+}
+double worstDifference(const Audio& a, const Audio& b) {
+    double worst = 0;
+    for (std::size_t i = 0; i < std::min(a.l.size(), b.l.size()); ++i)
+        worst = std::max({ worst, double(std::abs(a.l[i] - b.l[i])), double(std::abs(a.r[i] - b.r[i])) });
+    return a.l.size() == b.l.size() ? worst : 1.0;
+}
+// A host with every Place output (as Logic's multi-output instrument).
+std::unique_ptr<Host> multiOut() {
+    auto h = std::make_unique<Host>(48000, 512, 2 + 2 * placeSlots);
+    auto layout = h->p->getBusesLayout();
+    for (auto& bus : layout.outputBuses) bus = juce::AudioChannelSet::stereo();
+    h->p->setBusesLayout(layout);
+    h->p->prepareToPlay(h->rate, h->block);
+    h->buffer.setSize(2 + 2 * placeSlots, h->block);
+    return h;
+}
+void muteLayers(Host& h) {
+    for (int l = 0; l < LayerCount; ++l) h.set(specs[std::size_t(layerMute(l))].id, 1.0f);
+}
+} // namespace proTest
+
+void testOutputs(Suite& s) {
+    using namespace proTest;
+    s.section("separate outputs: one stereo output per Place slot");
+    {
+        auto p = std::make_unique<WorldbuilderProcessor>();
+        auto layout = p->getBusesLayout();
+        s.check(p->checkBusesLayoutSupported(layout) && layout.outputBuses.size() == 1 + placeSlots, "the default layout (main and four Place outputs, stereo) is supported");
+        auto mainOnly = layout;
+        for (int bus = 1; bus < mainOnly.outputBuses.size(); ++bus) mainOnly.outputBuses.getReference(bus) = juce::AudioChannelSet::disabled();
+        s.check(p->checkBusesLayoutSupported(mainOnly), "the main output alone (GarageBand) is supported");
+        auto mono = mainOnly;
+        mono.outputBuses.getReference(0) = juce::AudioChannelSet::mono();
+        s.check(p->checkBusesLayoutSupported(mono), "and a mono main output");
+        auto bad = layout;
+        bad.outputBuses.getReference(2) = juce::AudioChannelSet::mono();
+        s.check(!p->checkBusesLayoutSupported(bad), "a mono Place output is refused");
+    }
+    // Castle in slot 1, Village in slot 2, slots 3 and 4 empty.
+    const auto setup = [](Host& h) {
+        h.set("p2_type", float(Village));
+        h.set("p2_level", -3.0f);
+    };
+    {
+        auto hp = multiOut();
+        auto& h = *hp;
+        setup(h);
+        h.p->prepareToPlay(h.rate, h.block);
+        bool enabled = true;
+        for (int bus = 1; bus <= placeSlots; ++bus) enabled &= h.p->getBus(false, bus)->isEnabled();
+        s.check(enabled, "a host with ten channels has every Place output");
+        const auto o = renderOuts(h, 5.0);
+        const auto p1 = measure(o.place[0], 2.5), p2 = measure(o.place[1], 2.5), p3 = measure(o.place[2], 2.5), p4 = measure(o.place[3], 2.5);
+        s.metric("Place 1 output (Castle)", p1.rmsDb, " dB");
+        s.metric("Place 2 output (Village)", p2.rmsDb, " dB");
+        s.check(p1.rmsDb > -45.0 && p2.rmsDb > -45.0 && p1.finite && p2.finite, "Place 1 and 2 play on their own outputs", fmt(p1.rmsDb) + ", " + fmt(p2.rmsDb) + " dB");
+        s.check(p3.peak == 0.0 && p4.peak == 0.0, "the empty slots' outputs are silent");
+        s.check(p1.peak <= 0.8911 && p2.peak <= 0.8911, "below the safety ceiling", fmt(std::max(p1.peak, p2.peak)));
+        // Copy: the main output is the same as a host with only the main output.
+        Host g;
+        setup(g);
+        const auto alone = g.render(5.0);
+        const double worst = worstDifference(o.main, alone);
+        s.check(worst < 1.0e-5, "Copy: the main output keeps the full mix, the same as without Place outputs", fmt(toDb(worst)) + " dB worst difference");
+        // The outputs differ from each other (each its own Place).
+        s.check(worstDifference(o.place[0], o.place[1]) > 1.0e-3, "each output carries its own Place");
+    }
+    {
+        // Split: a Place with its own output leaves the main mix (its reverb stays there).
+        auto cp = multiOut(), sp = multiOut();
+        auto &copy = *cp, &split = *sp;
+        for (Host* h : { &copy, &split }) muteLayers(*h);
+        split.set("placeouts", 1.0f);
+        const auto a = renderOuts(copy, 5.0), b = renderOuts(split, 5.0);
+        const auto mainCopy = measure(a.main, 2.5), mainSplit = measure(b.main, 2.5), out = measure(b.place[0], 2.5);
+        s.metric("Split: main without the Place", mainSplit.rmsDb - mainCopy.rmsDb, " dB");
+        // (Castle is reverberant: its returns stay on the main, about -6 dB of it.)
+        s.check(mainSplit.rmsDb < mainCopy.rmsDb - 4.0 && out.rmsDb > -45.0, "Split: the Place leaves the main mix and plays on its output",
+                fmt(mainSplit.rmsDb - mainCopy.rmsDb) + " dB on the main");
+        s.check(mainSplit.rmsDb > -90.0, "and its reverb and delay returns stay on the main", fmt(mainSplit.rmsDb) + " dB");
+        s.check(worstDifference(a.place[0], b.place[0]) < 1.0e-5, "the Place output is the same in Copy and Split");
+        // Without Place outputs (GarageBand) Split changes nothing: the main keeps everything.
+        Host c2, s2;
+        for (Host* h : { &c2, &s2 }) muteLayers(*h);
+        s2.set("placeouts", 1.0f);
+        const double worst = worstDifference(c2.render(4.0), s2.render(4.0));
+        s.check(worst < 1.0e-6, "without Place outputs Split keeps every Place in the main", fmt(toDb(worst)) + " dB");
+    }
+    {
+        // The outputs follow the Master Level, Power and the slot's mute.
+        auto ap = multiOut(), bp = multiOut();
+        auto &a = *ap, &b = *bp;
+        b.set("master", -12.0f);
+        const double drop = measure(renderOuts(a, 4.0).place[0], 2.5).rmsDb - measure(renderOuts(b, 4.0).place[0], 2.5).rmsDb;
+        s.check(std::abs(drop - 12.0) < 1.5, "a Place output follows the Master Level", fmt(drop) + " dB for -12 dB");
+        a.set("power", 0.0f);
+        a.set("p1_mute", 0.0f);
+        renderOuts(a, 2.5);
+        s.check(measure(renderOuts(a, 0.5).place[0], 0).peak < 1.0e-6, "and Power: silent when the world is off");
+        auto mp = multiOut();
+        auto& m = *mp;
+        m.set("p1_mute", 1.0f);
+        s.check(measure(renderOuts(m, 3.0).place[0], 2.0).rmsDb < -90.0, "a muted Place's output is silent");
+    }
+    {
+        // No heap allocation with the Place outputs, in Split and in Arrangement mode.
+        auto hp = multiOut();
+        auto& h = *hp;
+        setup(h);
+        h.set("placeouts", 1.0f);
+        h.p->arrangement.set(arrangeTest::classicArc());
+        arrangeTest::play(h);
+        h.render(1.0);
+        allocationProbe::calls = 0;
+        allocationProbe::enabled = true;
+        for (int i = 0; i < 200; ++i) h.processOne(i % 3 == 0 ? 512 : 100 + i);
+        allocationProbe::enabled = false;
+        s.check(allocationProbe::calls == 0, "processBlock with Place outputs performs no heap allocations", std::to_string(allocationProbe::calls) + " allocations");
+    }
+}
+
+void testScenes(Suite& s) {
+    using namespace arrangeTest;
+    s.section("scenes: the factory scenes");
+    const int count = scenes::factoryCount();
+    s.check(count >= 20, "at least 20 factory scenes", std::to_string(count));
+    std::set<std::string> names;
+    int bad = 0;
+    std::string badList;
+    for (int i = 0; i < count; ++i) {
+        const auto& sc = scenes::factory(i);
+        int places = 0;
+        std::set<int> types;
+        bool ok = names.insert(sc.name).second && !sc.description.empty();
+        for (const auto& slot : sc.slots)
+            if (slot.type != NoPlace) {
+                ++places;
+                ok &= placeImplemented[std::size_t(slot.type)] && types.insert(slot.type).second && slot.character >= 0 && slot.character < placeCharacters;
+            }
+        ok &= places >= 2 && places <= 4 && sc.locationCount >= 2 && sc.locationCount <= 4 && sc.templ >= 0 && sc.templ < arr::TemplateCount;
+        ok &= sc.mood >= 0 && sc.mood < 9 && sc.root >= 0 && sc.root < 12 && sc.planet >= 0 && sc.planet < 7;
+        // Every Location changes something.
+        const auto world = scenes::worldValues(sc, scenes::worldValues(sc, {}));
+        for (int l = 1; l < sc.locationCount; ++l) ok &= scenes::locationValues(sc, l, world) != scenes::locationValues(sc, 0, world);
+        if (!ok) {
+            ++bad;
+            badList += sc.name + "; ";
+        }
+    }
+    s.check(bad == 0, "every scene: a unique name, 2-4 different Places, 2-4 Locations that differ, a template, key and Planet", badList);
+
+    // Every scene loads and plays: its Places, Locations and arrangement, audible and
+    // within a loudness window from the start and at its first peak.
+    int failures = 0;
+    std::string report;
+    for (int i = 0; i < count; ++i) {
+        const auto& sc = scenes::factory(i);
+        Host h;
+        h.p->loadFactoryScene(i);
+        bool ok = true;
+        for (int slot = 0; slot < placeSlots; ++slot) ok &= placeType(h, slot) == sc.slots[std::size_t(slot)].type;
+        int used = 0;
+        for (int l = 0; l < locationCount; ++l) used += h.p->locations.used(l) ? 1 : 0;
+        const auto a = h.p->arrangement.get();
+        ok &= used == sc.locationCount && a.count == arr::makeTemplate(sc.templ).count && h.p->sceneName() == juce::String(sc.name);
+        int peak = -1;
+        bool located = true;
+        for (int k = 0; k < a.count; ++k) {
+            located &= a.sections[std::size_t(k)].location >= 0 && a.sections[std::size_t(k)].location < sc.locationCount;
+            if (peak < 0 && arr::kindOf(a, k) == arr::KindPeak) peak = k;
+        }
+        ok &= located;
+        play(h);
+        const auto intro = h.render(6.0);
+        const auto first = measure(intro, 2.0);
+        Stats climax = first;
+        if (peak >= 0) {
+            h.playHead.position = int64_t(double(a.startOf(peak)) * 4.0 * 60.0 / 120.0 * 48000.0);
+            climax = measure(h.render(5.0), 1.0);
+        }
+        s.metric(sc.name + ": start", first.rmsDb, " dB");
+        s.metric(sc.name + ": peak", climax.rmsDb, " dB");
+        const bool audible = first.finite && climax.finite && first.rmsDb > -48.0 && climax.rmsDb > -40.0 && first.rmsDb < -6.0 && climax.rmsDb < -6.0
+                             && first.peak <= 0.8911 && climax.peak <= 0.8911;
+        if (!ok || !audible) {
+            ++failures;
+            report += sc.name + " (" + fmt(first.rmsDb) + " / " + fmt(climax.rmsDb) + " dB" + (ok ? "" : ", setup") + "); ";
+        }
+    }
+    s.check(failures == 0, "every factory scene loads (Places, Locations, arrangement) and plays within the loudness window", report);
+
+    s.section("scenes: session settings, undo, state");
+    {
+        Host h;
+        h.set("master", -6.0f);
+        h.set("quality", 2.0f);
+        h.set("placeouts", 1.0f);
+        h.set("playmode", float(PlayTransport));
+        h.p->loadFactoryScene(3);
+        s.check(h.get("master") == -6.0f && h.get("quality") == 2.0f && h.get("placeouts") == 1.0f, "a scene keeps the session's Master Level, Quality and Place Outputs");
+        s.check(h.get("playmode") == float(PlayArrangement), "and switches Play Mode Transport to Arrangement");
+        Host f;
+        f.p->loadFactoryScene(0);
+        s.check(f.get("playmode") == float(PlayFree), "but leaves Play Mode Free as it is");
+    }
+    {
+        Host h;
+        h.set("temperature", 0.77f);
+        s.check(!h.p->canUndoScene(), "nothing to undo before a scene");
+        h.p->loadFactoryScene(7);
+        s.check(h.p->canUndoScene() && h.p->arrangement.get().count > 0 && placeType(h, 0) == scenes::factory(7).slots[0].type, "a scene replaces the world");
+        // The state round trip keeps the scene (arrangement, Locations, name).
+        juce::MemoryBlock state;
+        h.p->getStateInformation(state);
+        Host r;
+        r.p->setStateInformation(state.getData(), int(state.getSize()));
+        s.check(r.p->arrangement.get() == h.p->arrangement.get() && r.p->locations.name(0) == h.p->locations.name(0) && r.p->sceneName() == h.p->sceneName(),
+                "the state round trip keeps the scene's arrangement, Locations and name");
+        s.check(h.p->undoScene(), "UNDO");
+        bool cleared = true;
+        for (int l = 0; l < locationCount; ++l) cleared &= !h.p->locations.used(l);
+        s.check(std::abs(h.get("temperature") - 0.77f) < 1.0e-4f && placeType(h, 0) == Castle && h.p->arrangement.get().count == 0 && cleared
+                    && h.get("playmode") == float(PlayFree) && !h.p->canUndoScene(),
+                "brings back the world before the scene (parameters, arrangement, Locations, Play Mode)");
+    }
+
+    s.section("scenes: Inspire");
+    {
+        const auto same = [](const scenes::Scene& a, const scenes::Scene& b) {
+            const auto none = WorldValues {};
+            return scenes::worldValues(a, none) == scenes::worldValues(b, none) && scenes::arrangement(a) == scenes::arrangement(b) && a.name == b.name;
+        };
+        s.check(same(scenes::inspire(42), scenes::inspire(42)), "the same World Seed inspires the same scene");
+        int different = 0, broken = 0, outside = 0, total = 0;
+        std::set<std::string> kinds;
+        std::string brokenList;
+        for (uint32_t seed = 1; seed <= 300; ++seed) {
+            const auto sc = scenes::inspire(seed);
+            different += same(sc, scenes::inspire(seed + 1)) ? 0 : 1;
+            std::set<int> types;
+            int places = 0, foreign = 0;
+            const int category = placeInfo(sc.slots[0].type).category;
+            for (const auto& slot : sc.slots)
+                if (slot.type != NoPlace) {
+                    ++places;
+                    types.insert(slot.type);
+                    const int c = placeInfo(slot.type).category;
+                    if (category != Nature && c != category && c != Nature) ++foreign;
+                }
+            const auto& calm = sc.locations[0];
+            const auto& peak = sc.locations[std::size_t(std::max(0, sc.locationCount - 1))];
+            const bool ok = places >= 2 && places <= 4 && int(types.size()) == places && sc.mood >= 0 && sc.mood < 8 && sc.root >= 0 && sc.root < 12
+                            && sc.planet >= 0 && sc.planet < 7 && sc.templ >= 0 && sc.templ < arr::TemplateCount && sc.locationCount >= 2
+                            && sc.locationCount <= 3 && peak.world[Danger] > calm.world[Danger];
+            if (!ok) {
+                ++broken;
+                brokenList += std::to_string(seed) + " ";
+            }
+            outside += foreign > 1 ? 1 : 0;
+            ++total;
+            kinds.insert(std::string(placeNames[std::size_t(sc.slots[0].type)]) + "/" + std::to_string(sc.mood));
+        }
+        s.check(broken == 0, "300 inspired scenes: 2-4 different Places, a key (no Chromatic), a Planet, a template, Locations rising in danger", brokenList);
+        s.check(outside == 0, "the Places belong together (at most one from another world)", std::to_string(outside) + " scenes");
+        s.check(different == total && kinds.size() > 60, "different seeds inspire different scenes", std::to_string(kinds.size()) + " Place/Mood pairs");
+        s.check(scenes::nextSeed(17) != 17 && scenes::nextSeed(9999) >= 1 && scenes::nextSeed(9999) <= 9999, "INSPIRE moves the World Seed on (1-9999)");
+    }
+    {
+        Host h;
+        const auto before = uint32_t(h.get("seed"));
+        h.p->inspire();
+        const auto seed = uint32_t(h.get("seed"));
+        const auto sc = scenes::inspire(seed);
+        s.check(seed == scenes::nextSeed(before) && placeType(h, 0) == sc.slots[0].type && h.p->arrangement.get().count > 0 && h.p->canUndoScene(),
+                "INSPIRE builds the next seed's scene: Places, arrangement, Locations");
+        h.p->undoScene();
+        s.check(uint32_t(h.get("seed")) == before && placeType(h, 0) == Castle && h.p->arrangement.get().count == 0, "and undoes");
+        int quiet = 0;
+        std::string report;
+        uint32_t at = 5;
+        for (int k = 0; k < 6; ++k) {
+            Host x;
+            x.set("seed", float(at));
+            x.p->inspire();
+            at = uint32_t(x.get("seed"));
+            play(x);
+            const auto st = measure(x.render(8.0), 2.0);
+            if (!st.finite || st.rmsDb < -50.0 || st.rmsDb > -6.0 || st.peak > 0.8911) {
+                ++quiet;
+                report += x.p->sceneName().toStdString() + " " + fmt(st.rmsDb) + " dB; ";
+            }
+        }
+        s.check(quiet == 0, "inspired worlds play in Arrangement mode within the loudness window", report);
+    }
+
+    s.section("scenes: interface");
+    {
+        Host h;
+        h.render(0.2);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        s.check(view->sceneNameButton().getButtonText() == "Scenes..." && !view->sceneUndoButton().isEnabled(), "the scene browser starts empty, UNDO off");
+        view->sceneNextButton().onClick();
+        s.check(h.p->factoryIndex() == 0 && view->sceneNameButton().getButtonText() == juce::String(scenes::factory(0).name) && view->sceneUndoButton().isEnabled(),
+                "> loads the first factory scene and shows its name");
+        view->scenePrevButton().onClick();
+        s.check(h.p->factoryIndex() == scenes::factoryCount() - 1, "< goes round to the last");
+        const auto seed = h.get("seed");
+        view->inspireButton().onClick();
+        s.check(h.get("seed") != seed && h.p->factoryIndex() < 0, "INSPIRE builds a new world");
+        view->sceneUndoButton().onClick();
+        s.check(h.p->factoryIndex() == scenes::factoryCount() - 1, "UNDO brings the scene before it back");
+        bool clear = true;
+        for (auto* b : { &view->scenePrevButton(), &view->sceneNameButton(), &view->sceneNextButton(), &view->inspireButton(), &view->sceneUndoButton() })
+            clear &= b->getWidth() >= 20 && b->getBounds().getRight() <= view->arrangeButton().getX() - 8 && b->getY() >= 0;
+        int sliders = 0, fine = 0;
+        std::function<void(juce::Component&)> visit = [&](juce::Component& c) {
+            for (auto* child : c.getChildren()) {
+                if (auto* slider = dynamic_cast<juce::Slider*>(child)) {
+                    ++sliders;
+                    fine += slider->getVelocityModeIsSwappable() && slider->getVelocitySensitivity() < 1.0 ? 1 : 0;
+                }
+                visit(*child);
+            }
+        };
+        visit(*editor);
+        s.check(sliders > 20 && fine == sliders, "Shift-drag gives fine control on every knob and slider", std::to_string(fine) + " of " + std::to_string(sliders));
+        s.check(clear && view->sceneNameButton().getWidth() >= 150, "the browser, INSPIRE and UNDO fit in the header before ARRANGE",
+                std::to_string(view->sceneNameButton().getWidth()) + " px name");
+        editor->createComponentSnapshot(editor->getLocalBounds());
+    }
+}
+
+// --snapshot-scenes dir: the header with a factory scene loaded, and the ARRANGE view
+// with its arrangement (Milestone 12).
+int writeSceneSnapshots(const juce::String& dir) {
+    juce::File folder(dir);
+    folder.createDirectory();
+    const auto save = [&](const juce::Image& image, const juce::String& name) {
+        juce::File file(folder.getChildFile(name + ".png"));
+        file.deleteFile();
+        juce::FileOutputStream out(file);
+        juce::PNGImageFormat().writeImageToStream(image, out);
+        std::cout << "  " << file.getFullPathName() << "\n";
+    };
+    Host h;
+    int index = 0;
+    for (int i = 0; i < scenes::factoryCount(); ++i)
+        if (scenes::factory(i).name == "Storm at Sea") index = i;
+    h.p->loadFactoryScene(index);
+    h.render(2.5);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    view->settle(2.5f);
+    const auto full = editor->createComponentSnapshot(editor->getLocalBounds());
+    save(full, "m12-scene-storm-at-sea");
+    save(full.getClippedImage({ 0, 0, 1160, 58 }), "m12-header-scenes");
+    view->openArrange();
+    view->settle(0.5f);
+    save(editor->createComponentSnapshot(editor->getLocalBounds()), "m12-scene-arranged");
+    return 0;
+}
+
 // --snapshots dir [prefix]: images of the interface for review by eye (the globe on
 // each planet, the cards, the strips, the detail panel, the Pattern Editor, the bars),
 // written as dir/prefix-name.png. Crops follow the editor's fixed 1160 x 812 layout.
@@ -5508,6 +5902,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i)
         if (juce::String(argv[i]) == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (juce::String(argv[i]) == "--snapshots" && i + 1 < argc) return writeSnapshots(argv[i + 1], i + 2 < argc ? juce::String(argv[i + 2]) : juce::String("shot"));
+        else if (juce::String(argv[i]) == "--snapshot-scenes" && i + 1 < argc) return writeSceneSnapshots(argv[i + 1]);
         else if (juce::String(argv[i]) == "--probe") return probe();
         else if (juce::String(argv[i]) == "--probe-places") return probePlaces();
         else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {
@@ -5560,6 +5955,8 @@ int main(int argc, char** argv) {
         transitionTest::testInterface(s);
     }
     if (run("gameaudio")) testGameAudio(s);
+    if (run("outputs")) testOutputs(s);
+    if (run("scenes")) testScenes(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }
