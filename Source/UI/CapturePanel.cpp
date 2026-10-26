@@ -343,7 +343,7 @@ void CapturePanel::saveRender() {
 
 void CapturePanel::paint(juce::Graphics& g) {
     const auto& pal = pixel::theme().colours;
-    pixel::drawText(g, "CAPTURE", label.withHeight(14), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "CAPTURE", label.withHeight(14), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
     if (status.isNotEmpty()) pixel::drawText(g, status, label.withTrimmedLeft(70).withHeight(14), pal.inkDim, juce::Justification::centredRight, pixel::Font::Small);
 }
 

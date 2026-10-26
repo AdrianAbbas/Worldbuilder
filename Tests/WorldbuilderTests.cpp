@@ -5315,8 +5315,9 @@ void testPlanet(Suite& s) {
             h.set("planet", float(planet));
             view->settle(1.5f);
             editor->createComponentSnapshot(editor->getLocalBounds());
-            const auto& f = view->globeRenderer().lastFrame();
-            const auto c = f.getPixelAt(f.getWidth() * 2 / 5, f.getHeight() * 2 / 5);
+            // A point on the planet's ground, below the middle of the horizon.
+            const auto& f = view->tinyPlanet().lastFrame();
+            const auto c = f.get(f.width() / 2, f.height() / 2 + 30);
             opaque &= c.getAlpha() == 255;
             centres.push_back(c);
         }
@@ -5326,32 +5327,36 @@ void testPlanet(Suite& s) {
                 alike += std::abs(centres[a].getFloatRed() - centres[b].getFloatRed()) + std::abs(centres[a].getFloatGreen() - centres[b].getFloatGreen())
                                  + std::abs(centres[a].getFloatBlue() - centres[b].getFloatBlue()) < 0.06f
                              ? 1 : 0;
-        s.check(opaque && alike == 0 && view->shownPlanetType() == PlanetTypeCount - 1, "the globe draws each planet opaque and in its own colours (its frame)",
+        s.check(opaque && alike == 0 && view->shownPlanetType() == PlanetTypeCount - 1, "the tiny planet draws each planet type opaque and in its own colours",
                 std::to_string(alike) + " alike");
         {
             // What the planet costs per frame (report only: the developer measures CPU on the Mac).
-            ui::GlobeRenderer globe;
-            juce::Image canvas(juce::Image::ARGB, 300, 300, true);
-            juce::Graphics g(canvas);
-            ui::GlobeLook look;
-            globe.draw(g, { 5, 5, 290, 290 }, GasGiant, GasGiant, 1.0f, look);   // maps made once
-            for (int planet : { Rocky, GasGiant }) {
-                globe.draw(g, { 5, 5, 290, 290 }, planet, planet, 1.0f, look);   // maps made once
+            ui::TinyPlanet planet;
+            ui::TinyPlanetScene scene;
+            scene.width = 249;
+            scene.height = 157;
+            scene.clouds = 0.6f;
+            scene.rain = 0.5f;
+            for (int type : { int(Rocky), int(GasGiant) }) {
+                scene.planet = scene.previous = type;
+                planet.render(scene, wb::ui::pixel::palette(0.5f));   // the sky made once
                 const auto begin = juce::Time::getHighResolutionTicks();
                 for (int frame = 0; frame < 60; ++frame) {
-                    look.spin += 0.01f;
-                    globe.draw(g, { 5, 5, 290, 290 }, planet, planet, 1.0f, look);
+                    scene.turn += 0.01f;
+                    scene.time += 1.0f / 30.0f;
+                    planet.render(scene, wb::ui::pixel::palette(0.5f));
                 }
                 const double ms = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - begin) * 1000.0 / 60.0;
-                s.metric(std::string("globe: one ") + planetNames[std::size_t(planet)] + " frame at 290 px (report only; at 30 fps " + fmt(ms * 3.0) + " % of one core)", ms, " ms");
+                s.metric(std::string("tiny planet: one ") + planetNames[std::size_t(type)] + " frame (report only; at 30 fps " + fmt(ms * 3.0) + " % of one core)", ms, " ms");
             }
         }
         {
-            // And the frame reaches the screen: the editor's pixels at the globe show it.
+            // And the frame reaches the screen: the editor's pixels at the planet show it.
             const auto shot = editor->createComponentSnapshot(editor->getLocalBounds());
-            const auto& f = view->globeRenderer().lastFrame();
-            const auto onScreen = shot.getPixelAt(575 - f.getWidth() / 2 + f.getWidth() * 2 / 5, 233 - f.getHeight() / 2 + f.getHeight() * 2 / 5);
-            const auto drawn = f.getPixelAt(f.getWidth() * 2 / 5, f.getHeight() * 2 / 5);
+            const auto& f = view->tinyPlanet().lastFrame();
+            const auto area = view->planetArea();
+            const auto onScreen = shot.getPixelAt(area.getX() + (f.width() / 2) * 2, area.getY() + (f.height() / 2 + 30) * 2);
+            const auto drawn = f.get(f.width() / 2, f.height() / 2 + 30);
             const float gap = std::abs(onScreen.getFloatRed() - drawn.getFloatRed()) + std::abs(onScreen.getFloatGreen() - drawn.getFloatGreen())
                               + std::abs(onScreen.getFloatBlue() - drawn.getFloatBlue());
             s.check(gap < 0.25f, "the planet is drawn on screen (the editor's pixels show its frame)", fmt(gap));
@@ -5786,13 +5791,19 @@ bool showsAtScale(const juce::Image& out, const px::Canvas& canvas, int ox, int 
 }
 
 // True when an image is made of uniform scale x scale blocks on the grid from (0, 0).
-bool onGrid(const juce::Image& image, int scale, std::string& detail) {
+// `tolerance`: colour levels a block may vary by (JUCE's scaled image drawing rounds by
+// a level or two at 150 %; a split pixel mixes two colours, far more).
+bool onGrid(const juce::Image& image, int scale, std::string& detail, int tolerance = 0) {
+    const auto differs = [tolerance](juce::Colour a, juce::Colour b) {
+        return std::abs(int(a.getRed()) - int(b.getRed())) > tolerance || std::abs(int(a.getGreen()) - int(b.getGreen())) > tolerance
+               || std::abs(int(a.getBlue()) - int(b.getBlue())) > tolerance || std::abs(int(a.getAlpha()) - int(b.getAlpha())) > tolerance;
+    };
     for (int y = 0; y + scale <= image.getHeight(); y += scale)
         for (int x = 0; x + scale <= image.getWidth(); x += scale) {
             const auto first = image.getPixelAt(x, y);
             for (int j = 0; j < scale; ++j)
                 for (int i = 0; i < scale; ++i)
-                    if (image.getPixelAt(x + i, y + j) != first) {
+                    if (differs(image.getPixelAt(x + i, y + j), first)) {
                         detail = "block at " + std::to_string(x) + "," + std::to_string(y);
                         return false;
                     }
@@ -5873,15 +5884,17 @@ void testPixel(Suite& s) {
         s.check(f.sparkle == 1 && b.runes == 1 && sf.scanline == 1, "each mood shows its own decoration (sparkles, runes, scanlines)");
         const auto q = px::palette(0.25f);
         s.check(q.sparkle > 0 && q.runes > 0 && q.scanline == 0, "between fantasy and the blend, both decorations cross-fade");
-        float worst = 100, worstOn = 100, worstPanel = 100, worstValue = 100, worstWell = 100, step = 0;
-        for (int i = 0; i <= 64; ++i) {
-            const auto p = px::palette(float(i) / 64.0f);
+        float worst = 100, worstOn = 100, worstPanel = 100, worstValue = 100, worstWell = 100, worstHeading = 100, step = 0;
+        for (int i = 0; i <= 64 * 3 + 2; ++i) {
+            // Every point on the fantasy - blend - sci-fi axis, plain, half and fully modern.
+            const auto p = px::palette(px::Mood { float(i % 65) / 64.0f, float(i / 65) * 0.5f });
+            worstHeading = std::min(worstHeading, px::contrast(p.heading, p.panel));
             worst = std::min({ worst, px::contrast(p.ink, p.face), px::contrast(p.ink, p.faceLight) });
             worstOn = std::min(worstOn, px::contrast(p.inkOn, p.accent));
             worstPanel = std::min(worstPanel, px::contrast(p.ink, p.panel));
             worstValue = std::min(worstValue, px::contrast(p.accent, p.panel));
             worstWell = std::min(worstWell, px::contrast(p.ink, p.well));
-            if (i > 0) {
+            if (i > 0 && i < 65) {
                 const auto prev = px::palette(float(i - 1) / 64.0f);
                 step = std::max({ step, std::abs(p.face.getFloatRed() - prev.face.getFloatRed()), std::abs(p.accent.getFloatGreen() - prev.accent.getFloatGreen()),
                                   std::abs(p.accent.getFloatRed() - prev.accent.getFloatRed()), std::abs(p.rim.getFloatBlue() - prev.rim.getFloatBlue()) });
@@ -5896,6 +5909,8 @@ void testPixel(Suite& s) {
         s.check(worstOn >= 4.5f, "text on a lit (active) face keeps 4.5:1 in every mood", fmt(worstOn));
         s.check(worstPanel >= 4.5f && worstWell >= 4.5f, "labels on the panel and text in fields keep 4.5:1 in every mood", fmt(std::min(worstPanel, worstWell)));
         s.check(worstValue >= 3.0f, "value readouts (accent on panel) keep 3:1 in every mood", fmt(worstValue));
+        s.metric("  headings on panel", worstHeading);
+        s.check(worstHeading >= 4.5f, "headings and labels on the panel keep 4.5:1 in every mood", fmt(worstHeading));
         s.check(step < 0.06f, "the mood changes smoothly (no colour jumps between 1/64 steps)", fmt(step));
     }
 
@@ -6113,6 +6128,41 @@ void testPixel(Suite& s) {
         s.metric("pixel: whole editor, one animation frame and paint (ms)", (juce::Time::getMillisecondCounterHiRes() - start) / 20.0);
     }
 
+    // The whole interface at 150 % and 200 % UI size: every panel (controls, sliders,
+    // knobs, cards, chips, meters, labels, the tiny planet) is whole art-pixel blocks.
+    {
+        Host h;
+        h.set(slotId(0, PlType), float(Castle));
+        h.set(slotId(1, PlType), float(Spaceport));
+        h.render(2.5);
+        h.p->saveLocation(2);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->settle(1.0f);
+        const std::vector<std::pair<const char*, juce::Rectangle<int>>> panels { { "World Controls", { 16, 64, 292, 554 } }, { "Environment", { 842, 64, 302, 178 } },
+                                                                                 { "Places (right of the half-size icons)", { 892, 260, 252, 358 } }, { "cards", { 328, 404, 494, 214 } },
+                                                                                 { "globe", { 328, 64, 494, 322 } }, { "Locations", { 16, 634, 1128, 76 } },
+                                                                                 { "footer", { 16, 726, 1128, 72 } }, { "header", { 12, 12, 1136, 40 } } };
+        for (int block : { 3, 4 }) {
+            const float scale = float(block) / float(px::unit);
+            const auto shot = editor->createComponentSnapshot(editor->getLocalBounds(), true, scale);
+            if (std::getenv("WB_DEBUG_PIXEL")) {
+                juce::File f(juce::String(std::getenv("WB_DEBUG_PIXEL")) + "/editor-" + juce::String(block) + ".png");
+                f.deleteFile();
+                juce::FileOutputStream out(f);
+                juce::PNGImageFormat().writeImageToStream(shot, out);
+            }
+            std::string failed;
+            for (const auto& [name, r] : panels) {
+                const auto d = (r.toFloat() * scale).toNearestInt();
+                const auto region = shot.getClippedImage({ d.getX() / block * block, d.getY() / block * block, d.getWidth() / block * block, d.getHeight() / block * block });
+                std::string detail;
+                if (!onGrid(region, block, detail, 3)) failed += std::string(name) + " (" + detail + ") ";
+            }
+            s.check(failed.empty(), "the whole interface draws on whole art pixels at " + std::to_string(block * 50) + " % UI size", failed);
+        }
+    }
+
     // The prototype sheets build in every mood, with all elements on them.
     {
         bool built = true;
@@ -6131,7 +6181,7 @@ int writePixelSnapshots(const juce::String& dir) {
     juce::File folder(dir);
     folder.createDirectory();
     const auto save = [&](const px::Canvas& canvas, int scale, const juce::String& name) {
-        juce::File file(folder.getChildFile("pixel-prototype-" + name + ".png"));
+        juce::File file(folder.getChildFile("pixel-13b-" + name + ".png"));
         file.deleteFile();
         juce::FileOutputStream out(file);
         juce::PNGImageFormat().writeImageToStream(canvas.scaled(scale), out);
@@ -6154,6 +6204,24 @@ int writePixelSnapshots(const juce::String& dir) {
     }
     // The idle animation, as frames of the sheet.
     for (int f = 1; f < 4; ++f) save(px::prototypeComparison(f), 2, "sheet-frame" + juce::String(f));   // the sheet is frame 0
+    // The whole editor in each mood, from the Places that make it.
+    const std::vector<std::pair<const char*, std::vector<int>>> worlds { { "fantasy", { Castle, Tavern, Forest } }, { "scifi", { Spaceport, Megacity, Nebula } },
+                                                                         { "blend", { Castle, Spaceport, Temple } }, { "neutral", { City, Mall, Suburbs } } };
+    for (const auto& [name, places] : worlds) {
+        Host h;
+        for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), slot < int(places.size()) ? float(places[std::size_t(slot)]) : float(NoPlace));
+        h.render(2.5);
+        h.p->saveLocation(1);
+        h.p->saveLocation(4);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        dynamic_cast<WorldbuilderEditor*>(editor.get())->settle(2.5f);
+        const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
+        juce::File file(folder.getChildFile("pixel-13b-editor-" + juce::String(name) + ".png"));
+        file.deleteFile();
+        juce::FileOutputStream out(file);
+        juce::PNGImageFormat().writeImageToStream(image, out);
+        std::cout << "  " << file.getFullPathName() << "\n";
+    }
     return 0;
 }
 
@@ -6182,6 +6250,72 @@ int writeSceneSnapshots(const juce::String& dir) {
     view->openArrange();
     view->settle(0.5f);
     save(editor->createComponentSnapshot(editor->getLocalBounds()), "m12-scene-arranged");
+    return 0;
+}
+
+// --snapshot-planets dir: the tiny planet, each Planet type with Places that suit it and
+// its weather, plus night, a journey and a sheet of all seven (docs/snapshots/tiny-planet-*).
+int writePlanetSnapshots(const juce::String& dir) {
+    juce::File folder(dir);
+    folder.createDirectory();
+    const auto save = [&](const juce::Image& image, const juce::String& name) {
+        juce::File file(folder.getChildFile("tiny-planet-" + name + ".png"));
+        file.deleteFile();
+        juce::FileOutputStream out(file);
+        juce::PNGImageFormat().writeImageToStream(image, out);
+        std::cout << "  " << file.getFullPathName() << "\n";
+    };
+    struct Shot {
+        const char* name;
+        int planet;
+        std::vector<int> places;
+        std::vector<std::pair<const char*, float>> settings;
+        float turn = 0.0f;
+        bool journey = false;
+    };
+    const std::vector<Shot> shots {
+        { "rocky", dsp::Rocky, { Mining, SpaceStation, Cavern }, { { "weather", 0.2f } } },
+        { "ocean", dsp::Ocean, { SeaShip, Beach }, { { "weather", 0.7f }, { "wetness", 0.85f } } },
+        { "icegiant", dsp::IceGiant, { Castle, Temple, Village }, { { "temperature", 0.05f }, { "weather", 0.5f }, { "wetness", 0.6f } } },
+        { "gasgiant", dsp::GasGiant, { Spaceport, Bridge, Nebula }, { { "magic", 0.6f } } },
+        { "desert", dsp::DesertWorld, { Desert, Palace }, { { "temperature", 0.8f }, { "wetness", 0.0f } } },
+        { "lava", dsp::LavaWorld, { Factory, Military, Ruins }, { { "temperature", 0.95f }, { "danger", 0.6f } } },
+        { "forest", dsp::ForestWorld, { Forest, Village, Tavern }, { { "wetness", 0.4f } } },
+        { "night", dsp::ForestWorld, { Forest, Castle, Tavern }, { { "magic", 0.8f } }, juce::MathConstants<float>::twoPi },
+        { "storm", dsp::Ocean, { SeaShip, City }, { { "weather", 0.95f }, { "wetness", 0.95f }, { "danger", 0.5f } } },
+        { "journey", dsp::Rocky, { Megacity, SpaceStation }, {}, 0.0f, true },
+    };
+    std::vector<juce::Image> sheet;
+    for (const auto& shot : shots) {
+        Host h;
+        for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), slot < int(shot.places.size()) ? float(shot.places[std::size_t(slot)]) : float(NoPlace));
+        h.set("planet", float(shot.planet));
+        for (auto [id, value] : shot.settings) h.set(id, value);
+        h.render(2.5);
+        // Three Locations in the sky (the world as it is), named.
+        for (int i : { 1, 3, 6 }) h.p->saveLocation(i);
+        if (shot.journey) {
+            h.set("traveltime", 4.0f);
+            h.p->travelTo(6);
+            h.render(1.8);
+        }
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->settle(2.0f);
+        view->setPlanetTurn(shot.turn);
+        view->settle(1.0f / 30.0f);
+        const auto image = editor->createComponentSnapshot(editor->getLocalBounds()).getClippedImage({ 318, 54, 514, 342 });
+        save(image, shot.name);
+        if (sheet.size() < 7) sheet.push_back(image.createCopy());
+    }
+    // All seven planet types on one sheet.
+    juce::Image all(juce::Image::ARGB, 514 * 2 + 6, 342 * 4 + 18, true);
+    {
+        juce::Graphics g(all);
+        g.fillAll(juce::Colour(0xff0c0a12));
+        for (std::size_t i = 0; i < sheet.size(); ++i) g.drawImageAt(sheet[i], int(i % 2) * 520, int(i / 2) * 348);
+    }
+    save(all, "sheet");
     return 0;
 }
 
@@ -6280,9 +6414,9 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
             View v({ Castle, Village }, { { "planet", float(planet) }, { "population", 0.7f } });
             save(v.image().getClippedImage(globe), "globe-planet-" + planets[planet]);
             if (std::getenv("WB_DEBUG_GLOBE")) {
-                const auto& f = v.view->globeRenderer().lastFrame();
-                std::cout << planets[planet] << " shown " << v.view->shownPlanetType() << " centre " << juce::String::toHexString((int) f.getPixelAt(f.getWidth() / 2, f.getHeight() / 2).getARGB()) << " ul "
-                          << juce::String::toHexString((int) f.getPixelAt(f.getWidth() / 3, f.getHeight() / 3).getARGB()) << "\n";
+                const auto& f = v.view->tinyPlanet().lastFrame();
+                std::cout << planets[planet] << " shown " << v.view->shownPlanetType() << " ground " << juce::String::toHexString((int) f.get(f.width() / 2, f.height() / 2 + 30).getARGB())
+                          << "\n";
             }
         }
     }
@@ -6302,6 +6436,7 @@ int main(int argc, char** argv) {
         else if (juce::String(argv[i]) == "--snapshots" && i + 1 < argc) return writeSnapshots(argv[i + 1], i + 2 < argc ? juce::String(argv[i + 2]) : juce::String("shot"));
         else if (juce::String(argv[i]) == "--snapshot-scenes" && i + 1 < argc) return writeSceneSnapshots(argv[i + 1]);
         else if (juce::String(argv[i]) == "--snapshot-pixel" && i + 1 < argc) return writePixelSnapshots(argv[i + 1]);
+        else if (juce::String(argv[i]) == "--snapshot-planets" && i + 1 < argc) return writePlanetSnapshots(argv[i + 1]);
         else if (juce::String(argv[i]) == "--probe") return probe();
         else if (juce::String(argv[i]) == "--probe-places") return probePlaces();
         else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {

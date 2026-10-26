@@ -49,6 +49,7 @@ struct Palette {
     juce::Colour ink, inkDim, inkOn;          // text on a face; dimmed; on a lit (accent) face
     juce::Colour panel, panelLight, panelDark;   // the background the controls sit on
     juce::Colour warn, peak;                  // meters: loud, too loud
+    juce::Colour heading;                     // titles and labels on the panel
     float sparkle = 0, scanline = 0, runes = 0;   // fantasy, sci-fi, blend decoration
 };
 Palette palette(float sciFi);
@@ -158,6 +159,10 @@ void blockArt(juce::Graphics& g, juce::Rectangle<int> r, juce::Colour body, juce
 void drawText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour,
               juce::Justification justification = juce::Justification::centredLeft, Font font = Font::Small,
               juce::Colour shadow = juce::Colours::black.withAlpha(0.0f), bool shadowFromTheme = true);
+// Tiny text: the Small font at half the art grid (one logical pixel per art pixel), for
+// rows too tight for the Small font (dense grids). Whole device pixels at every size.
+void drawTinyText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour,
+                  juce::Justification justification = juce::Justification::centredLeft);
 // Its width in logical pixels.
 int textWidthLogical(const juce::String& text, Font font = Font::Small);
 

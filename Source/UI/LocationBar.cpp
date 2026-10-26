@@ -139,7 +139,7 @@ bool LocationBar::canSave() const {
 
 void LocationBar::paint(juce::Graphics& g) {
     const auto& pal = pixel::theme().colours;
-    pixel::drawText(g, "LOCATIONS", title.withTrimmedLeft(4).withWidth(116), pal.rim, juce::Justification::centredLeft, pixel::Font::Large);
+    pixel::drawText(g, "LOCATIONS", title.withTrimmedLeft(4).withWidth(116), pal.heading, juce::Justification::centredLeft, pixel::Font::Large);
     const int mode = processor.travel.uiMode.load(std::memory_order_relaxed);
     const int target = processor.travel.uiTarget.load(std::memory_order_relaxed);
     const int arrived = processor.travel.uiArrived.load(std::memory_order_relaxed);
@@ -157,7 +157,7 @@ void LocationBar::paint(juce::Graphics& g) {
         else state = "click an empty slot to save the world there";
         pixel::drawText(g, state, title.withTrimmedLeft(124).withTrimmedRight(104), mode == Travel::Idle || mode == Travel::Holding ? pal.inkDim : pal.inlay,
                         juce::Justification::centredLeft, pixel::Font::Small);
-        pixel::drawText(g, "JOURNEY PATH", pathMode.getBounds().withX(title.getRight() - 104).withWidth(100), pal.rim, juce::Justification::centredRight, pixel::Font::Small);
+        pixel::drawText(g, "JOURNEY PATH", pathMode.getBounds().withX(title.getRight() - 104).withWidth(100), pal.heading, juce::Justification::centredRight, pixel::Font::Small);
     }
     const bool journeyOn = mode == Travel::Journeying;
     const int journeyFrom = processor.travel.uiFrom.load(std::memory_order_relaxed);
@@ -199,10 +199,10 @@ void LocationBar::paint(juce::Graphics& g) {
         pixel::drawText(g, juce::String(i + 1), r.withTrimmedLeft(8).withHeight(12).translated(0, 2), used ? colour.brighter(0.3f) : pal.inkDim,
                         juce::Justification::centredLeft, pixel::Font::Small);
     }
-    pixel::drawText(g, "TRAVEL", travelLabel, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
-    pixel::drawText(g, "JOURNEY", journeyLabel.withX(journeyMode.getX()).withWidth(journeyMode.getWidth()), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
-    pixel::drawText(g, "FROM", journeyLabel.withX(from.getX()).withWidth(from.getWidth()), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
-    pixel::drawText(g, "TO", journeyLabel.withX(to.getX()).withWidth(to.getWidth()), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "TRAVEL", travelLabel, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "JOURNEY", journeyLabel.withX(journeyMode.getX()).withWidth(journeyMode.getWidth()), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "FROM", journeyLabel.withX(from.getX()).withWidth(from.getWidth()), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "TO", journeyLabel.withX(to.getX()).withWidth(to.getWidth()), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
     const bool synced = juce::roundToInt(processor.parameters.getRawParameterValue(specs[PTravelSync].id)->load()) > 0;
     pixel::drawText(g, travelTime.getTextFromValue(travelTime.getValue()) + " S", travelValue, synced ? pal.inkDim : pal.accent, juce::Justification::centred, pixel::Font::Small);
     pixel::drawCached(g, "arrow", { arrow.getCentreX() - 4, arrow.getCentreY() - 6 }, [&] {

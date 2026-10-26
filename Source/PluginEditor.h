@@ -6,7 +6,7 @@
 #include "PluginProcessor.h"
 #include "UI/ArrangeView.h"
 #include "UI/CapturePanel.h"
-#include "UI/GlobeRenderer.h"
+#include "UI/TinyPlanet.h"
 #include "UI/LocationBar.h"
 #include "UI/PatternEditor.h"
 #include "UI/PlaceArt.h"
@@ -55,8 +55,11 @@ public:
     // Lists one category of Place cards (-1: all), as its chip does; how many are listed.
     void showCategory(int c);
     int listedPlaces() const { return listedCount; }
-    // The globe's planet renderer (its last frame) and the Planet it shows.
-    const wb::ui::GlobeRenderer& globeRenderer() const { return globe; }
+    // The tiny planet (its last frame, in art pixels) and the Planet it shows.
+    const wb::ui::TinyPlanet& tinyPlanet() const { return tiny; }
+    juce::Rectangle<int> planetArea() const { return planetScene; }
+    // Turns the planet to `turn` radians (tests and snapshots: day is 0, night is 2 pi).
+    void setPlanetTurn(float turn) { spin = turn / 0.3f; }
     int shownPlanetType() const { return shownPlanet; }
     // Scenes (Milestone 12): the header's scene browser, INSPIRE and UNDO.
     void loadScene(int index);
@@ -130,11 +133,13 @@ private:
     void updateTheme(float seconds, bool snap = false);
     // Tells the overlays where the panels are and what they must keep clear.
     void updateOverlayFrames();
-    void paintGlobeFeatures(juce::Graphics&, juce::Rectangle<float> area, float alpha);
     juce::Point<float> landmarkPosition(int slot) const;
+    // How far the planet has turned (radians; it follows the spin), where a slot's Place
+    // stands on it.
+    float planetTurn() const;
+    float landmarkLongitude(int slot) const;
     int landmarkAt(juce::Point<float>) const;
-    // The Location markers around the globe, and the journey between them.
-    float markerAngle(int index) const;
+    // The Location markers in the planet's sky.
     int markerAt(juce::Point<float>) const;
     void paintLocationMarkers(juce::Graphics&, float alpha);
 
@@ -184,7 +189,10 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> planetAttachment;
     std::unique_ptr<SliderAttachment> planetInfluenceAttachment;
     juce::Rectangle<int> planetLabel, influenceLabel;
-    wb::ui::GlobeRenderer globe;
+    wb::ui::TinyPlanet tiny;
+    juce::Rectangle<int> planetScene;
+    juce::Point<float> dragFrom;
+    float dragPan = 0, dragDistance = 0;
     int shownPlanet = 0, previousPlanet = 0;
     float planetBlend = 1;   // 0..1: the crossfade from previousPlanet to shownPlanet
     std::unique_ptr<wb::ui::PlaceOverlays> overlays;

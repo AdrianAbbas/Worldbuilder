@@ -452,7 +452,8 @@ Canvas tab(const Palette& p, const juce::String& text, int width, int height, bo
     height = std::max(8, height);
     Canvas k(width, height);
     const int iconW = icon != nullptr ? icon->width() + 2 : 0;
-    const auto font = fontFitting(text, width - 8 - iconW, height - 2);
+    // Tabs keep one size of text across a strip: Large only on tall tabs.
+    const auto font = height >= 18 ? fontFitting(text, width - 8 - iconW, height - 2) : Font::Small;
     const auto line = or_(accent, p.inlay);
     const auto shown = fitText(text, width - 8 - iconW, font);
     const int contentW = iconW + Canvas::textWidth(shown, font);

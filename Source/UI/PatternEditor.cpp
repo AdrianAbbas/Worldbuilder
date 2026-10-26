@@ -96,8 +96,9 @@ public:
             // The key column.
             pixel::blockArt(g, { 0, y, keyWidth - 4, rowHeight }, row.tonic ? pal.rim.interpolatedWith(pal.face, 0.5f) : row.inScale ? pal.face : pal.faceDark,
                             pal.faceLight, pal.faceDark, pal.outline);
-            pixel::drawText(g, row.label, { 4, y, keyWidth - 10, rowHeight }, row.tonic ? pal.ink : row.inScale ? pal.ink.withAlpha(0.8f) : pal.inkDim,
-                            juce::Justification::centredLeft, pixel::Font::Small);
+            const auto ink = row.tonic ? pal.ink : row.inScale ? pal.ink.withAlpha(0.8f) : pal.inkDim;
+            if (rowHeight >= 12) pixel::drawText(g, row.label, { 4, y, keyWidth - 10, rowHeight }, ink, juce::Justification::centredLeft, pixel::Font::Small);
+            else pixel::drawTinyText(g, row.label, { 4, y, keyWidth - 10, rowHeight }, ink);
         }
         // Columns: steps, beats, bars (in the rim colour, numbered).
         const int first = int(std::floor(firstStep)), last = first + visibleSteps() + 1;
@@ -107,7 +108,7 @@ public:
             const bool bar = s % perBar == 0, beat = std::abs(std::fmod(double(s), perBeat)) < 1.0e-9;
             pixel::fillArt(g, { x, 0, u, getHeight() }, bar ? pal.rim.withAlpha(0.7f) : beat ? pal.wellLight.brighter(0.2f) : pal.wellLight.withAlpha(0.5f));
             if (bar && s < pattern.lengthSteps)
-                pixel::drawText(g, juce::String(s / perBar + 1), { x + 4, 2, 30, 12 }, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+                pixel::drawText(g, juce::String(s / perBar + 1), { x + 4, 2, 30, 12 }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         }
         // Beyond the end of the pattern.
         if (const int end = int(xForStep(pattern.lengthSteps)); end < right) pixel::fillArt(g, { end, 0, right - end, getHeight() }, pal.well.withAlpha(0.75f));
@@ -311,7 +312,7 @@ public:
         const auto& pal = pixel::theme().colours;
         const int u = pixel::unit;
         pixel::fillArt(g, getLocalBounds(), pal.well);
-        pixel::drawText(g, isVelocity ? "VELOCITY" : "CHANCE", { 4, 0, keyWidth - 8, getHeight() }, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, isVelocity ? "VELOCITY" : "CHANCE", { 4, 0, keyWidth - 8, getHeight() }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         const auto& grid = *owner.gridView;
         const auto& p = owner.working.pattern;
         const auto accent = accentFor(owner.type());
@@ -1338,10 +1339,10 @@ void PatternEditor::paint(juce::Graphics& g) {
     title.removeFromLeft(40);
     pixel::drawText(g, juce::String(placeNames[std::size_t(std::clamp(t, 0, PlaceTypeCount - 1))]).toUpperCase(), title.removeFromTop(24), pal.ink,
                     juce::Justification::centredLeft, pixel::Font::Large);
-    pixel::drawText(g, "PATTERNS - PLACE " + juce::String(slotIndex + 1), title, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "PATTERNS - PLACE " + juce::String(slotIndex + 1), title, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
 
     const auto above = [&](juce::Component& c, const juce::String& text, int extra = 30) {
-        pixel::drawText(g, text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + extra), pal.rim, juce::Justification::centredLeft,
+        pixel::drawText(g, text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + extra), pal.heading, juce::Justification::centredLeft,
                         pixel::Font::Small);
     };
     above(length, "LENGTH", 100);
@@ -1361,22 +1362,22 @@ void PatternEditor::paint(juce::Graphics& g) {
                           [&] { return pixel::instrumentIcon(spec.icon, 9, ink, pal.outline); });
         strip.removeFromLeft(26);
         pixel::drawText(g, juce::String(spec.name).toUpperCase(), strip.removeFromLeft(112), pal.ink, juce::Justification::centredLeft, pixel::Font::Small);
-        pixel::drawText(g, "LEVEL", elementLevel.getBounds().withX(elementLevel.getX() - 44).withWidth(40), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, "LEVEL", elementLevel.getBounds().withX(elementLevel.getX() - 44).withWidth(40), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
     }
     above(snapButton, "MIDI FILES", 100);
     {
         // The effects row's labels, above each control (sliders with their values).
-        pixel::drawText(g, "EFFECTS", fxArea.withWidth(60).withTrimmedTop(13), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, "EFFECTS", fxArea.withWidth(60).withTrimmedTop(13), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         const auto percent = [](const juce::Slider& k) { return juce::String(juce::roundToInt(k.getValue() * 100.0)) + "%"; };
         above(reverbType, "REVERB");
         above(reverbSend, "SEND " + percent(reverbSend));
         above(delayType, "DELAY");
         above(delaySend, "SEND " + percent(delaySend));
         above(characterType, "CHARACTER");
-        above(characterAmount, "AMOUNT " + percent(characterAmount));
+        above(characterAmount, "AMT " + percent(characterAmount), 6);
         const int tone = juce::roundToInt((fxTone.getValue() - 0.5) * 200.0);
-        above(fxTone, "TONE " + juce::String(tone == 0 ? "FLAT" : (tone < 0 ? "DARK " : "BRIGHT ") + juce::String(std::abs(tone))));
-        above(fxWidth, "WIDTH " + percent(fxWidth));
+        above(fxTone, "TONE " + juce::String(tone == 0 ? "FLAT" : (tone < 0 ? "-" : "+") + juce::String(std::abs(tone))), 6);
+        above(fxWidth, "WIDTH " + percent(fxWidth), 6);
         pixel::fillArt(g, { fxArea.getX(), fxArea.getBottom(), fxArea.getWidth(), pixel::unit }, pal.wellLight);
     }
 

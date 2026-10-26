@@ -44,6 +44,7 @@ Palette fantasy() {
     p.ink = c(0xfff3dc); p.inkDim = c(0xd9b9cb); p.inkOn = c(0x3a1a22);
     p.panel = c(0x1e3832); p.panelLight = c(0x2c4c44); p.panelDark = c(0x142824);
     p.warn = c(0xff9f5a); p.peak = c(0xff5c7a);
+    p.heading = c(0xf6c04e);
     p.sparkle = 1;
     return p;
 }
@@ -58,6 +59,7 @@ Palette sciFi() {
     p.ink = c(0xc4f6ff); p.inkDim = c(0x6a8aa2); p.inkOn = c(0x03141c);
     p.panel = c(0x0b1019); p.panelLight = c(0x162234); p.panelDark = c(0x060910);
     p.warn = c(0xffd23e); p.peak = c(0xff3e7a);
+    p.heading = c(0x5ee8ff);
     p.scanline = 1;
     return p;
 }
@@ -72,6 +74,7 @@ Palette magitech() {
     p.ink = c(0xffe8f2); p.inkDim = c(0xb491aa); p.inkOn = c(0x1c0826);
     p.panel = c(0x1f1220); p.panelLight = c(0x2e1c2e); p.panelDark = c(0x140a14);
     p.warn = c(0xffc85a); p.peak = c(0xff4a6a);
+    p.heading = c(0xe8a868);
     p.runes = 1;
     return p;
 }
@@ -87,6 +90,7 @@ Palette neutralKeyframe() {
     p.ink = c(0xf2f4f6); p.inkDim = c(0xa3abb4); p.inkOn = c(0x2a120c);
     p.panel = c(0x1a1d22); p.panelLight = c(0x252930); p.panelDark = c(0x121418);
     p.warn = c(0xffd25a); p.peak = c(0xff4a4a);
+    p.heading = c(0xc8d0d8);
     return p;
 }
 
@@ -102,6 +106,7 @@ Palette mix(const Palette& a, const Palette& b, float t) {
     p.ink = m(a.ink, b.ink); p.inkDim = m(a.inkDim, b.inkDim); p.inkOn = m(a.inkOn, b.inkOn);
     p.panel = m(a.panel, b.panel); p.panelLight = m(a.panelLight, b.panelLight); p.panelDark = m(a.panelDark, b.panelDark);
     p.warn = m(a.warn, b.warn); p.peak = m(a.peak, b.peak);
+    p.heading = m(a.heading, b.heading);
     p.sparkle = a.sparkle + (b.sparkle - a.sparkle) * t;
     p.scanline = a.scanline + (b.scanline - a.scanline) * t;
     p.runes = a.runes + (b.runes - a.runes) * t;
@@ -503,6 +508,23 @@ void drawText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> 
     drawCached(g, key, { x, y }, [&] {
         Canvas k(w, h);
         k.shadowText(0, 0, shown, colour, shadow, font);
+        return k;
+    });
+}
+
+void drawTinyText(juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Justification justification) {
+    if (text.isEmpty() || colour.getAlpha() == 0) return;
+    const auto shown = fitText(text, std::max(0, area.getWidth()), Font::Small);
+    if (shown.isEmpty()) return;
+    const int w = Canvas::textWidth(shown, Font::Small), h = Canvas::textHeight(Font::Small);
+    int x = area.getX(), y = area.getY();
+    if (justification.testFlags(juce::Justification::horizontallyCentred)) x += (area.getWidth() - w) / 2;
+    else if (justification.testFlags(juce::Justification::right)) x = area.getRight() - w;
+    if (justification.testFlags(juce::Justification::verticallyCentred)) y += (area.getHeight() - h) / 2;
+    else if (justification.testFlags(juce::Justification::bottom)) y = area.getBottom() - h;
+    drawCachedSmall(g, "tiny/" + juce::String::toHexString(int(colour.getARGB())) + "/" + shown, { x, y }, [&] {
+        Canvas k(w, h);
+        k.text(0, 0, shown, colour, Font::Small);
         return k;
     });
 }

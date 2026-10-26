@@ -613,12 +613,12 @@ void ArrangeView::paint(juce::Graphics& g) {
         const int total = shown.totalBars();
         juce::String sub = juce::String(shown.count) + (shown.count == 1 ? " SECTION" : " SECTIONS") + " - " + juce::String(total) + " BARS";
         if (shown.firstEndless() < shown.count) sub << " - ENDS IN A LOOP";
-        pixel::drawText(g, sub, t.withWidth(400), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, sub, t.withWidth(400), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
     }
 
     // The inspector's labels.
     const auto above = [&](juce::Component& c, const juce::String& text) {
-        pixel::drawText(g, text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + 40), pal.rim, juce::Justification::centredLeft,
+        pixel::drawText(g, text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + 40), pal.heading, juce::Justification::centredLeft,
                         pixel::Font::Small);
     };
     const bool any = selectedIndex >= 0 && selectedIndex < shown.count;
@@ -634,7 +634,7 @@ void ArrangeView::paint(juce::Graphics& g) {
     above(planetChoice, "PLANET");
     above(worldButton, "OVERRIDES");
     if (swatches[0].getWidth() > 0) {
-        pixel::drawText(g, "COLOUR", swatches[0].translated(0, -13).withHeight(12).withWidth(80), pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, "COLOUR", swatches[0].translated(0, -13).withHeight(12).withWidth(80), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         for (int i = 0; i < arr::colourCount; ++i) {
             const auto b = swatches[std::size_t(i)];
             const auto c = juce::Colour(arr::colours[std::size_t(i)]).withAlpha(any ? 1.0f : 0.35f);
@@ -729,7 +729,7 @@ void ArrangeView::paint(juce::Graphics& g) {
         if (shown.count > 0 && shown.firstEndless() == shown.count) {
             const int x = int(xForBar(shown.totalBars()));
             const auto label = shown.end == arr::EndStop ? juce::String("END") : "TO " + juce::String(shown.loopTarget() + 1);
-            pixel::drawText(g, label, { x + 4, timeline.getY(), 60, timeline.getHeight() }, pal.rim, juce::Justification::centredLeft, pixel::Font::Small);
+            pixel::drawText(g, label, { x + 4, timeline.getY(), 60, timeline.getHeight() }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         }
         g.restoreState();
     }
@@ -753,18 +753,25 @@ void ArrangeView::paint(juce::Graphics& g) {
                 auto h = row.bounds;
                 pixel::fillArt(g, h, accent.withAlpha(0.2f));
                 pixel::fillArt(g, h.withHeight(u), accent.withAlpha(0.6f));
-                pixel::drawText(g, "PLACE " + juce::String(row.slot + 1) + "  " + juce::String(placeNames[std::size_t(type)]).toUpperCase(), h.withTrimmedLeft(6), pal.ink,
-                                juce::Justification::centredLeft, pixel::Font::Small);
+                const auto heading = "PLACE " + juce::String(row.slot + 1) + "  " + juce::String(placeNames[std::size_t(type)]).toUpperCase();
+                if (h.getHeight() >= 12) pixel::drawText(g, heading, h.withTrimmedLeft(6), pal.ink, juce::Justification::centredLeft, pixel::Font::Small);
+                else pixel::drawTinyText(g, heading, h.withTrimmedLeft(6), pal.ink);
                 continue;
             }
             const auto& spec = placeInfo(type).element[std::size_t(row.element)];
             auto label = row.bounds.withWidth(labelWidth - 6);
             if (row.element % 2 == 1) pixel::fillArt(g, row.bounds, pal.well.withAlpha(0.3f));
             const auto ink = accent.interpolatedWith(pal.ink, 0.25f);
-            const int iconSize = std::min(7, row.bounds.getHeight() / u - 2);
-            pixel::drawCached(g, "ainst/" + juce::String(spec.icon) + "/" + juce::String(iconSize) + ink.toString(),
-                              { label.getX() + 2, label.getCentreY() - (iconSize + 1) * u / 2 }, [&] { return pixel::instrumentIcon(spec.icon, iconSize, ink, pal.outline); });
-            pixel::drawText(g, spec.name, label.withTrimmedLeft(22), pal.ink.withAlpha(0.9f), juce::Justification::centredLeft, pixel::Font::Small);
+            if (row.bounds.getHeight() >= 14)
+                pixel::drawCached(g, "ainst/" + juce::String(spec.icon) + ink.toString(), { label.getX() + 2, label.getCentreY() - 8 },
+                                  [&] { return pixel::instrumentIcon(spec.icon, 7, ink, pal.outline); });
+            else {
+                const int size = std::max(5, row.bounds.getHeight() - 1);
+                pixel::drawCachedSmall(g, "ainsts/" + juce::String(spec.icon) + "/" + juce::String(size) + ink.toString(), { label.getX() + 4, label.getCentreY() - size / 2 },
+                                       [&] { return pixel::instrumentIcon(spec.icon, size, ink, juce::Colours::transparentBlack); });
+            }
+            if (row.bounds.getHeight() >= 12) pixel::drawText(g, spec.name, label.withTrimmedLeft(22), pal.ink.withAlpha(0.9f), juce::Justification::centredLeft, pixel::Font::Small);
+            else pixel::drawTinyText(g, juce::String(spec.name).toUpperCase(), label.withTrimmedLeft(22), pal.ink.withAlpha(0.9f));
             for (int i = 0; i < shown.count; ++i) {
                 const auto& s = shown.sections[std::size_t(i)];
                 const auto cell = s.cells[std::size_t(row.slot)][std::size_t(row.element)];
