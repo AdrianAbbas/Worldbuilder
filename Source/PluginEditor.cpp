@@ -119,6 +119,15 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         s.soloAttachment = std::make_unique<ButtonAttachment>(processor.parameters, specs[std::size_t(layerSolo(l))].id, s.solo);
     }
 
+    // The Environment master: one level over all six layers, beside the panel's title.
+    environmentLevel.setSliderStyle(juce::Slider::LinearHorizontal);
+    environmentLevel.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    environmentLevel.setTooltip("Environment level: all six environment layers together (automatable)");
+    addAndMakeVisible(environmentLevel);
+    environmentAttachment = std::make_unique<SliderAttachment>(processor.parameters, specs[std::size_t(PEnvironment)].id, environmentLevel);
+    environmentLevel.setDoubleClickReturnValue(true, specs[std::size_t(PEnvironment)].def);
+    environmentLevel.onValueChange = [this] { repaint(environmentValue); };
+
     for (int slot = 0; slot < placeSlotCount; ++slot) {
         auto& s = placeStrips[std::size_t(slot)];
         const auto id = [slot](int field) { return specs[std::size_t(placeParam(slot, field))].id; };
@@ -642,7 +651,13 @@ void WorldbuilderEditor::resized() {
 
     // Environment layers.
     auto mixer = layersPanel.reduced(10, 8);
-    mixer.removeFromTop(20);
+    {
+        // The title row: ENVIRONMENT, then its master level and value.
+        auto title = mixer.removeFromTop(20);
+        title.removeFromLeft(118);
+        environmentValue = title.removeFromRight(46);
+        environmentLevel.setBounds(title.reduced(0, 3));
+    }
     const int stripHeight = mixer.getHeight() / LayerCount;
     for (auto& s : strips) {
         s.row = mixer.removeFromTop(stripHeight);
@@ -832,6 +847,10 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
             pixel::drawText(g, groups[i].title, title, p.heading, juce::Justification::centredLeft, pixel::Font::Large);
     if (const auto title = layersPanel.reduced(14, 8).withHeight(16); g.clipRegionIntersects(title))
         pixel::drawText(g, "ENVIRONMENT", title, p.heading, juce::Justification::centredLeft, pixel::Font::Large);
+    if (g.clipRegionIntersects(environmentValue)) {
+        const double db = environmentLevel.getValue();
+        pixel::drawText(g, db <= -59.9 ? juce::String("OFF") : juce::String(db, 1) + " DB", environmentValue, p.ink, juce::Justification::centredRight, pixel::Font::Small);
+    }
     if (const auto title = placesPanel.reduced(14, 8).withHeight(16); g.clipRegionIntersects(title))
         pixel::drawText(g, "PLACES", title, p.heading, juce::Justification::centredLeft, pixel::Font::Large);
 

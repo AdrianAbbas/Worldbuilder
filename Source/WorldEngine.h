@@ -24,6 +24,7 @@ struct EngineControls {
     std::array<float, LayerCount> layerDb {};
     std::array<bool, LayerCount> mute {}, solo {};
     float masterDb = 0, width = 1, spaceMix = 0.4f;
+    float environmentDb = 0;   // the environment layers' master level
     float intensity = 0.5f;   // Score Intensity
     bool power = true;
     int root = 2, mood = 0, quality = 1;
@@ -46,6 +47,11 @@ struct EngineControls {
     std::array<bool, placeSlots> slotOut {};
     bool splitOuts = false;
 };
+
+// Each environment layer's balance trim (dB): at equal settings the layers sit about
+// 10-15 dB under a typical Place, as background (the GarageBand fix round; measured by
+// the `envbalance` tests).
+inline constexpr std::array<float, LayerCount> environmentTrimDb { -21.3f, -21.0f, -13.1f, -15.3f, -15.9f, -14.3f };
 
 class WorldEngine {
 public:

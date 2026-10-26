@@ -292,7 +292,12 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         Generator* layer = layers[li];
         if (layer == nullptr) continue;
         const bool audible = !controls.mute[li] && (!anySolo || controls.solo[li]);
-        const float target = audible ? dbToGain(std::clamp(controls.layerDb[li], -60.0f, 6.0f)) : 0.0f;
+        // The layer's own level, its balance trim (background under the Places) and the
+        // Environment master; either level at its minimum silences it.
+        const bool silent = controls.layerDb[li] <= -59.95f || controls.environmentDb <= -59.95f;
+        const float target = audible && !silent
+                                 ? dbToGain(std::clamp(controls.layerDb[li], -60.0f, 6.0f) + environmentTrimDb[li] + std::clamp(controls.environmentDb, -60.0f, 6.0f))
+                                 : 0.0f;
         auto& gain = layerGain[li];
         if (target == 0.0f && gain.value < 1.0e-5f) {
             gain.snap(0);

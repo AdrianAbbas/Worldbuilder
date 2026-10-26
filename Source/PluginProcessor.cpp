@@ -102,6 +102,7 @@ EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& valu
     }
     c.power = value(PPower) > 0.5f;
     c.masterDb = value(PMaster);
+    c.environmentDb = value(PEnvironment);
     c.width = value(PWidth);
     c.spaceMix = value(PSpaceMix);
     c.intensity = value(PIntensity);

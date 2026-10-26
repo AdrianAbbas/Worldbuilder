@@ -4193,7 +4193,7 @@ water or a hurdy-gurdy rebuild).
 ### Progress checklist
 
 - [x] 1. Freeze with 3+ Places and Overlays Full: frame governor, cheaper overlay frames, 60 s stress test
-- [ ] 2. Environment layers 10-15 dB under a typical Place; automatable Environment master; scenes and Inspire re-checked
+- [x] 2. Environment layers 10-15 dB under a typical Place; automatable Environment master; scenes and Inspire re-checked
 - [ ] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
 - [ ] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
 - [ ] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
@@ -4242,3 +4242,41 @@ not growing after warm-up, and the audio keeping up. This container: 16 opens, p
 median 21 ms / 99th percentile 53 ms (software renderer), the editor busy 25 % of the
 time, memory 156.04 MB after warm-up and 156.07 MB at the end, audio blocks 3.3 ms at the
 99th percentile.
+
+### 2. The environment balance
+
+**Measured** (`--only envbalance`): each layer soloed in a world that features it, against
+every Place soloed in its slot at default settings, both judged by how loud they are
+while they sound (the 90th percentile of 400 ms RMS, so Thunder is judged by its
+strikes). A typical Place (the median of all 26) sounds at -27.1 dB. Before: **Air and
+Water 9 dB louder than a typical Place**, Fire & Heat, Ice & Earth, Thunder and the
+Tonal Bed within 0.6-3.4 dB of one. The developer's complaint, confirmed.
+
+**Fix**: a balance trim per layer in the engine (`environmentTrimDb` in
+`WorldEngine.h`: Air -21.3, Water -21.0, Fire & Heat -13.1, Ice & Earth -15.3, Thunder
+-15.9, Tonal Bed -14.3 dB), on top of the layer's own level. After: every layer sits
+**11.9-12.5 dB under a typical Place**. The user's layer levels keep their meaning
+(0 dB is the balanced level; each still goes to +6 dB).
+
+**Environment master**: a new automatable parameter, **Environment Level**
+(`environment`, -60 to +6 dB, default 0), one level over all six layers, added at the
+end of the parameter list (older projects load with it at 0 dB). It is a slider beside
+the ENVIRONMENT title with its value; double-click resets it. Its minimum silences the
+layers. Tests: -12 dB takes the layers down by 12 dB (within 1.5 dB), the minimum is
+silence, it is automatable.
+
+**Scenes and Inspire**: they never set layer levels (they leave them at 0 dB), so they
+take the new balance as it is; the scene tests (every factory scene and Inspire
+audible, finite and within the loudness window) pass unchanged.
+
+**Tests that leaned on the old, loud bed**: the journey, Journey Path, far-point and
+Planet colour tests had been measured against the environment as a steady broadband
+bed; with it 12-21 dB quieter, the Places' own notes made their 20 ms level steps and
+difference signals look like jumps. They now raise the environment 12 dB
+(`featureEnvironment` in the tests: each layer and the Environment master +6 dB), about
+where it sat, so they still judge travel and the master colour. The Activity check
+mutes the Tonal Bed (a held drone that Activity does not move; the bed is now as loud as
+the wind, so it hid the wind's movement). A Drop transition returns from true silence
+now, so its allowed rise is 45 dB (was 30). **Report-only**: Forest World's colour at
+100 % measures 0.98 dB against the 1 dB target after two attempts; 0.8 dB is still
+required.

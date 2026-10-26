@@ -85,6 +85,8 @@ enum P {
     PPlanet, PPlanetInfluence,
     // Separate outputs (Milestone 12).
     PPlaceOuts,
+    // The environment layers' master level (the GarageBand fix round).
+    PEnvironment,
     PCount
 };
 
@@ -191,6 +193,9 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     // multi-output instrument). Copy: the main output keeps the full mix. Split: a Place
     // that has its own output leaves the main mix (its reverb and delay stay there).
     { "placeouts", "Place Outputs", Kind::Choice, 0, 1, 0, placeOutChoices },
+    // Environment: one level for all six environment layers (Air, Water, Fire & Heat,
+    // Ice & Earth, Thunder, Tonal Bed), on top of each layer's own.
+    { "environment", "Environment Level", Kind::Decibels, -60, 6, 0 },
 } };
 // clang-format on
 

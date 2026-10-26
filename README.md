@@ -380,7 +380,9 @@ instrument's level and effects (reverb and type, delay and type, character and a
 tone, width), MIDI import (drop a file) and DRAG MIDI / save.
 
 **Right.** **ENVIRONMENT**: Air, Water, Fire & Heat, Ice & Earth, Thunder and Tonal Bed,
-each with level, M (mute), S (solo) and a meter. **PLACES**: the four slots, each with
+each with level, M (mute), S (solo) and a meter. At 0 dB each layer sits about 12 dB under
+a typical Place, as a background. The slider beside the ENVIRONMENT title is the
+**Environment Level**: one automatable level over all six layers. **PLACES**: the four slots, each with
 level, distance, pan, M, S, EDIT and X (remove).
 
 **LOCATIONS row.** Eight Location chips (click an empty one to save, a saved one to

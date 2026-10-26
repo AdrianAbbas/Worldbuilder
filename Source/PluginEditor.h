@@ -161,6 +161,9 @@ private:
     std::vector<std::unique_ptr<SliderAttachment>> knobAttachments;
     std::array<juce::Slider*, wb::PCount> knobFor {};
     std::array<LayerStrip, wb::LayerCount> strips;
+    juce::Slider environmentLevel;
+    std::unique_ptr<SliderAttachment> environmentAttachment;
+    juce::Rectangle<int> environmentValue;
     std::array<PlaceStrip, wb::placeSlotCount> placeStrips;
     Detail detail;
     juce::ToggleButton power { "POWER" };
