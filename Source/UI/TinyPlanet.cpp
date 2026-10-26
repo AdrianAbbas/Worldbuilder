@@ -168,13 +168,13 @@ juce::Colour skylineColour(int planet, const Look& look, float height, float abo
 // ---- Geometry ------------------------------------------------------------------------
 
 juce::Point<float> TinyPlanet::centre(int width, int height) { return { float(width) * 0.5f, float(height) * 0.5f + radius(width, height) }; }
-float TinyPlanet::radius(int width, int) { return float(width) * 0.82f; }
+float TinyPlanet::radius(int width, int) { return float(width) * 0.40f; }
 float TinyPlanet::angleOf(float longitude, float turn) {
     float a = std::fmod(longitude + turn + pi, twoPi);
     if (a < 0) a += twoPi;
     return a - pi;
 }
-bool TinyPlanet::visible(float angle) { return std::abs(angle) < 0.78f; }
+bool TinyPlanet::visible(float angle) { return std::abs(angle) < visibleArc; }
 juce::Point<float> TinyPlanet::horizonPoint(int width, int height, float angle, float lift) {
     const auto o = centre(width, height);
     const float r = radius(width, height) + lift;
@@ -208,7 +208,7 @@ bool TinyPlanet::placePoint(int width, int height, int kind, float longitude, fl
         // A lower orbit than the sky arc, turning faster than the planet; behind it when
         // the orbit takes it past the sides.
         angle = angleOf(longitude, turn * 1.8f);
-        if (std::abs(angle) > 0.7f) return false;
+        if (std::abs(angle) > visibleArc - 0.1f) return false;
         middle = horizonPoint(width, height, angle, float(height) * 0.14f + 1.5f * std::sin(time * 1.3f + longitude * 5.0f));
         angle *= 0.25f;   // a little lean along the orbit, mostly upright
         return true;
@@ -326,13 +326,24 @@ const pixel::Canvas& TinyPlanet::render(const TinyPlanetScene& s, const pixel::P
             frame.blend(x, y, juce::Colours::white.withAlpha(bright ? 0.95f : 0.55f));
         }
     }
-    // An aurora with Magic at night: wavy curtains.
-    if (s.magic > 0.25f && night > 0.3f) {
-        const float a = (s.magic - 0.25f) * night * 1.2f;
+    // An aurora with Magic at night: faint curtains of vertical rays, each fading in at
+    // its foot and out toward the top by ordered dither, its brightness wandering slowly
+    // along the sky. Never a solid band (that read as a glitch across the panel's top).
+    if (s.magic > 0.35f && night > 0.4f) {
+        const float strength = juce::jlimit(0.0f, 1.0f, (s.magic - 0.35f) * 1.6f) * juce::jlimit(0.0f, 1.0f, (night - 0.4f) * 2.0f);
+        const float foot = float(h) * 0.34f;
         for (int x = 0; x < w; ++x) {
-            const float y0 = float(h) * 0.12f + 6.0f * std::sin(float(x) / 17.0f + s.time * 0.5f);
-            for (int k = 0; k < 10; ++k)
-                if (bayer(x, int(y0) + k) < a * (1.0f - float(k) / 10.0f)) frame.blend(x, int(y0) + k, (k < 4 ? c(0x8affc0) : c(0xc08aff)).withAlpha(0.7f));
+            const float ray = noise1(float(x) * 0.09f + s.time * 0.15f, 91) * noise1(float(x) * 0.023f - s.time * 0.05f, 93);
+            const float amount = strength * juce::jlimit(0.0f, 1.0f, (ray - 0.2f) * 2.2f) * 0.55f;
+            if (amount <= 0.01f) continue;
+            const float length = float(h) * (0.12f + 0.12f * noise1(float(x) * 0.05f, 95));
+            const float base = foot + 3.0f * noise1(float(x) * 0.04f + s.time * 0.1f, 97);
+            for (int k = 0; k < int(length); ++k) {
+                const int y = int(base) - k;
+                const float t = float(k) / length;   // 0 at the foot, 1 at the top
+                const float fade = std::min(t * 6.0f, 1.0f) * (1.0f - t);
+                if (bayer(x, y) < amount * fade) frame.blend(x, y, (t < 0.45f ? c(0x7af0b8) : c(0xa890f0)).withAlpha(0.5f));
+            }
         }
     }
     // Places out in space (the Nebula): far off in the sky, behind the clouds.
@@ -407,7 +418,7 @@ const pixel::Canvas& TinyPlanet::render(const TinyPlanetScene& s, const pixel::P
                 const float depth = r - d;
                 auto col = groundAt(type, look, u, depth, x, y, s.time, s.frame);
                 // Limb darkening toward the sides, night shade.
-                const float edge = std::abs(angle) / 0.8f;
+                const float edge = std::abs(angle) / (visibleArc * 1.05f);
                 if (edge > 0.55f && bayer(x, y) < (edge - 0.55f) * 1.6f) col = col.darker(0.35f);
                 if (night > 0.0f) col = mixc(col, p.panelDark, night * 0.45f);
                 frame.set(x, y, col);
@@ -458,7 +469,7 @@ const pixel::Canvas& TinyPlanet::render(const TinyPlanetScene& s, const pixel::P
         juce::Point<float> middle;
         float tilt = 0;
         if (!placePoint(w, h, lm.kind, lm.longitude, s.turn, s.time, middle, tilt)) continue;
-        const float edge = juce::jlimit(0.0f, 1.0f, std::abs(lm.kind == Orbit ? tilt * 4.0f : tilt) / 0.78f);
+        const float edge = juce::jlimit(0.0f, 1.0f, std::abs(lm.kind == Orbit ? tilt * 4.0f : tilt) / visibleArc);
         const float scale = juce::jlimit(0.35f, 1.0f, (1.0f - 0.55f * edge * edge) * (0.62f + 0.38f * lm.near) * (lm.kind == Orbit ? 0.85f : 1.0f));
         const float dim = juce::jlimit(0.0f, 1.0f, edge * edge * 0.9f + (1.0f - lm.near) * 0.35f + night * 0.25f);
         const auto& sprite = placeSprite(lm.type, lm.frame, juce::roundToInt(juce::radiansToDegrees(tilt) / 2.0f), juce::roundToInt(scale * 16.0f),

@@ -6648,6 +6648,71 @@ void testEnvironmentKept(Suite& s) {
             fmt(renderedLoud - renderedQuiet) + " dB down");
 }
 
+// The tiny planet's motion (the GarageBand fix round): a tight curve, a quick turn,
+// Places spread evenly so some are always in view, and no band across the sky.
+void testTinyPlanetMotion(Suite& s) {
+    s.section("tiny planet: curve, turn, spread, aurora");
+    {
+        const int w = 249, h = 157;
+        const float share = 2.0f * ui::TinyPlanet::visibleArc / juce::MathConstants<float>::twoPi;
+        // The arc in view must reach the panel: its ends inside the scene.
+        const auto end = ui::TinyPlanet::horizonPoint(w, h, ui::TinyPlanet::visibleArc);
+        s.check(share >= 0.38f && end.y < float(h) && end.x < float(w), "the visible arc is a larger share of the planet (at least 38 %, was 25 %)",
+                fmt(share * 100.0f) + " %, ends at " + fmt(end.x) + "," + fmt(end.y));
+    }
+    for (int places : { 3, 4 }) {
+        Host h;
+        const std::array<int, 4> types { Castle, Village, Forest, Tavern };
+        for (int slot = 0; slot < 4; ++slot) h.set(slotId(slot, PlType), slot < places ? float(types[std::size_t(slot)]) : float(NoPlace));
+        h.render(0.5);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->settle(0.2f);
+        // A turn at the default Activity (40 %).
+        const float before = view->planetTurnNow();
+        view->settle(2.0f);
+        const float perSecond = (view->planetTurnNow() - before) / 2.0f;
+        const float period = juce::MathConstants<float>::twoPi / std::max(1.0e-4f, perSecond);
+        if (places == 3) s.check(period >= 10.0f && period <= 25.0f, "a full turn takes 10-25 s at the default Activity", fmt(period) + " s");
+        // Every turn of the planet: some Place always in view.
+        int fewest = 99;
+        for (int step = 0; step < 360; ++step) {
+            view->setPlanetTurn(juce::degreesToRadians(float(step)));
+            int inView = 0;
+            for (int slot = 0; slot < places; ++slot) inView += view->placeInView(slot) ? 1 : 0;
+            fewest = std::min(fewest, inView);
+        }
+        s.check(fewest >= 1, std::to_string(places) + " Places spread evenly: at least one is always in view", std::to_string(fewest) + " at the fewest");
+    }
+    {
+        // The aurora at full Magic at night: no row of the sky is a solid band.
+        ui::TinyPlanet planet;
+        ui::TinyPlanetScene scene;
+        scene.width = 249;
+        scene.height = 157;
+        scene.day = 0.0f;
+        scene.magic = 1.0f;
+        const auto p = ui::pixel::palette(ui::pixel::fantasyMood);
+        ui::TinyPlanetScene night = scene;
+        night.magic = 0.0f;
+        const auto& plain = planet.render(night, p);
+        std::vector<juce::Colour> before;
+        for (int y = 0; y < scene.height / 2; ++y)
+            for (int x = 0; x < scene.width; ++x) before.push_back(plain.get(x, y));
+        const auto& lit = planet.render(scene, p);
+        double widest = 0, changed = 0;
+        for (int y = 0; y < scene.height / 2; ++y) {
+            int row = 0;
+            for (int x = 0; x < scene.width; ++x)
+                if (lit.get(x, y) != before[std::size_t(y * scene.width + x)]) ++row;
+            widest = std::max(widest, double(row) / double(scene.width));
+            changed += row;
+        }
+        s.check(changed > 50 && widest < 0.6, "the aurora is faint curtains, never a solid band across the sky",
+                fmt(widest * 100.0) + " % of the busiest row, " + fmt(changed) + " pixels");
+    }
+}
+
 // The freeze found in GarageBand (3+ Places, overlays Full): the editor's animation
 // must never pile up on the message thread, nor make the audio thread wait.
 long residentKilobytes() {
@@ -6849,7 +6914,10 @@ int main(int argc, char** argv) {
     if (run("overlays")) testOverlays(s, snapshot);
     if (run("locations")) testLocations(s);
     if (run("smoke")) testSmoke(s);
-    if (run("planet")) testPlanet(s);
+    if (run("planet")) {
+        testPlanet(s);
+        testTinyPlanetMotion(s);
+    }
     if (run("arrangement")) testArrangement(s);
     if (run("transitions")) {
         testTransitions(s);

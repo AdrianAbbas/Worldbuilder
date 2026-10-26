@@ -53,6 +53,9 @@ public:
     // The geometry, in art pixels of a scene `width` x `height`: the planet's centre and
     // radius, where a longitude shows on the horizon (its angle from the top, after the
     // turn), and the sky arc's point for a marker position (0..count-1).
+    // The planet is small (0.4 x the scene's width), so its curve is tight and the arc
+    // in view (angles within visibleArc of the top) is about 43 % of its circumference.
+    static constexpr float visibleArc = 1.3f;
     static juce::Point<float> centre(int width, int height);
     static float radius(int width, int height);
     static float angleOf(float longitude, float turn);

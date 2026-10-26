@@ -4196,7 +4196,7 @@ water or a hurdy-gurdy rebuild).
 - [x] 2. Environment layers 10-15 dB under a typical Place; automatable Environment master; scenes and Inspire re-checked
 - [x] 3. Environment levels, mutes and the Environment master kept after Inspire, in arrangements, Locations and renders (test)
 - [x] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
-- [ ] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
+- [x] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
 - [ ] 6. Forest planet: lakes, rivers and clearings
 - [ ] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
 - [ ] 8. Location labels in the sky: hidden by default, shown on hover or for a journey's ends, never overlapping
@@ -4358,3 +4358,27 @@ before and after side by side: `r16-closeup-planet-corner.png`,
 `r16-closeup-footer.png`, `r16-closeup-environment-title.png`. Regenerate the after
 shots with `WorldbuilderTests --snapshot-pixel <dir>` (the files are named
 `pixel-13b-editor-*`).
+
+### 5. The tiny planet: curve, speed, spread, the band at the top
+
+- **Tighter curve**: the planet's radius is 0.40 x the scene's width (was 0.82), so its
+  edge curves down into the panel. Places show within 1.3 rad of the top
+  (`TinyPlanet::visibleArc`, was 0.78): **about 41 % of the circumference is in view**
+  (was 25 %). Their shrinking and haze toward the edges, the limb darkening and the
+  orbiting ships follow the new arc.
+- **Speed**: the planet turns per second, not per animation tick: a full turn takes
+  **about 18 s at the default Activity** (40 %), 52 s when calm, 9 s when chaotic (was
+  about 58 s at the default). Day and night are still two turns long.
+- **Spread**: the active Places stand evenly around the planet in slot order (2 pi / n
+  apart); Pan now moves a Place up to 0.35 rad from its place (dragging follows the
+  pointer). With three or four Places at least one is always in view (tested at every
+  degree of a turn); with two, one is in view about 80 % of the time; one Place is in
+  view about 40 % of the time (it turns with the planet, as asked in 13b).
+- **The wavy green and purple band** was the aurora (Magic at night): a sine-shaped
+  ten-pixel band right across the top of the sky. It is now faint curtains of vertical
+  rays, each fading in at its foot and out at its top by ordered dither, their
+  brightness wandering slowly; it starts at a higher Magic (35 %) and only in deep
+  night. A test renders full Magic at night and requires no row of the sky to be more
+  than 60 % covered.
+- Snapshots `docs/snapshots/tiny-planet-*.png` regenerated
+  (`WorldbuilderTests --snapshot-planets docs/snapshots`).

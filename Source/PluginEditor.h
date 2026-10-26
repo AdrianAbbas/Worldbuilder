@@ -70,6 +70,9 @@ public:
     juce::Rectangle<int> planetArea() const { return planetScene; }
     // Turns the planet to `turn` radians (tests and snapshots: day is 0, night is 2 pi).
     void setPlanetTurn(float turn) { spin = turn / 0.3f; }
+    float planetTurnNow() const { return planetTurn(); }
+    // Whether a slot's Place shows on the planet now (not over the horizon).
+    bool placeInView(int slot) const { return landmarkPosition(slot).x > -999.0f; }
     int shownPlanetType() const { return shownPlanet; }
     // Scenes (Milestone 12): the header's scene browser, INSPIRE and UNDO.
     void loadScene(int index);

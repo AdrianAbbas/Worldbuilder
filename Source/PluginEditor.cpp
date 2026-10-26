@@ -1104,8 +1104,16 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
 float WorldbuilderEditor::planetTurn() const { return spin * 0.3f; }
 
 float WorldbuilderEditor::landmarkLongitude(int slot) const {
-    // Pan places a Place along the horizon (the slots' default pans spread them apart).
-    return param(placeParam(slot, PlPan));
+    // The active Places stand evenly around the planet (in slot order), so with three or
+    // four at least one is always in view; Pan moves each a little from its place.
+    int index = 0, count = 0;
+    for (int s = 0; s < placeSlotCount; ++s)
+        if (placeType(s) != NoPlace) {
+            if (s == slot) index = count;
+            ++count;
+        }
+    const float spacing = juce::MathConstants<float>::twoPi / float(std::max(1, count));
+    return float(index) * spacing + 0.35f * param(placeParam(slot, PlPan));
 }
 
 void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float>) {
@@ -1372,7 +1380,8 @@ void WorldbuilderEditor::mouseDrag(const juce::MouseEvent& e) {
     // Along the horizon: Pan; up and down: Distance (up is nearer). The planet holds still
     // while a Place is dragged.
     const float r = ui::TinyPlanet::radius(planetScene.getWidth() / pixel::unit, planetScene.getHeight() / pixel::unit) * float(pixel::unit);
-    const float pan = juce::jlimit(-1.0f, 1.0f, dragPan + (e.position.x - dragFrom.x) / r);
+    // (Pan moves a Place 0.35 rad from its even place: follow the pointer.)
+    const float pan = juce::jlimit(-1.0f, 1.0f, dragPan + (e.position.x - dragFrom.x) / (r * 0.35f));
     const float d = juce::jlimit(0.0f, 1.0f, dragDistance + (e.position.y - dragFrom.y) / 120.0f);
     for (auto [field, value] : { std::pair<int, float> { PlPan, pan }, { PlDistance, d } })
         if (auto* parameter = processor.parameters.getParameter(specs[std::size_t(placeParam(dragLandmark, field))].id))
@@ -1517,7 +1526,9 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         planetChoice.setVisible(globeShown);
         planetInfluence.setVisible(globeShown);
     }
-    if (dragLandmark < 0) spin += frames * (0.004f + 0.02f * processor.engine.frame()[Activity]);
+    // The planet turns once in about 18 s at the default Activity (52 s when calm, 9 s
+    // when chaotic): the turn is 0.3 x the spin.
+    if (dragLandmark < 0) spin += seconds * (0.4f + 1.9f * processor.engine.frame()[Activity]);
     // On a journey the globe turns faster, most in the middle of the way.
     if (processor.travel.uiMode.load(std::memory_order_relaxed) == Travel::Travelling)
         spin += frames * 0.06f * std::sin(juce::MathConstants<float>::pi * processor.travel.uiProgress.load(std::memory_order_relaxed));
