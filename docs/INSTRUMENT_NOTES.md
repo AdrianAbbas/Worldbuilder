@@ -289,8 +289,8 @@ README has the steps); the sampler only reshapes them to fit:
   strings only were recorded, so stopped notes are pitch-shifted up to 3.5 semitones from
   the nearest string (a fifth above the E string at most; higher notes fold down).
 - **Kalimba (Forest)**: as recorded (three velocity layers), low-passed in the Dark Woods.
-- **Water Plucks (Biodome) from the kalimba**: a 2.5-semitone rise into each note over
-  25 ms (the old drops' "rise into the note"), a 4 ms fade-in over the tine's click, short.
+- **Water Plucks (Biodome) from the kalimba**: a 0.6-semitone rise into each note over
+  about 10 ms (the old drops' "rise into the note"), a 4 ms fade-in over the tine's click, short.
 - **Violin Textures (Ruins)**: bowed swells (1.2-1.8 s attack, 2.5 s release) on the chord
   with a slow 4.2 Hz vibrato, bowed tremolo in time when Haunted; eighth notes play the
   pizzicato recordings and sixteenths the col legno ones.

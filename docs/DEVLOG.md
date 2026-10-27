@@ -5,7 +5,12 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 14 is complete** (MIDI keyboard play and record; handoff at the end). Before it:
+**Milestone 15a is done** (the first recorded instruments: preparation script, CI fetch of
+the private samples, the sampler, six instruments replaced; handoff at the end:
+[Milestone 15a](#milestone-15a-the-first-recorded-instruments-2026-10-27)). **The CI needs the
+`SAMPLES_TOKEN` repository secret** (steps in that handoff).
+
+**Milestone 14 is complete** (MIDI keyboard play and record). Before it:
 **Milestone 13 is complete.** After it, the developer tested in GarageBand on a MacBook Air
 and sent eight fixes; their checklist and handoff are in the
 [GarageBand fix round section](#garageband-fix-round-2026-10-26) at the end. A new
@@ -5052,3 +5057,76 @@ guitar note fades; no instrument clicks on its attack; a sampled part allocates 
 while starting and rendering notes; each Place's recorded element is audible and finite in
 every Character, differs from its fallback and sits within 4 dB of it.
 `--no-samples` runs everything on the fallbacks (the samples group then only reports).
+
+### Fix: the Biodome's key fit
+
+The full suite failed one check: "Biodome / Night Cycle: in D minor" (in-scale pitch
+classes 4.46 dB above the rest, the check asks for 5). The water plucks' slide into each
+note (then 2.5 semitones over 25 ms) spent long enough between pitches to smear the key,
+and the kalimba's own neighbouring tines ring faintly in every note. The slide is now 0.6
+semitone over 10 ms: Night Cycle 6.2 dB (Thriving 6.9, Failing 9.0; the synthesised drops
+gave 8.1 / 7.8 / 11.0).
+
+### Tests (Linux, GCC)
+
+Full suite before the fix: 3842 passed, 1 failed (the Biodome check above), across the six
+shards (including `samples`, the CPU groups and the 60 s stress test). After the fix:
+Biodome's places, instruments and samples groups 114 passed, 0 failed; the Places shard
+(places, placeworld, scenes, envbalance, envkept, hurdy) SHARD3_RESULT. The AU harness
+check runs on the macOS CI only.
+
+### Milestone 15a handoff
+
+**Done**: the preparation script, the CI fetch, the sampler, the six replaced instruments,
+tests, docs. Parts 1-4 went up with `[skip ci]`; this last push is without it.
+
+**First, add the token (CI fails without it).** The CI clones the private Samples
+repository with a fine-grained personal access token that can only read that repository:
+
+1. On github.com, click your profile picture (top right) > **Settings**.
+2. In the left sidebar, at the bottom: **Developer settings** > **Personal access tokens**
+   > **Fine-grained tokens** > **Generate new token**.
+3. **Token name**: `Worldbuilder CI samples`. **Expiration**: your choice (when it
+   expires, CI stops with "Samples fetch failed"; make a new one the same way).
+4. **Resource owner**: AdrianAbbas. **Repository access**: **Only select repositories**,
+   then pick **AdrianAbbas/Samples** (only that one).
+5. **Permissions** > **Repository permissions** > **Contents**: **Read-only** (Metadata:
+   Read-only is added by itself). Leave everything else at No access.
+6. **Generate token**, and copy it (it is shown once).
+7. Open https://github.com/AdrianAbbas/Worldbuilder > **Settings** (the repository's tab,
+   not your profile) > **Secrets and variables** > **Actions** > **New repository secret**.
+8. **Name**: `SAMPLES_TOKEN`. **Secret**: paste the token. **Add secret**.
+9. **Actions** tab > the latest "Native build" run > **Re-run all jobs** (the run started by
+   this push fails at "Fetch and prepare the samples" until the secret exists).
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Milestone 15a check"): the installer
+reports 160 recorded notes in each bundle; the Tavern's lute and fiddle, the Desert's oud,
+the Forest's kalimba, the Biodome's water plucks and the Ruins' new Violin Textures, each by
+ear, from the keyboard too; long held fiddle notes (loops); levels in the mix.
+
+**Known issues / limits**:
+- Nothing here has been heard: everything is measured on Linux through the sampler and
+  `processBlock`. Whether the oud reads as an oud and the guitar as a lute is for your ears.
+- The violin was recorded on open strings only: stopped notes are pitch-shifted up to 3.5
+  semitones (up to a fifth above the E string; higher fiddle notes fold down an octave).
+  Recording a few stopped notes per string would help most.
+- The guitar's soft layer above E4 has the open strings ringing louder than the note
+  (notched and high-passed, but still less clean than the medium and hard takes); its top
+  note was played as an A5. Re-recording the soft takes with the other strings muted would
+  fix both.
+- Three guitar notes (C#3, C#4, C#5) keep one velocity pair out of loudness order; one D4
+  violin take was dropped; one violin loop (G3 take 3) is the weakest match (crossfaded
+  and levelled; the loop tests pass).
+- The kalimba's strum/tapping recording is unused.
+- The recorded water plucks carry the kalimba's faint neighbouring tines: Biodome's key
+  margin is about 1.5-2 dB smaller than with the synthesised drops (still above the test's
+  5 dB).
+- The CI package grows to about 41 MB (each plugin bundle carries its own 11.3 MB copy).
+  The repository is public, so the CI's package artifact (with the prepared samples inside
+  the bundles) can be downloaded by any signed-in GitHub user while it is kept (90 days by
+  default), as any shipped copy of the plugin could be. The raw MP3s never leave the
+  runner. If that matters, lower the artifact retention or make this repository private.
+- Milestone 15b (more recordings, the hybrid sample + model option, more instruments) is
+  next, when the next batch is in the Samples repository: add its files to
+  `tools/sample-prep/manifest.json` and rerun.
+
