@@ -191,7 +191,7 @@ private:
     juce::TextButton arrangeToggle { "ARRANGE" };
     // Two lines in the space of one: ARRANGEMENT: ON / OFF over the section's name.
     struct TwoLineButton final : juce::TextButton {
-        using juce::TextButton::TextButton;
+        explicit TwoLineButton(const juce::String& text) : juce::TextButton(text) { getProperties().set("pixelOwnText", true); }
         void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
     };
     TwoLineButton arrangementState { "ARRANGEMENT: OFF" };

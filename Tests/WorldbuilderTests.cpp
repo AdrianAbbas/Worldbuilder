@@ -7743,6 +7743,99 @@ void testStress(Suite& s) {
     s.check(percentile(blockMs, 0.99) < 512.0 / 48.0, "the audio thread keeps up while the editor works (99 % of blocks within real time)", fmt(percentile(blockMs, 0.99)) + " ms");
 }
 
+// The hotfix after Milestone 14: no text drawn twice or on top of another control's. The
+// top bar's ARRANGEMENT: ON / OFF drew its sprite's label under its own two lines; the
+// Pattern Editor's STEPS bar drew its value in the sprite and in its text box.
+namespace overlapTest {
+// Visible controls that carry text, with their bounds in the editor.
+void collect(juce::Component& c, juce::Component& root, std::vector<std::pair<juce::Component*, juce::Rectangle<int>>>& out) {
+    for (auto* child : c.getChildren()) {
+        if (!child->isVisible() || child->getWidth() <= 0 || child->getHeight() <= 0) continue;
+        const bool control = dynamic_cast<juce::Button*>(child) != nullptr || dynamic_cast<juce::ComboBox*>(child) != nullptr
+                             || dynamic_cast<juce::Slider*>(child) != nullptr || dynamic_cast<juce::Label*>(child) != nullptr;
+        if (control) out.push_back({ child, root.getLocalArea(child, child->getLocalBounds()) });
+        else collect(*child, root, out);
+    }
+}
+// Pairs of sibling controls whose bounds overlap (each pair once), as "a / b" names.
+juce::StringArray overlaps(juce::Component& root) {
+    std::vector<std::pair<juce::Component*, juce::Rectangle<int>>> all;
+    collect(root, root, all);
+    juce::StringArray out;
+    const auto name = [](juce::Component* c) {
+        if (auto* b = dynamic_cast<juce::Button*>(c); b != nullptr && b->getButtonText().isNotEmpty()) return b->getButtonText();
+        if (auto* k = dynamic_cast<juce::Slider*>(c); k != nullptr && k->getName().isNotEmpty()) return k->getName();
+        if (auto* l = dynamic_cast<juce::Label*>(c)) return l->getText();
+        return juce::String(typeid(*c).name());
+    };
+    for (std::size_t i = 0; i < all.size(); ++i)
+        for (std::size_t j = i + 1; j < all.size(); ++j)
+            if (all[i].first->getParentComponent() == all[j].first->getParentComponent() && all[i].second.intersects(all[j].second))
+                out.add(name(all[i].first) + " / " + name(all[j].first));
+    return out;
+}
+// Every bar slider (its value is drawn in its sprite) keeps its text box's text hidden.
+int barsShowingText(juce::Component& c) {
+    int count = 0;
+    for (auto* child : c.getChildren()) {
+        if (auto* k = dynamic_cast<juce::Slider*>(child); k != nullptr && k->isBar())
+            for (auto* box : k->getChildren())
+                if (auto* l = dynamic_cast<juce::Label*>(box); l != nullptr && l->findColour(juce::Label::textColourId).getAlpha() > 0) ++count;
+        count += barsShowingText(*child);
+    }
+    return count;
+}
+} // namespace overlapTest
+
+void testOverlap(Suite& s) {
+    using namespace overlapTest;
+    s.section("overlap: no text drawn twice, no control on top of another");
+    Host h;
+    for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), float(NoPlace));
+    h.set(slotId(0, PlType), float(Castle));
+    h.set(slotId(1, PlType), float(Village));
+    h.set(slotId(2, PlType), float(Spaceport));
+    h.set(slotId(3, PlType), float(Forest));
+    h.render(0.5);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    view->settle(0.5f);
+    {
+        // The indicator's face carries no text of its own: with and without a label it is
+        // the same picture, and its two lines are drawn once, over it.
+        auto& b = view->arrangementIndicator();
+        const auto paintFace = [&](const juce::String& text) {
+            const auto was = b.getButtonText();
+            b.setButtonText(text);
+            juce::Image image(juce::Image::ARGB, b.getWidth(), b.getHeight(), true);
+            juce::Graphics g(image);
+            b.getLookAndFeel().drawButtonBackground(g, b, juce::Colours::black, false, false);
+            b.setButtonText(was);
+            return image;
+        };
+        const auto a = paintFace("ARRANGEMENT: OFF"), e = paintFace("");
+        int differ = 0;
+        for (int y = 0; y < a.getHeight(); ++y)
+            for (int x = 0; x < a.getWidth(); ++x) differ += a.getPixelAt(x, y) != e.getPixelAt(x, y) ? 1 : 0;
+        s.check(differ == 0, "ARRANGEMENT: OFF / ON: the button's face draws no label under its own (one label, not two)", std::to_string(differ) + " pixels differ");
+    }
+    const auto check = [&](const char* where) {
+        view->settle(0.1f);
+        const auto o = overlaps(*editor);
+        s.check(o.isEmpty(), std::string(where) + ": no two controls overlap", o.joinIntoString("; ").toStdString());
+        const int bars = barsShowingText(*editor);
+        s.check(bars == 0, std::string(where) + ": every bar slider shows its value once (in the bar, not also in its text box)", std::to_string(bars));
+    };
+    check("the main view");
+    view->openDetail(1);
+    check("a Place's detail panel");
+    view->openPatterns(0);
+    check("the Pattern Editor");
+    h.p->arrangement.set(arrangeTest::classicArc());
+    view->openArrange();
+    check("the ARRANGE view");
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -7823,6 +7916,7 @@ int main(int argc, char** argv) {
     if (run("envkept")) testEnvironmentKept(s);
     if (run("hurdy")) testHurdyGurdy(s);
     if (run("keys")) testKeys(s);
+    if (run("overlap")) testOverlap(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

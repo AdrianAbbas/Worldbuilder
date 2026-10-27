@@ -89,8 +89,9 @@ void PixelLookAndFeel::drawLinearSlider(juce::Graphics& g, int, int, int, int, f
     const float v = std::round(float(slider.valueToProportionOfLength(slider.getValue())) * 256.0f) / 256.0f;
     // The slider's own text box (if any) keeps its side; the sprite fills the rest.
     auto bounds = slider.getLocalBounds();
-    if (slider.getTextBoxPosition() == juce::Slider::TextBoxLeft) bounds.removeFromLeft(slider.getTextBoxWidth());
-    else if (slider.getTextBoxPosition() == juce::Slider::TextBoxRight) bounds.removeFromRight(slider.getTextBoxWidth());
+    // (A bar's text box lies over it: the bar keeps its whole width.)
+    if (!slider.isBar() && slider.getTextBoxPosition() == juce::Slider::TextBoxLeft) bounds.removeFromLeft(slider.getTextBoxWidth());
+    else if (!slider.isBar() && slider.getTextBoxPosition() == juce::Slider::TextBoxRight) bounds.removeFromRight(slider.getTextBoxWidth());
     if (style == juce::Slider::LinearBar || style == juce::Slider::LinearBarVertical) {
         const int w = art(bounds.getWidth()), h = art(bounds.getHeight());
         const auto text = slider.getTextFromValue(slider.getValue());
@@ -115,7 +116,9 @@ juce::Label* PixelLookAndFeel::createSliderTextBox(juce::Slider& slider) {
     auto* label = LookAndFeel_V4::createSliderTextBox(slider);
     label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     label->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    label->setColour(juce::Label::textColourId, wb::ui::colours::parchment);
+    // A bar draws its value in its sprite, and its text box lies over the whole bar: the
+    // box's own text is hidden so the value is never drawn twice (it can still be typed).
+    label->setColour(juce::Label::textColourId, slider.isBar() ? juce::Colours::transparentBlack : wb::ui::colours::parchment);
     return label;
 }
 
@@ -124,7 +127,9 @@ juce::Label* PixelLookAndFeel::createSliderTextBox(juce::Slider& slider) {
 void PixelLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&, bool highlighted, bool down) {
     const auto s = stateOf(button, highlighted, down, button.getToggleState());
     const auto accent = moodColour(button.findColour(juce::TextButton::buttonOnColourId));
-    const auto text = button.getButtonText().toUpperCase();
+    // A button that draws its own text (two lines) asks for the face alone, so the text
+    // is never drawn twice.
+    const auto text = button.getProperties().getWithDefault("pixelOwnText", false) ? juce::String() : button.getButtonText().toUpperCase();
     const int w = art(button.getWidth()), h = art(button.getHeight()) - 1;
     const auto icon = iconOf(button);
     pixel::drawCached(g, "button/" + juce::String(w) + "x" + juce::String(h) + "/" + text + "/" + juce::String(int(icon)) + "/" + stateKey(s) + frameKey(s) + colourKey(accent),

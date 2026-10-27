@@ -617,7 +617,8 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     slider(steps, 1, 128, "Free length, in steps");
     steps.setRange(1, 128, 1);
     steps.setSliderStyle(juce::Slider::LinearBar);
-    steps.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
+    // The bar draws its value: no text box (it would draw the value a second time).
+    steps.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     steps.onValueChange = [this] {
         if (!updating && working.pattern.bars == 0) setGrid(working.pattern.resolution, 0, int(steps.getValue()));
     };
