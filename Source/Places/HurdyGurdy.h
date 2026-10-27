@@ -136,6 +136,7 @@ public:
     }
     void reset() override {
         for (auto& s : strings) s.reset();
+        scoop = 0;
         for (auto& side : body)
             for (auto& f : side) f.reset();
         hiss.reset();
@@ -167,6 +168,9 @@ public:
         // A key pressed: the melody string's length steps to the note (no glide), and
         // the tangent ticks against the string.
         melodySemis = n.semis;
+        // Scoop / Glide on: the key slides the tangent up into the note.
+        scoop = slide.plain(0.0f);
+        scoopMul = std::exp(-float(dsp::chunk) / (std::max(slide.seconds, 0.002f) * rate));
         held.set(n);
         playing = true;
         until = std::max(until, n.beat + n.length);
@@ -185,7 +189,8 @@ public:
         // The crank keeps turning a little after the last note, then stops.
         if (playing && f.beat >= until + 1.0) playing = false;
         const float position = 0.09f;   // the wheel touches the strings near the bridge
-        strings[Chanter].tune(music::noteHz(root, melodySemis + bend), rate, position);
+        scoop *= scoopMul;
+        strings[Chanter].tune(music::noteHz(root, melodySemis + bend - scoop), rate, position);
         strings[Bourdon].tune(music::noteHz(root, -12.0f), rate, position);
         strings[Mouche].tune(music::noteHz(root, -5.0f), rate, position);
         strings[Trompette].tune(music::noteHz(root, 0.0f), rate, position);
@@ -295,6 +300,7 @@ private:
     float beatsPerSecond = 2, velocity = 0.8f;
     int root = 2;
     float melodySemis = openSemis;
+    float scoop = 0, scoopMul = 0;
     float wheelLevel = 0, chien = 0, tick = 0, raspEnv = 0, periodPhase = 0, trompettePeriod = 100;
 };
 

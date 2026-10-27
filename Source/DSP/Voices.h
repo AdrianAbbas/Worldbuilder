@@ -109,6 +109,9 @@ struct SynthVoice {
     // Brass and Reed.
     float velocity = 0.8f, formantHz = 1200, formantLevel = 0.6f, breath = 0.05f, blat = 0, drive = 1, rate = 48000;
     float scoopCents = 0;
+    // Scoop / Glide (set by the part before start): the horn's scoop scaled (0: none) and
+    // its time; a plain scoop from below (semitones) for the other models.
+    float scoopScale = 1, scoopSeconds = 0.028f, plainScoop = 0, plainSeconds = 0.08f;
     uint64_t noiseIndex = 0;
     Stream air;
     PanGains pan { 0.7071f, 0.7071f };
@@ -156,10 +159,12 @@ struct SynthVoice {
         vibratoPhase += twoPi * vibratoHz * chunkSeconds;
         if (vibratoPhase > twoPi) vibratoPhase -= twoPi;
         float vib = vibratoDepth * smoothstep(vibratoDelay, vibratoDelay + 0.4f, age) * std::sin(vibratoPhase);
-        if (model == SynthBrass) {
+        if (model == SynthBrass && scoopScale != 0.0f) {
             // The scoop settles in about 30 ms with a slight overshoot.
-            vib += (scoopCents * std::exp(-age / 0.028f) + 6.0f * velocity * (std::exp(-age / 0.07f) - std::exp(-age / 0.028f))) / 100.0f;
+            const float t = std::max(scoopSeconds, 0.002f);
+            vib += scoopScale * (scoopCents * std::exp(-age / t) + 6.0f * velocity * (std::exp(-age / (2.5f * t)) - std::exp(-age / t))) / 100.0f;
         }
+        if (plainScoop != 0.0f) vib -= plainScoop * std::exp(-age / std::max(plainSeconds, 0.002f));
         const float f = hz * std::exp2((vib + bend) / 12.0f);
         const float d = detuneCents / 1200.0f;
         switch (model) {
@@ -614,6 +619,9 @@ struct Drum {
     float amp = 0, decay = 1, noise = 0, noiseDecay = 1, strikeAmp = 0, snareLevel = 0, snareDecay = 1, shellGain = 0, retuned = 0;
     // Membrane and Timpani settings (before start).
     float position = 0.3f, hardness = 0.5f, snare = 0, shellHz = 0, shell = 0;
+    // How quickly the pitch falls from the strike to the note (time constant, set before start).
+    static constexpr float pitchSeconds = 0.035f;
+    float bendSeconds = pitchSeconds;
     // The stick's slap on the skin: brighter and louder the harder the hit.
     Svf slapBand;
     float slap = 0, slapDecay = 1;
@@ -636,7 +644,7 @@ struct Drum {
         rate = sampleRate;
         endHz = toneHz;
         hz = toneHz * bend;
-        pitchCoef = std::exp(-float(chunk) / (0.035f * rate));
+        pitchCoef = std::exp(-float(chunk) / (std::max(bendSeconds, 0.002f) * rate));
         noise = noiseAmp;
         noiseDecay = Env::coefFor(noiseSeconds / 6.91f, rate);
         noiseBand.set(noiseHz, noiseQ, rate);

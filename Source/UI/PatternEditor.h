@@ -132,6 +132,9 @@ private:
     // effect, tone and width.
     juce::ComboBox reverbType, delayType, characterType;
     juce::Slider reverbSend, delaySend, characterAmount, fxTone, fxWidth;
+    // Scoop / Glide (in the instrument's strip, after LEVEL).
+    juce::ComboBox slideType;
+    juce::Slider slideAmount, slideTime;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> fxCombos;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> fxSliders;
     juce::Rectangle<int> fxArea;

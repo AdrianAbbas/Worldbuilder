@@ -17,8 +17,9 @@ struct PlaceSlotControls {
     uint32_t seed = 1;
     std::array<float, placeElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
     std::array<bool, placeElements> elementOn { true, true, true, true, true, true };
-    // Each instrument's effects.
+    // Each instrument's effects, and its Scoop / Glide.
     std::array<dsp::ElementFxControls, placeElements> fx {};
+    std::array<Slide, placeElements> slide {};
     // A journey between Locations sends the Place away (0: where the slot puts it, 1: at
     // the horizon, nearly silent) as it leaves or arrives.
     float travelFar = 0;

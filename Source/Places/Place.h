@@ -270,6 +270,37 @@ inline const PlaceInfo& placeInfo(int type) {
 // already folded in (Population into Activity and effect depth, Danger into
 // Tension, Scale into Size, Era and Temperature into Tone...). element[e] is the
 // instrument's level with its switch, mute and solo applied.
+// Scoop / Glide (after Milestone 15a): an instrument's own pitch slides, as its
+// setting says. Off: every note starts on its pitch, and a held note moving to its next
+// pitch (a chord change, a legato note) gets there in at most 30 ms. On: the slides the
+// instrument was designed with, scaled by the setting against the instrument's own
+// defaults (`ref`), so each Character keeps its proportions; an instrument without a
+// slide of its own scoops up from `semis` below over `seconds`.
+struct Slide {
+    bool on = false;
+    float semis = 0.5f, seconds = 0.08f;          // the setting
+    float refSemis = 0.5f, refSeconds = 0.08f;    // the instrument's defaults
+    static constexpr float quick = 0.03f;
+    // A designed scoop or bend (semitones, either sign) as the setting scales it.
+    float depth(float designed) const {
+        if (!on || std::abs(designed) < 1.0e-6f) return 0.0f;
+        return refSemis > 1.0e-4f ? designed * semis / refSemis : std::copysign(semis, designed);
+    }
+    // A plain scoop from below (semitones) for an instrument whose designed one is zero.
+    float plain(float designed) const { return on && std::abs(designed) < 1.0e-6f ? semis : 0.0f; }
+    // A designed time (a scoop's, a bend's, a glide's) as the setting scales it.
+    float time(float designed) const { return refSeconds > 1.0e-4f ? designed * seconds / refSeconds : designed; }
+    // A held note's glide to its next pitch.
+    float glide(float designed) const { return on ? time(designed) : std::min(designed, quick); }
+};
+
+// What a part's notes do to their pitch as its patch is set now (the Scoop / Glide
+// defaults are generated from these): a scoop or bend into each note (semitones; + from
+// above, - from below) over `scoopSeconds`, and the glide of held notes to a new pitch.
+struct SlideDesign {
+    float scoop = 0, scoopSeconds = 0, glide = 0;
+};
+
 struct PlaceSettings {
     int character = 0;
     float activity = 0.5f, tension = 0.3f, density = 0.5f, swing = 0.15f, tone = 0.5f, size = 0.5f, variation = 0.35f;
@@ -279,6 +310,7 @@ struct PlaceSettings {
     // instrument off stops its notes at the boundary while what rings fades out.
     std::array<bool, placeElements> notes { true, true, true, true, true, true };
     bool sync = true;
+    std::array<Slide, placeElements> slide {};
     bool plays(int e) const { return notes[std::size_t(e)] && element[std::size_t(e)] > 0.001f; }
 };
 
@@ -390,6 +422,8 @@ public:
     virtual void generate(int element, const GenInputs& in, pat::Pattern& out) const = 0;
     // An instrument's own transposition (semitones), so a live note sounds as pressed.
     virtual float partTranspose(int) const { return 0.0f; }
+    // An instrument's own pitch slides as its patch is set now (Scoop / Glide defaults).
+    virtual SlideDesign slideDesign(int) const { return {}; }
 
     // Every note or hit the Place plays is logged, for the tests.
     struct Logged {

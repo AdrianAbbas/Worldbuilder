@@ -700,6 +700,20 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
         knob(characterAmount, "How much of the character effect");
         knob(fxTone, "Tone: dark to bright (the middle leaves it as it is)");
         knob(fxWidth, "Width: mono to extra wide (the middle leaves it as it is)");
+        // Scoop / Glide: whether this instrument's notes slide in pitch.
+        combo(slideType, slideChoices, "Scoop / Glide. Off: every note starts on its pitch, and held notes move to their next pitch at once. "
+                                       "On: notes scoop into their pitch and held notes glide, as this instrument was designed to (drums, birds, "
+                                       "drips, gongs and sirens start on); an instrument with no slide of its own scoops up from below");
+        slideType.onChange = [this] {
+            const bool on = slideType.getSelectedItemIndex() == 1;
+            slideAmount.setEnabled(on);
+            slideTime.setEnabled(on);
+            repaint(settingsArea);
+        };
+        knob(slideAmount, "Scoop amount: how far from its pitch a note starts, in semitones (below for a scoop, above for a drum's bend; "
+                          "a drip's rise). The default is the instrument's own; its Characters keep their proportions");
+        knob(slideTime, "Scoop / Glide time: how long a note's scoop takes, and how long held notes glide to their next pitch");
+        for (auto* k : { &slideAmount, &slideTime }) k->onValueChange = [this] { repaint(settingsArea); };
     }
     elementOn.setColour(juce::TextButton::buttonOnColourId, colours::brass);
     elementOn.setTooltip("Switch this instrument on or off (automatable)");
@@ -985,6 +999,12 @@ void PatternEditor::attachEffects(int element) {
         // Double-click: this instrument's own default.
         slider->setDoubleClickReturnValue(true, instrumentFxDefault(t, element, field));
     }
+    fxCombos.push_back(std::make_unique<ComboAttachment>(processor.parameters, id(FxSlide), slideType));
+    for (auto [slider, field] : { std::pair<juce::Slider*, int> { &slideAmount, FxSlideAmount }, { &slideTime, FxSlideTime } }) {
+        fxSliders.push_back(std::make_unique<SliderAttachment>(processor.parameters, id(field), *slider));
+        slider->setDoubleClickReturnValue(true, instrumentFxDefault(t, element, field));
+    }
+    if (slideType.onChange) slideType.onChange();
 }
 
 void PatternEditor::layoutTabs() {
@@ -1536,8 +1556,16 @@ void PatternEditor::resized() {
         place(rowB, randomness, 150);
         for (auto& v : vary) v.setBounds(rowB.removeFromLeft(28).reduced(1, 1));
         rowB.removeFromLeft(14);
-        place(rowB, evolve, 130);
+        place(rowB, evolve, 112);
         place(rowB, returnEvery, 110);
+        // The instrument's Scoop / Glide, at the row's end: [Off|On] amount, time.
+        auto slide = rowB.removeFromRight(std::min(rowB.getWidth(), 262));
+        const int knob = (slide.getWidth() - 56 - 24) / 2;
+        slideTime.setBounds(slide.removeFromRight(knob).reduced(0, 3));
+        slide.removeFromRight(8);
+        slideAmount.setBounds(slide.removeFromRight(knob).reduced(0, 3));
+        slide.removeFromRight(16);
+        slideType.setBounds(slide.removeFromRight(56).reduced(1, 1));
     }
     r.removeFromTop(4);
     keysArea = r.removeFromTop(64);
@@ -1612,6 +1640,16 @@ void PatternEditor::paint(juce::Graphics& g) {
     above(evolve, "EVOLVE " + juce::String(juce::roundToInt(working.controls.evolve * 100.0f)) + "%", 100);
     above(returnEvery, "RETURN", 100);
     {
+        // Scoop / Glide, its amount and time (dimmed while off).
+        const auto dim = slideType.getSelectedItemIndex() == 1 ? pal.heading : pal.heading.withMultipliedAlpha(0.45f);
+        const double semis = slideAmount.getValue(), ms = slideTime.getValue() * 1000.0;
+        above(slideType, "SCOOP/GLIDE", 40);
+        pixel::drawText(g, "AMT " + juce::String(semis, semis < 10.0 ? 2 : 1) + " ST", slideAmount.getBounds().translated(0, -13).withHeight(12).withWidth(slideAmount.getWidth() + 6),
+                        dim, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, "TIME " + (ms < 1000.0 ? juce::String(juce::roundToInt(ms)) + " MS" : juce::String(ms / 1000.0, 2) + " S"),
+                        slideTime.getBounds().translated(0, -13).withHeight(12).withWidth(slideTime.getWidth() + 6), dim, juce::Justification::centredLeft, pixel::Font::Small);
+    }
+    {
         // The instrument strip: its icon and name, then LEVEL.
         auto strip = elementArea;
         const auto& spec = placeInfo(t).element[std::size_t(std::clamp(elementIndex, 0, placeElements - 1))];
@@ -1621,6 +1659,7 @@ void PatternEditor::paint(juce::Graphics& g) {
         strip.removeFromLeft(26);
         pixel::drawText(g, juce::String(spec.name).toUpperCase(), strip.removeFromLeft(112), pal.ink, juce::Justification::centredLeft, pixel::Font::Small);
         pixel::drawText(g, "LEVEL", elementLevel.getBounds().withX(elementLevel.getX() - 44).withWidth(40), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+
     }
     above(snapButton, "MIDI FILES", 100);
     {

@@ -464,6 +464,8 @@ struct StringVoice {
     float hz = 220, targetHz = 220, glide = 0, age = 0, settle = 1, rate = 48000;
     float position = 0.12f, brightness = 0.5f, bowNoise = 0.3f, vibratoDepth = 0.2f, vibratoDelay = 0.3f, spreadCents = 8, gain = 1, bend = 0;
     float combDelay = 10, combLevel = 0.7f, scratch = 0, velocity = 0.8f;
+    // Scoop / Glide (set before start): the settle from flat scaled (0: none), its time.
+    float settleScale = 1, settleSeconds = 0.06f;
     uint64_t noiseIndex = 0;
     PanGains pan { 0.7071f, 0.7071f };
     bool active() const { return env.active(); }
@@ -500,7 +502,7 @@ struct StringVoice {
         }
         // The pitch settles from a little flat as the bow takes the string.
         this->velocity = clamp01(velocity);
-        settle = sounding ? 1.0f : std::exp2(-(6.0f + 6.0f * velocity) / 1200.0f);
+        settle = sounding ? 1.0f : std::exp2(-settleScale * (6.0f + 6.0f * velocity) / 1200.0f);
         scratch = (sounding ? 0.3f : 1.0f) * (0.4f + 0.8f * velocity);
         env.trigger(attack, 1.0f, 1.0f, rate);
         noiseIndex = noiseAt;
@@ -511,7 +513,7 @@ struct StringVoice {
         hz = glide > 0 ? targetHz * std::pow(hz / targetHz, glide) : targetHz;
         const float chunkSeconds = float(chunk) / rate;
         age += chunkSeconds;
-        settle = 1.0f + (settle - 1.0f) * std::exp(-chunkSeconds / 0.06f);
+        settle = 1.0f + (settle - 1.0f) * std::exp(-chunkSeconds / std::max(settleSeconds, 0.002f));
         scratch *= std::exp(-chunkSeconds / 0.07f);
         const float vib = vibratoDepth * smoothstep(vibratoDelay, vibratoDelay + 0.6f, age);
         for (int k = 0; k < players; ++k) {

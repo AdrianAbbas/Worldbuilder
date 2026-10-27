@@ -150,6 +150,7 @@ PlaceSettings PlaceSlot::settingsFor(const WorldFrame& world, const PlaceSlotCon
     s.era = world[Era];
     s.sync = c.sync;
     for (int e = 0; e < placeElements; ++e) s.element[std::size_t(e)] = c.elementOn[std::size_t(e)] ? clamp01(c.element[std::size_t(e)]) : 0.0f;
+    s.slide = c.slide;
     return s;
 }
 

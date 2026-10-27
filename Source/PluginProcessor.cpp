@@ -37,6 +37,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout WorldbuilderProcessor::makeL
             case Kind::Int:
                 layout.add(std::make_unique<juce::AudioParameterInt>(id, s.name, int(s.min), int(s.max), int(s.def)));
                 break;
+            case Kind::Semitones: {
+                juce::NormalisableRange<float> range(s.min, s.max);
+                range.setSkewForCentre(1.0f);
+                auto attributes = juce::AudioParameterFloatAttributes()
+                    .withLabel("st")
+                    .withStringFromValueFunction([](float v, int) { return juce::String(v, 2); })
+                    .withValueFromStringFunction([](const juce::String& t) { return t.getFloatValue(); });
+                layout.add(std::make_unique<juce::AudioParameterFloat>(id, s.name, range, s.def, attributes));
+                break;
+            }
+            case Kind::ShortSeconds: {
+                juce::NormalisableRange<float> range(s.min, s.max);
+                range.setSkewForCentre(0.15f);
+                auto attributes = juce::AudioParameterFloatAttributes()
+                    .withLabel("ms")
+                    .withStringFromValueFunction([](float v, int) { return juce::String(juce::roundToInt(v * 1000.0f)); })
+                    .withValueFromStringFunction([](const juce::String& t) { return t.getFloatValue() / 1000.0f; });
+                layout.add(std::make_unique<juce::AudioParameterFloat>(id, s.name, range, s.def, attributes));
+                break;
+            }
             case Kind::Seconds: {
                 juce::NormalisableRange<float> range(s.min, s.max);
                 range.setSkewForCentre(6.0f);
@@ -166,6 +186,13 @@ EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& valu
             fx.amount = field(fxField(e, FxAmount));
             fx.tone = field(fxField(e, FxTone));
             fx.width = field(fxField(e, FxWidth));
+            auto& slide = pc.slide[std::size_t(e)];
+            const auto& own = instrumentFx(pc.type, e);
+            slide.on = field(fxField(e, FxSlide)) > 0.5f;
+            slide.semis = field(fxField(e, FxSlideAmount));
+            slide.seconds = field(fxField(e, FxSlideTime));
+            slide.refSemis = own.slideSemis;
+            slide.refSeconds = own.slideSeconds;
         }
     }
     return c;

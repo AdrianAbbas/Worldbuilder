@@ -154,7 +154,8 @@ void BiodomePlace::configure(const PlaceContext& c) {
     // A failing dome flickers: the power sags now and then.
     const float sag = failing ? clamp01(0.6f + 0.8f * drift.smooth(t, 0.3)) : 1.0f;
 
-    // Lush pads: wide detuned saws through a soft filter; failing, they waver and sag.
+    // Lush pads: wide detuned saws through a soft filter; failing, they waver and sag. With
+    // Scoop / Glide on, a note bows on from the last one and glides (else it moves at once).
     {
         auto& p = pads.patch;
         p.held = p.legato = true;
@@ -218,9 +219,9 @@ void BiodomePlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 4, 5, 6);
         p.gain = 1.0f;
     }
-    // Water plucks from the recorded kalimba: each tine slides up into its note like a
-    // drop (0.6 semitone in about 10 ms), its click softened, darker and short, ringing a
-    // little longer in the night cycle. The slide is quick so the notes stay clearly in the key.
+    // Water plucks from the recorded kalimba: its click softened, darker and short, ringing
+    // a little longer in the night cycle. With Scoop / Glide on, each tine slides up into
+    // its note like a drop (0.6 semitone in about 10 ms, quick so the notes stay in the key).
     {
         auto& p = waterRec.patch;
         p.instrument = "kalimba";

@@ -108,6 +108,9 @@ public:
     virtual float transposeSemis() const { return 0.0f; }
     virtual void stopLive(int) {}
     float bend = 0, mod = 0;
+    // Scoop / Glide: set by the Place each chunk (before its patches), used as notes start.
+    Slide slide;
+    virtual SlideDesign designed() const { return {}; }
 
 protected:
     // Held notes of live id `id` end now (the next update releases them).
@@ -120,6 +123,19 @@ protected:
     dsp::Stream noise;
     uint64_t noiseAt = 0;
     float spreadPan(float pan, float spread, float random) const { return std::clamp(pan + spread * (2.0f * random - 1.0f), -1.0f, 1.0f); }
+};
+
+// Scoop / Glide on an instrument without a slide of its own: each voice starts a plain
+// scoop below its note (semitones), shrinking every chunk.
+template <std::size_t N>
+struct Scoops {
+    std::array<float, N> now {}, mul {};
+    void start(std::size_t k, const Slide& s, float designed, float rate) {
+        now[k] = s.plain(designed);
+        mul[k] = std::exp(-float(dsp::chunk) / (std::max(s.seconds, 0.002f) * rate));
+    }
+    void step(std::size_t k) { now[k] *= mul[k]; }
+    void reset() { now.fill(0.0f); }
 };
 
 //==============================================================================
@@ -183,6 +199,7 @@ public:
         auto& v = voice[std::size_t(k)];
         v.model = patch.model;
         v.velocity = n.velocity;
+        scoop(v);
         v.start(hz, patch.attack, patch.decay, patch.held ? patch.sustain : 0.0f, rate, legato);
         v.gain = n.velocity;
         if (!legato) v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
@@ -213,7 +230,10 @@ public:
         }
         if (patch.pedal > 0.0f && any) {
             const float hz = music::noteHz(f.root, patch.pedalSemis + patch.transpose);
-            if (!pedalVoice.active() || pedalVoice.env.stage == dsp::Env::Release) pedalVoice.start(hz, std::max(patch.attack, 0.5f), 1.0f, 1.0f, rate);
+            if (!pedalVoice.active() || pedalVoice.env.stage == dsp::Env::Release) {
+                scoop(pedalVoice);
+                pedalVoice.start(hz, std::max(patch.attack, 0.5f), 1.0f, 1.0f, rate);
+            }
             pedalVoice.targetHz = hz;
         } else if (pedalVoice.active() && pedalVoice.env.stage != dsp::Env::Release) {
             pedalVoice.release(std::max(patch.release * weight::release, 0.5f), rate);
@@ -239,9 +259,23 @@ public:
         }
     }
 
+    SlideDesign designed() const override {
+        const bool brass = patch.model == dsp::SynthBrass;
+        return { brass ? -brassScoop : 0.0f, brass ? brassSeconds : 0.0f, patch.held || patch.legato ? patch.glide : 0.0f };
+    }
+
 private:
+    // A horn's lips find the note from below (about a third of a semitone, in 28 ms).
+    static constexpr float brassScoop = 0.35f, brassSeconds = 0.028f;
+    void scoop(dsp::SynthVoice& v) const {
+        const bool brass = patch.model == dsp::SynthBrass;
+        v.scoopScale = brass ? slide.depth(brassScoop) / brassScoop : 0.0f;
+        v.scoopSeconds = slide.time(brassSeconds);
+        v.plainScoop = slide.plain(brass ? brassScoop : 0.0f);
+        v.plainSeconds = slide.seconds;
+    }
     void apply(dsp::SynthVoice& v) const {
-        v.glide = glideFor(patch.glide, rate);
+        v.glide = glideFor(slide.glide(patch.glide), rate);
         v.detuneCents = patch.detune;
         v.subLevel = patch.sub;
         v.cutoff = patch.cutoff;
@@ -348,7 +382,8 @@ public:
                 dsp::clamp01(patch.brightness + 0.4f * mod), velocity, n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, noiseAt, shape,
                 length);
         v.wait = wait;
-        v.bendTo(std::exp2(bend / 12.0f));
+        scoops.start(k, slide, 0.0f, rate);
+        v.bendTo(std::exp2((bend - scoops.now[k]) / 12.0f));
         noiseAt += 1ull << 24;
     }
     void update(const PartFrame& f) override {
@@ -364,10 +399,12 @@ public:
             openPeriod[0] = rate / root;
             openPeriod[1] = rate / fifth;
         }
-        // The pitch wheel bends the sounding strings.
-        const float ratio = std::exp2(bend / 12.0f);
-        for (auto& v : voice)
-            if (v.active) v.bendTo(ratio);
+        // The pitch wheel bends the sounding strings (and a scoop settles into the note).
+        for (std::size_t k = 0; k < voice.size(); ++k)
+            if (voice[k].active) {
+                scoops.step(k);
+                voice[k].bendTo(std::exp2((bend - scoops.now[k]) / 12.0f));
+            }
     }
     void render(float* left, float* right, int n) override {
         const auto& b = dsp::bodies[std::size_t(std::max(bodyType, 0))];
@@ -422,6 +459,7 @@ private:
     std::array<dsp::OnePole, 2> openDamp;
     std::array<float, 2> openPeriod { 400, 300 };
     double strumBeat = -1.0e9;
+    Scoops<maxVoices> scoops;
     float strumFirst = 0;
     int strumCount = 0;
 };
@@ -466,8 +504,17 @@ public:
         }
         auto& b = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Bell& v) { return v.level(); })];
         b.extras = patch.extras;
+        // A gong's glide after the strike, as Scoop / Glide says; or a plain scoop: the
+        // strike a little below the note, gliding up into it.
+        b.extras.glideSemis = slide.depth(patch.extras.glideSemis);
+        b.extras.glideSeconds = slide.time(patch.extras.glideSeconds);
+        const float plain = slide.plain(patch.extras.glideSemis);
+        if (plain > 0.0f) {
+            b.extras.glideSemis = plain;
+            b.extras.glideSeconds = slide.seconds;
+        }
         const float hardness = dsp::clamp01(patch.hardness + patch.velocityHardness * (n.velocity - 0.6f) + 0.35f * mod);
-        b.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::ring * n.decay, hardness, n.velocity,
+        b.start(music::noteHz(f.root, n.semis + patch.transpose - plain), patch.decay * weight::ring * n.decay, hardness, n.velocity,
                 n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random), rate, ratios.data(), patch.decays.data(), patch.gains.data(), patch.modes);
         b.update();
     }
@@ -489,6 +536,8 @@ public:
             right[i] += tone[1].lp(r) * patch.gain;
         }
     }
+
+    SlideDesign designed() const override { return { patch.extras.glideSemis, patch.extras.glideSemis != 0.0f ? patch.extras.glideSeconds : 0.0f, 0.0f }; }
 
 private:
     std::array<dsp::Bell, maxVoices> voice;
@@ -539,10 +588,24 @@ public:
         d.shellHz = row.shellHz;
         d.shell = row.shell;
         const float hz = row.tuned ? music::noteHz(f.root, row.semis) : row.hz;
-        d.start(hz, row.bend, row.decay * (row.kind == dsp::DrumTwoTone ? 1.0f : weight::skin) * n.decay, row.tone * n.velocity, row.noise * n.velocity, row.noiseHz, row.noiseQ, row.noiseDecay * n.decay,
+        // The skin's pitch falling after the strike, as Scoop / Glide says (a plain
+        // scoop on a drum: a bend down from above).
+        const float semis = 12.0f * std::log2(std::max(row.bend, 0.01f));
+        const float bendSemis = slide.depth(semis) + slide.plain(semis);
+        d.bendSeconds = std::abs(semis) > 1.0e-6f ? slide.time(dsp::Drum::pitchSeconds) : slide.seconds;
+        d.start(hz, std::exp2(bendSemis / 12.0f), row.decay * (row.kind == dsp::DrumTwoTone ? 1.0f : weight::skin) * n.decay, row.tone * n.velocity, row.noise * n.velocity, row.noiseHz, row.noiseQ, row.noiseDecay * n.decay,
                 n.hasPan ? n.pan : spreadPan(row.pan, patch.spread, n.random), rate, noiseAt);
         d.update(rate);
         noiseAt += 1ull << 24;
+    }
+    SlideDesign designed() const override {
+        // The deepest bend of the kit's drums.
+        float deepest = 0;
+        for (const auto& row : patch.rows) {
+            const float semis = 12.0f * std::log2(std::max(row.bend, 0.01f));
+            if (std::abs(semis) > std::abs(deepest)) deepest = semis;
+        }
+        return { deepest, deepest != 0.0f ? dsp::Drum::pitchSeconds : 0.0f, 0.0f };
     }
     void update(const PartFrame&) override {
         for (auto& d : voice)
@@ -603,6 +666,8 @@ public:
         if (patch.model == FmTine) {
             const int k = int(dsp::pickVoice(tines, std::clamp(patch.voices, 1, maxVoices), [](const dsp::TineVoice& v) { return v.level(); }));
             auto& v = tines[std::size_t(k)];
+            scoops.start(std::size_t(k), slide, 0.0f, rate);
+            v.bend = bend - scoops.now[std::size_t(k)];
             v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.decay * weight::keys * n.decay * 4.0f, dsp::clamp01(patch.brightness + 0.4f * mod), n.velocity, rate);
             v.gainLevel = 1.0f;
             v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
@@ -613,6 +678,8 @@ public:
         const int k = int(dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::FmVoice& v) { return v.level(); }));
         auto& v = voice[std::size_t(k)];
         apply(v);
+        scoops.start(std::size_t(k), slide, 0.0f, rate);
+        v.bend = bend - scoops.now[std::size_t(k)];
         v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, patch.decay * weight::keys * n.decay, patch.held ? patch.sustain : 0.0f, rate,
                 patch.indexSeconds * n.decay);
         v.gain = n.velocity;
@@ -632,7 +699,8 @@ public:
                     h.on = false;
                 }
                 if (v.active()) {
-                    v.bend = bend;
+                    scoops.step(std::size_t(i));
+                    v.bend = bend - scoops.now[std::size_t(i)];
                     v.update();
                 }
             }
@@ -648,6 +716,8 @@ public:
             if (!v.active()) continue;
             if (h.on && h.follow) v.targetHz = music::noteHz(f.root, h.now(f) + patch.transpose);
             apply(v);
+            scoops.step(std::size_t(i));
+            v.bend = bend - scoops.now[std::size_t(i)];
             v.update(rate);
         }
     }
@@ -671,6 +741,8 @@ public:
         }
     }
 
+    SlideDesign designed() const override { return { 0.0f, 0.0f, patch.held && patch.glide > 0.0f ? patch.glide : 0.0f }; }
+
 private:
     std::array<dsp::TineVoice, maxVoices> tines;
     void apply(dsp::FmVoice& v) const {
@@ -681,9 +753,10 @@ private:
         v.vibratoHz = patch.vibratoHz;
         v.vibratoDepth = patch.vibratoDepth + 0.45f * mod;
         v.bend = bend;
-        v.glide = patch.glide > 0 ? glideFor(patch.glide, rate) : 0.0f;
+        v.glide = patch.glide > 0 ? glideFor(slide.glide(patch.glide), rate) : 0.0f;
     }
     std::array<dsp::FmVoice, maxVoices> voice;
+    Scoops<maxVoices> scoops;
     std::array<HeldNote, maxVoices> held {};
 };
 
@@ -735,6 +808,7 @@ public:
         v.gain = n.velocity;
         if (!legato) v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
         v.vibratoHz = 4.6f + 1.2f * n.random2;
+        if (!legato) scoops.start(std::size_t(k), slide, 0.0f, rate);
         velocity[std::size_t(k)] = n.velocity;
         held[std::size_t(k)].set(n);
         claimed[std::size_t(k)] = n.beat;
@@ -752,6 +826,7 @@ public:
             }
             if (!v.active()) continue;
             if (h.on && h.follow) v.targetHz = music::noteHz(f.root, h.now(f) + patch.transpose);
+            scoops.step(std::size_t(i));
             apply(v, i, f);
             v.update(rate);
         }
@@ -770,12 +845,14 @@ public:
         }
     }
 
+    SlideDesign designed() const override { return { 0.0f, 0.0f, patch.glide }; }
+
 private:
     void apply(dsp::ChoirVoice& v, int i, const PartFrame&) {
-        v.glide = glideFor(patch.glide, rate);
+        v.glide = glideFor(slide.glide(patch.glide), rate);
         v.detuneCents = patch.detune;
         v.vibratoDepth = patch.vibratoDepth + 0.45f * mod;
-        v.bend = bend;
+        v.bend = bend - scoops.now[std::size_t(i)];
         v.brightness = patch.brightness;
         // Each voice drifts slowly around the vowel, so the choir breathes; babbling
         // voices move through syllables, louder and softer.
@@ -786,6 +863,7 @@ private:
             v.gain *= 1.0f - patch.chatter * dsp::clamp01(0.5f + 0.8f * noise.smooth(time * 1.37 + 57.0 * i, double(patch.babble) * 1.6));
     }
     std::array<dsp::ChoirVoice, maxVoices> voice;
+    Scoops<maxVoices> scoops;
     std::array<HeldNote, maxVoices> held {};
     std::array<float, maxVoices> velocity {};
     std::array<double, maxVoices> claimed {};
@@ -831,7 +909,8 @@ public:
         auto& v = voice[std::size_t(k)];
         apply(v);
         v.velocity = n.velocity;
-        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, patch.scoop, rate, noiseAt);
+        // The scoop into the note, as Scoop / Glide says (positive: from below).
+        v.start(music::noteHz(f.root, n.semis + patch.transpose), patch.attack, -slide.depth(-patch.scoop) + slide.plain(patch.scoop), rate, noiseAt);
         noiseAt += 1ull << 24;
         v.gain = n.velocity;
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
@@ -867,6 +946,8 @@ public:
         }
     }
 
+    SlideDesign designed() const override { return { -patch.scoop, patch.scoop != 0.0f ? patch.scoopSeconds : 0.0f, 0.0f }; }
+
 private:
     void apply(dsp::WindVoice& v) const {
         v.h2 = patch.h2;
@@ -874,7 +955,7 @@ private:
         v.breath = patch.breath;
         v.tone = patch.tone;
         v.breathQ = patch.breathQ;
-        v.scoopSeconds = patch.scoopSeconds;
+        v.scoopSeconds = std::abs(patch.scoop) > 1.0e-6f ? slide.time(patch.scoopSeconds) : slide.seconds;
         v.vibratoHz = patch.vibratoHz;
         v.vibratoDepth = patch.vibratoDepth + 0.45f * mod;
         v.vibratoDelay = mod > 0.01f ? 0.0f : patch.vibratoDelay;
@@ -956,6 +1037,10 @@ public:
         if (string) {
             auto& v = strings[std::size_t(k)];
             apply(v);
+            // The pitch settles from a little flat as the bow takes the string, as Scoop /
+            // Glide says (off: the bow starts on the note).
+            v.settleScale = slide.depth(settleSemis) / settleSemis;
+            v.settleSeconds = slide.time(settleSeconds);
             // A harder stroke speaks sooner.
             v.start(hz, patch.attack * dsp::lerp(1.3f, 0.6f, n.velocity), n.velocity, n.random2, noiseAt, legato);
             v.gain = n.velocity;
@@ -964,6 +1049,8 @@ public:
         } else {
             auto& v = voice[std::size_t(k)];
             apply(v);
+            if (!legato) scoops.start(std::size_t(k), slide, 0.0f, rate);
+            v.bend = bend - scoops.now[std::size_t(k)];
             v.start(hz, patch.attack, rate, noiseAt, legato);
             v.gainLevel = n.velocity;
             if (!legato) v.pan = dsp::panGains(pan);
@@ -1005,6 +1092,8 @@ public:
                 if (!v.active()) continue;
                 if (h.on && h.follow) v.targetHz = music::noteHz(f.root, h.now(f) + patch.transpose);
                 apply(v);
+                scoops.step(std::size_t(i));
+                v.bend = bend - scoops.now[std::size_t(i)];
                 v.update(rate);
             }
         }
@@ -1044,6 +1133,11 @@ public:
         }
     }
 
+    SlideDesign designed() const override {
+        const bool string = patch.model == BowedString;
+        return { string ? -settleSemis : 0.0f, string ? settleSeconds : 0.0f, patch.held ? patch.glide : 0.0f };
+    }
+
 private:
     void apply(dsp::BowedVoice& v) const {
         v.modes = patch.modes;
@@ -1057,7 +1151,7 @@ private:
         v.vibratoHz = patch.vibratoHz;
         v.vibratoDepth = patch.vibratoDepth + 0.45f * mod;
         v.bend = bend;
-        v.glide = glideFor(patch.glide, rate);
+        v.glide = glideFor(slide.glide(patch.glide), rate);
     }
     void apply(dsp::StringVoice& v) const {
         v.players = std::clamp(patch.players, 1, dsp::StringVoice::maxPlayers);
@@ -1068,9 +1162,12 @@ private:
         v.vibratoDelay = mod > 0.01f ? 0.0f : 0.25f;
         v.bend = bend;
         v.spreadCents = patch.spreadCents;
-        v.glide = glideFor(patch.glide, rate);
+        v.glide = glideFor(slide.glide(patch.glide), rate);
     }
+    // The bowed string's settle from flat at its nominal velocity (semitones, seconds).
+    static constexpr float settleSemis = 0.09f, settleSeconds = 0.06f;
     std::array<dsp::BowedVoice, maxVoices> voice;
+    Scoops<maxVoices> scoops;
     std::array<dsp::StringVoice, maxVoices> strings;
     std::array<HeldNote, maxVoices> held {};
     std::array<std::array<dsp::Svf, 5>, 2> body;
@@ -1108,10 +1205,17 @@ public:
         const float polarity = n.random2 < 0.5f ? -1.0f : 1.0f;
         // The bloop starts `below` the note and rises `rise` semitones within a fifth of
         // the decay; the note fades in under it and rings on.
-        bloop[k].start(hz * std::exp2(-patch.below / 12.0f), decay * 0.2f, std::exp2(patch.rise / 12.0f), polarity * n.velocity * patch.bloop, pan, rate, 0.0005f);
+        // The bloop rising into the drop, as Scoop / Glide says (off: a short ping on the
+        // note; a plain scoop: from below by the setting).
+        const float rise = slide.depth(patch.rise) + slide.plain(patch.rise);
+        const float scale = std::abs(patch.rise) > 1.0e-6f ? rise / patch.rise : (rise > 0.0f ? 1.0f : 0.0f);
+        const float below = std::abs(patch.rise) > 1.0e-6f ? patch.below * scale : rise;
+        const float bloopSeconds = decay * 0.2f * (slide.on && std::abs(patch.rise) > 1.0e-6f ? slide.time(1.0f) : 1.0f);
+        bloop[k].start(hz * std::exp2(-below / 12.0f), bloopSeconds, std::exp2(rise / 12.0f), polarity * n.velocity * patch.bloop, pan, rate, 0.0005f);
         drop[k].start(hz, decay, 1.0f, polarity * n.velocity, pan, rate, 0.004f);
         ring[k].start(hz * 3.0f, decay * 0.5f, 1.0f, polarity * n.velocity * patch.overtone, pan, rate, 0.004f);
     }
+    SlideDesign designed() const override { return { -patch.rise, patch.rise != 0.0f ? 0.2f * patch.decay : 0.0f, 0.0f }; }
     void update(const PartFrame&) override {
         for (auto* pings : { &bloop, &drop, &ring })
             for (auto& p : *pings)
@@ -1268,6 +1372,9 @@ public:
     void render(const PlaceContext& c, float* left, float* right, int n) override;
     float partTranspose(int e) const override {
         return e >= 0 && e < placeElements && parts[std::size_t(e)] != nullptr ? parts[std::size_t(e)]->transposeSemis() : 0.0f;
+    }
+    SlideDesign slideDesign(int e) const override {
+        return e >= 0 && e < placeElements && parts[std::size_t(e)] != nullptr ? parts[std::size_t(e)]->designed() : SlideDesign {};
     }
 
 protected:

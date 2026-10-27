@@ -194,8 +194,8 @@ void DesertPlace::configure(const PlaceContext& c) {
     }
     // The recorded oud: the developer's classical guitar, revoiced. Paired courses a few
     // cents apart (as an oud's are), its deep bowl body, a darker and more nasal tone, a
-    // slightly harder pluck (the risha) and a hint of a fretless slide into each note;
-    // shorter than a guitar, longest in the dunes.
+    // slightly harder pluck (the risha) and, with Scoop / Glide on, a hint of a fretless
+    // slide into each note; shorter than a guitar, longest in the dunes.
     {
         auto& p = oudRec.patch;
         p.instrument = "guitar";
@@ -268,7 +268,7 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.voices = 6;
         p.gain = 1.0f;
     }
-    // The ney: a reed flute, very breathy, scooping into its notes.
+    // The ney: a reed flute, very breathy, scooping into its notes (with Scoop / Glide on).
     {
         auto& p = ney.patch;
         p.h2 = 0.12f + 0.1f * tone;

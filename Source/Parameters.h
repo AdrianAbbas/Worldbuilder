@@ -9,7 +9,7 @@
 
 namespace wb {
 
-enum class Kind { Float, Decibels, Bool, Choice, Int, Seconds };
+enum class Kind { Float, Decibels, Bool, Choice, Int, Seconds, Semitones, ShortSeconds };
 
 struct ParamSpec {
     const char* id;
@@ -136,7 +136,10 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { id e "_char", name label " Character", Kind::Choice, 0, CharacterTypeCount - 1, instrumentFxDefault(type, k, FxCharacter), characterFxChoices }, \
     { id e "_charamt", name label " Character Amount", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxAmount) }, \
     { id e "_tone", name label " Tone", Kind::Float, 0, 1, instrumentFxDefault(type, k, FxTone) }, \
-    { id e "_width", name label " Width", Kind::Float, 0, 2, instrumentFxDefault(type, k, FxWidth) }
+    { id e "_width", name label " Width", Kind::Float, 0, 2, instrumentFxDefault(type, k, FxWidth) }, \
+    { id e "_slide", name label " Scoop/Glide", Kind::Choice, 0, 1, instrumentFxDefault(type, k, FxSlide), slideChoices }, \
+    { id e "_slideamt", name label " Scoop Amount", Kind::Semitones, 0, 12, instrumentFxDefault(type, k, FxSlideAmount) }, \
+    { id e "_slidetime", name label " Scoop/Glide Time", Kind::ShortSeconds, 0.005f, 3, instrumentFxDefault(type, k, FxSlideTime) }
 #define WB_PLACE(id, name, type, pan, seed) \
     { id "_type", name " Place", Kind::Choice, 0, placeChoiceCount - 1, type, placeChoices }, \
     { id "_level", name " Level", Kind::Decibels, -60, 6, 0 }, \

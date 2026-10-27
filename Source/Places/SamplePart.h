@@ -38,7 +38,7 @@ struct SamplePatch {
     // A second string of a course (lutes and ouds have paired strings): detuned, a little
     // later, at this level.
     float courseCents = 0, courseLevel = 0, courseMs = 0;
-    float scoopSemis = 0, scoopSeconds = 0.05f;   // a slide into the note
+    float scoopSemis = 0, scoopSeconds = 0.05f;   // a slide into the note (as Scoop / Glide allows)
     float vibratoHz = 5, vibratoDepth = 0, vibratoDelay = 0.3f;   // semitones
     float glide = 0.05f;        // held notes following the chords
     float tremoloPerBeat = 0, tremoloDepth = 0;
@@ -105,6 +105,7 @@ public:
 
     void start(const PartFrame& f, const NoteOn& n) override {
         if (!sampled()) {
+            fallback.slide = slide;
             fallback.start(f, n);
             return;
         }
@@ -169,8 +170,10 @@ public:
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
         const float cutoff = patch.toneHz * std::exp2(-patch.velocityTone * (1.0f - dsp::clamp01(velocity))) * std::exp2(2.0f * mod);
         v.filter.set(std::min(cutoff, 0.45f * rate), 0.6f, rate);
-        v.scoop = patch.scoopSemis;
-        v.scoopMul = patch.scoopSemis != 0.0f ? std::exp(-float(dsp::chunk) / (std::max(patch.scoopSeconds, 0.002f) * rate)) : 0.0f;
+        // A slide into the note, as Scoop / Glide says (off: the note starts on its pitch).
+        v.scoop = slide.depth(patch.scoopSemis) - slide.plain(patch.scoopSemis);
+        const float scoopSeconds = patch.scoopSemis != 0.0f ? slide.time(patch.scoopSeconds) : slide.seconds;
+        v.scoopMul = v.scoop != 0.0f ? std::exp(-float(dsp::chunk) / (std::max(scoopSeconds, 0.002f) * rate)) : 0.0f;
         v.course = !zone->loops() && patch.courseLevel > 0.0f;
         v.coursePos = v.pos - double(patch.courseMs * 0.001f * inst->rate);
         v.courseRatio = std::exp2(patch.courseCents / 1200.0f);
@@ -186,6 +189,7 @@ public:
         if (!sampled()) {
             fallback.bend = bend;
             fallback.mod = mod;
+            fallback.slide = slide;
             fallback.update(f);
             return;
         }
@@ -200,7 +204,7 @@ public:
             openPeriod[1] = rate / music::noteHz(f.root, -12.0f + float(music::degree(f.mood, 4)));
         }
         trem = 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::cos(float(f.beat * double(patch.tremoloPerBeat)) * dsp::twoPi));
-        const float glide = glideFor(patch.glide, rate);
+        const float glide = glideFor(slide.glide(patch.glide), rate);
         for (std::size_t k = 0; k < voice.size(); ++k) {
             auto& v = voice[k];
             auto& h = held[k];
@@ -262,6 +266,11 @@ public:
             left[i] += dc[0].hp(l) * g;
             right[i] += dc[1].hp(r) * g;
         }
+    }
+
+    SlideDesign designed() const override {
+        if (!sampled()) return fallback.designed();
+        return { patch.scoopSemis, patch.scoopSemis != 0.0f ? patch.scoopSeconds : 0.0f, patch.held ? patch.glide : 0.0f };
     }
 
     // How many voices sound (tests).

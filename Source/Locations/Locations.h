@@ -54,7 +54,8 @@ inline Move moveOf(int p) {
         if (field == PlMute || (field >= PlElementOn && field < PlFx)) return Move::Paired;
     }
     const auto kind = specs[std::size_t(p)].kind;
-    return kind == Kind::Float || kind == Kind::Decibels || kind == Kind::Seconds ? Move::Glide : Move::Switch;
+    return kind == Kind::Float || kind == Kind::Decibels || kind == Kind::Seconds || kind == Kind::Semitones || kind == Kind::ShortSeconds ? Move::Glide
+                                                                                                                                         : Move::Switch;
 }
 
 inline int slotTypeIn(const WorldValues& v, int slot) {

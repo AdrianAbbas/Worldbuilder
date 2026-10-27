@@ -527,7 +527,11 @@ levels and switches, the suggested Mood, and **PATTERNS** for the Pattern Editor
 velocity and chance lanes, DRAW and SELECT, undo and redo, copy and paste, transpose,
 double and halve, lock, Generate, randomness (amount, what varies, Evolve), the
 instrument's level and effects (reverb and type, delay and type, character and amount,
-tone, width), MIDI import (drop a file) and DRAG MIDI / save.
+tone, width), **SCOOP/GLIDE** (whether its notes slide in pitch: Off, every note starts
+on its pitch and held notes move to the next chord at once; On, notes scoop into their
+pitch and held notes glide, with the amount in semitones and the time; on by default only
+for drums, birds and gulls, cave drips, the Temple gongs and the City sirens), MIDI import
+(drop a file) and DRAG MIDI / save.
 
 **Right.** **ENVIRONMENT**: Air, Water, Fire & Heat, Ice & Earth, Thunder and Tonal Bed,
 each with level, M (mute), S (solo) and a meter. At 0 dB each layer sits about 12 dB under

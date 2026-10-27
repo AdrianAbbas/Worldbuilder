@@ -67,6 +67,9 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
     frame.quality = std::clamp(w.quality, 0, 2);
     frame.beat = c.beat;
     frame.beatsPerSecond = double(c.bpm) / 60.0;
+    // Each instrument's Scoop / Glide (a Place's configure() may shape it further).
+    for (int e = 0; e < placeElements; ++e)
+        if (auto* p = parts[std::size_t(e)]) p->slide = c.s.slide[std::size_t(e)];
     configure(c);
     // The keyboard's pitch wheel and mod wheel reach the instrument it plays.
     for (int e = 0; e < placeElements; ++e)

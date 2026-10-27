@@ -333,7 +333,8 @@ void ForestPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 4, 5, 6);
         p.gain = 4.2f;
     }
-    // Strings: a soft section pad; in dark woods it trembles with Tension.
+    // Strings: a soft section pad; in dark woods it trembles with Tension. With Scoop /
+    // Glide on, chord changes glide and each stroke settles from a little flat.
     {
         auto& p = strings.patch;
         // A string section of violas and cellos, bowed over the fingerboard (soft, veiled).
