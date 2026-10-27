@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Samples/SampleBank.h"
 
 using namespace wb;
 
@@ -62,6 +63,8 @@ WorldbuilderProcessor::WorldbuilderProcessor()
       parameters(*this, nullptr, "WORLDBUILDER", makeLayout()) {
     for (std::size_t i = 0; i < specs.size(); ++i) raw[i] = parameters.getRawParameterValue(specs[i].id);
     patterns.syncTypes(slotTypes());
+    // The recorded instruments load in the background, once per process (Milestone 15).
+    samples::Bank::get().load();
     startTimerHz(10);
 }
 
@@ -199,6 +202,9 @@ capture::Scene WorldbuilderProcessor::captureScene() {
 
 void WorldbuilderProcessor::prepareToPlay(double sampleRate, int) {
     rate = std::isfinite(sampleRate) ? juce::jlimit(8000.0, 384000.0, sampleRate) : 48000.0;
+    // Not on the audio thread: wait (briefly) for the recordings, so the first notes and
+    // every render use them.
+    samples::Bank::get().waitUntilLoaded(5000);
     travel.prepare(rate);
     engine.prepare(rate, readControls());
     countClick.prepare(float(rate));
@@ -790,6 +796,9 @@ juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new W
 void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = parameters.copyState();
     state.setProperty("version", 4, nullptr);
+    // How many recorded notes this instance plays (information for diagnostics and the AU
+    // host harness; never read back).
+    state.setProperty("samples", samples::Bank::get().zoneCount(), nullptr);
     patterns.syncTypes(slotTypes());
     state.removeChild(state.getChildWithName("Patterns"), nullptr);
     state.appendChild(patterns.toValueTree(), nullptr);

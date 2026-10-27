@@ -39,6 +39,7 @@
 #include <cstdarg>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <strings.h>
@@ -672,6 +673,26 @@ void v2Suite(Report& r, AudioComponent component, bool outOfProcess, bool useWin
                 for (const auto& [id, value] : restore) setParameter(unit, id, value);
                 host.render(0.5, 0.0);
             }
+        }
+
+        // 4c. Milestone 15: the recorded instruments loaded from inside the installed bundle
+        // (Contents/Resources/Samples). The plugin's saved state says how many notes it has.
+        {
+            CFPropertyListRef info = nullptr;
+            UInt32 infoSize = sizeof(info);
+            std::string count = "(no state)";
+            if (AudioUnitGetProperty(unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &info, &infoSize) == noErr && info != nullptr
+                && CFGetTypeID(info) == CFDictionaryGetTypeID()) {
+                const auto data = static_cast<CFDataRef>(CFDictionaryGetValue(static_cast<CFDictionaryRef>(info), CFSTR("jucePluginState")));
+                if (data != nullptr && CFGetTypeID(data) == CFDataGetTypeID() && CFDataGetLength(data) > 8) {
+                    const std::string xml(reinterpret_cast<const char*>(CFDataGetBytePtr(data) + 8),
+                                          strnlen(reinterpret_cast<const char*>(CFDataGetBytePtr(data) + 8), size_t(CFDataGetLength(data) - 8)));
+                    const auto at = xml.find(" samples=\"");
+                    count = at != std::string::npos ? xml.substr(at + 10, xml.find('"', at + 10) - at - 10) : "(not in the state)";
+                }
+            }
+            if (info != nullptr) CFRelease(info);
+            r.check(std::atoi(count.c_str()) > 0, "Samples: the recorded instruments load from the bundle", count + " recorded notes");
         }
 
         // 5. Factory presets via kAudioUnitProperty_PresentPreset.

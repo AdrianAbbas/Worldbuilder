@@ -98,7 +98,7 @@ public:
     virtual void render(float* left, float* right, int n) = 0;
     // True for parts that sustain their notes (they catch up on missed ones).
     virtual bool sustains() const { return false; }
-    void setKey(uint32_t key, uint32_t salt) { noise.setKey(key, salt); }
+    virtual void setKey(uint32_t key, uint32_t salt) { noise.setKey(key, salt); }
 
     // KEYS (Milestone 14): the part's own transposition (a live note is concert pitch, so
     // the part takes it off), a live note's key released (held notes let go; plucked

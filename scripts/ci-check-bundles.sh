@@ -26,7 +26,7 @@ done
 for bundle in "$artefacts/AU/WORLDBUILDER.component" "$artefacts/VST3/WORLDBUILDER.vst3"; do
     samples="$bundle/Contents/Resources/Samples"
     if [[ -f "$samples/index.json" ]]; then
-        printf '%-60s %s notes, %s\n' "$samples" "$(find "$samples" -name '*.flac' | wc -l | tr -d ' ')" "$(du -sh "$samples" | cut -f1)"
+        printf '%-60s %s notes, %s (bundle %s)\n' "$samples" "$(find "$samples" -name '*.flac' | wc -l | tr -d ' ')" "$(du -sh "$samples" | cut -f1)" "$(du -sh "$bundle" | cut -f1)"
     else
         echo "::error::$bundle has no samples ($samples/index.json missing)"; status=1
     fi

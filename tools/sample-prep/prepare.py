@@ -415,13 +415,25 @@ def find_loop(x, f0_hz, region):
 
 
 def crossfade_loop(x, s, e, xf):
-    """Blends the end of the loop into what precedes its start, so the jump is seamless."""
+    """Blends the end of the loop into what precedes its start, so the jump is seamless.
+    Two stretches of a bowed note are only partly alike, so a plain crossfade dips in
+    level where they cancel: the blend is levelled (per 10 ms) to the level the two
+    stretches have on their own."""
     xf = min(xf, s, (e - s) // 3)
     if xf <= 0:
         return x
     w = np.linspace(0.0, 1.0, xf)
+    a, b = x[e - xf:e], x[s - xf:s]
     y = x.copy()
-    y[e - xf:e] = x[e - xf:e] * (1 - w) + x[s - xf:s] * w
+    blend = a * (1 - w) + b * w
+    win = int(0.01 * RATE)
+    rms = lambda v: np.sqrt(np.convolve(v ** 2, np.ones(win) / win, mode="same") + 1e-18)
+    target = rms(a) * (1 - w) + rms(b) * w
+    gain = np.clip(target / rms(blend), 0.5, 2.5)
+    gain = np.convolve(gain, np.hanning(2 * win) / np.hanning(2 * win).sum(), mode="same")
+    # The ends stay untouched (gain 1) so the blend joins the waveform on both sides.
+    edge = np.minimum(1.0, np.minimum(np.arange(xf), np.arange(xf)[::-1]) / win)
+    y[e - xf:e] = blend * (1 + (gain - 1) * edge)
     return y
 
 
@@ -509,6 +521,12 @@ def slice_note(x, onset_frame, next_frame, env, floor, max_seconds, bowed):
         if sm[i] < floor + 5:
             end = min(stop_limit, (i + 20) * ENV_HOP)
             break
+    # Leading near-silence (a slow bow's onset walked back too far): start 10 ms before
+    # the level first comes within 40 dB of the note's peak.
+    env_note = envelope(x[start:end])
+    if len(env_note):
+        first = int(np.argmax(env_note >= env_note.max() - 40.0))
+        start += max(0, first * ENV_HOP - int(0.01 * RATE))
     y = x[start:end].copy()
     # Fades: a short one in (the attack stays), a longer cosine one out.
     fin = int((0.012 if bowed else 0.002) * RATE)
@@ -617,7 +635,20 @@ def process_set(spec, source, room, out_dir, report):
                 loop = find_loop(y, 440 * 2 ** ((midi - 69) / 12), region) if region else None
                 if loop:
                     s, e, cost, _ = loop
-                    zone["audio"] = crossfade_loop(y, s, e, int(0.08 * RATE))
+                    # A held note plays its loop: its pitch there is the note's pitch (the
+                    # bow's onset and other strings ringing pull the first second off).
+                    frames = yin(y[s:e], fmin=440 * 2 ** ((label - 8 - 69) / 12), fmax=440 * 2 ** ((label + 8 - 69) / 12))
+                    steady = [f for f, ap in frames if ap < 0.3]
+                    if len(steady) >= 5:
+                        spread = float(np.std([1200 * math.log2(f / np.median(steady)) for f in steady]))
+                        zone["wander"] = spread
+                        note["loop wander"] = f"{spread:.0f} cents"
+                        held_midi = 69 + 12 * math.log2(float(np.median(steady)) / 440.0)
+                        if abs(held_midi - midi) > 0.05:
+                            note["detected"] += f", held {100 * (held_midi - label):+.0f} cents"
+                        midi = held_midi
+                        zone["root"] = round(midi, 3)
+                    zone["audio"] = crossfade_loop(y, s, e, int(0.15 * RATE))
                     zone["loop"] = [s, e]
                     zone["release"] = int(region[1])
                     note["loop"] = f"{s / RATE:.2f}-{e / RATE:.2f}s (match {cost:.3f})"
@@ -627,6 +658,7 @@ def process_set(spec, source, room, out_dir, report):
                     report["problems"].append(f"{sid} {name_of(label)} take {rr + 1}: no sustain loop found (too short)")
             entry["notes"].append(note)
             zones.append(zone)
+        entry["found"] = len(entry["notes"])
         report["files"].append(entry)
         if takes == 0:
             entry["takesPerNote"] = {name_of(k): v for k, v in sorted(rr_count.items())}
@@ -635,6 +667,17 @@ def process_set(spec, source, room, out_dir, report):
                 report["problems"].append(f"{sid}/{layer['name']}: no note matched {name_of(m)}")
     if not zones:
         return None
+    # A held take whose pitch wanders (more than 12 cents, standard deviation, across its
+    # loop) would wobble every time the loop turns: dropped when the note has other takes.
+    for z in [z for z in zones if z.get("wander", 0) > 12]:
+        others = [o for o in zones if o is not z and o["label"] == z["label"] and o["layer"] == z["layer"] and o.get("wander", 0) <= 12]
+        if others:
+            zones.remove(z)
+            report["warnings"].append(f"{sid} {z['label']} take {z['rr'] + 1}: dropped, its pitch wanders while held ({z['wander']:.0f} cents); "
+                                      f"{len(others)} steady take{'s' if len(others) > 1 else ''} left")
+    for key in {(z["layer"], z["label"]) for z in zones}:
+        for i, z in enumerate(sorted([z for z in zones if (z["layer"], z["label"]) == key], key=lambda z: z["rr"])):
+            z["rr"] = i
 
     # The layers of one instrument were recorded at different input levels (the soft
     # takes turned up). The room's noise is the same in all of them, so each layer is
@@ -651,7 +694,10 @@ def process_set(spec, source, room, out_dir, report):
     # Loudness per note (the first 300 ms), and the layers' order.
     for z in zones:
         z["audio"] = z["audio"] * gain
-        head = z["audio"][:int(0.3 * RATE)]
+        # From the loudest 10 ms in the first 1.5 s (a bow takes a while to speak).
+        env_z = envelope(z["audio"][:int(1.5 * RATE)])
+        top = int(np.argmax(np.convolve(env_z, np.ones(2) / 2, mode="same"))) * ENV_HOP
+        head = z["audio"][top:top + int(0.3 * RATE)]
         z["rms"] = round(float(db(np.sqrt(np.mean(head ** 2)))), 2)
         z["peak"] = round(float(db(np.abs(z["audio"]).max())), 2)
     layers = len(spec["layers"])
