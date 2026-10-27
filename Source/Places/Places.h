@@ -228,7 +228,10 @@ private:
     // The kalimba plays the developer's recorded kalimba (Milestone 15); the modal model
     // behind it plays only without samples.
     SamplePart kalimbaRec { kalimba };
+    // The string pad plays the recorded violin's sustains (the hotfix after 15a); the bowed
+    // section model behind it plays only without samples.
     BowedPart strings;
+    SamplePart stringsRec { strings };
     dsp::Diffuser diffuser;
     dsp::SmallSpace space;
     std::array<dsp::OnePole, 4> tilt;   // Tone, two poles each side

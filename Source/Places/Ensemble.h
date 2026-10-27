@@ -1410,6 +1410,7 @@ private:
     NoteOn noteFor(const PlaceContext& c, const Scheduled& x) const;
     uint32_t salt = 0;
     std::array<bool, placeElements> catchUp {}, silent {};
+    std::array<float, placeElements> levelNow {};
 };
 
 } // namespace wb

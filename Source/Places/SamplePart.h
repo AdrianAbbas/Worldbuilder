@@ -28,6 +28,8 @@ struct SamplePatch {
     float gain = 1, pan = 0, spread = 0.4f, transpose = 0;
     int voices = 6;
     bool held = false;          // notes last their length (sustained recordings loop), else they ring
+    bool recordedTail = true;   // a held note ends in its recorded release (else it fades over `release` on its loop)
+    float legatoSeconds = 0.04f;   // a held note handing over to the next: its fade in (the old one's out, 1.5 times)
     float attack = 0;           // a fade-in (seconds) over the recorded attack: swells
     float release = 0.25f;      // a held note's release, a damped string's fade (seconds)
     float decay = 0;            // > 0: the recording dies away faster (seconds to fall 60 dB more)
@@ -38,6 +40,9 @@ struct SamplePatch {
     // A second string of a course (lutes and ouds have paired strings): detuned, a little
     // later, at this level.
     float courseCents = 0, courseLevel = 0, courseMs = 0;
+    // Held (looped) notes too: a second player of a section, playing another recorded take
+    // of the note where there is one.
+    bool courseLoops = false;
     float scoopSemis = 0, scoopSeconds = 0.05f;   // a slide into the note (as Scoop / Glide allows)
     float vibratoHz = 5, vibratoDepth = 0, vibratoDelay = 0.3f;   // semitones
     float glide = 0.05f;        // held notes following the chords
@@ -84,6 +89,7 @@ public:
         strumBeat = -1.0e9;
         strumCount = 0;
         trem = 1;
+        gainNow = -1;
     }
     void setKey(uint32_t key, uint32_t salt) override {
         Part::setKey(key, salt);
@@ -127,7 +133,7 @@ public:
                 auto& old = voice[std::size_t(i)];
                 if (old.on && h.on && h.until <= n.beat + 1.0e-6 && h.until >= n.beat - 0.07) {
                     held[std::size_t(i)].on = false;
-                    release(old, 0.06f);
+                    release(old, patch.legatoSeconds * 1.5f);
                     legato = true;
                 }
             }
@@ -163,7 +169,7 @@ public:
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
         v.gain = (1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(velocity), 1.3f)) * dsp::dbToGain(even);
-        const float attack = quick ? 0.008f : (legato ? 0.04f : patch.attack);
+        const float attack = quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack);
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
         v.fadeMul = patch.decay > 0.0f ? std::exp(-6.9078f / (patch.decay * weight::ring * n.decay * rate)) : 1.0f;
@@ -174,9 +180,15 @@ public:
         v.scoop = slide.depth(patch.scoopSemis) - slide.plain(patch.scoopSemis);
         const float scoopSeconds = patch.scoopSemis != 0.0f ? slide.time(patch.scoopSeconds) : slide.seconds;
         v.scoopMul = v.scoop != 0.0f ? std::exp(-float(dsp::chunk) / (std::max(scoopSeconds, 0.002f) * rate)) : 0.0f;
-        v.course = !zone->loops() && patch.courseLevel > 0.0f;
+        v.course = (!zone->loops() || patch.courseLoops) && patch.courseLevel > 0.0f;
+        v.courseZone = zone;
+        if (v.course && zone->loops()) {
+            // Another take for the second player (it loops on its own points), tuned to the first.
+            const auto* other = inst->find(int(std::lround(midi)), n.velocity, n.random2 + 0.5f - std::floor(n.random2 + 0.5f));
+            if (other != nullptr && other->loops()) v.courseZone = other;
+        }
         v.coursePos = v.pos - double(patch.courseMs * 0.001f * inst->rate);
-        v.courseRatio = std::exp2(patch.courseCents / 1200.0f);
+        v.courseRatio = std::exp2(patch.courseCents / 1200.0f + (zone->root - v.courseZone->root) / 12.0f);
         v.vibratoAge = 0;
         held[std::size_t(k)].set(n);
         if (!patch.held && n.live == 0) held[std::size_t(k)].on = false;   // it rings
@@ -234,8 +246,13 @@ public:
         const bool body = bodyType > dsp::BodyNone && amount > 0.0f;
         const float direct = dsp::lerp(1.0f, b.direct, amount);
         const float sym = patch.sympathetic;
-        const float g = patch.gain * trem;
+        // The level glides (20 ms) to a new gain (a Character's own) and the tremolo.
+        const float target = patch.gain * trem;
+        if (gainNow < 0.0f) gainNow = target;
+        const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
         for (int i = 0; i < n; ++i) {
+            gainNow += (target - gainNow) * follow;
+            const float g = gainNow;
             float l = 0, r = 0;
             for (auto& v : voice) {
                 if (!v.on) continue;
@@ -284,6 +301,7 @@ private:
     struct Voice {
         bool on = false, releasing = false, course = false;
         const samples::Zone* zone = nullptr;
+        const samples::Zone* courseZone = nullptr;
         double pos = 0, coursePos = 0, tailPos = -1;
         float rateRatio = 1, inc = 1, courseRatio = 1;
         float midi = 60, target = 60, scoop = 0, scoopMul = 0;
@@ -313,7 +331,8 @@ private:
         const auto& z = *v.zone;
         float y = read(z.data, v.pos);
         if (v.course && v.coursePos >= 0.0) {
-            if (v.coursePos < double(z.length - 1)) y += patch.courseLevel * read(z.data, v.coursePos);
+            const auto& c = *v.courseZone;
+            if (v.coursePos < double(c.length - 1)) y += patch.courseLevel * read(c.data, v.coursePos);
         }
         if (v.tailPos >= 0.0) {
             // Crossing into the recorded release tail.
@@ -327,6 +346,8 @@ private:
         }
         v.pos += double(v.inc);
         v.coursePos += double(v.inc * v.courseRatio);
+        if (v.course && v.courseZone->loops() && !v.releasing && v.coursePos >= double(v.courseZone->loopEnd))
+            v.coursePos -= double(v.courseZone->loopEnd - v.courseZone->loopStart);
         if (z.loops() && !v.releasing && v.pos >= double(z.loopEnd)) v.pos -= double(z.loopEnd - z.loopStart);
         if (v.tailPos >= double(z.length - 1)) v.tailPos = -1, v.tailMix = 0, v.pos = double(z.length);
         if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
@@ -341,7 +362,7 @@ private:
         v.releasing = true;
         const float s = seconds > 0.0f ? seconds : patch.release * weight::release;
         const auto& z = *v.zone;
-        if (seconds <= 0.0f && z.release > 0 && v.pos < double(z.release)) {
+        if (seconds <= 0.0f && patch.recordedTail && z.release > 0 && v.pos < double(z.release)) {
             // The bow lifts: the recorded tail, faded in over 40 ms, and a slower release on top.
             v.tailPos = double(z.release);
             v.tailMix = 0;
@@ -390,7 +411,7 @@ private:
     std::array<dsp::OnePole, 2> openDamp;
     std::array<float, 2> openPeriod { 400, 300 };
     double strumBeat = -1.0e9;
-    float strumFirst = 0, trem = 1;
+    float strumFirst = 0, trem = 1, gainNow = -1;
     int strumCount = 0;
 };
 

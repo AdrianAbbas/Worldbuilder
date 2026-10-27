@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-ForestPlace::ForestPlace() : EnsemblePlace(1600) { setParts({ &flute, &birds, &wood, &kalimbaRec, &strings, &rustle }); }
+ForestPlace::ForestPlace() : EnsemblePlace(1600) { setParts({ &flute, &birds, &wood, &kalimbaRec, &stringsRec, &rustle }); }
 
 void ForestPlace::prepareFx() {
     diffuser.prepare(rate);
@@ -355,6 +355,41 @@ void ForestPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 3, 4, 4);
         p.held = true;
         p.gain = 1.0f;
+    }
+    // The recorded string pad: the developer's bowed violin, looped while the chord holds,
+    // an octave above the old section (the recordings start at the G string), two players
+    // a note (another take, a few cents apart and a moment late). It swells in slowly, a
+    // gentle vibrato after it speaks; darker and slower in the dark woods, where Tension
+    // makes it tremble; the recorded release as the bow lifts.
+    {
+        auto& p = stringsRec.patch;
+        p.instrument = "violin-sustain";
+        p.held = true;
+        p.transpose = 12.0f;
+        p.attack = dark ? 2.0f : 1.4f;
+        p.release = 2.4f;
+        p.recordedTail = false;   // a pad fades slowly on its loop (the bow lifting would cut it short)
+        p.legatoSeconds = 0.25f;  // chords hand over slowly
+        p.glide = 1.2f;
+        p.vibratoHz = dark ? 4.6f : 5.2f;
+        p.vibratoDepth = 0.1f + 0.05f * s.life;
+        p.vibratoDelay = 0.5f;
+        p.tremoloPerBeat = 4.0f;
+        p.tremoloDepth = 0.6f * std::max(0.0f, tension - 0.3f);
+        p.courseLoops = true;
+        p.courseLevel = 0.8f;
+        p.courseCents = 7.0f;
+        p.courseMs = 35.0f;
+        p.toneHz = lerpExp(2200.0f, 9000.0f, tone) * (dark ? 0.6f : 1.0f) * std::exp2(0.3f * drift.smooth(t, 0.06));
+        p.velocityTone = 0.6f;
+        p.velocityGain = 0.5f;
+        p.even = 0.7f;
+        p.lowestKey = 55;    // the G string
+        p.highestKey = 83;   // up to a fifth above the highest recorded note
+        p.spread = 0.6f;
+        p.voices = byQuality(q, 3, 4, 4);
+        // Where the section model sat in each Character (measured, Tests "balance").
+        p.gain = enchanted ? 4.15f : (dark ? 2.56f : 3.32f);
     }
     // Rustling leaves: tuned breath alone, in gusts.
     const float gust = clamp01(0.55f + 0.6f * drift.smooth(t + 70.0, 0.25));

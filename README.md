@@ -304,9 +304,10 @@ and KEYS as every other instrument):
 |---|---|---|---|
 | Tavern | Lute Strum | classical guitar, fingers (3 velocity layers) | paired courses, a lute's lighter body, shorter and brighter |
 | Tavern | Fiddle | violin, bowed open strings (looped while held, its own release) | vibrato, quick bowing for reels, sweeter in the Quiet Corner |
-| Desert | Oud | classical guitar | paired courses, the oud's bowl body, darker, a fretless slide into notes |
+| Desert | Oud | classical guitar | paired courses, the oud's bowl body, darker (with SCOOP/GLIDE on, a fretless slide into notes) |
 | Forest | Kalimba | kalimba, 17 tines (3 velocity layers) | as played; darker in the Dark Woods, short in the Morning Glade |
-| Biodome | Water Plucks | kalimba | each tine slides quickly up into its note like a drop, softened and short |
+| Forest | Strings | violin, bowed open strings (looped while held, its own release) | a soft pad on the chords an octave above the old section, two players a note (another take, a few cents apart); darker and trembling in the Dark Woods |
+| Biodome | Water Plucks | kalimba | softened and short (with SCOOP/GLIDE on, each tine slides quickly up into its note like a drop) |
 | Ruins | Violin Textures (new, in place of the Ghost Pad) | violin: bowed, pizzicato, col legno | slow swells and bowed tremolo; short notes are plucked, the shortest struck with the bow's wood |
 
 In the Ruins' Violin Textures a note's length in the Pattern Editor chooses how it is

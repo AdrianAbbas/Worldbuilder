@@ -119,7 +119,7 @@ inline constexpr std::array<std::array<SlideDefault, 6>, 27> slideTable = [] {
     // City: Chimes, Synth Bass, E-Piano, Crowd, Sirens, Traffic Hum
     t[5] = { s(0.500f, 0.080f), s(0.500f, 0.080f), s(0.500f, 0.080f), s(0.000f, 0.300f), on(0.000f, 0.350f), s(0.000f, 1.000f) };
     // Forest: Flute, Birds, Wood, Kalimba, Strings, Rustle
-    t[6] = { s(0.500f, 0.060f), on(3.000f, 0.025f), on(0.845f, 0.035f), s(0.500f, 0.080f), s(0.090f, 1.200f), s(0.500f, 0.080f) };
+    t[6] = { s(0.500f, 0.060f), on(3.000f, 0.025f), on(0.845f, 0.035f), s(0.500f, 0.080f), s(0.000f, 1.200f), s(0.500f, 0.080f) };
     // Alien Hive: Pulses, Glass Calls, Chitter, Throb Bass, Formants, Swarm
     t[7] = { s(0.500f, 0.080f), s(0.500f, 0.080f), on(8.137f, 0.035f), s(0.000f, 0.300f), s(0.000f, 0.800f), s(0.000f, 0.500f) };
     // Temple: Choir, Gongs, Bowls, Chant Drone, Temple Bells, Zither

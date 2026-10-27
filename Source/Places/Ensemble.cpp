@@ -17,6 +17,7 @@ void EnsemblePlace::reset() {
     for (auto& b : busR) b.fill(0);
     catchUp.fill(true);
     silent.fill(false);
+    levelNow.fill(-1.0f);
     resetFx();
 }
 
@@ -106,6 +107,7 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             if (!silent[k]) part->reset();
             silent[k] = true;
             catchUp[k] = true;
+            levelNow[k] = 0.0f;
             continue;
         }
         silent[k] = false;
@@ -169,9 +171,14 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
         }
         playLive(n);
         if (done < n) part->render(l + done, r + done, n - done);
+        // The level glides (about 20 ms) when it changes at once (a Character's own level
+        // for the element, set in configure()), so a switch never clicks.
+        if (levelNow[k] < 0.0f) levelNow[k] = g;
+        const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
         for (int i = 0; i < n; ++i) {
-            l[i] *= g;
-            r[i] *= g;
+            levelNow[k] += (g - levelNow[k]) * follow;
+            l[i] *= levelNow[k];
+            r[i] *= levelNow[k];
         }
         // Population (the effect depth) deepens the sends, as it does the Place's own effects.
         if (c.fx != nullptr) c.fx->process(e, l, r, n, sendScale[k] * dsp::lerp(0.5f, 1.5f, c.s.fxDepth));

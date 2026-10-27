@@ -8189,8 +8189,9 @@ namespace sampleTest {
 using namespace models;
 // The elements that play recordings, and the bank instrument each plays first.
 struct Sampled { int type, element; const char* name; };
-const std::array<Sampled, 6> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
+const std::array<Sampled, 7> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
                                          { Desert, DesertPlace::Oud, "Desert Oud" }, { Forest, ForestPlace::Kalimba, "Forest Kalimba" },
+                                         { Forest, ForestPlace::Strings, "Forest Strings" },
                                          { Biodome, BiodomePlace::WaterPlucks, "Biodome Water Plucks" },
                                          { Ruins, RuinsPlace::ViolinTextures, "Ruins Violin Textures" } } };
 
@@ -8813,6 +8814,25 @@ void testSamples(Suite& s) {
         s.check(loops >= 11 && smooth == loops, "violin: every loop is smooth over 12 s (no 20 ms level jump beyond the bowing's own, no click)",
                 std::to_string(smooth) + " of " + std::to_string(loops) + detail);
         s.check(sustained == loops, "violin: held notes sustain (the loop keeps them within 9 dB after 10 s)", std::to_string(sustained) + " of " + std::to_string(loops));
+        // The Forest's pad: two players a note (another take, looping on its own points).
+        int section = 0, sectionSmooth = 0;
+        std::string sectionDetail;
+        for (int key : { 55, 58, 62, 65, 69, 72, 76, 79 }) {
+            const auto y = play("violin-sustain", key, 0.6f, 0.3f, 12.0, 12.0, true, [](SamplePatch& p) {
+                p.courseLoops = true;
+                p.courseLevel = 0.8f;
+                p.courseCents = 7.0f;
+                p.courseMs = 35.0f;
+            });
+            const double step = worstStep(y, 48000, y.size() - 1);
+            const double early = rmsDb(y, 48000, 48000), late = rmsDb(y, std::size_t(10.5 * 48000), 48000);
+            const bool ok = step < 30.0 && late > early - 9.0 && finite(y);
+            sectionSmooth += ok ? 1 : 0;
+            ++section;
+            if (!ok) sectionDetail += " " + std::to_string(key) + " (step " + fmt(step) + " dB, " + fmt(late - early) + " dB)";
+        }
+        s.check(sectionSmooth == section, "violin, two players a note (the Forest pad): held 12 s, no click, it sustains",
+                std::to_string(sectionSmooth) + " of " + std::to_string(section) + sectionDetail);
         // Released after 2 s: the recorded tail, no click, gone within 2 s.
         const auto y = play("violin-sustain", 62, 0.6f, 0.5f, 2.0, 4.5, true, [](SamplePatch& p) { p.release = 0.3f; });
         const double held = rmsDb(y, std::size_t(1.5 * 48000), 9600), after = rmsDb(y, std::size_t(4.0 * 48000), 9600);

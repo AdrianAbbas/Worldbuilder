@@ -837,3 +837,27 @@ Nothing in the sound changed; this is about the look and that every control stil
 - [ ] **Levels**: each sits in its Place's mix about where the old instrument did.
 - [ ] **Two instances** (two tracks): both play the recordings; memory grows by much less
   than 40 MB for the second one (the samples are shared).
+
+## Hotfix check after Milestone 15a (guitar levels, Scoop / Glide, violin pad)
+
+- [ ] **Tavern** (each Character): the Lute Strum is clearly audible next to the fiddle and
+  squeezebox, about as present as them (Quiet Corner's slow arpeggios too). Play it from
+  the keyboard soft to hard: it gets steadily louder and brighter, with no sudden jump
+  between soft, medium and hard.
+- [ ] **Desert** (each Character): the Oud sits level with the ney, tanpura and drums; Endless
+  Dunes' sparse phrases are not lost.
+- [ ] **Forest** (Enchanted): the Strings pad is now your violin, looped, an octave above the
+  old pad. Each chord starts in tune, with no slide into it, and the chord changes move at
+  once. Hold a pad note from the keyboard for 10 s: no pulsing or click as it loops. Does
+  it fit the forest? (The old pad is still in the code if not.)
+- [ ] **Biodome**: the Pads start in tune and change chords without gliding; the Water Plucks
+  start on their note (no slide).
+- [ ] **SCOOP/GLIDE** (Pattern Editor, end of the randomness row): Off by default on the
+  Forest Strings, Biodome Pads, Water Plucks, Oud and Ney; switch it On on the Forest
+  Strings: the chords glide again (TIME sets how long; AMT adds a scoop into each note). On
+  by default for the drums (the skin's pitch drop), the Forest birds, the Cavern drips, the
+  Temple gongs and the City sirens: switch one Off and hear the difference. Automate it;
+  save and reopen the project: it is kept.
+- [ ] **An older project** with the Forest or Biodome: it opens with their pads no longer
+  gliding (the new defaults), everything else as it was.
+

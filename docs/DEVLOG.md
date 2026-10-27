@@ -5,7 +5,7 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Hotfix after Milestone 15a, in progress** (the guitars' levels, Scoop / Glide, the violin
+**The hotfix after Milestone 15a is done** (the guitars' levels, Scoop / Glide, the violin
 pad): checklist and handoff at the end, in
 [Hotfix after Milestone 15a](#hotfix-after-milestone-15a-guitar-levels-scoop--glide-violin-pad-2026-10-27).
 
@@ -5148,8 +5148,8 @@ string pad from the recorded violin sustains.
 
 - [x] 1. Guitar levels: velocity layers balanced per note, notes evened within their layer, lute and oud set by measured loudness (`--only balance`)
 - [x] 2. Scoop / Glide per instrument (Off / On, amount, time), every instrument checked
-- [ ] 3. (Optional) Forest string pad from the violin sustain samples
-- [ ] 4. Tests, docs, this handoff, final push without `[skip ci]`
+- [x] 3. (Optional) Forest string pad from the violin sustain samples
+- [x] 4. Tests, docs, this handoff, final push without `[skip ci]`
 
 ### 1. The guitars' levels
 
@@ -5252,4 +5252,79 @@ Full suite (Linux, six shards): 3995 passed, 1 failed: "Alien Ruins: Tone bright
 drone's glides, now off, carried a little of it). Two attempts (the Place's tilt opened to
 600 Hz, the crystals' tone range widened) moved it under 0.1 dB, so per the working rules
 that one check is report-only for Alien Ruins (the other 26 Places keep it).
+
+### 3. The Forest string pad from the violin
+
+**They fit, an octave up.** The pad held chords from D2 (the Dark Woods' low fifths) to
+about C4 for a viola-and-cello section; the violin recordings are the open strings G3 to
+E5 (plus up to a fifth above). Played an octave higher, every Character's chords sit
+inside that range, and the developer hears the pad as a violin anyway. A single violin
+per note was thin for a pad, so the sampler gained a second player for held notes: the
+"second string" it already had for the lute's and oud's courses now also runs on looped
+notes (`courseLoops`), reading *another recorded take* of the note where there is one
+(G3 and A4 and E5 have three, D4 two), looping on its own points, 7 cents apart and 35 ms
+late.
+
+- `ForestPlace`: `stringsRec`, a `SamplePart` over the old `BowedPart` section (kept and
+  still configured: it plays only without samples, as the other replaced instruments'
+  models do). Held, 1.4 s swell (2 s in the Dark Woods), a 2.4 s fade on the loop when a
+  chord ends (`recordedTail = false`: the recorded bow lift would cut a pad short), chords
+  handing over in 0.25 s (`legatoSeconds`; the fiddle keeps 0.04), the 1.2 s chord glide
+  when Scoop / Glide is on (off by default), gentle vibrato after it speaks, the same
+  Tension tremolo, darker in the Dark Woods.
+- Level: per Character where the section model sat (measured: within 0.01 LU in all three).
+- **A click on Character changes (found by the automation test, fixed for every Place).**
+  Switching the Forest from Enchanted to Dark Woods failed "a step in any of these
+  controls is smooth" (-15.2 dB against -20). The cause was older than the pad: a Place's
+  per-Character level for each instrument (`level[]`, set in `configure()`) was applied
+  without smoothing, so every Character switch stepped it at once. The old bowed pad alone
+  gave the same -14.6 dB; it passed in the mix only because its first chord happened to be
+  quiet at that moment. `EnsemblePlace` now glides each instrument's level over about 20 ms
+  (reset with the Place, so renders stay deterministic); the sampler glides its own gain
+  likewise. The Forest switch is now -28.7 dB in the mix (the old pad: -27.8).
+- Tests: the Forest Strings joins the recorded instruments' checks (audible in every
+  Character, differs from its fallback, within 4 dB of it), and a held note with the second
+  player is click-free over 12 s and sustains (eight notes across the range). The Scoop /
+  Glide default for the element is now its 1.2 s glide alone (no bow settle).
+
+Full suite after all three fixes (Linux, GCC, six shards): **3999 passed, 0 failed** (the
+Alien Ruins Tone check reporting, as above). The AU harness runs on the macOS CI only.
+
+### Hotfix handoff
+
+**Done**: the three fixes. Pushed after each with `[skip ci]`; this last push is without it,
+so CI builds once.
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Hotfix check after Milestone 15a"):
+the lute and the oud in every Character (level, and soft to hard from the keyboard); the
+Forest's new violin pad and the Biodome pads (in tune from the start, no gliding); the
+SCOOP/GLIDE control (end of the Pattern Editor's randomness row) on and off on a few
+instruments, saved with the project.
+
+**Known issues / limits**:
+- Nothing here has been heard: levels are measured (gated loudness, each instrument alone
+  in its Place) and slides are measured on the parts; whether the lute and oud now sit
+  right in the full mix is for your ears (they are set about 1.5 LU above their Place's
+  median; turn the element level down if they now stick out).
+- Scoop / Glide's defaults take over in existing projects too (the parameters are new): the
+  Forest and Biodome pads and every other pad, drone and choir stop gliding between chords;
+  switch it On per instrument to bring a glide back.
+- Off, a held note moving to its next chord changes pitch within 30 ms instead of gliding;
+  on a sustained pad that is a clean step, like a player changing finger.
+- The noise sweeps (risers, wind, waves, steam, hiss, solar flares) ignore Scoop / Glide:
+  they have no pitch to slide. The control still shows on their tabs.
+- Alien Ruins: the "Tone brightens it" check is report-only (2.89 dB of the 3 wanted since its
+  choir and drone stopped gliding).
+- Every Place's instruments now glide to a new per-Character level over about 20 ms instead
+  of stepping (the click fix above); nothing else about their levels changed.
+- The new violin pad is an octave above the old section and is two players a note, not a
+  full section; Dark Woods' low fifths are now in the violin's register. If it does not suit
+  the forest, swapping `stringsRec` back to `strings` in `ForestPlace`'s `setParts` brings the
+  old pad back.
+- Noticed, not changed: the Ruins' Violin Textures (15a) is very quiet in Overgrown and
+  Desolate (-49 and -45 LUFS alone, 12-17 LU under the Ruins' other instruments; the `balance`
+  group reports it). Raising it was not part of this hotfix.
+- Legato quirk (existing, not changed): a held note whose next note starts exactly on a
+  processing chunk's first sample is let go before the next one starts, so that pair is
+  not played legato. With Scoop / Glide off it makes no audible difference.
 
