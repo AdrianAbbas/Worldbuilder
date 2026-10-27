@@ -4905,3 +4905,150 @@ WORLDBUILDERs saved as patches.
 - The Pattern Editor's grid is a little shorter again for the ruler (it scrolls and now
   zooms).
 - Carried over: Milestone 15 (samples) is next; the repository must be private first.
+
+## Milestone 15a: the first recorded instruments (2026-10-27)
+
+From [Direction Update 8](DIRECTION_UPDATE_8.md), Milestone 15, as a first test run with
+the developer's first recordings. The developer's instructions for this run override
+Update 8 where they differ: the recordings stay in the private `AdrianAbbas/Samples`
+repository (MP3s in its root, described by its `notes.txt`) and never enter this public
+one; CI fetches them with a token; the instruments are replaced outright (no switch).
+
+### Progress checklist
+
+- [x] 1. Preparation script (`tools/sample-prep/`): MP3 padding, slicing, pitch detection and checks, trimming, levels, room-tone noise reduction, loops, mapping files, report
+- [x] 2. CI fetches the private samples with the `SAMPLES_TOKEN` secret; bundles ship them (`Contents/Resources/Samples`); install and bundle checks
+- [x] 3. Sampler engine (`SampleBank`, `SamplePart`): key mapping and pitch-shifting, velocity layers, round-robins, loops, release tails, per-voice filter and envelope, background loading, shared bank
+- [x] 4. Replacements: Tavern lute and fiddle, Desert oud, Forest kalimba, Biodome water plucks, Ruins violin textures (new element); synth models kept as fallbacks only
+- [x] 5. Tests (`--only samples`), AU harness check, size and memory report, docs, this handoff
+
+### What is in the recordings (checked against the audio)
+
+`notes.txt` was right about almost everything; the script checks it and prints a full
+report (`report.json` next to the prepared samples, and the CI log). What I found and
+assumed:
+
+- **Thirteen MP3s, all GarageBand exports**: 44.1 kHz, 192 kbit/s, dual mono (left and
+  right identical, so stored as mono), with Apple's `iTunSMPB` gapless tag (encoder delay
+  528 samples, padding 1898-2804) and no LAME header. Several end in 13-62 s of digital
+  silence (exported past the take). The padding and the decoder's 529 samples are taken
+  off; the silence is dropped.
+- **"Varying Sweep..." and "Wood tapping..." are the same recording** (correlation
+  0.99999999995; "Wood tapping" is a re-encode one second longer). It is seven strums
+  across all the kalimba's tines with a burst of tapping between 16 and 19 s. Not used
+  (no note map needs it); listed in the manifest as unused.
+- **Guitar** (Soft / Medium / Hard 1 (no pick)): 15 notes each, E2 G2 A#2 C#3 ... A#5 as
+  listed, within a few cents. Two exceptions: the **soft "A#5" is an A5** (-87 cents; mapped
+  as an A5, so the soft layer's top note is A5 shifted up), and the **soft E4** has the
+  open strings ringing louder than the note (its harmonics confirm E4; kept).
+  The **open A string (110 Hz) rings in sympathy** through the second half of every guitar
+  take (louder than the note itself in the soft layer's upper notes), with the other open
+  strings fainter: steady tones below a note's pitch are notched out and notes above
+  250 Hz get a gentle high-pass at half their pitch, so the guitar does not drone an A
+  under every note in every key.
+- **The velocity layers were recorded at different input levels.** Taken as they are, the
+  soft takes were often louder than the hard ones (14 of 17 kalimba notes and 13 of 15
+  guitar notes out of order). The noise floors give it away (kalimba -59.7 / -69.1 /
+  -78.4 dBFS, guitar -62.9 / -72.3 / -73.7): the same room at different gains. Each layer
+  is levelled by its noise floor (kalimba soft -9.4 dB, hard +9.3 dB; guitar soft -6.7,
+  medium +2.7, hard +4.1). Afterwards all 17 kalimba notes are in order; three guitar
+  notes (C#3, C#4, C#5) still have one pair out of order (left as recorded). **Assumed:**
+  the room and mic position stayed the same between the takes.
+- **Kalimba** (Soft / Medium / Hard Hits): 17 notes, C4 to E6 in C major (no dots 1-7, one
+  dot 1-7, two dots 1-3) as described. The tines are up to 23 cents out (mostly sharp;
+  the sampler plays them in tune). Each hit has a small finger click about 1.5 s before it (ignored).
+- **Violin, Open sustain 1**: the four open strings G3 D4 A4 E5, three bowed takes each,
+  plus 10 s of handling noise before the first. The strings are tuned 1-21 cents flat.
+  **D4 take 2 is dropped**: its pitch wanders by 19 cents (standard deviation) while held,
+  so its loop would wobble; the other two D4 takes are steady (under 8 cents).
+- **Violin, pizzicato 1**: the open strings, three each (12). **pizzicato 2**: ten notes
+  every three semitones from G3 to A#5, three each (30). The two are merged into one key
+  map (G3 and E5 get six round-robins).
+- **Violin, hitting bow wood** (col legno): G string twice, D, A and E three times each (11
+  hits). One more knock at 30.3 s sounds like a D3, below the violin's range: not a string,
+  left out.
+- **Room tone**: 181 s at -42 dBFS RMS with a steady whine at 1234 Hz (32 dB over the
+  noise), 25-35 dB louder than the gaps in the takes (recorded at another gain, or with a
+  fan on). **Assumed:** its spectrum is the room's noise shape; it is fitted per third of
+  an octave to each take's own quiet gaps before it is taken off, gently (at most 9 dB).
+  The floors come down about 4 dB.
+- Nothing else was unmatched. The script lists anything it cannot match ("Could not match")
+  and every warning.
+
+### Decisions
+
+- **Out of the public repository.** The recordings live only in `AdrianAbbas/Samples`.
+  `.gitignore` refuses audio files. CI clones the Samples repository with the
+  `SAMPLES_TOKEN` secret (sent as an HTTP header and masked, never in a URL), prepares the
+  notes in the runner's temp folder and deletes the MP3s. Without the secret the CI jobs
+  stop with an explanation (a build without the recordings is not the product).
+- **Shipping.** CMake copies the prepared notes into every plugin bundle's
+  `Contents/Resources/Samples` (`WORLDBUILDER_SAMPLES_DIR`), so ad-hoc signing seals them
+  with the bundle and GarageBand's sandbox can read them. Mono 16-bit FLAC (the sources are
+  MP3s, so FLAC loses nothing more and 16 bits are plenty): 160 notes, 11.3 MB.
+- **Loading.** One bank per process (`samples::Bank`, shared by every instance), loaded on
+  a background thread when the first instance is created; `prepareToPlay` waits for it up
+  to 5 s, so the first notes and every render already use it (it takes about 0.3 s). After
+  loading nothing in it changes, so the audio thread reads it without locks. Notes stay
+  16-bit in memory (40 MB, half of what floats would take). Plucked notes are kept to 5 s
+  (the Places shorten them further anyway).
+- **The sampler** (`SamplePart`, a Part like any other): the nearest recorded pitch for the
+  key (prepared key ranges), the layer for the velocity, a round-robin take chosen from the
+  note's own deterministic random number (so renders and playback stay identical), cubic
+  interpolation from the recorded pitch (as detected, so out-of-tune recordings play in
+  tune) and sample rate. Held notes loop and, on release, cross into the recorded tail
+  (where the bow lifts) over 40 ms with a release on top; plucked notes ring and are damped
+  on a key's release. Per voice: a low-pass that follows velocity, an attack and an extra
+  decay, a second course string, a slide into the note, vibrato, chord following, and the
+  part's body resonances and sympathetic open strings (shared with the plucked-string
+  model). A note outside the recorded range folds in by octaves.
+- **Loops.** For each bowed take: the best-matching pair of points in the sustain (on
+  upward zero crossings, scored by the waveform difference, longer loops preferred), a
+  150 ms crossfade levelled per 10 ms (two stretches of a bowed note partly cancel in a
+  plain crossfade: the D4 loops dipped 4.5 dB), and the release point where the level
+  falls away. Held notes are tuned on their loop (the bow's onset and other strings
+  ringing pulled the first second's pitch up to 30 cents off).
+- **Fallbacks, not switches.** Each `SamplePart` holds the synthesised part it replaced
+  and plays it only when the bank has no recordings (a build without samples, a fork).
+  The old patches are still configured, so the fallback sounds exactly as before. The
+  interface shows only the recorded instruments.
+- **The Ruins' new texture element.** A Place has six elements by design (Update 5), so
+  "Violin Textures" takes the Ghost Pad's place (the Ruins' synthesised choir pad, its
+  closest role). Its pattern: two bars per bowed swell on the chord, a few pizzicato notes
+  and, as the ruin is haunted or tense, col legno taps. A note's written length picks the
+  articulation, so it stays editable. It goes through its own reverse echo (not the
+  lo-fi the old instruments get). Old projects keep their saved pattern for that element
+  and play it on the violin.
+- **Biodome's "kalimba-style plucks"** are its Water Plucks (the element that plucks; the
+  Mallets are struck bars). Forest's are its Kalimba.
+- **Levels.** Each recorded element is set to sit where the model it replaced sat in its
+  Place (checked per Character, within 4 dB): the kalimba and the water drops needed far
+  more gain than the recordings' raw level (the old models were loud), the oud less.
+- **The AU harness** reads the sample count the plugin saves in its state (`samples`
+  attribute, information only) and fails if the installed plugin loaded none.
+
+### Size and memory
+
+- **Samples**: 160 notes from 11 recordings, 486 s of audio, 11.3 MB as FLAC.
+- **Package**: each plugin bundle carries its own copy (the AU and the VST3), so the
+  download grows by about 22.5 MB: from 18.8 MB (the last CI package) to about 41 MB. The
+  installed AU and VST3 each grow by 11.3 MB. CI's bundle check now prints both bundles'
+  sizes.
+- **Memory**: 40.0 MB for the bank, once per process (shared by every WORLDBUILDER
+  instance in the same host process), loaded in 0.29 s here (Linux, 4 cores). The parts
+  themselves add nothing measurable (fixed voice arrays).
+
+### Tests (`--only samples`, 47 checks)
+
+The bank loads (count, memory, load time as metrics); every mapped note plays at its pitch
+(within 12 cents held, measured in the loop, 15 cents plucked); a note between recordings
+is shifted to its pitch; the guitar's and kalimba's velocities pick their layers; the hard
+guitar layer is louder (all 8 sampled notes) and brighter (5 of 6 from E2 to A#4; the soft
+E4 has open strings ringing over it; above A#4 the soft takes are no darker, reported);
+three violin takes of G3 sound different; the merged pizzicato has six G3 takes; every
+loop held for 12 s stays as smooth as the bowing itself with no click and keeps its level;
+a released bowed note crosses into its tail and dies away without a click; a damped
+guitar note fades; no instrument clicks on its attack; a sampled part allocates nothing
+while starting and rendering notes; each Place's recorded element is audible and finite in
+every Character, differs from its fallback and sits within 4 dB of it.
+`--no-samples` runs everything on the fallbacks (the samples group then only reports).
