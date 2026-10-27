@@ -4,17 +4,19 @@ namespace wb {
 
 using namespace dsp;
 
-RuinsPlace::RuinsPlace() : EnsemblePlace(2000) { setParts({ &shards, &box, &bells, &wind, &ghost, &toms }); }
+RuinsPlace::RuinsPlace() : EnsemblePlace(2000) { setParts({ &shards, &box, &bells, &wind, &violin, &toms }); }
 
 void RuinsPlace::prepareFx() {
     lofi.prepare(rate, 2001);
     reverse.prepare(rate, 0.9f);
+    reverseViolin.prepare(rate, 0.9f);
     hall.prepare(rate);
 }
 
 void RuinsPlace::resetFx() {
     lofi.clear();
     reverse.clear();
+    reverseViolin.clear();
     hall.clear();
     for (auto& f : tilt) f.reset();
 }
@@ -113,15 +115,30 @@ void RuinsPlace::generate(int element, const GenInputs& in, pat::Pattern& out) c
         return;
     }
 
-    if (element == GhostPad) {
-        // A ghostly pad on the chord, two bars a note.
+    if (element == ViolinTextures) {
+        // A violin heard through the walls: long bowed swells on the chord, two bars a note,
+        // and between them a few ghostly sounds. A note's length chooses how it is played
+        // (the recordings): longer than an eighth is bowed, an eighth is plucked
+        // (pizzicato), a sixteenth is the bow's wood on the string (col legno).
         out.setGrid(pat::Sixteenth, 4);
         out.followChords = true;
-        out.base = -12;
-        w.note(0, 0, 64, 0.8f);
-        w.note(0, 4, 32, 0.65f);
-        w.note(32, ch(30, 0) < 0.5f ? 2 : 4, 32, 0.65f);
-        if (in.character == Haunted) w.note(0, size + 2, 64, 0.5f);
+        out.base = 0;
+        const bool haunted = in.character == Haunted, desolate = in.character == Desolate;
+        w.note(0, 0, desolate ? 64 : 32, 0.6f);
+        if (!desolate) w.note(32, ch(30, 0) < 0.5f ? 2 : 4, 32, 0.6f);
+        if (haunted) w.note(16, size + 2, 48, 0.45f);
+        // Pizzicato: a few chord tones, plucked.
+        const int plucks = int((desolate ? 1.0f : 2.0f) + (haunted ? 1.0f : 2.0f) * busy * lerp(0.6f, 1.4f, density));
+        for (int k = 0; k < plucks; ++k) {
+            const int at = 2 * int(ch(31, k) * 32.0f);
+            w.note(at, size + 2 * int(ch(32, k) * 3.0f), 2, (0.35f + 0.3f * ch(33, k)) * human(34, k));
+        }
+        // The bow's wood: taps on the strings, more as the ruin is haunted or tense.
+        const int taps = int((haunted ? 3.0f : 0.5f) * busy + 4.0f * tension);
+        for (int k = 0; k < taps; ++k) {
+            const int at = 32 + int(ch(35, k) * 32.0f);
+            w.note(at, 2 * int(ch(36, k) * 4.0f), 1, (0.3f + 0.35f * ch(37, k)) * human(38, k));
+        }
         return;
     }
 
@@ -247,6 +264,35 @@ void RuinsPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 3, 4, 4);
         p.gain = 1.0f;
     }
+    // Violin textures: the recorded violin. Bowed notes swell in slowly and loop while they
+    // hold, with a slow, uneasy vibrato (bowed tremolo in the haunted ruin, quicker as
+    // tension rises), darker as the ruin is overgrown; plucks and wood taps ring in the
+    // space between.
+    {
+        auto& p = violin.patch;
+        p.instrument = "violin-sustain";
+        p.shortInstrument = "violin-pizz";
+        p.shortBeats = 0.5f;
+        p.tinyInstrument = "violin-collegno";
+        p.tinyBeats = 0.25f;
+        p.held = true;
+        p.attack = haunted ? 1.8f : 1.2f;
+        p.release = 2.5f;
+        p.vibratoHz = 4.2f;
+        p.vibratoDepth = 0.1f + 0.15f * tension;
+        p.vibratoDelay = 0.6f;
+        p.glide = 1.0f;
+        p.tremoloPerBeat = haunted ? 4.0f : 0.0f;
+        p.tremoloDepth = haunted ? 0.25f + 0.35f * tension : 0.0f;
+        p.toneHz = lerpExp(2500.0f, 10000.0f, tone) * (overgrown ? 0.75f : 1.0f);
+        p.velocityTone = 0.8f;
+        p.even = 0.7f;
+        p.lowestKey = 55;
+        p.highestKey = 83;
+        p.spread = 0.9f;
+        p.voices = byQuality(q, 4, 5, 6);
+        p.gain = haunted ? 1.05f : (desolate ? 0.42f : 0.7f);
+    }
     // Low toms: soft skins tuned to the root and the fifth below.
     {
         auto& p = toms.patch;
@@ -300,6 +346,7 @@ void RuinsPlace::configure(const PlaceContext& c) {
     lofi.set(lerp(18000.0f, 9000.0f, worn), lerp(12.0f, 8.0f, worn), lerpExp(4000.0f, 12000.0f, tone) * (0.8f + 0.5f * s.era), worn);
     // Reverse echoes: long swells in the haunted ruin, a trace elsewhere.
     reverse.set(haunted ? 0.75f : 0.5f, (haunted ? 0.45f : 0.25f) + 0.25f * tension, lerpExp(1500.0f, 6000.0f, tone));
+    reverseViolin.set(haunted ? 0.9f : 0.65f, (haunted ? 0.4f : 0.2f) + 0.2f * tension, lerpExp(1500.0f, 6000.0f, tone));
     reverseSend = (haunted ? 0.55f : (desolate ? 0.35f : 0.2f)) * (0.6f + 0.6f * s.fxDepth);
     // A roofless hall: long and dark, open to the sky.
     hall.set(lerp(0.55f, 1.0f, s.size), lerp(2.0f, 5.0f, s.size) * (desolate ? 1.3f : 1.0f) * (1.0f + 0.3f * s.magic), lerpExp(1200.0f, 5000.0f, tone));
@@ -324,8 +371,11 @@ void RuinsPlace::mix(const PlaceContext&, float* left, float* right, int n) {
         lofi.process(ol, orr);
         float rl = 0, rr = 0, wl = 0, wr = 0;
         reverse.process(ol * reverseSend, orr * reverseSend, rl, rr);
-        float l = ol + rl + busL[Wind][k] + busL[GhostPad][k] + busL[LowToms][k];
-        float r = orr + rr + busR[Wind][k] + busR[GhostPad][k] + busR[LowToms][k];
+        // The violin echoes backwards too, but plays clean (a real instrument in the ruin).
+        float vl = 0, vr = 0;
+        reverseViolin.process(busL[ViolinTextures][k] * reverseSend, busR[ViolinTextures][k] * reverseSend, vl, vr);
+        float l = ol + rl + busL[Wind][k] + busL[ViolinTextures][k] + 0.7f * vl + busL[LowToms][k];
+        float r = orr + rr + busR[Wind][k] + busR[ViolinTextures][k] + 0.7f * vr + busR[LowToms][k];
         hall.process(l * hallSend, r * hallSend, wl, wr);
         l += 0.7f * wl;
         r += 0.7f * wr;

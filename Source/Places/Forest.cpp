@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-ForestPlace::ForestPlace() : EnsemblePlace(1600) { setParts({ &flute, &birds, &wood, &kalimba, &strings, &rustle }); }
+ForestPlace::ForestPlace() : EnsemblePlace(1600) { setParts({ &flute, &birds, &wood, &kalimbaRec, &strings, &rustle }); }
 
 void ForestPlace::prepareFx() {
     diffuser.prepare(rate);
@@ -314,6 +314,24 @@ void ForestPlace::configure(const PlaceContext& c) {
         p.spread = 0.7f;
         p.voices = byQuality(q, 4, 5, 6);
         p.gain = 1.0f;
+    }
+    // The recorded kalimba, as played: three velocity layers, ringing on. The enchanted
+    // wood lets it ring and glitter; the dark woods darken it and fold its low notes into
+    // the tines it has; the morning glade keeps it short and bright.
+    {
+        auto& p = kalimbaRec.patch;
+        p.instrument = "kalimba";
+        p.decay = glade ? 1.8f : 0.0f;
+        p.toneHz = dark ? lerpExp(1800.0f, 6000.0f, tone) : lerpExp(4000.0f, 16000.0f, tone);
+        p.velocityTone = 1.0f;
+        p.velocityGain = 0.4f;
+        p.even = 0.6f;
+        p.release = 0.3f;
+        p.lowestKey = 53;
+        p.highestKey = 95;
+        p.spread = 0.7f;
+        p.voices = byQuality(q, 4, 5, 6);
+        p.gain = 9.0f;
     }
     // Strings: a soft section pad; in dark woods it trembles with Tension.
     {

@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-TavernPlace::TavernPlace() : EnsemblePlace(3000) { setParts({ &lute, &drum, &fiddle, &glasses, &squeezebox, &stomps }); }
+TavernPlace::TavernPlace() : EnsemblePlace(3000) { setParts({ &luteRec, &drum, &fiddleRec, &glasses, &squeezebox, &stomps }); }
 
 void TavernPlace::prepareFx() {
     room.prepare(rate);
@@ -223,6 +223,28 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.sympathetic = 0.06f;
         p.gain = 1.0f;
     }
+    // The recorded lute: the developer's classical guitar played as a lute. Paired gut
+    // courses (a second string a few cents off), the lute's lighter body, a shorter
+    // ring, brighter strings; the strum crosses the courses as before.
+    {
+        auto& p = luteRec.patch;
+        p.instrument = "guitar";
+        p.decay = (quiet ? 4.5f : 2.6f) * lerp(1.0f, 0.55f, tension);
+        p.strumMs = lute.patch.strumMs;
+        p.toneHz = lerpExp(3200.0f, 13000.0f, tone);
+        p.velocityTone = 1.2f;
+        p.courseCents = 4.0f;
+        p.courseLevel = 0.45f;
+        p.courseMs = 1.2f;
+        p.body = dsp::BodyLute;
+        p.bodyAmount = 0.35f;
+        p.sympathetic = 0.03f;
+        p.release = 0.25f;
+        p.spread = 0.4f;
+        p.pan = -0.25f;
+        p.voices = byQuality(q, 5, 7, 8);
+        p.gain = 0.65f;
+    }
     // A frame drum on the root and its rim.
     {
         auto& p = drum.patch;
@@ -278,6 +300,31 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.voices = 3;
         p.held = true;
         p.gain = 1.0f;
+    }
+    // The recorded fiddle: the developer's bowed violin (open strings, looped while a
+    // note is held, the recorded release when the bow lifts). Vibrato on the stopped
+    // notes, sweeter and slower in the quiet corner; the drone notes stay open strings.
+    {
+        auto& p = fiddleRec.patch;
+        p.instrument = "violin-sustain";
+        p.held = true;
+        p.attack = quiet ? 0.12f : 0.0f;
+        p.release = quiet ? 0.5f : 0.15f;
+        p.vibratoHz = quiet ? 5.0f : 5.8f;
+        p.vibratoDepth = (quiet ? 0.2f : 0.12f) + 0.06f * s.life;
+        p.vibratoDelay = quiet ? 0.35f : 0.2f;
+        p.glide = 0.04f;
+        p.quickBelow = 0.3f;   // the reel's and the brawl's quick bowing
+        p.toneHz = lerpExp(3500.0f, 14000.0f, tone) * (quiet ? 0.85f : 1.0f);
+        p.velocityTone = 0.8f;
+        p.velocityGain = 0.6f;
+        p.transpose = 12.0f;
+        p.lowestKey = 55;    // the violin's G string
+        p.highestKey = 83;   // up to a fifth above the highest recorded note
+        p.spread = 0.2f;
+        p.pan = 0.2f;
+        p.voices = 4;
+        p.gain = 2.6f;
     }
     // Glass clinks: thin glass, its overtones a quarter-tone off any note.
     {

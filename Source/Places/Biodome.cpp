@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-BiodomePlace::BiodomePlace() : EnsemblePlace(2200) { setParts({ &pads, &mallets, &birds, &water, &vents, &shaker }); }
+BiodomePlace::BiodomePlace() : EnsemblePlace(2200) { setParts({ &pads, &mallets, &birds, &waterRec, &vents, &shaker }); }
 
 void BiodomePlace::prepareFx() {
     dome.prepare(rate);
@@ -217,6 +217,27 @@ void BiodomePlace::configure(const PlaceContext& c) {
         p.spread = 0.8f;
         p.voices = byQuality(q, 4, 5, 6);
         p.gain = 1.0f;
+    }
+    // Water plucks from the recorded kalimba: each tine slides up into its note like a
+    // drop (a few semitones in 25 ms), its click softened, darker and short, ringing a
+    // little longer in the night cycle.
+    {
+        auto& p = waterRec.patch;
+        p.instrument = "kalimba";
+        p.decay = night ? 1.6f : (failing ? 0.7f : 1.0f);
+        p.scoopSemis = -2.5f;
+        p.scoopSeconds = 0.025f;
+        p.attack = 0.004f;
+        p.toneHz = lerpExp(2500.0f, 9000.0f, tone);
+        p.velocityTone = 0.8f;
+        p.velocityGain = 0.5f;
+        p.even = 0.8f;
+        p.release = 0.2f;
+        p.lowestKey = 53;
+        p.highestKey = 95;
+        p.spread = 0.8f;
+        p.voices = byQuality(q, 4, 5, 6);
+        p.gain = 16.0f;
     }
     // Vents: a hum with air in it; failing, it sputters with the power.
     {

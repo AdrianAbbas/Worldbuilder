@@ -812,3 +812,28 @@ Nothing in the sound changed; this is about the look and that every control stil
   effects, the rest of the scene is silent. Library > Save... as a patch; load the patch on
   another track and check it comes back in single mode. (README: "Exporting parts to
   separate GarageBand tracks".)
+
+## Milestone 15a check: the first recorded instruments
+
+- [ ] **Install**: the installer's step 1-3 says "N recorded notes inside" for the AU and
+  the VST3 (160 notes, about 11 MB).
+- [ ] **Tavern** (Lively Night): the Lute Strum is your guitar, strummed (a lute-like
+  doubled course, brighter and shorter than a guitar); the Fiddle is your violin playing
+  the reel with vibrato. Quiet Corner: slow arpeggios and a sweet, slower fiddle air.
+  Brawl: fast sawing still speaks (no swallowed short notes). Hold a fiddle note from the
+  keyboard (KEYS on the Fiddle tab) for 10 s: no pulsing or click as it loops; on release
+  the bow lifts naturally.
+- [ ] **Desert**: the Oud is your guitar revoiced (darker, nasal, a slight slide into each
+  note). Does it read as an oud next to the frame drums and ney?
+- [ ] **Forest**: the Kalimba is your kalimba; Dark Woods darker, Morning Glade short.
+- [ ] **Biodome**: Water Plucks: your kalimba with a drop-like slide up into each note.
+- [ ] **Ruins**: the new Violin Textures tab (in place of the Ghost Pad): slow bowed swells
+  on the chord, a few pizzicato notes, col legno taps in Haunted (with bowed tremolo).
+  Draw notes of different lengths in its Pattern Editor tab: an eighth is pizzicato, a
+  sixteenth col legno, longer is bowed.
+- [ ] **KEYS**: play each of these instruments from a keyboard across its range: soft to
+  hard (the guitar and kalimba change timbre, not only level), no clicks, in tune; notes
+  outside the recorded range fold into it by octaves.
+- [ ] **Levels**: each sits in its Place's mix about where the old instrument did.
+- [ ] **Two instances** (two tracks): both play the recordings; memory grows by much less
+  than 40 MB for the second one (the samples are shared).

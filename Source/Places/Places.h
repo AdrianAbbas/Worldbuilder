@@ -4,6 +4,7 @@
 // each, from the Place's seed and settings.
 #include "Ensemble.h"
 #include "HurdyGurdy.h"
+#include "SamplePart.h"
 #include <memory>
 
 namespace wb {
@@ -224,6 +225,9 @@ private:
     WindPart flute, birds, rustle;
     DrumPart wood;
     ModalPart kalimba;
+    // The kalimba plays the developer's recorded kalimba (Milestone 15); the modal model
+    // behind it plays only without samples.
+    SamplePart kalimbaRec { kalimba };
     BowedPart strings;
     dsp::Diffuser diffuser;
     dsp::SmallSpace space;
@@ -336,7 +340,7 @@ public:
     float freeTempo() const override { return 70.0f; }
     float spaceSend() const override { return 0.4f; }
     void generate(int element, const GenInputs& in, pat::Pattern& out) const override;
-    enum Element { PianoShards, MusicBox, BrokenBells, Wind, GhostPad, LowToms };
+    enum Element { PianoShards, MusicBox, BrokenBells, Wind, ViolinTextures, LowToms };
     enum Character { Overgrown, Haunted, Desolate };
 
 private:
@@ -349,10 +353,14 @@ private:
     FmPart shards;
     ModalPart box, bells;
     WindPart wind;
+    // Violin textures (Milestone 15): the developer's recorded violin, bowed, plucked and
+    // struck with the bow's wood. The ghostly choir pad it replaced stays behind it and
+    // plays only without samples.
     ChoirPart ghost;
+    SamplePart violin { ghost };
     DrumPart toms;
     dsp::LoFi lofi;
-    dsp::ReverseEcho reverse;
+    dsp::ReverseEcho reverse, reverseViolin;
     dsp::SmallSpace hall;
     std::array<dsp::OnePole, 4> tilt;
     float reverseSend = 0, hallSend = 0;
@@ -416,6 +424,9 @@ private:
     ModalPart mallets;
     WindPart birds, vents;
     DripPart water;
+    // The water plucks are the developer's recorded kalimba, made watery (Milestone 15);
+    // the synthesised drops behind them play only without samples.
+    SamplePart waterRec { water };
     DrumPart shaker;
     dsp::SmallSpace dome;
     dsp::Chorus chorus;
@@ -610,6 +621,9 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     PluckPart oud;
+    // The oud plays the developer's classical-guitar recordings (Milestone 15); the
+    // synthesised oud behind it plays only without samples.
+    SamplePart oudRec { oud };
     DrumPart drums;
     WindPart ney, wind;
     SynthPart tanpura;
@@ -676,9 +690,12 @@ private:
     bool shape(const PlaceContext& c, const Scheduled& x, NoteOn& on) override;
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
+    // The lute and the fiddle play the developer's recordings (Milestone 15: the classical
+    // guitar and the violin); the synthesised models behind them play only without samples.
     PluckPart lute;
     DrumPart drum, stomps;
     BowedPart fiddle;
+    SamplePart luteRec { lute }, fiddleRec { fiddle };
     ModalPart glasses;
     SynthPart squeezebox;
     dsp::SmallSpace room;

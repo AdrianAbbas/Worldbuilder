@@ -268,3 +268,29 @@ koreascience soprano study)*: not modelled.
 `--only models` checks every rebuilt model directly (no Place): in tune (the
 fundamental's pitch, partials where the tables put them), finite, starting without a
 click, and louder **and** brighter at higher velocity.
+
+## Recorded instruments (Milestone 15)
+
+Six elements now play the developer's recordings through `SamplePart`
+(`Source/Places/SamplePart.h`); the models above stay behind them as fallbacks for a build
+without samples. The recordings are prepared by `tools/sample-prep/prepare.py` (its
+README has the steps); the sampler only reshapes them to fit:
+
+- **Lute (Tavern) from the classical guitar**: a second string per note 4 cents up and
+  1.2 ms late at -7 dB (a lute's paired gut courses), the lute body's resonances (above)
+  at 35 %, a shorter ring (2.6 s to fall a further 60 dB, 4.5 s in the Quiet Corner), the
+  strum spread across the courses as before.
+- **Oud (Desert) from the classical guitar**: courses 6 cents apart at -4.4 dB and 0.8 ms,
+  the oud's bowl body at 50 %, a darker low-pass (2.4 to 9 kHz with Tone), a 0.18-semitone
+  slide up into each note over 30 ms (fretless), shorter than a guitar.
+- **Fiddle (Tavern) from the violin's bowed open strings**: looped sustain, the recorded
+  release when the bow lifts, 5-6 Hz vibrato of 0.12-0.2 semitone after 0.2-0.35 s, short
+  notes (under 0.3 s) start 0.12 s into the recording (the bow already speaking). Open
+  strings only were recorded, so stopped notes are pitch-shifted up to 3.5 semitones from
+  the nearest string (a fifth above the E string at most; higher notes fold down).
+- **Kalimba (Forest)**: as recorded (three velocity layers), low-passed in the Dark Woods.
+- **Water Plucks (Biodome) from the kalimba**: a 2.5-semitone rise into each note over
+  25 ms (the old drops' "rise into the note"), a 4 ms fade-in over the tine's click, short.
+- **Violin Textures (Ruins)**: bowed swells (1.2-1.8 s attack, 2.5 s release) on the chord
+  with a slow 4.2 Hz vibrato, bowed tremolo in time when Haunted; eighth notes play the
+  pizzicato recordings and sixteenths the col legno ones.

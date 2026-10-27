@@ -14,6 +14,7 @@
 #include "Arrangement/Templates.h"
 #include "UI/PixelLookAndFeel.h"
 #include "UI/WorldLookAndFeel.h"
+#include "Samples/SampleBank.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -8175,8 +8176,317 @@ void testSingle(Suite& s) {
     }
 }
 
+
+//==============================================================================
+// Milestone 15: the developer's recorded instruments.
+namespace sampleTest {
+using namespace models;
+// The elements that play recordings, and the bank instrument each plays first.
+struct Sampled { int type, element; const char* name; };
+const std::array<Sampled, 6> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
+                                         { Desert, DesertPlace::Oud, "Desert Oud" }, { Forest, ForestPlace::Kalimba, "Forest Kalimba" },
+                                         { Biodome, BiodomePlace::WaterPlucks, "Biodome Water Plucks" },
+                                         { Ruins, RuinsPlace::ViolinTextures, "Ruins Violin Textures" } } };
+
+// A sampled part alone, at 48 kHz, playing one note (MIDI `key`), its key held `hold`
+// seconds (a live note: released then), rendered for `seconds`.
+std::vector<float> play(const char* id, int key, float velocity, float pick, double hold, double seconds, bool held,
+                        const std::function<void(SamplePatch&)>& tweak = {}) {
+    PluckPart unused;
+    SamplePart part(unused);
+    part.patch.instrument = id;
+    part.patch.held = held;
+    part.patch.voices = 2;
+    part.patch.even = 0;
+    part.patch.spread = 0;
+    part.patch.toneHz = 20000;
+    part.patch.velocityTone = 0;
+    if (tweak) tweak(part.patch);
+    const float rate = 48000;
+    part.prepare(rate);
+    PartFrame f;
+    f.rate = rate;
+    f.root = 0;   // C: semitones above C3 (MIDI 48)
+    f.beatsPerSecond = 2;
+    NoteOn n;
+    n.semis = float(key - 48);
+    n.velocity = velocity;
+    n.random2 = pick;
+    n.live = key + 1;
+    n.length = liveLength;
+    n.seconds = 3600;
+    part.update(f);
+    part.start(f, n);
+    std::vector<float> l(std::size_t(seconds * rate), 0.0f), r(l.size(), 0.0f);
+    bool released = false;
+    for (std::size_t at = 0; at < l.size(); at += std::size_t(dsp::chunk)) {
+        if (!released && double(at) >= hold * rate) {
+            part.stopLive(key + 1);
+            released = true;
+        }
+        f.beat = double(at) / rate * f.beatsPerSecond;
+        part.update(f);
+        const int n2 = int(std::min<std::size_t>(std::size_t(dsp::chunk), l.size() - at));
+        part.render(l.data() + at, r.data() + at, n2);
+    }
+    for (std::size_t i = 0; i < l.size(); ++i) l[i] += r[i];
+    return l;
+}
+
+// Level (dB) per 10 ms frame.
+std::vector<double> frames(const std::vector<float>& y, double rate, double ms = 10.0) {
+    const auto n = std::size_t(ms * 0.001 * rate);
+    std::vector<double> out;
+    for (std::size_t i = 0; i + n <= y.size(); i += n) out.push_back(rmsDb(y, i, n));
+    return out;
+}
+// The largest sample-to-sample step's ratio (dB) to the median step size of its
+// neighbourhood: a click stands out of the waveform's own motion.
+double worstStep(const std::vector<float>& y, std::size_t from, std::size_t to) {
+    double worst = -200;
+    const std::size_t w = 480;
+    for (std::size_t i = from + w; i + w < to; i += w) {
+        std::vector<double> d;
+        for (std::size_t k = i - w; k < i + w; ++k) d.push_back(std::abs(double(y[k + 1]) - double(y[k])));
+        std::nth_element(d.begin(), d.begin() + std::ptrdiff_t(d.size() / 2), d.end());
+        const double med = std::max(d[d.size() / 2], 1.0e-7);
+        double top = 0;
+        for (std::size_t k = i; k < i + w; ++k) top = std::max(top, std::abs(double(y[k + 1]) - double(y[k])));
+        worst = std::max(worst, toDb(top / med));
+    }
+    return worst;
+}
+} // namespace sampleTest
+
+bool expectSamples = true;
+
+void testSamples(Suite& s) {
+    using namespace sampleTest;
+    auto& bank = samples::Bank::get();
+    bank.load();
+    s.section("samples: the developer's recordings load (Milestone 15)");
+    const bool loaded = bank.waitUntilLoaded(30000);
+    if (!expectSamples) {
+        std::cout << "  [report] run with --no-samples: " << bank.message() << "\n";
+        return;
+    }
+    s.check(loaded, "the sample bank loads", bank.message().toStdString());
+    if (!loaded) return;
+    s.metric("samples: recorded notes", bank.zoneCount());
+    s.metric("samples: memory", double(bank.memoryBytes()) / 1048576.0, " MB");
+    s.metric("samples: load time", bank.loadSeconds(), " s");
+    for (const char* id : { "guitar", "kalimba", "violin-sustain", "violin-pizz", "violin-collegno" })
+        s.check(bank.instrument(id) != nullptr, std::string("the bank has ") + id);
+
+    s.section("samples: every mapped note plays at its pitch");
+    for (const char* id : { "guitar", "kalimba", "violin-sustain", "violin-pizz", "violin-collegno" }) {
+        const auto* inst = bank.instrument(id);
+        if (inst == nullptr) continue;
+        int checked = 0, inTune = 0;
+        std::string off;
+        for (const auto& z : inst->zones) {
+            int takes = 0;
+            for (const auto& o : inst->zones) takes += o.layer == z.layer && std::abs(o.root - z.root) < 0.5f ? 1 : 0;
+            const int key = int(std::lround(z.root));
+            const float velocity = 0.5f * (z.loVel + z.hiVel);
+            const float pick = (float(z.rr) + 0.5f) / float(std::max(takes, 1));
+            if (inst->find(key, velocity, pick) != &z) continue;   // another zone covers this key
+            // A held note is measured in its sustain (a bow's onset wanders), a pluck after
+            // its attack. Plucked tines and strings settle within 15 cents, bowed ones 12.
+            // (A held note mostly plays its loop: measured there.)
+            const double at = z.loops() ? double(z.loopStart) / double(inst->rate) + 0.05 : 0.12;
+            const auto y = play(id, key, velocity, pick, 9.0, at + 0.5, z.loops());
+            const double hz = 440.0 * std::exp2((key - 69) / 12.0);
+            const std::size_t from = std::size_t(at * 48000), length = 16384;
+            const double f1 = peakNear(y, from, length, 48000, hz), f2 = peakNear(y, from, length, 48000, 2 * hz) / 2;
+            const double c1 = 1200.0 * std::log2(f1 / hz), c2 = 1200.0 * std::log2(f2 / hz);
+            const double tolerance = z.loops() ? 12.0 : 15.0;
+            const bool ok = std::abs(c1) <= tolerance || std::abs(c2) <= tolerance;
+            ++checked;
+            inTune += ok ? 1 : 0;
+            if (!ok) off += " " + std::to_string(key) + "/" + std::to_string(z.layer) + "/" + std::to_string(z.rr) + " (" + fmt(c1) + ", " + fmt(c2) + " cents)";
+        }
+        s.check(checked > 0 && inTune == checked, std::string(id) + ": every recorded note in tune (within 12 cents held, 15 plucked)",
+                std::to_string(inTune) + " of " + std::to_string(checked) + off);
+        // A note between the recorded ones is pitch-shifted to it.
+        const int between = int(std::lround(0.5f * (inst->lowRoot + inst->highRoot))) + 1;
+        const auto y = play(id, between, 0.6f, 0.5f, 1.0, 0.9, std::string(id) == "violin-sustain");
+        const double hz = 440.0 * std::exp2((between - 69) / 12.0);
+        const double c1 = 1200.0 * std::log2(peakNear(y, 6000, 16384, 48000, hz) / hz), c2 = 1200.0 * std::log2(peakNear(y, 6000, 16384, 48000, 2 * hz) / 2 / hz);
+        s.check(std::abs(c1) <= 12.0 || std::abs(c2) <= 12.0, std::string(id) + ": a note between the recordings is shifted to its pitch",
+                std::to_string(between) + ": " + fmt(c1) + " / " + fmt(c2) + " cents");
+    }
+
+    s.section("samples: velocity layers and round-robins");
+    {
+        const auto* guitar = bank.instrument("guitar");
+        int ordered = 0, louder = 0, brighter = 0, notes = 0;
+        std::string bright;
+        for (int key : { 40, 46, 52, 58, 64, 70, 76, 82 }) {
+            const auto *soft = guitar->find(key, 0.2f, 0.5f), *medium = guitar->find(key, 0.6f, 0.5f), *hard = guitar->find(key, 0.95f, 0.5f);
+            ordered += soft->layer == 0 && medium->layer == 1 && hard->layer == 2 ? 1 : 0;
+            const auto a = play("guitar", key, 0.2f, 0.5f, 2.0, 0.6, false, [](SamplePatch& p) { p.velocityGain = 0; });
+            const auto b = play("guitar", key, 0.95f, 0.5f, 2.0, 0.6, false, [](SamplePatch& p) { p.velocityGain = 0; });
+            louder += rmsDb(b, 0, 14400) > rmsDb(a, 0, 14400) ? 1 : 0;
+            // Brightness: the upper partials (4 to 12 times the note) against the lowest two
+            // (a soft take's room hiss would fool a plain spectral centroid).
+            const auto upper = [&](const std::vector<float>& y) {
+                const double hz = 440.0 * std::exp2((key - 69) / 12.0);
+                std::vector<std::complex<double>> buf(8192);
+                for (std::size_t i = 0; i < buf.size(); ++i) buf[i] = double(y[480 + i]) * (0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(buf.size())));
+                fft(buf);
+                double lo = 0, hi = 0;
+                for (std::size_t k = 1; k < buf.size() / 2; ++k) {
+                    const double f = double(k) * 48000.0 / double(buf.size()), e = std::norm(buf[k]);
+                    if (f > 0.8 * hz && f < 2.2 * hz) lo += e;
+                    if (f > 3.8 * hz && f < 12.0 * hz) hi += e;
+                }
+                return 10.0 * std::log10((hi + 1.0e-20) / (lo + 1.0e-20));
+            };
+            // Up to A#4: above it the soft takes have other strings ringing in them (and
+            // the soft "A#5" is an A5), so the soft layer is no darker there (reported).
+            if (key <= 70) brighter += upper(b) > upper(a) ? 1 : 0;
+            bright += " " + std::to_string(key) + ":" + fmt(upper(a)) + "/" + fmt(upper(b));
+            ++notes;
+        }
+        s.check(ordered == notes, "guitar: soft, medium and hard velocities pick their layers", std::to_string(ordered) + " of " + std::to_string(notes));
+        s.check(louder >= notes - 1, "guitar: the hard layer is louder than the soft one (as recorded, levelled by noise floor)",
+                std::to_string(louder) + " of " + std::to_string(notes));
+        s.check(brighter >= 5, "guitar: the hard layer is brighter than the soft one (E2 to A#4; the soft E4 has open strings ringing over it)",
+                std::to_string(brighter) + " of 6;" + bright);
+        std::cout << "  [report] guitar brightness, soft/hard (dB, upper partials over the lowest):" << bright << "\n";
+        const auto* kalimba = bank.instrument("kalimba");
+        int kOrdered = 0;
+        for (int key = 60; key <= 88; key += 2) kOrdered += kalimba->find(key, 0.1f, 0.5f)->layer == 0 && kalimba->find(key, 0.9f, 0.5f)->layer == 2 ? 1 : 0;
+        s.check(kOrdered == 15, "kalimba: soft and hard velocities pick their layers", std::to_string(kOrdered) + " of 15");
+        // Round-robins: three takes of each violin note.
+        const auto* violin = bank.instrument("violin-sustain");
+        std::set<const samples::Zone*> takes;
+        for (float pick : { 0.1f, 0.5f, 0.9f }) takes.insert(violin->find(55, 0.5f, pick));
+        s.check(takes.size() == 3, "violin: three round-robin takes of G3", std::to_string(takes.size()) + " takes");
+        const auto a = play("violin-sustain", 55, 0.6f, 0.1f, 2.0, 1.0, true), b = play("violin-sustain", 55, 0.6f, 0.9f, 2.0, 1.0, true);
+        double diff = 0;
+        for (std::size_t i = 0; i < a.size(); ++i) diff += std::abs(double(a[i]) - double(b[i]));
+        s.check(diff > 1.0, "violin: the takes sound different", fmt(diff));
+        const auto* pizz = bank.instrument("violin-pizz");
+        std::set<const samples::Zone*> pz;
+        for (int k = 0; k < 6; ++k) pz.insert(pizz->find(55, 0.5f, (float(k) + 0.5f) / 6.0f));
+        s.check(pz.size() == 6, "pizzicato: G3's six takes (open and stopped files merged)", std::to_string(pz.size()));
+    }
+
+    s.section("samples: sustain loops are click-free, release tails ring out");
+    {
+        const auto* violin = bank.instrument("violin-sustain");
+        int loops = 0, smooth = 0, sustained = 0;
+        std::string detail;
+        for (const auto& z : violin->zones) {
+            if (!z.loops()) continue;
+            ++loops;
+            int takes = 0;
+            for (const auto& o : violin->zones) takes += std::abs(o.root - z.root) < 0.5f ? 1 : 0;
+            const int key = int(std::lround(z.root));
+            const float pick = (float(z.rr) + 0.5f) / float(takes);
+            // Held 12 s: longer than any recording, so it loops several times.
+            const auto y = play("violin-sustain", key, 0.6f, pick, 12.0, 12.0, true);
+            // The level's largest 20 ms jump once the loop has turned, against the bowing's
+            // own (the recording up to the loop's end, played straight through).
+            const auto lv = frames(y, 48000, 20.0);
+            const auto jumpOver = [&](double from, double to) {
+                double j = 0;
+                for (auto i = std::size_t(from / 0.02); i + 1 < lv.size() && double(i) * 0.02 < to; ++i) j = std::max(j, std::abs(lv[i + 1] - lv[i]));
+                return j;
+            };
+            const double loopEnd = double(z.loopEnd) / double(violin->rate), loopLength = double(z.loopEnd - z.loopStart) / double(violin->rate);
+            const double natural = jumpOver(1.0, loopEnd), jump = jumpOver(loopEnd - 0.2, 11.8);
+            const double step = worstStep(y, 48000, y.size() - 1);
+            const bool ok = jump < std::max(3.0, natural + 1.0) && step < 30.0 && loopLength > 0.5;
+            smooth += ok ? 1 : 0;
+            const double early = rmsDb(y, 48000, 48000), late = rmsDb(y, std::size_t(10.5 * 48000), 48000);
+            sustained += late > early - 9.0 ? 1 : 0;
+            if (!ok || late <= early - 9.0)
+                detail += " " + std::to_string(key) + "/" + std::to_string(z.rr) + " (jump " + fmt(jump) + " dB vs " + fmt(natural) + " dB, step " + fmt(step) + " dB, " + fmt(late - early) + " dB)";
+        }
+        s.check(loops >= 11 && smooth == loops, "violin: every loop is smooth over 12 s (no 20 ms level jump beyond the bowing's own, no click)",
+                std::to_string(smooth) + " of " + std::to_string(loops) + detail);
+        s.check(sustained == loops, "violin: held notes sustain (the loop keeps them within 9 dB after 10 s)", std::to_string(sustained) + " of " + std::to_string(loops));
+        // Released after 2 s: the recorded tail, no click, gone within 2 s.
+        const auto y = play("violin-sustain", 62, 0.6f, 0.5f, 2.0, 4.5, true, [](SamplePatch& p) { p.release = 0.3f; });
+        const double held = rmsDb(y, std::size_t(1.5 * 48000), 9600), after = rmsDb(y, std::size_t(4.0 * 48000), 9600);
+        const double step = worstStep(y, std::size_t(1.8 * 48000), std::size_t(2.6 * 48000));
+        s.check(after < held - 40.0 && step < 30.0 && finite(y), "violin: a released note crosses into its recorded tail and dies away, no click",
+                "held " + fmt(held) + " dB, 2 s later " + fmt(after) + " dB, worst step " + fmt(step) + " dB");
+        // A plucked note released (a damped string) fades quickly.
+        const auto g = play("guitar", 52, 0.6f, 0.5f, 0.5, 1.5, false);
+        s.check(rmsDb(g, std::size_t(1.2 * 48000), 9600) < rmsDb(g, std::size_t(0.3 * 48000), 9600) - 30.0, "guitar: a released (damped) note fades");
+        // Attack: no click at the start of any instrument.
+        bool clean = true;
+        for (const char* id : { "guitar", "kalimba", "violin-sustain", "violin-pizz", "violin-collegno" }) clean = clean && clickFree(play(id, 64, 0.7f, 0.5f, 1.0, 0.3, false), 48000);
+        s.check(clean, "every instrument starts without a click");
+    }
+
+    s.section("samples: no allocation while playing");
+    {
+        PluckPart unused;
+        SamplePart part(unused);
+        part.patch.instrument = "violin-sustain";
+        part.patch.shortInstrument = "violin-pizz";
+        part.patch.shortBeats = 0.5f;
+        part.patch.held = true;
+        part.prepare(48000);
+        PartFrame f;
+        std::array<float, dsp::chunk> l {}, r {};
+        allocationProbe::calls = 0;
+        allocationProbe::enabled = true;
+        for (int i = 0; i < 2000; ++i) {
+            f.beat = double(i) * 0.02;
+            if (i % 50 == 0) {
+                NoteOn n;
+                n.semis = float(i % 24);
+                n.beat = f.beat;
+                n.length = i % 100 == 0 ? 0.25 : 2.0;
+                part.start(f, n);
+            }
+            part.update(f);
+            part.render(l.data(), r.data(), dsp::chunk);
+        }
+        allocationProbe::enabled = false;
+        s.check(allocationProbe::calls == 0, "a sampled part allocates nothing while starting and rendering notes", std::to_string(allocationProbe::calls) + " allocations");
+    }
+
+    s.section("samples: the Places' sampled instruments");
+    for (const auto& x : sampled) {
+        std::string levels;
+        bool audible = true, near = true, differs = true;
+        for (int c = 0; c < placeCharacters; ++c) {
+            auto h = instrumentHost(x.type, c, x.element, { { "p1_activity", 0.9f } });
+            const auto a = h.render(24.0);
+            samples::Bank::bypassForTests(true);
+            auto hs = instrumentHost(x.type, c, x.element, { { "p1_activity", 0.9f } });
+            const auto b = hs.render(24.0);
+            samples::Bank::bypassForTests(false);
+            const auto sa = measure(a, 2.0), sb = measure(b, 2.0);
+            audible = audible && sa.rmsDb > -60.0 && sa.finite && sa.peak < 0.9;
+            near = near && std::abs(sa.rmsDb - sb.rmsDb) < 4.0;
+            double diff = 0;
+            for (std::size_t i = 0; i < a.l.size(); ++i) diff += std::abs(double(a.l[i]) - double(b.l[i]));
+            differs = differs && diff > 1.0;
+            levels += (c > 0 ? ", " : "") + fmt(sa.rmsDb) + " (synth " + fmt(sb.rmsDb) + ")";
+        }
+        s.check(audible, std::string(x.name) + ": the recordings play, audible and finite in every Character", levels + " dBFS");
+        s.check(differs, std::string(x.name) + ": plays the recordings (differs from the synthesised fallback)");
+        s.check(near, std::string(x.name) + ": sits at the level the Place was mixed for (within 4 dB of the model it replaced)", levels);
+    }
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
+    // The prepared samples (CMake's WORLDBUILDER_SAMPLES_DIR); --no-samples tests the
+    // synthesised fallbacks.
+    bool withSamples = true;
+    for (int i = 1; i < argc; ++i)
+        if (juce::String(argv[i]) == "--no-samples") withSamples = false;
+    if (withSamples) samples::Bank::setFolder(juce::File(juce::String(WB_TEST_SAMPLES_DIR)));
+    expectSamples = withSamples;
     juce::String snapshot;
     for (int i = 1; i + 1 < argc; ++i)
         if (juce::String(argv[i]) == "--place")
@@ -8258,6 +8568,7 @@ int main(int argc, char** argv) {
     if (run("overlap")) testOverlap(s);
     if (run("transport")) testTransport(s);
     if (run("single")) testSingle(s);
+    if (run("samples")) testSamples(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

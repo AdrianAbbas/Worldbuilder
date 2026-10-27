@@ -4,8 +4,10 @@ A film-scoring soundscape instrument for Logic Pro and GarageBand on macOS (Appl
 Silicon and Intel, macOS 10.15+). It scores a place rather than recording it:
 musical, tonal and rhythmic sound in your song's key and tempo that evokes a castle,
 a forge, a city at night, a forest or a cavern, over a living environment of wind,
-water, fire, ice and thunder. Everything is synthesised in real time. It uses no samples and no
-recordings.
+water, fire, ice and thunder. Almost everything is synthesised in real time; since
+Milestone 15 a few instruments play the developer's own recordings (see
+[Recorded instruments](#recorded-instruments)). Nothing comes from sample libraries or
+other people's recordings.
 
 **Status: Milestone 12, feature-complete for release (26 Places of six instruments,
 each with its own instrument effects; Score Intensity; render to WAV and scene MIDI
@@ -291,6 +293,30 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
 - Automating Score Intensity still works: it adds on top of the sections' ramps (50 %
   adds nothing).
 - Bars are 4/4. The arrangement is saved with the project and in `.world` files.
+
+## Recorded instruments
+
+Since Milestone 15 these instruments play the developer's own recordings instead of a
+synthesised model (the same patterns, effects, Characters, Score Intensity, Arrangement
+and KEYS as every other instrument):
+
+| Place | Instrument | Recording | Fitted to the Place |
+|---|---|---|---|
+| Tavern | Lute Strum | classical guitar, fingers (3 velocity layers) | paired courses, a lute's lighter body, shorter and brighter |
+| Tavern | Fiddle | violin, bowed open strings (looped while held, its own release) | vibrato, quick bowing for reels, sweeter in the Quiet Corner |
+| Desert | Oud | classical guitar | paired courses, the oud's bowl body, darker, a fretless slide into notes |
+| Forest | Kalimba | kalimba, 17 tines (3 velocity layers) | as played; darker in the Dark Woods, short in the Morning Glade |
+| Biodome | Water Plucks | kalimba | each tine slides up into its note like a drop, softened and short |
+| Ruins | Violin Textures (new, in place of the Ghost Pad) | violin: bowed, pizzicato, col legno | slow swells and bowed tremolo; short notes are plucked, the shortest struck with the bow's wood |
+
+In the Ruins' Violin Textures a note's length in the Pattern Editor chooses how it is
+played: longer than an eighth is bowed, an eighth is pizzicato, a sixteenth is col legno.
+
+The recordings are inside the plugin bundle (`Contents/Resources/Samples`, about 11 MB),
+where GarageBand's sandbox lets the plugin read them, and load once in the background when
+the first WORLDBUILDER opens (about 40 MB of memory, shared by every instance). The
+installer reports how many recorded notes each bundle holds. A build without them (see
+[Build](#build)) plays the synthesised models these instruments had before.
 
 ## Play and record with a MIDI keyboard (KEYS)
 
@@ -620,6 +646,19 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release      # fetches JUCE 8.0.16
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure          # offline processor tests
 ```
+
+The recorded instruments come from the private `AdrianAbbas/Samples` repository and are
+never committed here. To build with them, prepare them and point CMake at the result:
+
+```
+pip install -r tools/sample-prep/requirements.txt
+python3 tools/sample-prep/prepare.py --source ../samples --out build/samples
+cmake -S . -B build -DWORLDBUILDER_SAMPLES_DIR=build/samples ...
+```
+
+(`tools/sample-prep/README.md` explains the preparation.) CI fetches them with the
+`SAMPLES_TOKEN` repository secret. Without them the build works and those instruments play
+their synthesised models.
 
 On Linux this builds the VST3, the Standalone app and the tests. You need the JUCE
 Linux dependencies (ALSA, FreeType, fontconfig, X11 headers); see

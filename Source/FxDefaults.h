@@ -117,9 +117,9 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
     // Cavern: Drips, Sub Drone, Metal Taps, Bowed Bass, Crystals, Rumble.
     t[9] = { cave(0.4f).echo(DlyDotted, 0.15f), cave(0.15f).toned(0.4f).wide(0.8f), cave(0.35f).echo(DlyTape, 0.2f), cave(0.25f).toned(0.45f),
              cave(0.4f).echo(DlyReverse, 0.15f).wide(1.4f), cave(0.3f).toned(0.4f) };
-    // Ruins: Piano Shards, Music Box, Broken Bells, Wind, Ghost Pad, Low Toms.
+    // Ruins: Piano Shards, Music Box, Broken Bells, Wind, Violin Textures, Low Toms.
     t[10] = { hall(0.35f).echo(DlyReverse, 0.25f).with(ChLoFi, 0.15f), hall(0.3f).echo(DlyTape, 0.2f).with(ChLoFi, 0.3f),
-              cathedral(0.35f).echo(DlyTape, 0.15f), hall(0.2f).wide(1.6f), cathedral(0.4f).with(ChChorus, 0.3f).wide(1.5f), hall(0.3f).toned(0.45f) };
+              cathedral(0.35f).echo(DlyTape, 0.15f), hall(0.2f).wide(1.6f), cathedral(0.4f).echo(DlyReverse, 0.15f).wide(1.4f), hall(0.3f).toned(0.45f) };
     // Spaceship: Engine, Life Support, Computer, Airlock, Hull, Alarm.
     t[11] = { room(0.1f).with(ChFilter, 0.25f).wide(0.9f), room(0.15f).with(ChLoFi, 0.1f), plate(0.2f).echo(DlyPingPong, 0.25f),
               room(0.2f).with(ChPhaser, 0.2f), plate(0.3f).echo(DlyTape, 0.1f), room(0.2f).echo(DlyDotted, 0.15f).with(ChSaturation, 0.15f) };

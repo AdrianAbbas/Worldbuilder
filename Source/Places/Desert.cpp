@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-DesertPlace::DesertPlace() : EnsemblePlace(2800) { setParts({ &oud, &drums, &ney, &tanpura, &wind, &chimes }); }
+DesertPlace::DesertPlace() : EnsemblePlace(2800) { setParts({ &oudRec, &drums, &ney, &tanpura, &wind, &chimes }); }
 
 void DesertPlace::prepareFx() {
     space.prepare(rate);
@@ -191,6 +191,31 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.shape = { 0.14f, 0.4f, 0.08f, 1.0f, 3.5f, 0.45f, 0.0f };
         p.sympathetic = 0.15f;
         p.gain = 1.0f;
+    }
+    // The recorded oud: the developer's classical guitar, revoiced. Paired courses a few
+    // cents apart (as an oud's are), its deep bowl body, a darker and more nasal tone, a
+    // slightly harder pluck (the risha) and a hint of a fretless slide into each note;
+    // shorter than a guitar, longest in the dunes.
+    {
+        auto& p = oudRec.patch;
+        p.instrument = "guitar";
+        p.decay = (dunes ? 3.6f : 2.2f) * lerp(1.0f, 0.6f, tension);
+        p.toneHz = lerpExp(2400.0f, 9000.0f, tone) * (storm ? 0.8f : 1.0f);
+        p.velocityTone = 0.7f;
+        p.velocityGain = 0.45f;
+        p.courseCents = 6.0f;
+        p.courseLevel = 0.6f;
+        p.courseMs = 0.8f;
+        p.body = dsp::BodyOud;
+        p.bodyAmount = 0.5f;
+        p.sympathetic = 0.08f;
+        p.scoopSemis = -0.18f;
+        p.scoopSeconds = 0.03f;
+        p.release = 0.2f;
+        p.spread = 0.3f;
+        p.pan = -0.15f;
+        p.voices = byQuality(q, 4, 6, 8);
+        p.gain = 0.35f;
     }
     // Frame drums: a deep doum on the root, a sharp tek, a riq's jingles.
     {
