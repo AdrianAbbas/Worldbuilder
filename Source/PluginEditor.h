@@ -73,6 +73,8 @@ public:
     float planetTurnNow() const { return planetTurn(); }
     // Whether a slot's Place shows on the planet now (not over the horizon).
     bool placeInView(int slot) const { return landmarkPosition(slot).x > -999.0f; }
+    // Roughly where a Place's picture stands on the planet (logical pixels).
+    juce::Rectangle<int> landmarkBounds(int slot) const { return juce::Rectangle<int>(56, 60).withCentre(landmarkPosition(slot).toInt().translated(0, -14)); }
     int shownPlanetType() const { return shownPlanet; }
     // Scenes (Milestone 12): the header's scene browser, INSPIRE and UNDO.
     void loadScene(int index);
@@ -155,6 +157,11 @@ private:
     // The Location markers in the planet's sky.
     int markerAt(juce::Point<float>) const;
     void paintLocationMarkers(juce::Graphics&, float alpha);
+public:
+    // The Location names shown on the globe now and where (hover, a journey's ends).
+    std::vector<std::pair<int, juce::Rectangle<int>>> locationLabels() const;
+    void setHoverMarker(int index) { hoverMarker = index; }   // for the tests
+private:
 
     WorldbuilderProcessor& processor;
     wb::ui::PixelLookAndFeel lookAndFeel;
@@ -240,7 +247,7 @@ private:
     std::array<float, 8> particleAmount {};
     juce::Rectangle<float> globeArea;
     float spin = 0, precipitation = 0, flash = 0;
-    int boltSeed = 1, hoverCard = -1, hoverChip = -1, dragLandmark = -1;
+    int boltSeed = 1, hoverCard = -1, hoverChip = -1, dragLandmark = -1, hoverMarker = -1;
     // The marker a journey on the globe set out from (-1: the top of the orbit).
     int journeyStart = -1, journeySeen = -1;
     double fullMessageUntil = 0;

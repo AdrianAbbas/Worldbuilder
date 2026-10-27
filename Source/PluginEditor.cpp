@@ -1156,11 +1156,6 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float>) {
     const int target = processor.travel.uiTarget.load(std::memory_order_relaxed);
     const int arrived = processor.travel.uiArrived.load(std::memory_order_relaxed);
     const float progress = processor.travel.uiProgress.load(std::memory_order_relaxed);
-    const int journeyKey = mode == Travel::Travelling ? target : -2;
-    if (journeyKey != journeySeen) {
-        journeySeen = journeyKey;
-        if (mode == Travel::Travelling) journeyStart = arrived;
-    }
     for (int i = 0; i < locationCount; ++i) {
         ui::TinyPlanetScene::Marker m;
         m.used = processor.locations.used(i);
@@ -1191,16 +1186,56 @@ void WorldbuilderEditor::paintGlobe(juce::Graphics& g, juce::Rectangle<float>) {
     paintLocationMarkers(g, alpha);
 }
 
-// The Locations' names beside their stars and moons (the planet draws the markers).
+// The Locations' names (the planet draws their stars and moons). None by default: a
+// name shows while the pointer is on its marker, and for the two ends of a journey. Each
+// is small (the Tiny face) and takes the first place beside its marker (above, below,
+// right, left) that is inside the sky and clear of the Planet's plate, the panel's
+// title, the Places on the planet and the other names.
+std::vector<std::pair<int, juce::Rectangle<int>>> WorldbuilderEditor::locationLabels() const {
+    std::vector<int> shown;
+    const auto show = [&](int i) {
+        if (i >= 0 && i < locationCount && processor.locations.used(i) && std::find(shown.begin(), shown.end(), i) == shown.end()) shown.push_back(i);
+    };
+    const int mode = processor.travel.uiMode.load(std::memory_order_relaxed);
+    if (mode == Travel::Travelling) {
+        show(journeyStart);
+        show(processor.travel.uiTarget.load(std::memory_order_relaxed));
+    } else if (mode == Travel::Journeying) {
+        show(processor.travel.uiFrom.load(std::memory_order_relaxed));
+        show(processor.travel.uiTo.load(std::memory_order_relaxed));
+    }
+    show(hoverMarker);
+    std::vector<juce::Rectangle<int>> avoid { planetPlate.expanded(2), globePanel.reduced(20, 10).withHeight(16).withWidth(120) };
+    for (int slot = 0; slot < placeSlotCount; ++slot)
+        if (placeType(slot) != NoPlace)
+            if (placeInView(slot)) avoid.push_back(landmarkBounds(slot));
+    std::vector<std::pair<int, juce::Rectangle<int>>> out;
+    const auto sky = planetScene.reduced(2);
+    for (int i : shown) {
+        const auto p = markerPosition(i).toInt();
+        const juce::String name = processor.locations.name(i).toUpperCase();
+        const int w = pixel::textWidthLogical(name, pixel::Font::Tiny) + 6, h = 12;
+        const juce::Rectangle<int> box(w, h);
+        for (auto candidate : { box.withCentre(p.translated(0, -13)), box.withCentre(p.translated(0, 13)), box.withPosition(p.x + 9, p.y - h / 2),
+                                box.withPosition(p.x - 9 - w, p.y - h / 2) }) {
+            bool clear = sky.contains(candidate);
+            for (const auto& r : avoid) clear = clear && !r.intersects(candidate);
+            if (!clear) continue;
+            out.push_back({ i, candidate });
+            avoid.push_back(candidate.expanded(2));
+            break;
+        }
+    }
+    return out;
+}
+
 void WorldbuilderEditor::paintLocationMarkers(juce::Graphics& g, float alpha) {
     const auto& pal = pixel::theme().colours;
-    for (int i = 0; i < locationCount; ++i) {
-        if (!processor.locations.used(i)) continue;
-        const auto p = markerPosition(i).toInt();
-        // Names alternate above and below the arc so neighbours never collide.
-        const bool below = i % 2 == 1;
-        const auto box = juce::Rectangle<int>(90, 14).withCentre(p.translated(0, below ? 15 : -15));
-        pixel::drawText(g, processor.locations.name(i), box, pal.ink.withMultipliedAlpha(0.95f * alpha), juce::Justification::centred, pixel::Font::Small);
+    for (const auto& [index, box] : locationLabels()) {
+        // A small dark tag behind the name, so it reads on any sky.
+        g.setColour(pal.panelDark.withAlpha(0.6f * alpha));
+        g.fillRect(box);
+        pixel::drawTinyText(g, processor.locations.name(index), box.reduced(3, 2), pal.ink.withMultipliedAlpha(0.85f * alpha), juce::Justification::centred);
     }
 }
 
@@ -1406,6 +1441,10 @@ void WorldbuilderEditor::mouseMove(const juce::MouseEvent& e) {
         hoverChip = chip;
         repaint(cardsPanel);
     }
+    if (const int marker = detail.slot >= 0 || covered() ? -1 : markerAt(e.position); marker != hoverMarker) {
+        hoverMarker = marker;   // its name shows while the pointer is on it
+        repaint(globePanel);
+    }
     const bool overLandmark = detail.slot < 0 && landmarkAt(e.position) >= 0;
     const bool clickable = (card >= 0 && placeImplemented[std::size_t(card)]) || overLandmark || (detail.slot < 0 && categoryAt(e.getPosition()) >= 0);
     setMouseCursor(clickable ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
@@ -1420,6 +1459,10 @@ void WorldbuilderEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::M
 }
 
 void WorldbuilderEditor::mouseExit(const juce::MouseEvent&) {
+    if (hoverMarker != -1) {
+        hoverMarker = -1;
+        repaint(globePanel);
+    }
     if (hoverCard != -1 || hoverChip != -1) {
         hoverCard = hoverChip = -1;
         repaint(cardsPanel);
@@ -1533,6 +1576,15 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     if (processor.travel.uiMode.load(std::memory_order_relaxed) == Travel::Travelling)
         spin += frames * 0.06f * std::sin(juce::MathConstants<float>::pi * processor.travel.uiProgress.load(std::memory_order_relaxed));
     if (spin > juce::MathConstants<float>::twoPi * 100.0f) spin = 0;
+    {
+        // Where a journey set out from (the comet's tail and the origin's name).
+        const int mode = processor.travel.uiMode.load(std::memory_order_relaxed);
+        const int journeyKey = mode == Travel::Travelling ? processor.travel.uiTarget.load(std::memory_order_relaxed) : -2;
+        if (journeyKey != journeySeen) {
+            journeySeen = journeyKey;
+            if (mode == Travel::Travelling) journeyStart = processor.travel.uiArrived.load(std::memory_order_relaxed);
+        }
+    }
     precipitation += frames * (0.05f + 0.06f * processor.engine.frame()[Weather]);
     if (precipitation > 1000.0f) precipitation = 0;
     const float strike = processor.engine.lightning.load(std::memory_order_relaxed);

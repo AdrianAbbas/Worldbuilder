@@ -4199,7 +4199,7 @@ water or a hurdy-gurdy rebuild).
 - [x] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
 - [x] 6. Forest planet: lakes, rivers and clearings
 - [x] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
-- [ ] 8. Location labels in the sky: hidden by default, shown on hover or for a journey's ends, never overlapping
+- [x] 8. Location labels in the sky: hidden by default, shown on hover or for a journey's ends, never overlapping
 
 ### 1. The freeze
 
@@ -4454,3 +4454,58 @@ fifth, a few lines in `Village.cpp` (the old patch is in git history before this
 commit). Two takes for listening, with and without the buzz, were sent with this
 session's report (the test writes them with `WB_HURDY_WAV=<dir> WorldbuilderTests
 --only hurdy`).
+
+### 8. Location names in the sky
+
+After Inspire (whose scenes save their own named Locations: "First Light", "Rising",
+"The Storm"...) every saved Location's name was drawn over the sky, alternating above and
+below the arc, and they overlapped each other, the Planet menu and the Places.
+
+- **None by default.** A name shows while the pointer is on its star or moon, and during
+  a journey only its two ends are named (the origin and the destination, or From and To
+  in Journey mode).
+- **Never overlapping**: each name takes the first place beside its marker (above,
+  below, right, left) that is inside the sky and clear of the Planet's plate, the panel's
+  title, the Places standing on the planet now and the other names; if none is clear it
+  is not drawn.
+- **Small and subtle**: the Tiny face (5 x 7) on a 12 px dark tag at 60 % opacity, ink at
+  85 %.
+- The markers moved higher (an arc at 0.36 of the scene's height above the horizon,
+  spread +-0.38 rad), above the Places and clear of the Planet's plate.
+- Where a journey set out from is now tracked in the animation step (it was only noted
+  while painting the globe).
+- Test (`--only locations`): no names by default; the markers stand apart, in the sky,
+  clear of the Planet's controls; hovering each saved marker at every 15 degrees of the
+  planet's turn shows its name alone, inside the sky, clear of the Planet's controls and
+  the Places in view (192 names placed); the tags are 12 px tall; during a journey the
+  origin and the destination are named and apart.
+
+---
+
+### GarageBand fix round handoff
+
+**Done**: all eight fixes, in order, each pushed after the full Linux suite passed
+(final run: 3674 passed, 0 failed). This last
+push is without `[skip ci]`, so CI builds and packages it once.
+
+**What to test first** ([MANUAL_TEST.md](MANUAL_TEST.md), "GarageBand fix round check"):
+the freeze with 4 Places on Full and the window opened and closed; the environment
+balance and the ENVIRONMENT slider; levels after INSPIRE and in the arrangement; the
+16-bit readability; the planet; Forest World; the hurdy-gurdy by ear; the Location names.
+
+**Known issues / limits**:
+- **The freeze fix is measured on Linux with JUCE's software renderer**, not in
+  GarageBand: the cause found and fixed is the message thread being flooded with frames;
+  nothing on the audio thread waits on the interface. If GarageBand still freezes, note
+  what was on screen and whether OVERLAYS had dropped to Subtle.
+- **The hurdy-gurdy has not been heard**: it was built from the instrument's acoustics
+  and measured (drones, stepped keys, rhythmic buzz), but only an ear can say if it
+  convinces. The fallback (fiddle and drone) is described in section 7.
+- Report-only since this round: Forest World's colour at 100 % (0.98 dB of a 1 dB
+  target); a far Village is 1.8 dB darker (2 dB target).
+- The environment trims were measured against the median Place at default settings;
+  the louder Places (Castle, Temple) still sit a little over a quiet layer, the quieter
+  ones (Palace, Desert) a little closer to it.
+- At 150 % UI size on a non-Retina screen a font pixel is 1 or 2 device pixels (crisp but
+  slightly uneven); whole at 100 %, 200 % and on Retina.
+- Carried over: 4/4 only; the `push-access-check` branch can be deleted.

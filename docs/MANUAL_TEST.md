@@ -719,3 +719,31 @@ Nothing in the sound changed; this is about the look and that every control stil
   Magic. Drag a Place sideways (pan) and up and down (distance).
 - [ ] Locations: save two and travel: a comet crosses the sky between their stars/moons.
 - [ ] CPU: about the same or lower than Milestone 12 with the interface open?
+
+## GarageBand fix round check (after Milestone 13)
+
+- [ ] **The freeze**: 4 Places, OVERLAYS **Full**, play for a few minutes; open and close
+  the plugin window many times. GarageBand stays responsive. If the Mac is slow, the
+  overlays drop to **Subtle** by themselves after about two seconds of slow frames (you
+  can set Full again).
+- [ ] **Environment balance**: with the default levels the environment (wind, rain, fire,
+  thunder, the Tonal Bed) sits well under the Places as a background. The new
+  **ENVIRONMENT level** slider (beside the panel's title) turns all six down or up
+  together, and can be automated.
+- [ ] **Levels kept**: set the environment layers low (or mute some), press **INSPIRE**,
+  play the arrangement (Play Mode Arrangement), click a section to preview, travel between
+  Locations, and RENDER: the environment stays as you set it everywhere.
+- [ ] **Readability**: the new 16-bit fonts and shading. Is every label and value easy to
+  read at 100 %? Nothing overlapping (PLANET and INFLUENCE now sit on their own plate; the
+  footer's WORLD SEED, UI SIZE and PLACE OUTPUTS labels have their own rows).
+- [ ] **The tiny planet**: a smaller, rounder planet; a full turn in about 18 s at the
+  default Activity; with 3 or 4 Places at least one is always in view. No wavy green and
+  purple band at the top (with Magic at night there are faint aurora curtains instead).
+- [ ] **Forest World**: lakes, rivers and clearings among the trees.
+- [ ] **Village hurdy-gurdy**: solo it (Village, the HURDY-GURDY element). Does it sound
+  like a hurdy-gurdy: a bowed, nasal tune over a root-and-fifth drone, with the
+  trompette's rhythmic buzz on the beats (Market Day, Harvest Night; none at Quiet
+  Dawn)? If not, say so: the fallback is a fiddle-and-drone part.
+- [ ] **Location names**: none in the sky until you hover a star or moon; during a
+  journey only the start and the destination are named; never over the PLANET plate or
+  the Places.

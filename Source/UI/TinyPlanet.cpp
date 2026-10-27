@@ -267,9 +267,11 @@ juce::Point<float> TinyPlanet::horizonPoint(int width, int height, float angle, 
 }
 juce::Point<float> TinyPlanet::markerPoint(int width, int height, float position, int count) {
     // An arc in the sky, concentric with the horizon, from left to right.
-    const float spread = 0.36f;
+    // High in the sky, clear of the Places on the horizon and of the Planet's plate in the
+    // top right corner.
+    const float spread = 0.38f;
     const float a = count > 1 ? -spread + 2.0f * spread * position / float(count - 1) : 0.0f;
-    return horizonPoint(width, height, a, float(height) * 0.25f);
+    return horizonPoint(width, height, a, float(height) * 0.36f);
 }
 
 int TinyPlanet::kindOf(int placeType) {

@@ -6935,6 +6935,72 @@ void testHurdyGurdy(Suite& s) {
     }
 }
 
+// The Location names in the sky (the GarageBand fix round): none by default; one on
+// hover; a journey's two ends; never overlapping each other, the Planet's controls or
+// the Places on the planet; small.
+void testLocationLabels(Suite& s) {
+    s.section("globe: Location names (hover, journeys), never overlapping");
+    auto h = locationHost();
+    h->set(slotId(0, PlType), float(Castle));
+    h->set(slotId(1, PlType), float(Village));
+    h->set(slotId(2, PlType), float(Forest));
+    for (int i : { 2, 3, 4, 5, 6, 7 }) h->p->saveLocation(i);
+    h->render(0.3);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h->p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    view->settle(0.5f);
+    s.check(view->locationLabels().empty(), "no Location names in the sky by default");
+    // The Planet's controls (its menu and Influence slider) as the editor laid them out.
+    juce::Rectangle<int> planetControls;
+    for (auto* c : editor->getChildren())
+        if (c->isVisible() && (dynamic_cast<juce::ComboBox*>(c) != nullptr || dynamic_cast<juce::Slider*>(c) != nullptr) && view->planetArea().intersects(c->getBounds()))
+            planetControls = planetControls.isEmpty() ? c->getBounds() : planetControls.getUnion(c->getBounds());
+    // The markers themselves: apart from each other and from the Planet's controls.
+    bool markersClear = true;
+    for (int i = 0; i < locationCount; ++i) {
+        const auto p = view->markerPosition(i);
+        markersClear &= !planetControls.expanded(6).contains(p.toInt()) && view->planetArea().contains(p.toInt());
+        for (int j = i + 1; j < locationCount; ++j) markersClear &= p.getDistanceFrom(view->markerPosition(j)) > 12.0f;
+    }
+    s.check(markersClear, "the stars and moons stand apart, in the sky, clear of the Planet's controls");
+    bool hoverOk = true, small = true;
+    int shown = 0;
+    for (int turn = 0; turn < 360; turn += 15) {
+        view->setPlanetTurn(juce::degreesToRadians(float(turn)));
+        for (int i = 0; i < locationCount; ++i) {
+            view->setHoverMarker(i);
+            const auto labels = view->locationLabels();
+            if (!h->p->locations.used(i)) {
+                hoverOk &= labels.empty();
+                continue;
+            }
+            hoverOk &= labels.size() <= 1 && (labels.empty() || labels[0].first == i);
+            for (const auto& [index, box] : labels) {
+                ++shown;
+                small &= box.getHeight() <= 12;
+                hoverOk &= view->planetArea().contains(box) && !box.intersects(planetControls);
+                for (int slot = 0; slot < 3; ++slot)
+                    if (view->placeInView(slot)) hoverOk &= !box.intersects(view->landmarkBounds(slot));
+            }
+        }
+    }
+    view->setHoverMarker(-1);
+    s.check(hoverOk && shown > 100, "hovering a star or moon shows its name alone, clear of the Planet's controls and the Places",
+            std::to_string(shown) + " names placed");
+    s.check(small, "the names are small (12 px tags)");
+    // A journey: its two ends are named, apart.
+    h->set("traveltime", 4.0f);
+    h->set("destination", 6);   // Location 6 (index 5)
+    h->render(0.5);
+    view->settle(0.2f);
+    const auto labels = view->locationLabels();
+    bool ends = labels.size() == 2;
+    if (ends) ends = !labels[0].second.intersects(labels[1].second);
+    std::string which;
+    for (const auto& [index, box] : labels) which += std::to_string(index) + " ";
+    s.check(ends && h->p->travel.uiMode.load() == Travel::Travelling, "during a journey the origin and the destination are named, apart", which);
+}
+
 // The freeze found in GarageBand (3+ Places, overlays Full): the editor's animation
 // must never pile up on the message thread, nor make the audio thread wait.
 long residentKilobytes() {
@@ -7134,7 +7200,10 @@ int main(int argc, char** argv) {
     if (run("realtime")) testRealtimeSafety(s);
     if (run("editor")) testEditor(s, snapshot);
     if (run("overlays")) testOverlays(s, snapshot);
-    if (run("locations")) testLocations(s);
+    if (run("locations")) {
+        testLocations(s);
+        testLocationLabels(s);
+    }
     if (run("smoke")) testSmoke(s);
     if (run("planet")) {
         testPlanet(s);
