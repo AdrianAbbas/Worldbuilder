@@ -1,0 +1,317 @@
+#include "KeysPanel.h"
+#include "Pixel.h"
+#include "Style.h"
+#include "WorldLookAndFeel.h"
+
+namespace wb::ui {
+
+// The on-screen keyboard: four octaves from C2 (with C6), lit where notes arrive (bright while a
+// key is down, dimmer while the sustain pedal holds it).
+class KeysPanel::Keyboard final : public juce::Component, public juce::SettableTooltipClient {
+public:
+    explicit Keyboard(WorldbuilderProcessor& p) : processor(p) {}
+    static constexpr int first = 36, count = 49;
+    void paint(juce::Graphics& g) override {
+        const auto& pal = pixel::theme().colours;
+        const auto& in = processor.engine.keysInput;
+        const auto bit = [&](const std::array<std::atomic<uint32_t>, 4>& bits, int note) {
+            return (bits[std::size_t(note / 32)].load(std::memory_order_relaxed) >> (note % 32)) & 1u;
+        };
+        static constexpr bool black[12] { false, true, false, true, false, false, true, false, true, false, true, false };
+        int whites = 0;
+        for (int n = first; n < first + count; ++n) whites += black[n % 12] ? 0 : 1;
+        const float w = float(getWidth()) / float(whites), h = float(getHeight());
+        const auto colourOf = [&](int note, juce::Colour base) {
+            if (bit(in.downBits, note)) return pal.accent;
+            if (bit(in.soundBits, note)) return pal.accent.withAlpha(0.55f).overlaidWith(base.withAlpha(0.3f));
+            return base;
+        };
+        int x = 0;
+        for (int n = first; n < first + count; ++n) {
+            if (black[n % 12]) continue;
+            const auto r = juce::Rectangle<float>(float(x) * w, 0, w - 1.0f, h);
+            g.setColour(colourOf(n, pal.ink.withAlpha(0.85f)));
+            g.fillRect(r);
+            ++x;
+        }
+        x = 0;
+        for (int n = first; n < first + count; ++n) {
+            if (black[n % 12]) {
+                g.setColour(colourOf(n, pal.well));
+                g.fillRect(juce::Rectangle<float>(float(x) * w - 0.3f * w, 0, 0.6f * w, 0.6f * h));
+            } else {
+                ++x;
+            }
+        }
+        // Middle C marked.
+        int c4 = 0;
+        for (int n = first; n < 60; ++n) c4 += black[n % 12] ? 0 : 1;
+        g.setColour(pal.heading);
+        g.fillRect(juce::Rectangle<float>((float(c4) + 0.5f) * w - 1.0f, h - 3.0f, 2.0f, 2.0f));
+    }
+
+private:
+    WorldbuilderProcessor& processor;
+};
+
+KeysPanel::KeysPanel(WorldbuilderProcessor& p) : processor(p) {
+    keyboard = std::make_unique<Keyboard>(processor);
+    keyboard->setTooltip("The notes WORLDBUILDER receives from the host's keyboard (lit while held; dimmer while the sustain pedal holds them).");
+    addAndMakeVisible(*keyboard);
+
+    target.setTooltip("Play target: the instrument the MIDI keyboard plays (Place > instrument). OFF: incoming notes do nothing.");
+    target.onChange = [this] {
+        if (updating) return;
+        const int id = target.getSelectedId();
+        if (id <= 1) setTarget(-1, 0);
+        else setTarget((id - 2) / placeElements, (id - 2) % placeElements);
+    };
+    thisButton.setTooltip("Play the instrument shown in the Pattern Editor");
+    thisButton.onClick = [this] {
+        if (slotShown >= 0) setTarget(slotShown, elementShown);
+    };
+    for (int i = 0; i < keys::ScaleModeCount; ++i) scale.addItem(keys::scaleModeNames[std::size_t(i)], i + 1);
+    scale.setTooltip("Chromatic: play exactly what is pressed. Snap to scale: wrong notes move to the nearest note of the Root and Mood.");
+    scale.onChange = [this] {
+        if (!updating) processor.keys.scale.store(scale.getSelectedId() - 1);
+    };
+    octDown.setTooltip("Octave down (to -2)");
+    octUp.setTooltip("Octave up (to +2)");
+    octDown.onClick = [this] {
+        processor.keys.octave.store(std::max(keys::octaveMin, processor.keys.octave.load() - 1));
+        repaint();
+    };
+    octUp.onClick = [this] {
+        processor.keys.octave.store(std::min(keys::octaveMax, processor.keys.octave.load() + 1));
+        repaint();
+    };
+    monitor.setClickingTogglesState(true);
+    monitor.setTooltip("Monitor: hear the keyboard live. Off: the notes are still recorded when REC is armed, but not heard.");
+    monitor.onClick = [this] { processor.keys.monitor.store(monitor.getToggleState()); };
+    regions.setClickingTogglesState(true);
+    regions.setTooltip("Host regions play the target instrument: MIDI regions in GarageBand or Logic play it while the song plays. "
+                       "Recommended: record into the pattern with REC (the part lives in the scene and the Arrangement) OR record a "
+                       "MIDI region in the DAW, not both. Switched off after a take recorded with the transport, so the part never "
+                       "plays twice.");
+    regions.onClick = [this] {
+        processor.keys.hostRegions.store(regions.getToggleState());
+        processor.keys.regionsNotice = false;
+    };
+
+    rec.setClickingTogglesState(true);
+    rec.setTooltip("REC: record the keyboard into the target's pattern. Press Record or Play in the host (the take follows its bars and "
+                   "tempo), or play with the host stopped (a free take: a metronome at the host tempo starts on your first note). "
+                   "Press again to stop.");
+    rec.onClick = [this] {
+        const bool on = rec.getToggleState();
+        if (on && processor.keys.slot.load() < 0 && slotShown >= 0) setTarget(slotShown, elementShown);
+        processor.setArmed(on);
+        if (on && !processor.keys.tipShown) {
+            processor.keys.tipShown = true;
+            tipUntil = juce::Time::getMillisecondCounterHiRes() + 15000.0;
+        }
+        refresh();
+    };
+    for (int i = 0; i < keys::RecordModeCount; ++i) mode.addItem(keys::recordModeNames[std::size_t(i)], i + 1);
+    mode.setTooltip("Replace: a new pattern. Overdub: add to the notes there. Into variant: a new pattern in A, B, C or the Fill.");
+    mode.onChange = [this] {
+        if (!updating) processor.keys.mode.store(mode.getSelectedId() - 1);
+        refresh();
+    };
+    const char* variants[] = { "A", "B", "C", "FILL" };
+    for (int v = 0; v < pat::variantCount; ++v) variant.addItem(variants[v], v + 1);
+    variant.setTooltip("The variant Into variant records into (and plays while armed)");
+    variant.onChange = [this] {
+        if (!updating) processor.keys.variant.store(variant.getSelectedId() - 1);
+    };
+    for (int i = 0; i < keys::QuantiseCount; ++i) quantise.addItem(keys::quantiseNames[std::size_t(i)], i + 1);
+    quantise.setTooltip("Quantise on input: the grid notes move toward (by Strength). Also used by QUANTISE afterwards.");
+    quantise.onChange = [this] {
+        if (!updating) processor.keys.quantise.store(quantise.getSelectedId() - 1);
+    };
+    strength.setSliderStyle(juce::Slider::LinearBar);
+    strength.setRange(0, 100, 1);
+    strength.setTextValueSuffix(" %");
+    strength.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    strength.setTooltip("Quantise strength: 100 % lands on the grid; less keeps some of your timing.");
+    strength.onValueChange = [this] {
+        if (!updating) processor.keys.strength.store(float(strength.getValue() / 100.0));
+    };
+    countIn.setClickingTogglesState(true);
+    countIn.setTooltip("Count-in: when the host starts with REC armed, one bar of clicks first; the take starts on the next bar.");
+    countIn.onClick = [this] { processor.keys.countIn.store(countIn.getToggleState()); };
+    length.addItem("PATTERN", 1);
+    length.addItem("AUTO", 2);
+    length.setTooltip("Length of a new pattern: the pattern's own, or Auto (whole bars covering the take, up to 8).");
+    length.onChange = [this] {
+        if (!updating) processor.keys.autoLength.store(length.getSelectedId() == 2);
+    };
+    quantiseNow.setTooltip("Quantise this pattern now, with the grid and strength above (UNDO TAKE undoes it)");
+    quantiseNow.onClick = [this] {
+        if (slotShown < 0) return;
+        const int t = processor.slotTypes()[std::size_t(slotShown)];
+        if (processor.recorder.quantise(slotShown, t, elementShown, variantShown, processor.keys.quantise.load(), processor.keys.strength.load())
+            && onPatternsChanged)
+            onPatternsChanged();
+        refresh();
+    };
+    undoTake.setTooltip("Undo the last take (or the last QUANTISE), all of it");
+    undoTake.onClick = [this] {
+        if (processor.recorder.undo() && onPatternsChanged) onPatternsChanged();
+        refresh();
+    };
+    for (auto* c : std::initializer_list<juce::Component*> { &target, &thisButton, &scale, &octDown, &octUp, &monitor, &regions, &rec, &mode, &variant,
+                                                             &quantise, &strength, &countIn, &length, &quantiseNow, &undoTake })
+        addAndMakeVisible(*c);
+    for (auto* b : { &monitor, &regions, &countIn, &rec }) b->setColour(juce::TextButton::buttonOnColourId, colours::brass);
+    rebuildTargets();
+    refresh();
+    startTimerHz(30);
+}
+
+KeysPanel::~KeysPanel() { stopTimer(); }
+
+void KeysPanel::setContext(int slot, int element, int v) {
+    slotShown = slot;
+    elementShown = element;
+    variantShown = v;
+    refresh();
+}
+
+void KeysPanel::setTarget(int slot, int element) {
+    // A new target while a take is under way ends it first.
+    if (slot != processor.keys.slot.load() || element != processor.keys.element.load()) processor.setArmed(false);
+    processor.keys.slot.store(slot);
+    processor.keys.element.store(std::clamp(element, 0, placeElements - 1));
+    refresh();
+}
+
+void KeysPanel::rebuildTargets() {
+    typesShown = processor.slotTypes();
+    updating = true;
+    target.clear(juce::dontSendNotification);
+    target.addItem("OFF", 1);
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        const int t = typesShown[std::size_t(slot)];
+        if (t == NoPlace || !hasPatterns(t)) continue;
+        for (int e = 0; e < placeElements; ++e)
+            if (patternInfo(t, e).kind != NoPattern)
+                target.addItem(juce::String(slot + 1) + ". " + juce::String(placeNames[std::size_t(t)]).toUpperCase() + " > "
+                                   + juce::String(placeInfo(t).element[std::size_t(e)].name).toUpperCase(),
+                               targetId(slot, e));
+    }
+    updating = false;
+}
+
+void KeysPanel::refresh() {
+    updating = true;
+    const auto& k = processor.keys;
+    const int slot = k.slot.load(), element = k.element.load();
+    const bool valid = slot >= 0 && typesShown[std::size_t(slot)] != NoPlace && patternInfo(typesShown[std::size_t(slot)], element).kind != NoPattern;
+    target.setSelectedId(valid ? targetId(slot, element) : 1, juce::dontSendNotification);
+    scale.setSelectedId(k.scale.load() + 1, juce::dontSendNotification);
+    monitor.setToggleState(k.monitor.load(), juce::dontSendNotification);
+    regions.setToggleState(k.hostRegions.load(), juce::dontSendNotification);
+    rec.setToggleState(k.armed.load(), juce::dontSendNotification);
+    mode.setSelectedId(k.mode.load() + 1, juce::dontSendNotification);
+    variant.setSelectedId(k.variant.load() + 1, juce::dontSendNotification);
+    variant.setEnabled(k.mode.load() == keys::IntoVariant);
+    quantise.setSelectedId(k.quantise.load() + 1, juce::dontSendNotification);
+    strength.setValue(double(k.strength.load()) * 100.0, juce::dontSendNotification);
+    countIn.setToggleState(k.countIn.load(), juce::dontSendNotification);
+    length.setSelectedId(k.autoLength.load() ? 2 : 1, juce::dontSendNotification);
+    undoTake.setEnabled(processor.recorder.canUndo() && !processor.recorder.taking());
+    thisButton.setToggleState(valid && slot == slotShown && element == elementShown, juce::dontSendNotification);
+
+    // The line under the controls: what REC is doing, or a tip.
+    juce::String text;
+    const auto state = processor.engine.capture.stateOut.load(std::memory_order_relaxed);
+    if (k.armed.load()) {
+        switch (state) {
+            case keys::Capture::CountIn: text = "COUNT-IN: " + juce::String(int(std::ceil(processor.engine.capture.countInLeft.load()))) + " beats"; break;
+            case keys::Capture::Taking: text = "RECORDING with the host: " + juce::String(processor.recorder.takeNotes()) + " notes"; break;
+            case keys::Capture::FreeTaking: text = "FREE TAKE (metronome at the host tempo): " + juce::String(processor.recorder.takeNotes()) + " notes. REC again to stop."; break;
+            case keys::Capture::FreeWaiting: text = "REC armed: press Play or Record in the host, or just play (a free take starts on your first note)."; break;
+            default: text = "REC armed."; break;
+        }
+    } else if (!valid) {
+        text = "No Play target: the keyboard does nothing. Choose an instrument (or THIS).";
+    }
+    if (juce::Time::getMillisecondCounterHiRes() < tipUntil)
+        text = "TIP: GarageBand/Logic also record your notes as a MIDI region. Record into WORLDBUILDER's pattern (recommended) OR a DAW "
+               "region, not both: after a take, HOST MIDI switches off so the region won't play the instrument twice.";
+    else if (k.regionsNotice && !k.armed.load())
+        text = "HOST MIDI is off: the take is in the pattern, so a MIDI region the host recorded won't play the instrument again. "
+               "Delete that region, or switch HOST MIDI back on.";
+    if (text != status) {
+        status = text;
+        repaint(statusArea);
+    }
+    updating = false;
+}
+
+void KeysPanel::timerCallback() {
+    if (!isShowing()) return;
+    processor.serviceKeys();
+    if (processor.slotTypes() != typesShown) rebuildTargets();
+    if (const auto r = processor.recorder.revision(); r != recorderSeen) {
+        recorderSeen = r;
+        if (onPatternsChanged) onPatternsChanged();
+    }
+    refresh();
+    keyboard->repaint();
+    repaint(octaveArea);
+}
+
+void KeysPanel::paint(juce::Graphics& g) {
+    const auto& pal = pixel::theme().colours;
+    pixel::drawText(g, "KEYS", playRow.withWidth(40), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "REC", recRow.withWidth(40), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    const int octave = processor.keys.octave.load();
+    pixel::drawText(g, "OCT " + juce::String(octave > 0 ? "+" : "") + juce::String(octave), octaveArea, pal.ink, juce::Justification::centred, pixel::Font::Small);
+    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.setColour(status.startsWith("TIP") || status.startsWith("HOST MIDI") ? pal.accent : pal.inkDim);
+    g.drawText(status, statusArea, juce::Justification::centredLeft, true);
+}
+
+void KeysPanel::resized() {
+    auto r = getLocalBounds();
+    playRow = r.removeFromTop(24);
+    r.removeFromTop(2);
+    recRow = r.removeFromTop(24);
+    statusArea = r;
+    {
+        auto t = playRow.withTrimmedLeft(40);
+        const auto place = [&t](juce::Component& c, int w) { c.setBounds(t.removeFromLeft(w).reduced(1, 1)); };
+        place(target, 180);
+        place(thisButton, 46);
+        t.removeFromLeft(4);
+        place(scale, 104);
+        t.removeFromLeft(6);
+        place(octDown, 22);
+        octaveArea = t.removeFromLeft(44);
+        place(octUp, 22);
+        t.removeFromLeft(6);
+        place(monitor, 70);
+        place(regions, 80);
+        t.removeFromLeft(4);
+        keyboard->setBounds(t.reduced(1, 2));
+    }
+    {
+        auto t = recRow.withTrimmedLeft(40);
+        const auto place = [&t](juce::Component& c, int w) { c.setBounds(t.removeFromLeft(w).reduced(1, 1)); };
+        place(rec, 50);
+        place(mode, 118);
+        place(variant, 58);
+        t.removeFromLeft(6);
+        place(quantise, 64);
+        place(strength, 90);
+        t.removeFromLeft(6);
+        place(countIn, 82);
+        place(length, 84);
+        undoTake.setBounds(t.removeFromRight(90).reduced(1, 1));
+        quantiseNow.setBounds(t.removeFromRight(86).reduced(1, 1));
+    }
+}
+
+} // namespace wb::ui

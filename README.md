@@ -292,6 +292,58 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
   adds nothing).
 - Bars are 4/4. The arrangement is saved with the project and in `.world` files.
 
+## Play and record with a MIDI keyboard (KEYS)
+
+In GarageBand and Logic, a MIDI keyboard plays the instrument plugin on the selected
+track, so WORLDBUILDER receives your keyboard. The **KEYS** rows in the Pattern Editor
+choose what it plays and record what you play.
+
+**Playing**
+- **Play target**: a Place and one of its instruments (e.g. "1. TAVERN > FIDDLE"), or
+  **THIS** for the instrument the Pattern Editor shows. **OFF** (the default, and every
+  older project): incoming notes do nothing, as before.
+- The keyboard plays that instrument live, through its own effects: **velocity** (level
+  and brightness), **note length** (released keys stop; plucked strings are damped, struck
+  bells and drums ring on), the **sustain pedal** (CC64), **pitch bend** (a tone; an octave
+  for sirens, risers and gliding leads; none for drums) and the **mod wheel** (vibrato, or
+  brightness on instruments without vibrato). Bend and mod act on the whole instrument,
+  as on a synth.
+- Drum instruments: each key plays a drum of the kit (C the first, C# the second...).
+- **CHROMATIC** plays exactly what you press; **SNAP TO SCALE** moves wrong notes to the
+  nearest note of the Root and Mood. **OCT** shifts -2 to +2 octaves. **MONITOR** off:
+  not heard (still recorded).
+- The instrument's pattern keeps playing; mute it (MUTE) to play over silence. In Play
+  Mode Transport with the song stopped the world is silent, and the keyboard alone sounds.
+- The small keyboard on the right lights up the notes arriving (dim: held by the pedal).
+
+**Recording (REC)**
+- Arm **REC**, then press **Record** or **Play** in GarageBand or Logic: the notes go into
+  the target's pattern, on the host's bars and tempo. **COUNT-IN** gives a bar of clicks
+  first. With the song stopped, just play: a **free take** starts on your first note, with
+  a metronome at the host tempo. Press REC again to stop.
+- **REPLACE** (a new pattern, from your first note; a take with no notes changes
+  nothing), **OVERDUB** (added to the notes there) or **INTO VARIANT** (a new pattern in A,
+  B, C or the Fill, for the Arrangement).
+- **Quantise** on input (OFF, 1/4, 1/8, 1/16, 1/32, 1/8T, 1/16T) with a **Strength** (less
+  than 100 % keeps some of your feel); **QUANTISE** applies it afterwards. New patterns
+  use the 1/32 grid (1/32T with a triplet quantise), the finest the editor has.
+- **Length**: the pattern's own, or **AUTO** (whole bars covering the take, up to 8). A
+  note keeps its place in the song: what you played at bar 9 plays at bar 9.
+- While armed, that instrument's generator and randomness pause, so you hear the pattern
+  exactly. Recorded notes appear in the grid at once; afterwards the pattern counts as
+  edited (Generate no longer overwrites it). **UNDO TAKE** removes the whole take.
+
+**Don't record it twice.** GarageBand and Logic also record your keyboard as a MIDI
+region on the track, and when that region plays back it plays the instrument again on
+top of the pattern. Either record into WORLDBUILDER's pattern (recommended: the part then
+lives in the scene and the Arrangement), **or** record a normal MIDI region in the DAW that
+plays the target, not both. **HOST MIDI** ("host regions play the target instrument") is on
+until you record a take with the transport; then it switches off by itself (the KEYS line
+says so) and notes arriving while the song plays no longer play the target, unless REC is
+armed. WORLDBUILDER cannot tell a region from your hands, so this includes playing along
+live while the song plays; with the song stopped the keyboard always plays. Delete the region, or switch HOST MIDI back on if you want the region instead. A
+tip says this the first time you arm REC.
+
 ## Getting WORLDBUILDER into your song
 
 WORLDBUILDER writes its own notes (the Pattern Editor), so there is no MIDI part to

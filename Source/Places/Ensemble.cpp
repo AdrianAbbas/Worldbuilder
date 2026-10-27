@@ -68,6 +68,13 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
     frame.beat = c.beat;
     frame.beatsPerSecond = double(c.bpm) / 60.0;
     configure(c);
+    // The keyboard's pitch wheel and mod wheel reach the instrument it plays.
+    for (int e = 0; e < placeElements; ++e)
+        if (auto* p = parts[std::size_t(e)]) {
+            const bool keys = c.live != nullptr && c.liveElement == e;
+            p->bend = keys ? c.live->bend : 0.0f;
+            p->mod = keys ? c.live->mod : 0.0f;
+        }
     for (auto* p : parts)
         if (p != nullptr) p->update(frame);
 
@@ -85,10 +92,14 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
         std::fill(l, l + n, 0.0f);
         std::fill(r, r + n, 0.0f);
         if (part == nullptr) continue;
-        const float g = level[k] * c.s.element[k];
+        // The instrument the keyboard plays sounds at its own level even while its pattern
+        // is muted, switched off or out of the section.
+        const keys::Live* live = c.live != nullptr && c.liveElement == e ? c.live : nullptr;
+        const float elementGain = live != nullptr ? std::max(c.s.element[k], c.liveLevel) : c.s.element[k];
+        const float g = level[k] * elementGain;
         // Switched off, muted or soloed away: silent and stopped. It picks up its
         // sustained notes again when it comes back.
-        if (c.s.element[k] < 1.0e-4f) {
+        if (elementGain < 1.0e-4f) {
             if (!silent[k]) part->reset();
             silent[k] = true;
             catchUp[k] = true;
@@ -96,7 +107,7 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
         }
         silent[k] = false;
         const auto& play = c.play[k];
-        if (catchUp[k]) {
+        if (catchUp[k] && c.s.plays(e)) {
             catchUp[k] = false;
             if (part->sustains() && play.pattern != nullptr)
                 play.sounding(c.beat, [&](const pat::Event& ev) {
@@ -109,9 +120,38 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
                 });
         }
         int done = 0;
+        int nextLive = 0;
+        // Live notes (KEYS) up to `offset`, each on its sample.
+        const auto playLive = [&](int offset) {
+            for (; live != nullptr && nextLive < live->count && live->notes[std::size_t(nextLive)].offset <= offset; ++nextLive) {
+                const auto& x = live->notes[std::size_t(nextLive)];
+                if (x.offset > done) {
+                    part->render(l + done, r + done, x.offset - done);
+                    done = x.offset;
+                }
+                if (!x.on) {
+                    part->stopLive(x.id);
+                    continue;
+                }
+                NoteOn on;
+                on.live = x.id;
+                on.velocity = x.velocity;
+                on.beat = c.beat + c.beatsPerSample * double(x.offset);
+                on.length = liveLength;
+                on.seconds = 3600.0f;
+                on.semis = x.semis - part->transposeSemis();
+                on.row = x.row;
+                const uint64_t h = dsp::mix64(noise.key ^ (uint64_t(x.id) << 48) ^ (c.clock + uint64_t(x.offset)));
+                on.random = dsp::unipolar(h);
+                on.random2 = dsp::unipolar(dsp::mix64(h));
+                part->start(frame, on);
+                logEvent(c.clock + uint64_t(x.offset), e, play.kit ? float(on.row) : on.semis, on.velocity);
+            }
+        };
         for (int i = 0; i < count; ++i) {
             const auto& x = notes[std::size_t(i)];
             if (x.element != e) continue;
+            playLive(x.offset - 1);
             if (x.offset > done) {
                 part->render(l + done, r + done, x.offset - done);
                 done = x.offset;
@@ -124,6 +164,7 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             part->start(frame, played);
             logEvent(c.clock + uint64_t(x.offset), e, play.kit && x.tag == 0 ? float(on.row) : on.semis, on.velocity);
         }
+        playLive(n);
         if (done < n) part->render(l + done, r + done, n - done);
         for (int i = 0; i < n; ++i) {
             l[i] *= g;

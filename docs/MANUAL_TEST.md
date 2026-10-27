@@ -760,3 +760,24 @@ Nothing in the sound changed; this is about the look and that every control stil
   plain world. Click it again (ON): the sections play again.
 - [ ] An older project with an arrangement that never played opens with Play Mode
   Arrangement.
+
+## Milestone 14 check: MIDI keyboard (KEYS and REC)
+
+- [ ] Open a Place's Pattern Editor (EDIT on a Place, then an instrument tab). In KEYS choose
+  a target (or THIS). Play the keyboard: the instrument sounds, louder and brighter when
+  played harder; the small keyboard lights up.
+- [ ] Sustain pedal holds notes; pitch bend bends (a tone); the mod wheel adds vibrato (or
+  brightness on plucks and bells). SNAP TO SCALE corrects wrong notes; OCT moves octaves;
+  MONITOR off silences the keyboard.
+- [ ] Play Mode Transport, song stopped: only the keyboard sounds. Press play: the world and
+  the keyboard together.
+- [ ] REC armed, press Record in GarageBand, play a phrase, stop: the notes are in the
+  pattern grid, on the beat where you played them, and play back. UNDO TAKE removes them.
+- [ ] COUNT-IN: one bar of clicks before the take. QUANTISE 1/8 at 100 % and 60 %.
+- [ ] OVERDUB adds; INTO VARIANT B leaves A alone (check in the Arrangement).
+- [ ] Song stopped, REC armed: just play. A metronome starts on your first note; press REC
+  again to stop; the take is in the pattern.
+- [ ] After a take with the transport, the KEYS line says HOST MIDI is off: the region
+  GarageBand recorded does not play the instrument twice. Delete the region (or switch HOST
+  MIDI back on to use the region instead).
+- [ ] The tip appears the first time REC is armed.

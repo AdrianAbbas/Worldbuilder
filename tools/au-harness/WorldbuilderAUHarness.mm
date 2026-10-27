@@ -582,6 +582,69 @@ void v2Suite(Report& r, AudioComponent component, bool outOfProcess, bool useWin
         const OSStatus s2 = MusicDeviceMIDIEvent(unit, 0x80, 60, 0, 0);
         r.check(s == noErr && s2 == noErr && withNote.status == noErr && withNote.finite, "MIDI note on/off accepted", withNote.describe());
 
+        // 4b. KEYS (Milestone 14): with a Play target, MIDI plays the instrument. The target
+        // is set through the state (it is not a parameter): Place 1 (the Castle) > Horns.
+        // Its patterns are switched off and the environment is down, so what is heard is
+        // the note.
+        {
+            CFPropertyListRef info = nullptr;
+            UInt32 infoSize = sizeof(info);
+            bool targeted = false;
+            if (AudioUnitGetProperty(unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &info, &infoSize) == noErr && info != nullptr
+                && CFGetTypeID(info) == CFDictionaryGetTypeID()) {
+                CFMutableDictionaryRef dict = CFDictionaryCreateMutableCopy(nullptr, 0, static_cast<CFDictionaryRef>(info));
+                const auto data = static_cast<CFDataRef>(CFDictionaryGetValue(dict, CFSTR("jucePluginState")));
+                if (data != nullptr && CFGetTypeID(data) == CFDataGetTypeID() && CFDataGetLength(data) > 8) {
+                    // JUCE's binary XML: a magic number, the text's size, the text.
+                    const UInt8* bytes = CFDataGetBytePtr(data);
+                    uint32_t magic = 0, length = 0;
+                    std::memcpy(&magic, bytes, 4);
+                    std::memcpy(&length, bytes + 4, 4);
+                    if (magic == 0x21324356 && length + 8 <= UInt32(CFDataGetLength(data))) {
+                        std::string xml(reinterpret_cast<const char*>(bytes + 8), strnlen(reinterpret_cast<const char*>(bytes + 8), length));
+                        const auto end = xml.rfind("</");
+                        if (end != std::string::npos) {
+                            xml.insert(end, "<Keys slot=\"0\" element=\"2\" monitor=\"1\"/>");
+                            std::vector<UInt8> out(8 + xml.size() + 1, 0);
+                            const uint32_t size2 = uint32_t(xml.size() + 1);
+                            std::memcpy(out.data(), &magic, 4);
+                            std::memcpy(out.data() + 4, &size2, 4);
+                            std::memcpy(out.data() + 8, xml.data(), xml.size());
+                            CFDataRef replaced = CFDataCreate(nullptr, out.data(), CFIndex(out.size()));
+                            CFDictionarySetValue(dict, CFSTR("jucePluginState"), replaced);
+                            CFRelease(replaced);
+                            CFPropertyListRef next = dict;
+                            targeted = AudioUnitSetProperty(unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &next, sizeof(next)) == noErr;
+                        }
+                    }
+                }
+                CFRelease(dict);
+            }
+            if (info != nullptr) CFRelease(info);
+            if (r.check(targeted, "KEYS: a Play target set through the state")) {
+                std::vector<std::pair<AudioUnitParameterID, float>> restore;
+                for (const auto& p : params) {
+                    const bool elementSwitch = p.name.rfind("Place 1 Element", 0) == 0 && p.name.size() > 3 && p.name.compare(p.name.size() - 3, 3, " On") == 0;
+                    if (elementSwitch) {
+                        restore.push_back({ p.id, getParameter(unit, p.id) });
+                        setParameter(unit, p.id, 0.0f);
+                    }
+                }
+                if (const auto* env = findParameter(params, { "Environment Level" })) {
+                    restore.push_back({ env->id, getParameter(unit, env->id) });
+                    setParameter(unit, env->id, env->info.minValue);
+                }
+                auto quiet = host.render(4.0, 3.0);
+                const OSStatus on = MusicDeviceMIDIEvent(unit, 0x90, 57, 110, 0);
+                auto played = host.render(1.0, 0.2);
+                MusicDeviceMIDIEvent(unit, 0x80, 57, 0, 0);
+                r.check(on == noErr && played.finite && played.rmsDb() > -60.0 && played.rmsDb() > quiet.rmsDb() + 15.0,
+                        "KEYS: a MIDI note plays the target instrument (audible)", strf("%.1f dBFS vs %.1f dBFS without", played.rmsDb(), quiet.rmsDb()));
+                for (const auto& [id, value] : restore) setParameter(unit, id, value);
+                host.render(0.5, 0.0);
+            }
+        }
+
         // 5. Factory presets via kAudioUnitProperty_PresentPreset.
         CFArrayRef presets = nullptr;
         size = sizeof(presets);

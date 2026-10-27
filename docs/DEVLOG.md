@@ -5,6 +5,7 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**Milestone 14 is complete** (MIDI keyboard play and record; handoff at the end). Before it:
 **Milestone 13 is complete.** After it, the developer tested in GarageBand on a MacBook Air
 and sent eight fixes; their checklist and handoff are in the
 [GarageBand fix round section](#garageband-fix-round-2026-10-26) at the end. A new
@@ -13,7 +14,8 @@ unticked item.
 
 After that round the developer reported that arrangements did not persist; the fix is in
 [Arrangement persistence fix](#arrangement-persistence-fix-2026-10-27). Milestone 14 (MIDI
-keyboard play and record) follows it.
+keyboard play and record) follows it: see
+[Milestone 14](#milestone-14-play-and-record-with-a-midi-keyboard-2026-10-27).
 
 ---
 
@@ -4577,3 +4579,145 @@ diagnosis above.
 Full Linux suite with the fix: 3684 passed and 1 failed on the first run (the header
 layout check, fixed as above); the groups touched (arrpersist, editor, arrangement,
 scenes, state) then passed 155 of 155.
+
+## Milestone 14: play and record with a MIDI keyboard (2026-10-27)
+
+From [Direction Update 8](DIRECTION_UPDATE_8.md) (added to `docs/` this session). The hotfix checklist of the GarageBand fix round was all
+ticked when the session started; the arrangement fix above came in during the session
+and went first.
+
+### Progress checklist
+
+- [x] 14a. Play target (Place slot > instrument), live notes with velocity, length, sustain (CC64), pitch bend, mod wheel
+- [x] 14a. Chromatic / Snap to scale, octave -2..+2, Monitor, on-screen keyboard; patterns keep playing; no target = nothing (as before)
+- [x] 14b. REC: follows the host transport, count-in, Replace / Overdub / Into variant, quantise + strength (on input and afterwards), Auto length
+- [x] 14b. Generator and randomness paused while armed, "edited" afterwards, notes shown at once, one-step undo, free record with a metronome
+- [x] 14c. Host regions safeguard (HOST MIDI), README section, first-time tip
+- [x] Tests (`--only keys`, 55 checks), AU harness MIDI check (macOS CI)
+
+### Decisions
+
+- **Where the notes go.** The live notes play the target element's own Part (the same
+  voices, patch, effects and Place mix as its pattern), so the keyboard sounds exactly like
+  the instrument. A live note is a `NoteOn` with `live` = MIDI note + 1 and an endless
+  length; `Part::stopLive(id)` ends it when its key is released (after the pedal). Held
+  parts (synths, FM and tine keys, choirs, winds, bowed strings, the hurdy-gurdy) let go;
+  plucked strings are damped (`Pluck::damp`, a new damper whose loop gain uses the loss
+  filter's real gain at the note: the old damper clamps near 1 for high notes, which the
+  harp test exposed; the harpsichord's own damper is left as it was so the Places sound as
+  before); struck bells, bars and drums ring on, as they would.
+- **Pitch.** A live note is concert pitch (MIDI 69 = 440 Hz): the part takes off its own
+  transpose (`Part::transposeSemis`). Snap to scale uses `music::quantise` on the Mood.
+  A kit plays its rows from C upwards (C, C#, D, D#...).
+- **Bend and mod act on the whole instrument**, as on a synth (its pattern's notes too).
+  Bend range: a tone; an octave for sirens, risers and the crystal/zero-g leads; none for
+  kits. Mod wheel: +0.45 semitone of vibrato (no vibrato delay while it is up) on
+  instruments with vibrato; brightness or hardness on plucks, bells, bars and drums.
+  Struck bells and drums do not bend; plucked strings retune their loop (`WaveguideString::retune`).
+- **The keyboard alone.** In Play Mode Transport (and Arrangement) with the host stopped
+  the world is gated silent. The keyboard still has to sound (trying a part before pressing
+  play, and free record), so the engine opens the gate for the target alone: layers and the
+  other slots silent, no pattern notes, only the live notes. Waking from full silence, the
+  target Place's frozen voices and the shared effects are cleared first. It stays awake six
+  seconds after the last key (and during a free take), then the gate closes over 250 ms.
+- **Timing.** The engine renders 32-sample chunks into a FIFO ahead of the host's block;
+  MIDI events are timed on a stream counter that never jumps (`WorldEngine::stream`), so a
+  note lands on its sample in the chunk (at most 31 samples late when the chunk was
+  already rendered, about 0.7 ms).
+- **Settings are state, not parameters.** The Play target, scale mode, octave, Monitor,
+  HOST MIDI and REC's settings save with the project (a `Keys` child); REC's arm does not.
+  Keeping them out of the parameter tree keeps Locations, scenes, travel and automation
+  untouched. Older projects: no target.
+- **REC timeline (audio thread, `keys::Capture`).** Armed and the host rolling: a take
+  starts where the host starts (with count-in: the next bar line after a bar of clicks) and
+  ends when it stops. Armed and stopped: a free take starts on the first note, on a clock at
+  the host tempo, with a metronome; it ends when REC is released or the host starts. The
+  take is a stream of events through a lock-free SPSC queue (2048 entries, preallocated).
+- **REC into patterns (message thread, `keys::Recorder`).** Replace starts the new pattern
+  at the take's first note (a take with no notes changes nothing: pressing play to listen
+  while armed never wipes a pattern). New patterns use the 1/32 grid (1/32T with a triplet
+  quantise), the finest the Pattern Editor has, are fixed in the key (no Follow Chords) and
+  have no swing. Overdub keeps the pattern's own grid; on a Follow Chords pattern a note is
+  stored relative to the chord where it was played. Notes fold into the pattern by song
+  position (a note at bar 9 plays at bar 9). Auto length: whole bars covering the take, up
+  to 8 (Replace and Into variant). While the take runs its notes carry `Note::takeFlag`:
+  playback skips them (no double notes while you play), the editor shows them at once.
+- **"Generator paused" while armed:** the target's pattern plays the recorded variant with
+  randomness and Evolve at 0, and its generated pattern is not regenerated.
+- **The safeguard (14c).** WORLDBUILDER cannot tell a DAW region from a hand on the keys.
+  HOST MIDI ("host regions play the target instrument") is on by default; notes arriving
+  while the host plays are ignored only when it is off and REC is not armed. After a take
+  recorded with the transport (the host has almost certainly recorded a region too), it
+  switches off by itself and the KEYS line says why. A first-time tip on arming REC explains
+  it; the README has the full explanation.
+
+### What was built
+
+- `Source/Keys/Keys.h`: settings types, `Input` (held keys, pedal, wheels, the editor's
+  key bits), `Capture`, `Fifo`, the metronome `Click`.
+- `Source/Keys/Recorder.{h,cpp}`: takes into patterns, quantise afterwards, undo (32 steps).
+- Engine (`keysBlock`, `keysPiece`, the keys-alone gate), PlaceSlot (keys level, armed
+  pause, `wake`), Ensemble (live notes merged on their samples, bend/mod per part), every
+  Part (transpose, `stopLive`, bend, mod), the voices (`bend`).
+- Processor: MIDI parsing (notes, CC64, CC1, pitch wheel, all-notes-off), state, the
+  safeguard, `serviceKeys` on the 10 Hz timer (the KEYS panel also calls it at 30 Hz).
+- `Source/UI/KeysPanel.{h,cpp}`: two rows under the Pattern Editor's settings: KEYS (target,
+  THIS, scale, OCT, MONITOR, HOST MIDI, the lit keyboard) and REC (arm, mode, variant,
+  quantise, strength, COUNT-IN, length, QUANTISE, UNDO TAKE) and a status line.
+- AU harness: sets a Play target through the state (`jucePluginState`), switches the
+  Castle's patterns off and the environment down, sends a note through
+  `MusicDeviceMIDIEvent`, asserts audible output. Not run here (macOS only).
+
+### Tests (`--only keys`)
+
+No target: identical output. Target: audible at the pitch pressed (A3 within 15 cents);
+velocity changes level (> 3 dB) and brightness; a released key stops (> 20 dB down), the
+pedal holds it, lifting it lets go; bend up a tone; the mod wheel changes the sound; Snap to
+scale and Chromatic; octave; Monitor off; the on-screen keyboard's bits; a plucked string
+damped on release; a kit plays. The pattern keeps playing; Transport with the host stopped:
+silence, then the keyboard alone, and only the live note. REC at 90, 120 and 147 bpm lands
+notes on the right 1/32 steps with lengths from the note-offs and no take marks left;
+quantise 1/8 at 100 %, 1/4 at 50 %; quantise afterwards and its undo; a take with no notes
+changes nothing; Replace, one-step undo, Overdub, Into variant (A untouched), Auto length,
+a late song position, count-in, take marks during a take, free record with the metronome,
+"edited", the recorded pitch; the safeguard; state round trip and old projects; no
+allocation on the audio thread while playing and recording; the KEYS rows (target list,
+THIS/choice, the tip, REC, a take shown at once).
+
+Test-host notes (not product issues): a new world fades in over 2 s, so the keys tests warm
+up first; the Castle's tape echo repeats a note for a second or two, so the keys host turns
+Activity and Population down; the harp's sympathetic open strings ring on after damping, so
+that check compares the first half second.
+
+Full Linux suite: 3734 passed, 0 failed (four shards, then the CPU and 60 s stress groups),
+before the six KEYS-interface checks were added; after them `--only keys,editor`: 98 passed,
+0 failed. The AU harness check runs on the macOS CI only.
+
+### Milestone 14 handoff
+
+**Done**: 14a, 14b and 14c, plus the arrangement persistence fix pushed before them. This
+push is without `[skip ci]`, so CI builds and packages it once. (14a-c went up as one
+commit: the parts share the engine, Part and UI changes, so they were finished and tested
+together.)
+
+**What to test first** ([MANUAL_TEST.md](MANUAL_TEST.md), "Milestone 14 check" and
+"Arrangement persistence check"): play an instrument from the keyboard in GarageBand
+(velocity, pedal, bend, mod wheel, snap, octave), the keyboard alone with the song
+stopped, a REC take with the transport (and count-in), a free take, Overdub / Into variant,
+UNDO TAKE, and that the GarageBand region does not double the part afterwards.
+
+**Known issues / limits**:
+- Not heard on a Mac yet: everything above is measured on Linux through `processBlock`.
+  Latency: up to 31 samples (0.7 ms) on top of the host's own.
+- WORLDBUILDER cannot tell a DAW region from live playing: with HOST MIDI off, playing along
+  live while the song plays is ignored unless REC is armed (the README says so).
+- Recorded notes land on 1/32 (or 1/32T) steps: the finest grid the Pattern Editor has
+  (about 62 ms at 120 bpm), so "Quantise off" still rounds to it.
+- Pitch bend and the mod wheel act on the whole target instrument (its pattern too).
+  Struck bells, bars and drums do not bend.
+- The harpsichord-style damper used by pattern notes clamps its loop gain near 1 for high
+  notes (it barely damps them); live notes use the new damper. Left as it was so the Places
+  sound unchanged; worth a listen later.
+- The Pattern Editor's grid is about 50 px shorter for the KEYS rows (it scrolls).
+- Milestone 15 (samples) is next; per Direction Update 8 the repository must be private
+  before any samples are committed.

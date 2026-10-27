@@ -42,6 +42,10 @@ struct Note {
     uint8_t probability = 100;   // 0..100 %
     uint8_t flags = 0;
     static constexpr uint8_t lockFlag = 1;
+    // Recorded in the take under way (KEYS): heard live as it is played, so playback
+    // leaves it out until the take ends.
+    static constexpr uint8_t takeFlag = 2;
+    bool inTake() const { return (flags & takeFlag) != 0; }
     bool locked() const { return (flags & lockFlag) != 0; }
     void setLocked(bool on) { flags = uint8_t(on ? (flags | lockFlag) : (flags & ~lockFlag)); }
     bool operator==(const Note& o) const {
@@ -307,6 +311,7 @@ struct Playback {
                 const Note& n = p.notes[std::size_t(i)];
                 const int64_t s = pass * length + n.step;
                 if (s > now) break;
+                if (n.inTake()) continue;
                 if (n.probability < 100 && unitOf(key, pass, i, 9) * 100.0f >= float(n.probability)) continue;
                 const Change c = changeFor(i, pass, music::floorDiv(s, int64_t(perBar)));
                 if (c.skip) continue;
@@ -339,6 +344,7 @@ struct Playback {
             const int64_t bar = music::floorDiv(s, int64_t(perBar));
             for (int i = lo; i < p.count && p.notes[std::size_t(i)].step == pos; ++i) {
                 const Note& n = p.notes[std::size_t(i)];
+                if (n.inTake()) continue;
                 if (n.probability < 100 && unitOf(key, pass, i, 9) * 100.0f >= float(n.probability)) continue;
                 const Change c = changeFor(i, pass, bar);
                 const double swingSteps = (s & 1) != 0 ? 0.45 * double(swing) : 0.0;

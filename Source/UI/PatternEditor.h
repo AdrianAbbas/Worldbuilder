@@ -9,6 +9,7 @@
 // (which follows the Place's knobs). The first edit keeps a copy, which then stays
 // as written.
 #include "../PluginProcessor.h"
+#include "KeysPanel.h"
 #include "WorldLookAndFeel.h"
 
 namespace wb::ui {
@@ -34,6 +35,7 @@ public:
     void generate();
     void addNote(int step, int degree, int length = 1, int velocity = 100);
     const pat::Element& shown() const { return working; }
+    KeysPanel& keysPanel() { return *keys; }
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -125,6 +127,8 @@ private:
     std::array<juce::ToggleButton, 5> vary;
     juce::TextButton importButton { "IMPORT" }, saveButton { "SAVE MIDI" };
     std::unique_ptr<DragOut> dragOut;
+    std::unique_ptr<KeysPanel> keys;   // KEYS (Milestone 14)
+    juce::Rectangle<int> keysArea;
     std::unique_ptr<Grid> gridView;
     std::unique_ptr<Lane> velocityLane, probabilityLane;
     juce::ScrollBar hScroll { false }, vScroll { true };

@@ -6941,6 +6941,441 @@ Run play(HurdyPatch patch, int root, const std::vector<std::array<float, 3>>& no
 }
 } // namespace hurdyTest
 
+// KEYS (Milestone 14): a MIDI keyboard plays and records a Place's instrument.
+namespace keysTest {
+// A Castle with its patterns muted (the keyboard's instrument still plays), no
+// environment, no shared space: what is heard is the keyboard.
+// The target's pattern starts as an empty, edited 4-bar pattern (so a take's steps are
+// known) unless `blank` is false.
+Host host(int type = Castle, int element = CastlePlace::Horns, double bpm = 120.0, bool blank = true) {
+    // The smallest space: the Place's own hall rings briefly.
+    auto h = placeHost(type, 0, { { "spacemix", 0.0f }, { "environment", -60.0f }, { "p1_size", 0.0f }, { "scale", 0.0f }, { "p1_activity", 0.0f }, { "population", 0.0f } }, bpm);
+    h.p->patterns.syncTypes(h.p->slotTypes());
+    for (int e = 0; e < placeElements; ++e) {
+        // Dry: no shared reverb or delay tails under what is measured.
+        h.set(fxId(0, e, FxReverb), 0.0f);
+        h.set(fxId(0, e, FxDelay), 0.0f);
+        auto el = h.p->patterns.element(0, type, e);
+        el.controls.mute = true;
+        if (e == element && blank) {
+            el.pattern.setGrid(pat::Sixteenth, 4);
+            el.pattern.clear();
+            el.controls.edited = true;
+        }
+        h.p->patterns.setElement(0, type, e, el);
+    }
+    h.p->keys.slot = 0;
+    h.p->keys.element = element;
+    // A new world fades in over two seconds (as Power does): past that first.
+    h.render(2.2);
+    return h;
+}
+void note(Host& h, int note, int velocity, int offset = 0) { h.midi.addEvent(juce::MidiMessage::noteOn(1, note, uint8_t(velocity)), offset); }
+void off(Host& h, int note, int offset = 0) { h.midi.addEvent(juce::MidiMessage::noteOff(1, note), offset); }
+void cc(Host& h, int controller, int value, int offset = 0) { h.midi.addEvent(juce::MidiMessage::controllerEvent(1, controller, value), offset); }
+// Renders `seconds` with the events queued for the first block.
+Audio play(Host& h, double seconds) { return h.render(seconds); }
+std::vector<float> mono(const Audio& a, double from, double seconds) {
+    std::vector<float> y;
+    const auto begin = std::size_t(from * a.rate), end = std::min(a.l.size(), std::size_t((from + seconds) * a.rate));
+    for (std::size_t i = begin; i < end; ++i) y.push_back(0.5f * (a.l[i] + a.r[i]));
+    return y;
+}
+double hzOf(int midi) { return 440.0 * std::exp2((midi - 69) / 12.0); }
+double cents(double a, double b) { return 1200.0 * std::log2(a / b); }
+// A sample position for a beat at `bpm` (48 kHz).
+int64_t sampleAt(double beat, double bpm) { return int64_t(std::llround(beat * 60.0 / bpm * 48000.0)); }
+// Plays the host from 0 with REC armed, sending note-ons (and offs a sixteenth later)
+// at the given beats, then stops and lets the recorder take them.
+void recordTake(Host& h, const std::vector<double>& beats, double bpm, double seconds, int midi = 62) {
+    h.playHead.bpm = bpm;
+    h.p->setArmed(true);
+    h.playHead.playing = true;
+    h.playHead.position = 0;
+    std::vector<std::pair<int64_t, bool>> todo;
+    for (double b : beats) {
+        todo.push_back({ sampleAt(b, bpm), true });
+        todo.push_back({ sampleAt(b + 0.25, bpm), false });
+    }
+    const auto total = int64_t(seconds * 48000.0);
+    for (int64_t at = 0; at < total; at += h.block) {
+        for (const auto& [when, on] : todo)
+            if (when >= at && when < at + h.block) {
+                if (on) note(h, midi, 100, int(when - at));
+                else off(h, midi, int(when - at));
+            }
+        h.processOne(h.block);
+    }
+    h.playHead.playing = false;
+    h.processOne(h.block);
+    h.p->setArmed(false);
+    h.processOne(h.block);
+    h.p->serviceKeys();
+}
+std::vector<int> steps(const pat::Pattern& p) {
+    std::vector<int> out;
+    for (int i = 0; i < p.count; ++i) out.push_back(p.notes[std::size_t(i)].step);
+    return out;
+}
+std::string list(const std::vector<int>& v) {
+    std::string t;
+    for (int x : v) t += std::to_string(x) + " ";
+    return t;
+}
+} // namespace keysTest
+
+void testKeys(Suite& s) {
+    using namespace keysTest;
+    s.section("keys: no Play target, notes do nothing (as before)");
+    {
+        auto a = host(), b = host();
+        a.p->keys.slot = -1;
+        b.p->keys.slot = -1;
+        note(a, 60, 110);
+        const auto x = play(a, 1.0), y = play(b, 1.0);
+        s.check(proTest::worstDifference(x, y) == 0.0, "with no Play target the keyboard changes nothing");
+    }
+    s.section("keys: the Play target plays live (pitch, velocity, sustain, bend, mod, scale, octave, monitor)");
+    {
+        auto quiet = host();
+        const auto silence = measure(play(quiet, 1.0), 0.2);
+        auto h = host();
+        note(h, 57, 110);
+        const auto a = play(h, 1.5);
+        const auto st = measure(a, 0.3);
+        s.check(st.finite && st.rmsDb > silence.rmsDb + 20.0, "a note received in processBlock plays the target instrument",
+                fmt(st.rmsDb) + " dB vs " + fmt(silence.rmsDb) + " dB");
+        const auto y = mono(a, 0.6, 0.5);
+        const double found = models::peakNear(y, 0, y.size(), 48000.0, hzOf(57));
+        s.check(std::abs(cents(found, hzOf(57))) < 15.0, "it sounds at the pitch pressed (A3 = 220 Hz)", fmt(found) + " Hz");
+        // Velocity: louder and brighter.
+        auto soft = host(), hard = host();
+        note(soft, 57, 35);
+        note(hard, 57, 127);
+        const auto sa = play(soft, 1.0), ha = play(hard, 1.0);
+        const auto ss = measure(sa, 0.2), hs = measure(ha, 0.2);
+        s.check(hs.rmsDb > ss.rmsDb + 3.0, "velocity changes the level", fmt(hs.rmsDb - ss.rmsDb) + " dB");
+        s.check(hs.highDb - hs.midDb > ss.highDb - ss.midDb + 1.0, "and the brightness", fmt((hs.highDb - hs.midDb) - (ss.highDb - ss.midDb)) + " dB");
+        // Note length: released, it stops; held by the sustain pedal, it sounds on.
+        auto released = host(), pedalled = host();
+        note(released, 57, 110);
+        note(pedalled, 57, 110);
+        cc(pedalled, 64, 127);
+        play(released, 0.5);
+        play(pedalled, 0.5);
+        off(released, 57);
+        off(pedalled, 57);
+        const auto ra = play(released, 2.5), pa = play(pedalled, 2.5);
+        const auto rs = measure(ra, 1.5, 2.5), ps = measure(pa, 1.5, 2.5);
+        s.check(rs.rmsDb < st.rmsDb - 20.0, "a released key stops its note", fmt(rs.rmsDb) + " dB after, " + fmt(st.rmsDb) + " dB held; env " + fmt(measure(ra, 0, 0.25).rmsDb) + " " + fmt(measure(ra, 0.25, 0.5).rmsDb) + " " + fmt(measure(ra, 0.5, 1).rmsDb) + " " + fmt(measure(ra, 1, 1.5).rmsDb) + " " + fmt(measure(ra, 2, 2.5).rmsDb));
+        s.check(ps.rmsDb > rs.rmsDb + 15.0, "the sustain pedal (CC64) holds it", fmt(ps.rmsDb - rs.rmsDb) + " dB");
+        cc(pedalled, 64, 0);
+        const auto after = play(pedalled, 2.5);
+        s.check(measure(after, 1.5).rmsDb < ps.rmsDb - 15.0, "lifting the pedal lets it go");
+        // Pitch bend: full up is a tone on the horns.
+        auto bent = host();
+        note(bent, 57, 110);
+        bent.midi.addEvent(juce::MidiMessage::pitchWheel(1, 16383), 0);
+        const auto ba = play(bent, 1.5);
+        const auto by = mono(ba, 0.6, 0.5);
+        const double up = models::peakNear(by, 0, by.size(), 48000.0, hzOf(59));
+        s.check(std::abs(cents(up, hzOf(59))) < 15.0, "pitch bend up bends a tone (the horns' range)", fmt(up) + " Hz");
+        s.check(WorldEngine::bendRange(Castle, CastlePlace::Pulse) == 0.0f && WorldEngine::bendRange(Castle, CastlePlace::Horns) == 2.0f,
+                "a kit does not bend; a melodic instrument bends a tone");
+        // Mod wheel: vibrato (the level moves more over time on a held note).
+        auto still = host(), wobble = host();
+        note(still, 57, 110);
+        note(wobble, 57, 110);
+        cc(wobble, 1, 127);
+        const auto sm = measure(play(still, 2.0), 0.8), wm = measure(play(wobble, 2.0), 0.8);
+        s.check(difference(sm, wm) > 0.3, "the mod wheel changes the sound (vibrato)", fmt(difference(sm, wm)) + " dB");
+        // Snap to scale (D minor): F# moves to F or G; Chromatic plays it.
+        auto chromatic = host(), snapped = host();
+        snapped.p->keys.scale = keys::SnapToScale;
+        note(chromatic, 66, 100);
+        note(snapped, 66, 100);
+        play(chromatic, 0.3);
+        play(snapped, 0.3);
+        const auto& lc = chromatic.p->engine.placeSlot(0).place()->logged(chromatic.p->engine.placeSlot(0).place()->eventCount() - 1);
+        const auto& ls = snapped.p->engine.placeSlot(0).place()->logged(snapped.p->engine.placeSlot(0).place()->eventCount() - 1);
+        const float transpose = chromatic.p->engine.placeSlot(0).place()->partTranspose(CastlePlace::Horns);
+        s.check(std::abs(lc.pitch + transpose - float(66 - 50)) < 0.01f, "Chromatic plays exactly what is pressed", fmt(lc.pitch + transpose));
+        s.check(music::inScale(0, int(std::lround(ls.pitch + transpose))) && std::abs(ls.pitch + transpose - 16.0f) <= 1.01f,
+                "Snap to scale moves a wrong note to the nearest note of the Mood", fmt(ls.pitch + transpose));
+        // Octave shift.
+        auto shifted = host();
+        shifted.p->keys.octave = 1;
+        note(shifted, 57, 100);
+        play(shifted, 0.3);
+        const auto* place = shifted.p->engine.placeSlot(0).place();
+        s.check(std::abs(place->logged(place->eventCount() - 1).pitch + transpose - float(57 + 12 - 50)) < 0.01f, "Octave +1 plays an octave up");
+        // Monitor off: not heard.
+        auto unheard = host();
+        unheard.p->keys.monitor = false;
+        note(unheard, 57, 110);
+        s.check(measure(play(unheard, 1.0), 0.2).rmsDb < silence.rmsDb + 3.0, "Monitor off: the keyboard is not heard");
+        // The indicator sees the keys.
+        auto shown = host();
+        note(shown, 61, 90);
+        shown.processOne(256);
+        s.check((shown.p->engine.keysInput.downBits[1].load() & (1u << (61 - 32))) != 0, "the on-screen keyboard can see the note arriving");
+        // Plucked strings are damped on release; drums ring.
+        auto harp = host(Castle, CastlePlace::Harp), harpHeld = host(Castle, CastlePlace::Harp);
+        note(harp, 69, 110);
+        note(harpHeld, 69, 110);
+        play(harp, 0.2);
+        play(harpHeld, 0.2);
+        off(harp, 69);
+        // (The harp's open strings ring on in sympathy, so the difference is the string's.)
+        const auto hr = measure(play(harp, 1.0), 0.1, 0.6), hh = measure(play(harpHeld, 1.0), 0.1, 0.6);
+        s.check(hh.rmsDb > hr.rmsDb + 4.0, "a plucked string is damped when its key is released", fmt(hh.rmsDb - hr.rmsDb) + " dB (" + fmt(hr.rmsDb) + " / " + fmt(hh.rmsDb) + ")");
+        auto drum = host(Castle, CastlePlace::Pulse);
+        note(drum, 48, 110);
+        s.check(measure(play(drum, 0.6), 0.0).rmsDb > silence.rmsDb + 20.0, "a kit instrument plays a drum per key");
+    }
+    s.section("keys: the pattern keeps playing; the keyboard alone in Transport with the host stopped");
+    {
+        auto h = placeHost(Castle, 0);
+        h.p->keys.slot = 0;
+        h.p->keys.element = CastlePlace::Horns;
+        h.render(3.0);
+        const auto before = h.p->engine.placeSlot(0).place()->eventCount();
+        note(h, 57, 100);
+        h.render(3.0);
+        s.check(h.p->engine.placeSlot(0).place()->eventCount() > before + 1, "the target's pattern and the other instruments keep playing");
+        auto t = host();
+        t.set("playmode", float(PlayTransport));
+        const auto quiet = measure(play(t, 1.0), 0.5);
+        note(t, 57, 110);
+        const auto alone = measure(play(t, 1.0), 0.3);
+        s.check(quiet.rmsDb < -100.0 && alone.rmsDb > -60.0 && t.p->engine.keysAlone(), "Transport, host stopped: the world is silent, the keyboard sounds",
+                fmt(quiet.rmsDb) + " / " + fmt(alone.rmsDb) + " dB");
+        // The world itself stays out (the Place's patterns and the environment).
+        auto w = placeHost(Castle, 0, { { "playmode", float(PlayTransport) } });
+        w.p->keys.slot = 0;
+        w.p->keys.element = CastlePlace::Horns;
+        w.render(0.5);
+        const auto count = w.p->engine.placeSlot(0).place()->eventCount();
+        note(w, 57, 110);
+        w.render(2.0);
+        s.check(w.p->engine.placeSlot(0).place()->eventCount() == count + 1, "and only the live note plays (no pattern notes)",
+                std::to_string(w.p->engine.placeSlot(0).place()->eventCount() - count));
+    }
+    s.section("keys: REC follows the host transport at several tempos (with and without quantise)");
+    for (double bpm : { 90.0, 120.0, 147.0 }) {
+        auto h = host(Castle, CastlePlace::Horns, bpm);
+        recordTake(h, { 0.0, 1.5, 2.25, 3.0, 5.0 }, bpm, 8.0 * 60.0 / bpm);
+        const auto el = h.p->patterns.element(0, Castle, CastlePlace::Horns);
+        const auto st = steps(el.pattern);
+        s.check(el.controls.edited && el.pattern.resolution == pat::ThirtySecond && st == std::vector<int> { 0, 12, 18, 24, 40 },
+                "at " + fmt(bpm) + " bpm the notes land on their steps (1/32 grid)", list(st));
+        bool flags = true;
+        for (int i = 0; i < el.pattern.count; ++i) flags &= !el.pattern.notes[std::size_t(i)].inTake() && el.pattern.notes[std::size_t(i)].length == 2;
+        s.check(flags, "lengths from the note-offs, no take marks left");
+    }
+    {
+        auto h = host();
+        h.p->keys.quantise = keys::QuantiseEighth;
+        recordTake(h, { 0.06, 1.45, 2.7 }, 120.0, 4.0);
+        s.check(steps(h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern) == std::vector<int> { 0, 12, 20 }, "quantise 1/8 at 100 %",
+                list(steps(h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern)));
+        auto half = host();
+        half.p->keys.quantise = keys::QuantiseQuarter;
+        half.p->keys.strength = 0.5f;
+        recordTake(half, { 0.5, 2.75 }, 120.0, 4.0);
+        s.check(steps(half.p->patterns.element(0, Castle, CastlePlace::Horns).pattern) == std::vector<int> { 6, 23 }, "quantise at 50 % keeps half the timing",
+                list(steps(half.p->patterns.element(0, Castle, CastlePlace::Horns).pattern)));
+        // Quantise afterwards, and undone.
+        auto later = host();
+        recordTake(later, { 0.4, 1.1 }, 120.0, 3.0);
+        const auto raw = later.p->patterns.element(0, Castle, CastlePlace::Horns);
+        s.check(later.p->recorder.quantise(0, Castle, CastlePlace::Horns, 0, keys::QuantiseQuarter, 1.0f)
+                    && steps(later.p->patterns.element(0, Castle, CastlePlace::Horns).pattern) == std::vector<int> { 0, 8 },
+                "quantise applied afterwards", list(steps(later.p->patterns.element(0, Castle, CastlePlace::Horns).pattern)));
+        later.p->recorder.undo();
+        s.check(later.p->patterns.element(0, Castle, CastlePlace::Horns).pattern.sameNotes(raw.pattern), "and undone");
+    }
+    s.section("keys: Replace, Overdub, Into variant, Auto length, undo, count-in, free record");
+    {
+        // Replace keeps nothing of the old pattern; a take with no notes changes nothing.
+        auto h = host();
+        auto el = h.p->patterns.element(0, Castle, CastlePlace::Horns);
+        el.pattern.setGrid(pat::Sixteenth, 2);
+        el.pattern.clear();
+        for (int i = 0; i < 4; ++i) el.pattern.add({ int16_t(i * 8), 2, 0, 0, 100, 100, 0 });
+        el.controls.edited = true;
+        h.p->patterns.setElement(0, Castle, CastlePlace::Horns, el);
+        recordTake(h, {}, 120.0, 2.0);
+        s.check(h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern.sameNotes(el.pattern) && !h.p->recorder.canUndo(),
+                "a take with no notes leaves the pattern as it was");
+        recordTake(h, { 1.0 }, 120.0, 3.0);
+        auto now = h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern;
+        s.check(now.count == 1 && now.bars == 2 && steps(now) == std::vector<int> { 8 }, "Replace: a new pattern, as long as the old one", list(steps(now)));
+        h.p->recorder.undo();
+        s.check(h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern.sameNotes(el.pattern), "one Undo removes the whole take");
+        // Overdub adds.
+        h.p->keys.mode = keys::Overdub;
+        recordTake(h, { 1.0, 3.0 }, 120.0, 3.0);
+        now = h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern;
+        s.check(now.count == 6 && now.resolution == pat::Sixteenth, "Overdub adds the take to the notes there", std::to_string(now.count));
+        // Into variant B: A stays.
+        h.p->keys.mode = keys::IntoVariant;
+        h.p->keys.variant = pat::VariantB;
+        const auto aBefore = h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern;
+        recordTake(h, { 0.0, 0.5, 1.0 }, 120.0, 2.0);
+        const auto e2 = h.p->patterns.element(0, Castle, CastlePlace::Horns);
+        s.check(e2.edited(pat::VariantB) && e2.alt[0].count == 3 && e2.pattern.sameNotes(aBefore), "Into variant records into B, A is untouched");
+        // Auto length: whole bars covering the take.
+        auto a = host();
+        a.p->keys.autoLength = true;
+        recordTake(a, { 0.0, 4.0, 9.5 }, 120.0, 6.0);
+        const auto ap = a.p->patterns.element(0, Castle, CastlePlace::Horns).pattern;
+        s.check(ap.bars == 3 && steps(ap) == std::vector<int> { 0, 32, 76 }, "Auto length rounds up to whole bars", std::to_string(ap.bars) + ": " + list(steps(ap)));
+        // A song position later than the pattern: the note keeps its place in the song.
+        auto late = host();
+        late.p->keys.mode = keys::Replace;
+        recordTake(late, { 9.0 }, 120.0, 6.0);   // a 4-bar pattern: beat 9 is step 72
+        s.check(steps(late.p->patterns.element(0, Castle, CastlePlace::Horns).pattern) == std::vector<int> { 72 }, "a note keeps its place in the song",
+                list(steps(late.p->patterns.element(0, Castle, CastlePlace::Horns).pattern)));
+        // Count-in: the first bar is clicks, notes from the next bar.
+        auto c = host();
+        c.p->keys.countIn = true;
+        recordTake(c, { 1.0, 4.0, 5.0 }, 120.0, 4.0);
+        s.check(steps(c.p->patterns.element(0, Castle, CastlePlace::Horns).pattern) == std::vector<int> { 32, 40 }, "count-in: a bar of clicks, then the take",
+                list(steps(c.p->patterns.element(0, Castle, CastlePlace::Horns).pattern)));
+        // During a take, the notes carry the take's mark (so they do not play twice).
+        auto m = host();
+        m.p->setArmed(true);
+        m.playHead.playing = true;
+        note(m, 62, 100);
+        m.render(0.3);
+        m.p->serviceKeys();
+        const auto during = m.p->patterns.element(0, Castle, CastlePlace::Horns).pattern;
+        s.check(during.count == 1 && during.notes[0].inTake() && m.p->recorder.taking(), "a recorded note appears at once, marked as the take's");
+        // Free record: the host stopped, the first note starts the clock.
+        auto f = host(Castle, CastlePlace::Horns, 120.0, false);
+        f.p->setArmed(true);
+        f.render(0.5);
+        const int64_t first = 3000, second = first + sampleAt(1.0, 120.0);
+        for (int64_t at = 0; at < 48000 * 3; at += f.block) {
+            if (first >= at && first < at + f.block) note(f, 60, 100, int(first - at));
+            if (second >= at && second < at + f.block) note(f, 64, 100, int(second - at));
+            f.processOne(f.block);
+        }
+        const bool clicking = f.p->engine.capture.clicking();
+        f.p->setArmed(false);
+        f.processOne(f.block);
+        f.p->serviceKeys();
+        const auto fp = f.p->patterns.element(0, Castle, CastlePlace::Horns).pattern;
+        s.check(steps(fp) == std::vector<int> { 0, 8 } && clicking, "free record: the internal metronome starts on the first note", list(steps(fp)));
+        s.check(f.p->patterns.element(0, Castle, CastlePlace::Horns).controls.edited, "after recording the pattern counts as edited");
+        // Recorded pitches play back as played.
+        const auto& n0 = fp.notes[0];
+        const float transpose = f.p->engine.placeSlot(0).place()->partTranspose(CastlePlace::Horns);
+        s.check(pat::semitonesFor(fp, 0, 0, n0.degree, n0.alter) == 60 - 50 - int(transpose), "the recorded pitch is the pitch played",
+                std::to_string(pat::semitonesFor(fp, 0, 0, n0.degree, n0.alter)));
+    }
+    s.section("keys: the KEYS rows in the Pattern Editor");
+    {
+        auto h = host();
+        h.p->keys.slot = -1;
+        h.p->keys.tipShown = false;
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->openPatterns(0, CastlePlace::Harp);
+        view->settle(0.1f);
+        auto& panel = view->patternEditor().keysPanel();
+        panel.refresh();
+        s.check(panel.isVisible() && panel.getHeight() >= 60 && panel.targetChoice().getNumItems() == 1 + placeElements,
+                "KEYS shows a Play target list (OFF and each instrument of the Place)", std::to_string(panel.targetChoice().getNumItems()));
+        s.check(panel.statusText().startsWith("No Play target"), "with no target it says the keyboard does nothing");
+        panel.targetChoice().setSelectedId(ui::KeysPanel::targetId(0, CastlePlace::Bells), juce::sendNotificationSync);
+        s.check(h.p->keys.slot == 0 && h.p->keys.element == CastlePlace::Bells, "choosing a target sets it");
+        const auto click = [](juce::Button& b) {
+            b.setToggleState(!b.getToggleState(), juce::dontSendNotification);
+            b.onClick();
+        };
+        click(panel.recButton());
+        panel.refresh();
+        s.check(h.p->keys.armed && h.p->keys.tipShown && panel.statusText().startsWith("TIP"), "arming REC the first time shows the host-regions tip");
+        click(panel.recButton());
+        s.check(!h.p->keys.armed, "REC again disarms");
+        // A take appears in the editor's grid at once.
+        view->openPatterns(0, CastlePlace::Horns);
+        h.p->keys.element = CastlePlace::Horns;
+        h.p->setArmed(true);
+        h.playHead.playing = true;
+        note(h, 62, 100);
+        h.render(0.3);
+        h.p->serviceKeys();
+        if (auto* cb = &view->patternEditor().keysPanel(); cb->onPatternsChanged) cb->onPatternsChanged();
+        s.check(view->patternEditor().shown().pattern.count == 1, "a recorded note shows in the Pattern Editor at once",
+                std::to_string(view->patternEditor().shown().pattern.count));
+        h.p->setArmed(false);
+        h.playHead.playing = false;
+        h.render(0.1);
+        h.p->serviceKeys();
+    }
+    s.section("keys: host regions (double-playing safeguard), state, no allocation");
+    {
+        auto h = host();
+        recordTake(h, { 0.0 }, 120.0, 2.0);
+        s.check(!h.p->keys.hostRegions.load() && h.p->keys.regionsNotice, "after a take with the transport, host regions stop playing the target");
+        h.playHead.playing = true;
+        h.playHead.position = 0;
+        const auto before = h.p->engine.placeSlot(0).place()->eventCount();
+        h.render(0.2);
+        const auto mid = h.p->engine.placeSlot(0).place()->eventCount();
+        note(h, 57, 100);
+        h.render(0.5);
+        s.check(h.p->engine.placeSlot(0).place()->eventCount() == mid && mid >= before, "a region's notes during playback do not play the target again");
+        h.playHead.playing = false;
+        h.render(0.2);
+        note(h, 57, 100);
+        h.render(0.3);
+        s.check(h.p->engine.placeSlot(0).place()->eventCount() > mid, "with the host stopped the keyboard still plays");
+        // State round trip.
+        h.p->keys.scale = keys::SnapToScale;
+        h.p->keys.octave = -1;
+        h.p->keys.mode = keys::IntoVariant;
+        h.p->keys.variant = 2;
+        h.p->keys.quantise = keys::QuantiseSixteenthT;
+        h.p->keys.strength = 0.7f;
+        h.p->keys.countIn = true;
+        h.p->keys.autoLength = true;
+        h.p->keys.element = CastlePlace::Harp;
+        juce::MemoryBlock state;
+        h.p->getStateInformation(state);
+        Host r;
+        r.p->setStateInformation(state.getData(), int(state.getSize()));
+        const auto& k = r.p->keys;
+        s.check(k.slot == 0 && k.element == CastlePlace::Harp && k.scale == keys::SnapToScale && k.octave == -1 && k.mode == keys::IntoVariant
+                    && k.variant == 2 && k.quantise == keys::QuantiseSixteenthT && std::abs(k.strength - 0.7f) < 1.0e-6f && k.countIn && k.autoLength
+                    && !k.hostRegions && !k.armed,
+                "the Play target and REC settings save with the project (REC's arm does not)");
+        Host old;
+        s.check(old.p->keys.slot == -1, "a project without them has no Play target");
+        // No allocation on the audio thread while playing and recording.
+        auto a = host();
+        a.p->setArmed(true);
+        a.playHead.playing = true;
+        a.render(0.5);
+        std::size_t calls = 0;
+        for (int b = 0; b < 40; ++b) {
+            note(a, 50 + b % 20, 100, b % 7);
+            off(a, 50 + (b + 10) % 20, 100);
+            cc(a, 64, b % 8 < 4 ? 127 : 0, 200);
+            a.midi.addEvent(juce::MidiMessage::pitchWheel(1, 8192 + 100 * b), 300);
+            allocationProbe::calls = 0;
+            allocationProbe::enabled = true;
+            a.processOne(512);
+            allocationProbe::enabled = false;
+            calls += allocationProbe::calls;
+        }
+        s.check(calls == 0, "playing and recording allocate nothing on the audio thread", std::to_string(calls));
+    }
+}
+
 void testHurdyGurdy(Suite& s) {
     using namespace hurdyTest;
     s.section("Village hurdy-gurdy: wheel, drones, trompette, keys, body");
@@ -7339,6 +7774,7 @@ int main(int argc, char** argv) {
     if (run("envbalance")) testEnvironmentBalance(s);
     if (run("envkept")) testEnvironmentKept(s);
     if (run("hurdy")) testHurdyGurdy(s);
+    if (run("keys")) testKeys(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

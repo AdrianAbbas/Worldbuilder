@@ -14,6 +14,7 @@
 #include "../DSP/PlaceFx.h"
 #include "../DSP/SendFx.h"
 #include "../Patterns/Pattern.h"
+#include "../Keys/Keys.h"
 
 namespace wb {
 
@@ -294,6 +295,12 @@ struct PlaceContext {
     // The slot's per-instrument effects: each element's bus passes through them (and
     // feeds the shared reverbs and delays) before the Place mixes it.
     dsp::InstrumentFx* fx = nullptr;
+    // KEYS (Milestone 14): the instrument the keyboard plays (-1: none), its live notes in
+    // this chunk, and its level for them (the element's level, whatever its pattern's
+    // mute, switch or arrangement say).
+    int liveElement = -1;
+    const keys::Live* live = nullptr;
+    float liveLevel = 0;
 };
 
 // A deterministic random value per (salt, position), for the pattern generators.
@@ -381,6 +388,8 @@ public:
     // Writes the starting pattern of a patterned element. A pure function of the
     // inputs (no audio state), so the same inputs always give the same pattern.
     virtual void generate(int element, const GenInputs& in, pat::Pattern& out) const = 0;
+    // An instrument's own transposition (semitones), so a live note sounds as pressed.
+    virtual float partTranspose(int) const { return 0.0f; }
 
     // Every note or hit the Place plays is logged, for the tests.
     struct Logged {

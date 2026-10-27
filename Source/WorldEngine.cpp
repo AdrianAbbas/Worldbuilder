@@ -41,6 +41,10 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     seedStep = 1.0f / (0.03f * r);   // a new Seed: the environment dips out and back over 30 ms each
     gateUp = 1.0f / (0.01f * r);     // Transport: in over 10 ms, out over 250 ms
     gateDown = 1.0f / (0.25f * r);
+    click.prepare(r);
+    keysInput.reset();
+    capture.reset();
+    keysAwake = 0;
     reset(initial);
 }
 
@@ -86,6 +90,11 @@ void WorldEngine::reset(const EngineControls& initial) {
     for (auto& f : sweep) f.reset();
     sweeping = false;
     duckGain = 1;
+    // The keyboard's state and a take carry on across a restart (a take starts with the
+    // host); only what the target plays this chunk is cleared.
+    live.clear();
+    click.reset();
+    keysOnly = false;
 }
 
 void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& controls) {
@@ -133,7 +142,7 @@ void WorldEngine::fillChunk(const EngineControls& controls) {
         if (arranging) arrangeSection.store(-1, std::memory_order_relaxed);
         arranging = false;
         arranged = arr::State {};
-        renderChunk(fifoL.data(), fifoR.data(), chunk, clock, controls);
+        renderChunk(fifoL.data(), fifoR.data(), chunk, clock, controls, stream);
         renderSlotOuts(0, chunk, controls);
         return;
     }
@@ -147,7 +156,7 @@ void WorldEngine::fillChunk(const EngineControls& controls) {
         const double until = (next - beat) / perSample;
         if (until < double(n)) n = std::clamp(int(std::floor(until + 1.0e-9)), 1, n);
         arranged = a->evaluate(beat + perSample);
-        renderChunk(fifoL.data() + done, fifoR.data() + done, n, clock + uint64_t(done), controls);
+        renderChunk(fifoL.data() + done, fifoR.data() + done, n, clock + uint64_t(done), controls, stream + uint64_t(done));
         renderSlotOuts(done, n, controls);
         done += n;
     }
@@ -199,6 +208,27 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
     placePeak.fill(0);
     masterPeak = 0;
     if (controls.hostBpm >= 20.0f && controls.hostBpm <= 999.0f) bpm = controls.hostBpm;
+    // The keyboard alone: with the host stopped in Transport the world is silent, but the
+    // instrument played (and a take's metronome) still sounds. Waking from silence, what
+    // was frozen mid-note is cleared first.
+    {
+        const auto& k = controls.keys;
+        const bool wanted = k.valid() && controls.power && (keysAwake > 0 || capture.clicking() || keysInput.anySounding() || keysInput.pending());
+        const bool alone = !controls.gate && wanted;
+        if (alone && !keysOnly && gateRamp <= 0.0f) {
+            for (auto& g : layerGain) g.snap(0);
+            for (int s = 0; s < placeSlots; ++s) {
+                if (s == k.slot) slots[std::size_t(s)].wake();
+                else slots[std::size_t(s)].silence();
+            }
+            sharedFx.clear();
+            space.reset();
+            transitionVoice.reset();
+        }
+        keysOnly = alone;
+        gateNow = controls.gate || keysOnly;
+        keysAwake = std::max(0, keysAwake - n);
+    }
     // The world is rendered in whole chunks into a small FIFO: control updates then
     // happen at the same positions whatever block size the host uses. An instrument
     // has no input, so rendering a chunk ahead adds no latency.
@@ -206,6 +236,7 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
         if (fifoRead == chunk) {
             fillChunk(controls);
             clock += chunk;
+            stream += chunk;
             fifoRead = 0;
         }
         const int count = std::min(chunk - fifoRead, n - done);
@@ -235,15 +266,102 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
     lightning.store(layerGain[Thunder].value > 1.0e-5f ? thunder.flash() * powerRamp : 0.0f, std::memory_order_relaxed);
 }
 
-void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls) {
+void WorldEngine::keysBlock(const keys::Event* events, int count, const EngineControls& controls) {
+    // The block's first sample is this far behind what the FIFO has rendered.
+    const uint64_t outStart = stream - uint64_t(chunk - fifoRead);
+    for (int i = 0; i < count; ++i) {
+        keysInput.push(events[i], outStart + uint64_t(std::max(0, events[i].offset)));
+        if (events[i].kind == keys::Event::NoteOn || events[i].kind == keys::Event::NoteOff) keysAwake = int(6.0 * rate);
+    }
+    (void) controls;
+}
+
+float WorldEngine::bendRange(int type, int element) {
+    if (patternInfo(type, element).kind != Melodic) return 0.0f;
+    const int icon = placeInfo(type).element[std::size_t(std::clamp(element, 0, placeElements - 1))].icon;
+    return icon == IconSiren || icon == IconRiser || icon == IconCrystal ? 12.0f : 2.0f;
+}
+
+void WorldEngine::keysPiece(int n, uint64_t at, const EngineControls& controls) {
+    live.clear();
+    auto k = controls.keys;
+    const int type = k.valid() ? controls.places[std::size_t(k.slot)].type : NoPlace;
+    const auto info = patternInfo(type, k.element);
+    // A target only where the slot holds a Place and the element has a pattern.
+    if (info.kind == NoPattern) k.slot = -1;
+    const bool target = k.valid();
+    const bool kit = info.kind == Kit;
+    const double perSample = double(bpm) / 60.0 / rate;
+    // The target's beat at the piece start: the host's, or a free-tempo Place's own.
+    const double beatNow = target && !controls.places[std::size_t(k.slot)].sync ? slots[std::size_t(k.slot)].upcomingBeat() : beat;
+    keys::Captured base;
+    base.slot = uint8_t(std::max(k.slot, 0));
+    base.element = uint8_t(k.element);
+    base.type = uint16_t(std::max(type, 0));
+    base.variant = uint8_t(pat::Element::clampVariant(k.variant));
+    base.kit = kit;
+    capture.step(k, beatNow, perSample, n, base);
+    clickBeat = capture.free() ? capture.freeClock() : beatNow;
+    const Place* place = target ? slots[std::size_t(k.slot)].place() : nullptr;
+    const float transpose = place != nullptr && slots[std::size_t(k.slot)].playingType() == type ? place->partTranspose(k.element) : 0.0f;
+    keys::Event e;
+    uint64_t when = 0;
+    while (keysInput.next(at + uint64_t(n), e, when)) {
+        const int offset = int(std::clamp<int64_t>(int64_t(when) - int64_t(at), 0, n - 1));
+        const double there = beatNow + perSample * double(offset);
+        keysInput.apply(
+            e,
+            [&](int note, float velocity) {
+                if (!target) return;
+                const int played = note + 12 * std::clamp(k.octave, keys::octaveMin, keys::octaveMax);
+                float semis = float(played - keys::rootNote(controls.root));
+                if (k.scale == keys::SnapToScale && !kit) semis = float(music::quantise(controls.mood, semis));
+                keys::LiveNote x;
+                x.offset = offset;
+                x.id = note + 1;
+                x.semis = semis;
+                x.row = kit ? (((played % 12) + 12) % 12) % std::max(1, info.rows) : 0;
+                x.velocity = velocity;
+                if (k.monitor) live.add(x);
+                keys::Captured c = base;
+                c.kind = keys::Captured::NoteOn;
+                c.note = int8_t(note);
+                c.pitch = int16_t(kit ? x.row : int(std::lround(semis - transpose)));
+                c.velocity = uint8_t(std::clamp<long>(std::lround(velocity * 127.0f), 1, 127));
+                c.chord = int8_t(music::chordDegree(there, world[Danger]));
+                capture.note(c, there, perSample * double(offset));
+            },
+            [&](int note) {
+                keys::LiveNote x;
+                x.offset = offset;
+                x.on = false;
+                x.id = note + 1;
+                live.add(x);
+                if (!target) return;
+                keys::Captured c = base;
+                c.kind = keys::Captured::NoteOff;
+                c.note = int8_t(note);
+                capture.note(c, there, perSample * double(offset));
+            });
+    }
+    live.bend = target ? keysInput.bend() * bendRange(type, k.element) : 0.0f;
+    live.mod = target ? keysInput.mod() : 0.0f;
+    live.monitor = k.monitor;
+    keysSlot = target ? k.slot : -1;
+    keysElementNow = k.element;
+}
+
+void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls, uint64_t at) {
+    keysPiece(n, at, controls);
     // Fully powered down: silence, and no work.
     // After the arrangement's end has faded out: silence too.
-    if ((!controls.power && powerRamp <= 0.0f) || (!controls.gate && gateRamp <= 0.0f) || (arranging && endGain <= 0.0f && arranged.endGain <= 0.0f)) {
+    if ((!controls.power && powerRamp <= 0.0f) || (!gateNow && gateRamp <= 0.0f) || (arranging && endGain <= 0.0f && arranged.endGain <= 0.0f)) {
         std::fill(left, left + n, 0.0f);
         std::fill(right, right + n, 0.0f);
         slotSounding.fill(false);
         // The song goes on: an arrangement keeps following it.
         if (arranging) beat += double(bpm) / 60.0 * double(n) / rate;
+        capture.finish(double(bpm) / 60.0 / rate, n);
         return;
     }
 
@@ -291,7 +409,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     for (std::size_t li = 0; li < layers.size(); ++li) {
         Generator* layer = layers[li];
         if (layer == nullptr) continue;
-        const bool audible = !controls.mute[li] && (!anySolo || controls.solo[li]);
+        const bool audible = !controls.mute[li] && (!anySolo || controls.solo[li]) && !keysOnly;
         // The layer's own level, its balance trim (background under the Places) and the
         // Environment master; either level at its minimum silences it.
         const bool silent = controls.layerDb[li] <= -59.95f || controls.environmentDb <= -59.95f;
@@ -330,8 +448,16 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     // its instruments feed the shared reverbs and delays.
     sharedFx.begin(n);
     for (std::size_t si = 0; si < slots.size(); ++si) {
-        const auto& pc = controls.places[si];
-        const bool audible = !pc.mute && (!anySolo || pc.solo);
+        PlaceSlotControls pc = controls.places[si];
+        const bool keysHere = keysSlot == int(si);
+        const bool audible = !pc.mute && (!anySolo || pc.solo) && (!keysOnly || keysHere);
+        if (keysHere) {
+            pc.keysElement = keysElementNow;
+            pc.keys = &live;
+            pc.keysArmed = controls.keys.armed;
+            pc.keysVariant = controls.keys.variant;
+        }
+        pc.keysOnly = keysOnly;
         patternsIn[si].update();
         const auto& slotPatterns = controls.patterns[si] != nullptr ? *controls.patterns[si] : patternsIn[si].read();
         bool sounding = false;
@@ -408,7 +534,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     const float widthTarget = std::clamp(controls.width, 0.0f, 2.0f);
     const float mixTarget = clamp01(controls.spaceMix);
     const float powerTarget = controls.power ? 1.0f : 0.0f;
-    const bool gateOpen = controls.gate;
+    const bool gateOpen = gateNow;
     // After the arrangement's end (End: stop) the world fades out.
     const float endFrom = endGain, endTo = arranging ? arranged.endGain : 1.0f;
     endGain = endTo;
@@ -468,6 +594,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         left[i] = l;
         right[i] = r;
     }
+    // The metronome of a count-in or a free take (after the master: always audible).
+    click.render(left, right, n, clickBeat, double(bpm) / 60.0 / rate, capture.clicking());
+    capture.finish(double(bpm) / 60.0 / rate, n);
 }
 
 } // namespace wb

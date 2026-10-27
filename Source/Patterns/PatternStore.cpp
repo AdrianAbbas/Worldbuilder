@@ -103,7 +103,8 @@ void PatternStore::decodeNotes(const juce::String& text, pat::Pattern& p) {
         n.alter = int8_t(juce::jlimit(-6, 6, f[3].getIntValue()));
         n.velocity = uint8_t(juce::jlimit(1, 127, f[4].getIntValue()));
         n.probability = uint8_t(f.size() > 5 ? juce::jlimit(0, 100, f[5].getIntValue()) : 100);
-        n.flags = uint8_t(f.size() > 6 ? juce::jlimit(0, 255, f[6].getIntValue()) : 0);
+        // A take's mark never outlives it (a project saved mid-take).
+        n.flags = uint8_t(f.size() > 6 ? juce::jlimit(0, 255, f[6].getIntValue()) & ~pat::Note::takeFlag : 0);
         p.add(n);
     }
 }

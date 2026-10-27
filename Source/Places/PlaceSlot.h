@@ -28,6 +28,14 @@ struct PlaceSlotControls {
     std::array<uint8_t, placeElements> variant {};
     // A stinger's ring-out (renders): what rings keeps ringing, no new notes start.
     bool ringOut = false;
+    // KEYS (Milestone 14): the instrument the keyboard plays in this slot (-1: none) and
+    // its live notes this chunk; REC armed on it (its pattern plays exactly, the generator
+    // and randomness paused, in the variant being recorded); keys alone (the host stopped
+    // in Transport: only the live notes sound, no patterns).
+    int keysElement = -1;
+    const keys::Live* keys = nullptr;
+    bool keysArmed = false, keysOnly = false;
+    int keysVariant = 0;
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -52,8 +60,15 @@ public:
     // While this flag is set (the Pattern Editor shows variants), every variant is
     // generated, not only the ones playing.
     void setVariantFlag(const std::atomic<bool>* flag) { allVariants = flag; }
-    // The Place's beat at the last chunk (for the editor's playhead).
+    // The Place's beat at the last chunk (for the editor's playhead), and where the next
+    // chunk starts.
     double beat() const { return lastBeat; }
+    double upcomingBeat() const { return nextBeat; }
+    // KEYS: the host stopped and the world silent, the keyboard wakes the slot: what was
+    // frozen mid-note is cleared and only the instrument played comes in.
+    void wake();
+    // Silent at once (another slot while the keyboard plays alone).
+    void silence() { gain.snap(0); }
     // The pattern element e is playing now (nullptr when none), for the tests.
     const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements ? playing[std::size_t(e)] : nullptr; }
     const pat::Pattern& generatedPattern(int e, int variant = 0) const {
@@ -110,7 +125,9 @@ private:
     void tiltSends(float tone, float far, int n);
     std::array<std::array<float, dsp::chunk>, 2> sendGain {};
 
-    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants);
+    // `paused`: an element whose generated patterns hold as they are (REC armed on it).
+    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants,
+                        int paused = -1);
     // Generated patterns per variant (A, B, C, Fill) and element.
     using VariantPatterns = std::array<std::array<pat::Pattern, placeElements>, pat::variantCount>;
     VariantPatterns generated {};
@@ -126,7 +143,8 @@ private:
     pat::TripleBuffer<pat::Generated>* feedback = nullptr;
     const std::atomic<bool>* allVariants = nullptr;
     uint32_t feedbackSerial = 0;
-    double lastBeat = 0;
+    double lastBeat = 0, nextBeat = 0;
+    dsp::Smoother keysLevel;
 };
 
 } // namespace wb

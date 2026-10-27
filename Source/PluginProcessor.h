@@ -2,6 +2,7 @@
 #include "Parameters.h"
 #include "Arrangement/ArrangementStore.h"
 #include "Capture/Capture.h"
+#include "Keys/Recorder.h"
 #include "Locations/LocationBank.h"
 #include "Patterns/PatternStore.h"
 #include "Scenes/Scenes.h"
@@ -109,6 +110,24 @@ public:
     bool arrangementOn() const;
     void setArrangementOn(bool on);
 
+    // KEYS (Milestone 14): the Play target and REC. Set on the message thread, read by
+    // the audio thread each block; saved with the project (REC's arm is not).
+    struct KeysSettings {
+        std::atomic<int> slot { -1 }, element { 0 }, scale { wb::keys::Chromatic }, octave { 0 };
+        std::atomic<bool> monitor { true }, hostRegions { true }, armed { false }, countIn { false }, autoLength { false };
+        std::atomic<int> mode { wb::keys::Replace }, variant { 0 }, quantise { wb::keys::QuantiseOff };
+        std::atomic<float> strength { 1.0f };
+        bool tipShown = false;         // the first-time tip about host regions
+        bool regionsNotice = false;    // a take with the transport switched host regions off (the editor says so)
+    };
+    KeysSettings keys;
+    wb::keys::Recorder recorder { patterns, engine.capture };
+    // Takes what REC captured into the patterns (the timer and the editor call it; the tests too).
+    void serviceKeys();
+    // REC on or off for the Play target.
+    void setArmed(bool on);
+    wb::keys::RecordSettings recordSettings() const;
+
 private:
     wb::EngineControls readControls() const noexcept;
     wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
@@ -122,6 +141,7 @@ private:
         serviceLocations();
         patterns.syncTypes(slotTypes());
         serviceArrangement();
+        serviceKeys();
     }
     int arrangementSeen = 0;   // sections when last looked at (0 -> some: Play Mode Arrangement)
     float modeBeforeArrangement = float(wb::PlayTransport);
@@ -133,7 +153,8 @@ private:
     std::array<std::atomic<float>*, wb::PCount> raw {};
     double rate = 48000;
     int64_t expectedHostPosition = -1;
-    bool hostWasPlaying = false;
+    bool hostWasPlaying = false, hostPlayingNow = false;
+    std::array<wb::keys::Event, 512> keyEvents {};
     std::atomic<float> hostBpm { 0 };
     bool gateOpen = true;
     std::atomic<int> previewBar { 0 };

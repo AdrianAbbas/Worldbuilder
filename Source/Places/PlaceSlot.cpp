@@ -21,6 +21,7 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     pan.setTime(0.2f, controlRate);
     fadeStep = 1.0f / (0.3f * rate);
     arrangeUp = 1.0f / (0.02f * rate);
+    keysLevel.setTime(0.08f, controlRate);
     arrangeDown = 1.0f / (0.25f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
     fx.prepare(rate);
@@ -47,7 +48,17 @@ void PlaceSlot::reset() {
     for (auto& v : generatedValid) v.fill(false);
     playing.fill(nullptr);
     arranged.fill(0.0f);
-    lastBeat = 0;
+    lastBeat = nextBeat = 0;
+    keysLevel.snap(0);
+}
+
+void PlaceSlot::wake() {
+    if (current != nullptr) current->reset();
+    fx.reset();
+    for (auto& s : elementSmooth) s.snap(0);
+    arranged.fill(0.0f);
+    for (auto& bus : sendTilt)
+        for (auto& f : bus) f.reset();
 }
 
 std::unique_ptr<Place> makePlace(int type) {
@@ -187,7 +198,8 @@ void PlaceSlot::generateVariant(int v, int e, GenInputs in) {
     }
 }
 
-void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants) {
+void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants,
+                               int paused) {
     const bool mine = patterns.type == currentType;
     // Generator inputs on a grid of 1/256 (rounded down, so a value exactly on one of
     // a generator's thresholds stays on the same side): a turning knob regenerates at
@@ -220,6 +232,8 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
             if (mine && element.edited(v)) continue;
             in.variant = mine ? element.generation(v) : 0;
             const auto kv = std::size_t(v);
+            // REC armed: the generator holds the pattern as it is.
+            if (e == paused && generatedValid[kv][k]) continue;
             if (!generatedValid[kv][k] || !(generatedFor[kv][k] == in)) {
                 generateVariant(v, e, in);
                 generatedFor[kv][k] = in;
@@ -279,6 +293,11 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
             if (el.mute || (anySolo && !el.solo)) target.element[std::size_t(e)] = 0.0f;
         }
     }
+    // The keyboard alone (the host stopped): no patterns, only its live notes.
+    if (c.keysOnly) target.element.fill(0.0f);
+    const int keysElement = c.keys != nullptr && c.keysElement >= 0 && c.keysElement < placeElements ? c.keysElement : -1;
+    auto variants = c.variant;
+    if (c.keysArmed && keysElement >= 0) variants[std::size_t(keysElement)] = uint8_t(pat::Element::clampVariant(c.keysVariant));
     const std::array<float, 8> targets { target.activity, target.tension, target.density, target.swing, target.tone, target.size, target.variation, target.fxDepth };
     const bool snapArrange = fresh;
     if (fresh) {
@@ -309,7 +328,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         else if (want > g) g = std::min(want, g + arrangeUp * float(n));
         else g = std::max(want, g - arrangeDown * float(n));
         settings.element[k] *= g;
-        settings.notes[k] = want > 0.0f && !c.ringOut;
+        settings.notes[k] = want > 0.0f && !c.ringOut && !c.keysOnly;
     }
 
     // The beat: the host's (or the world's default tempo), or the Place's own free tempo.
@@ -331,7 +350,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     context.chord = music::chordDegree(hostBeat, world[Danger]);
 
     // Patterns: the composer's, or generated from the seed and the settings.
-    updatePatterns(target, world.mood, patterns, c.variant);
+    updatePatterns(target, world.mood, patterns, variants, c.keysArmed ? keysElement : -1);
     for (int e = 0; e < placeElements; ++e) {
         const auto k = std::size_t(e);
         auto& play = context.play[k];
@@ -340,11 +359,20 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         play.controls = controlsNow[k];
         // Variation scales every element's Randomness; at its default it is as set.
         play.randomness = clamp01(controlsNow[k].randomness * settings.variation / 0.35f);
-        play.swing = patterns.type == currentType && patterns.element[k].edited(c.variant[k]) ? play.pattern->swing : settings.swing;
+        if (c.keysArmed && e == keysElement) {
+            // REC armed: the pattern plays exactly as written.
+            play.randomness = 0;
+            play.controls.evolve = 0;
+        }
+        play.swing = patterns.type == currentType && patterns.element[k].edited(variants[k]) ? play.pattern->swing : settings.swing;
         play.kit = patternInfo(currentType, e).kind == Kit;
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
     }
     lastBeat = context.beat;
+    nextBeat = context.beat + context.beatsPerSample * double(n);
+    context.liveElement = keysElement;
+    context.live = keysElement >= 0 ? c.keys : nullptr;
+    context.liveLevel = keysLevel.next(keysElement >= 0 ? clamp01(c.element[std::size_t(keysElement)]) : 0.0f);
     fx.begin(c.fx, n);
     context.fx = &fx;
     current->render(context, left, right, n);

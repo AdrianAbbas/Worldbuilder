@@ -88,6 +88,17 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
     auto c = controlsFromValues(values);
     c.hostBpm = hostBpm.load(std::memory_order_relaxed);
     c.gate = gateOpen;
+    // The Play target (KEYS).
+    auto& k = c.keys;
+    k.slot = keys.slot.load(std::memory_order_relaxed);
+    k.element = keys.element.load(std::memory_order_relaxed);
+    k.scale = keys.scale.load(std::memory_order_relaxed);
+    k.octave = keys.octave.load(std::memory_order_relaxed);
+    k.monitor = keys.monitor.load(std::memory_order_relaxed);
+    k.armed = keys.armed.load(std::memory_order_relaxed);
+    k.countIn = keys.countIn.load(std::memory_order_relaxed);
+    k.variant = keys.mode.load(std::memory_order_relaxed) == keys::IntoVariant ? keys.variant.load(std::memory_order_relaxed) : 0;
+    k.hostPlaying = hostPlayingNow;
     return c;
 }
 
@@ -157,6 +168,7 @@ capture::Scene WorldbuilderProcessor::captureScene() {
     scene.bpm = bpm >= 20.0f && bpm <= 999.0f ? bpm : WorldEngine::defaultBpm;
     scene.controls.hostBpm = scene.bpm;
     scene.controls.gate = true;
+    scene.controls.keys = {};   // renders play no keyboard
     patterns.syncTypes(slotTypes());
     for (int slot = 0; slot < placeSlots; ++slot) scene.patterns[std::size_t(slot)] = patterns.get(slot);
     // The arrangement, and what its sections' Locations need (Milestone 11c).
@@ -205,9 +217,10 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     juce::ScopedNoDenormals noDenormals;
     const auto begin = juce::Time::getHighResolutionTicks();
     const int n = buffer.getNumSamples();
-    // MIDI control (Play Mode MIDI, keyboard zones) arrives in Milestone 6.
-    midi.clear();
-    if (n <= 0 || buffer.getNumChannels() <= 0) return;
+    if (n <= 0 || buffer.getNumChannels() <= 0) {
+        midi.clear();
+        return;
+    }
 
     // Follow the host transport while it plays, so the same start point gives the
     // same world. While stopped the world keeps evolving on its own clock.
@@ -268,6 +281,46 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     engine.transportRolling.store(playing || previewing, std::memory_order_relaxed);
     gateOpen = !transportMode || playing || previewing;
     hostWasPlaying = playing;
+    hostPlayingNow = playing;
+    // The host's MIDI: the keyboard (KEYS). With "Host regions play the target" off, notes
+    // arriving while the host plays (a recorded region playing back) are left out unless
+    // REC is armed (then they are the take).
+    int keyCount = 0;
+    {
+        const bool armed = keys.armed.load(std::memory_order_relaxed);
+        const bool regions = keys.hostRegions.load(std::memory_order_relaxed);
+        const bool notes = !(playing && !armed && !regions);
+        for (const auto meta : midi) {
+            if (keyCount >= int(keyEvents.size())) break;
+            const auto m = meta.getMessage();
+            keys::Event e;
+            e.offset = juce::jlimit(0, n - 1, meta.samplePosition);
+            if (m.isNoteOn()) {
+                if (!notes) continue;
+                e.kind = keys::Event::NoteOn;
+                e.note = uint8_t(m.getNoteNumber());
+                e.value = float(m.getVelocity()) / 127.0f;
+            } else if (m.isNoteOff()) {
+                e.kind = keys::Event::NoteOff;
+                e.note = uint8_t(m.getNoteNumber());
+            } else if (m.isSustainPedalOn() || m.isSustainPedalOff()) {
+                e.kind = keys::Event::Sustain;
+                e.value = m.isSustainPedalOn() ? 1.0f : 0.0f;
+            } else if (m.isPitchWheel()) {
+                e.kind = keys::Event::Bend;
+                e.value = float(m.getPitchWheelValue() - 8192) / 8192.0f;
+            } else if (m.isController() && m.getControllerNumber() == 1) {
+                e.kind = keys::Event::Mod;
+                e.value = float(m.getControllerValue()) / 127.0f;
+            } else if (m.isAllNotesOff() || m.isAllSoundOff()) {
+                e.kind = keys::Event::AllOff;
+            } else {
+                continue;
+            }
+            keyEvents[std::size_t(keyCount++)] = e;
+        }
+        midi.clear();
+    }
     // Play Mode Arrangement (with the host playing) and the preview follow the arrangement.
     engine.arrangementIn.update();
     const arr::Arrangement* arranged = (transportMode && mode == PlayArrangement && playing) || previewing ? &engine.arrangementIn.read() : nullptr;
@@ -325,6 +378,7 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         }
         controls.slotOut = hasOut;
         if (restart && done == 0) engine.restart(restartAt, restartBeat, controls);
+        if (done == 0) engine.keysBlock(keyEvents.data(), keyCount, controls);
         if (right != nullptr && anyOut) {
             std::array<float*, 2 * placeSlots> outs {};
             for (std::size_t c = 0; c < outs.size(); ++c) outs[c] = slotOut[c] != nullptr ? slotOut[c] + done : nullptr;
@@ -505,6 +559,33 @@ void WorldbuilderProcessor::inspire() {
     arrangementSeen = arrangement.get().count;
 }
 
+keys::RecordSettings WorldbuilderProcessor::recordSettings() const {
+    keys::RecordSettings r;
+    r.mode = keys.mode.load();
+    r.variant = keys.variant.load();
+    r.quantise = keys.quantise.load();
+    r.strength = keys.strength.load();
+    r.autoLength = keys.autoLength.load();
+    return r;
+}
+
+void WorldbuilderProcessor::serviceKeys() {
+    recorder.service(recordSettings(), juce::roundToInt(raw[PMood]->load()));
+    // A take recorded with the host rolling: the host has most likely recorded the same
+    // notes as a MIDI region, which would play the instrument again on top of the
+    // pattern. Host regions stop playing the target (the editor says so; one click
+    // turns it back on).
+    if (recorder.takeWithTransportEnded() && keys.hostRegions.load()) {
+        keys.hostRegions.store(false);
+        keys.regionsNotice = true;
+    }
+}
+
+void WorldbuilderProcessor::setArmed(bool on) {
+    keys.armed.store(on);
+    if (!on) serviceKeys();
+}
+
 void WorldbuilderProcessor::serviceArrangement() {
     const int count = arrangement.get().count;
     const int mode = juce::roundToInt(raw[PPlayMode]->load());
@@ -568,6 +649,25 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     state.appendChild(locationTree, nullptr);
     state.removeChild(state.getChildWithName("Arrangement"), nullptr);
     state.appendChild(arrangement.toValueTree(), nullptr);
+    // KEYS: the Play target and REC's settings (not its arm).
+    state.removeChild(state.getChildWithName("Keys"), nullptr);
+    {
+        juce::ValueTree k("Keys");
+        k.setProperty("slot", keys.slot.load(), nullptr);
+        k.setProperty("element", keys.element.load(), nullptr);
+        k.setProperty("scale", keys.scale.load(), nullptr);
+        k.setProperty("octave", keys.octave.load(), nullptr);
+        k.setProperty("monitor", keys.monitor.load(), nullptr);
+        k.setProperty("regions", keys.hostRegions.load(), nullptr);
+        k.setProperty("countin", keys.countIn.load(), nullptr);
+        k.setProperty("auto", keys.autoLength.load(), nullptr);
+        k.setProperty("mode", keys.mode.load(), nullptr);
+        k.setProperty("variant", keys.variant.load(), nullptr);
+        k.setProperty("quantise", keys.quantise.load(), nullptr);
+        k.setProperty("strength", keys.strength.load(), nullptr);
+        k.setProperty("tip", keys.tipShown, nullptr);
+        state.appendChild(k, nullptr);
+    }
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
 }
 
@@ -625,6 +725,26 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     if (int(state.getProperty("version", 0)) < 4 && arrangementSeen > 0 && juce::roundToInt(raw[PPlayMode]->load()) == PlayTransport) {
         modeBeforeArrangement = float(PlayTransport);
         parameters.getParameter(specs[PPlayMode].id)->setValueNotifyingHost(parameters.getParameter(specs[PPlayMode].id)->convertTo0to1(float(PlayArrangement)));
+    }
+    // KEYS (Milestone 14); older projects have no Play target (incoming notes do nothing).
+    {
+        const auto k = state.getChildWithName("Keys");
+        const auto number = [&](const char* id, int fallback, int lo, int hi) { return juce::jlimit(lo, hi, int(k.getProperty(id, fallback))); };
+        keys.slot.store(number("slot", -1, -1, placeSlots - 1));
+        keys.element.store(number("element", 0, 0, placeElements - 1));
+        keys.scale.store(number("scale", keys::Chromatic, 0, keys::ScaleModeCount - 1));
+        keys.octave.store(number("octave", 0, keys::octaveMin, keys::octaveMax));
+        keys.monitor.store(bool(k.getProperty("monitor", true)));
+        keys.hostRegions.store(bool(k.getProperty("regions", true)));
+        keys.countIn.store(bool(k.getProperty("countin", false)));
+        keys.autoLength.store(bool(k.getProperty("auto", false)));
+        keys.mode.store(number("mode", keys::Replace, 0, keys::RecordModeCount - 1));
+        keys.variant.store(number("variant", 0, 0, pat::variantCount - 1));
+        keys.quantise.store(number("quantise", keys::QuantiseOff, 0, keys::QuantiseCount - 1));
+        const float strength = float(double(k.getProperty("strength", 1.0)));
+        keys.strength.store(std::isfinite(strength) ? juce::jlimit(0.0f, 1.0f, strength) : 1.0f);
+        keys.tipShown = bool(k.getProperty("tip", false));
+        keys.armed.store(false);
     }
     // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
     // project stored Full, the old default, so those open with the new default (Off).

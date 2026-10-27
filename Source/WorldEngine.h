@@ -46,6 +46,8 @@ struct EngineControls {
     // reverb and delay sends stay there, the shared effects are returns on the main).
     std::array<bool, placeSlots> slotOut {};
     bool splitOuts = false;
+    // KEYS (Milestone 14): the Play target and its settings.
+    keys::Controls keys;
 };
 
 // Each environment layer's balance trim (dB): at equal settings the layers sit about
@@ -111,11 +113,26 @@ public:
     // For the tests: the arrangement state of the last chunk.
     const arr::State& arrangeState() const { return arranged; }
 
+    // KEYS (Milestone 14). The host's MIDI for this block (offsets in samples from the
+    // block's first sample), before process(): the events land on their samples.
+    void keysBlock(const keys::Event* events, int count, const EngineControls& controls);
+    keys::Input keysInput;
+    keys::Capture capture;
+    // Whether the keyboard plays alone now (the host stopped in Transport: the world is
+    // silent but the instrument played sounds), for the tests and the editor.
+    bool keysAlone() const { return keysOnly; }
+    // An instrument's pitch-bend range (semitones): a tone, an octave for sirens, risers
+    // and gliding leads, none for a kit.
+    static float bendRange(int type, int element);
+
 private:
     // Fills the FIFO with one chunk; with an arrangement the chunk is split at beat
     // lines, so sections, entrances, variants and Fills change on the exact sample.
     void fillChunk(const EngineControls& controls);
-    void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls);
+    void renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls, uint64_t at);
+    // The keyboard's events for a piece starting at stream position `at`: the live notes
+    // for the target and what a take records.
+    void keysPiece(int n, uint64_t at, const EngineControls& controls);
     // The slot outputs of the chunk just rendered (at `offset` in the FIFO).
     void renderSlotOuts(int offset, int n, const EngineControls& controls);
 
@@ -159,6 +176,13 @@ private:
     float endGain = 1;
     float arrangedIntensity(const EngineControls& controls) const;
     uint64_t clock = 0;   // absolute position of the next chunk to render
+    uint64_t stream = 0;  // samples ever rendered into the FIFO (the keyboard's timeline; never jumps)
+    keys::Live live;
+    keys::Click click;
+    bool keysOnly = false, gateNow = true;
+    int keysSlot = -1, keysElementNow = 0;
+    double clickBeat = 0;
+    int keysAwake = 0;    // samples the keyboard keeps a stopped world awake for
     int fifoRead = dsp::chunk;
     std::array<float, dsp::chunk> fifoL {}, fifoR {};
 

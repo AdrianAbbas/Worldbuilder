@@ -445,6 +445,13 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     velocityLane = std::make_unique<Lane>(*this, true);
     probabilityLane = std::make_unique<Lane>(*this, false);
     dragOut = std::make_unique<DragOut>(*this);
+    keys = std::make_unique<KeysPanel>(processor);
+    keys->onPatternsChanged = [this] {
+        refreshFromStore();
+        resized();
+        repaint();
+    };
+    addAndMakeVisible(*keys);
     addAndMakeVisible(*gridView);
     addAndMakeVisible(*velocityLane);
     addAndMakeVisible(*probabilityLane);
@@ -1295,7 +1302,11 @@ void PatternEditor::resized() {
         place(rowB, evolve, 130);
         place(rowB, returnEvery, 110);
     }
-    r.removeFromTop(6);
+    r.removeFromTop(4);
+    keysArea = r.removeFromTop(64);
+    keys->setBounds(keysArea);
+    keys->setContext(slotIndex, elementIndex, variantIndex);
+    r.removeFromTop(4);
     statusArea = r.removeFromBottom(16);
     r.removeFromBottom(2);
     auto lanes = r.removeFromBottom(30);

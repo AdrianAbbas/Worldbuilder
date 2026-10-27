@@ -33,7 +33,7 @@ inline float sinCycles(float x) {
 struct FmVoice {
     float phase = 0, modPhase = 0, hz = 440, targetHz = 440, glide = 0;
     float ratio = 2, index = 1, indexFloor = 0.2f, indexEnv = 0, indexCoef = 0.99f, feedback = 0, last = 0;
-    float vibratoHz = 5, vibratoDepth = 0, vibratoPhase = 0, age = 0;
+    float vibratoHz = 5, vibratoDepth = 0, vibratoPhase = 0, age = 0, bend = 0;
     float inc = 0, modInc = 0, gain = 1;
     Env env;
     PanGains pan { 0.7071f, 0.7071f };
@@ -63,7 +63,7 @@ struct FmVoice {
         age += chunkSeconds;
         vibratoPhase += vibratoHz * chunkSeconds;
         vibratoPhase -= std::floor(vibratoPhase);
-        const float f = hz * std::exp2(vibratoDepth * smoothstep(0.2f, 0.6f, age) * sinCycles(vibratoPhase) / 12.0f);
+        const float f = hz * std::exp2((vibratoDepth * smoothstep(0.2f, 0.6f, age) * sinCycles(vibratoPhase) + bend) / 12.0f);
         inc = std::min(f / rate, 0.45f);
         modInc = std::min(f * ratio / rate, 0.45f);
         indexEnv *= indexCoef;
@@ -94,6 +94,7 @@ struct TineVoice {
     std::array<float, 4> gain {}, freq {}, tau {};
     int strikeAt = 0, strikeLength = 1;
     float strikeAmp = 0, bark = 0.5f, velocity = 0.8f, rate = 48000, energy = 0, gainLevel = 1, dcZ = 0, dcA = 0.001f;
+    float bend = 0, bent = 0;   // the pitch wheel (semitones), and what the modes are tuned to
     Phasor strikeShape;
     PanGains pan { 0.7071f, 0.7071f };
     bool on = false;
@@ -110,6 +111,7 @@ struct TineVoice {
     void start(float hz, float decaySeconds, float brightness, float vel, float sampleRate) {
         rate = sampleRate;
         velocity = clamp01(vel);
+        bent = 0;
         // Low notes sustain longer.
         const float t = decaySeconds * std::clamp(std::pow(262.0f / hz, 0.4f), 0.5f, 2.0f);
         freq = { hz, hz * 1.0007f, hz * tineRatios[1], hz * tineRatios[2] };
@@ -137,6 +139,7 @@ struct TineVoice {
             tau[k] = std::min(tau[k], seconds / 6.91f * (k >= 2 ? 0.5f : 1.0f));
             mode[k].retune(freq[k], tau[k], rate);
         }
+        bent = 0;
     }
     float tick() {
         float x = 0;
@@ -153,6 +156,11 @@ struct TineVoice {
         return (y - dcZ) * gainLevel;
     }
     void update() {
+        if (std::abs(bend - bent) > 1.0e-4f) {
+            bent = bend;
+            const float r = std::exp2(bend / 12.0f);
+            for (std::size_t k = 0; k < 4; ++k) mode[k].retune(std::min(freq[k] * r, 0.45f * rate), tau[k], rate);
+        }
         float e = 0;
         for (std::size_t k = 0; k < 4; ++k) e += gain[k] * gain[k] * mode[k].energy();
         energy = e;
@@ -175,7 +183,7 @@ struct ChoirVoice {
     std::array<float, 5> formantGain {};
     OnePole tilt1, tilt2, breathLowCut;
     Env env;
-    float hz = 220, targetHz = 220, glide = 0, detuneCents = 9, vowel = 2, vibratoHz = 5.2f, vibratoDepth = 0.12f, age = 0;
+    float hz = 220, targetHz = 220, glide = 0, detuneCents = 9, vowel = 2, vibratoHz = 5.2f, vibratoDepth = 0.12f, age = 0, bend = 0;
     float gain = 1, brightness = 0.5f, breath = 0.08f, rate = 48000, velocity = 0.7f;
     uint64_t noiseIndex = 0;
     Stream jitter;
@@ -222,7 +230,7 @@ struct ChoirVoice {
             ph -= std::floor(ph);
             // Each singer a little off and wandering (a few cents), with their own vibrato.
             const float cents = detuneCents * offset[std::size_t(k)] + 3.0f * jitter.smooth(double(age) + 17.0 * k, 3.0);
-            osc[std::size_t(k)].setFrequency(hz * std::exp2((cents / 100.0f + depth * sinCycles(ph)) / 12.0f), rate);
+            osc[std::size_t(k)].setFrequency(hz * std::exp2((cents / 100.0f + depth * sinCycles(ph) + bend) / 12.0f), rate);
         }
         // The vocal tract for this range, between the two nearest vowels.
         const int range = hz < 165.0f ? VoiceBass : (hz < 290.0f ? VoiceTenor : (hz < 440.0f ? VoiceAlto : VoiceSoprano));
@@ -280,7 +288,7 @@ struct WindVoice {
     float hz = 440, targetHz = 440, scoop = 1, scoopCoef = 0.9f, h2 = 0.2f, h3 = 0.1f, h4 = 0, h5 = 0, breath = 0.2f;
     float tone = 1, breathQ = 3, scoopSeconds = 0.06f;   // tone 0: breath alone (a tuned rustle or gust)
     float chiff = 0.3f, chiffSeconds = 0.04f, air = 0.1f, velocity = 0.8f, wander = 3;
-    float vibratoHz = 5, vibratoDepth = 0.15f, vibratoDelay = 0.25f, vibratoPhase = 0, age = 0, gain = 1, breathPulse = 1;
+    float vibratoHz = 5, vibratoDepth = 0.15f, vibratoDelay = 0.25f, vibratoPhase = 0, age = 0, gain = 1, breathPulse = 1, bend = 0;
     uint64_t noiseIndex = 0;
     PanGains pan { 0.7071f, 0.7071f };
     bool active() const { return env.active(); }
@@ -324,7 +332,7 @@ struct WindVoice {
         // Blown harder: a few cents sharp; and the player's pitch wanders slowly.
         const float cents = 4.0f * (velocity - 0.6f) + wander * sinCycles(0.13f * float(noiseIndex >> 24) + 0.21f * age);
         // Flute vibrato is mostly a pulse in the breath: a third in pitch, the rest in level.
-        const float f = std::min(hz * scoop * std::exp2((0.35f * vib + cents / 100.0f) / 12.0f), 0.3f * rate);
+        const float f = std::min(hz * scoop * std::exp2((0.35f * vib + cents / 100.0f + bend) / 12.0f), 0.3f * rate);
         breathPulse = 1.0f + 0.25f * vib;
         osc.setFrequency(f, rate);
         osc.normalise();
@@ -368,7 +376,7 @@ struct BowedVoice {
     OnePole bowLp;
     Env env;
     float hz = 220, targetHz = 220, glide = 0, tunedHz = 0, ringSeconds = 0.4f;
-    float rosin = 0.5f, noisiness = 0.3f, vibratoHz = 5, vibratoDepth = 0, vibratoPhase = 0, age = 0, gainLevel = 1;
+    float rosin = 0.5f, noisiness = 0.3f, vibratoHz = 5, vibratoDepth = 0, vibratoPhase = 0, age = 0, gainLevel = 1, bend = 0;
     uint64_t noiseIndex = 0;
     bool ringing = false;   // the modes ring on after the bow stops
     PanGains pan { 0.7071f, 0.7071f };
@@ -404,7 +412,7 @@ struct BowedVoice {
         age += chunkSeconds;
         vibratoPhase += vibratoHz * chunkSeconds;
         vibratoPhase -= std::floor(vibratoPhase);
-        const float f = hz * std::exp2(vibratoDepth * smoothstep(0.3f, 0.9f, age) * sinCycles(vibratoPhase) / 12.0f);
+        const float f = hz * std::exp2((vibratoDepth * smoothstep(0.3f, 0.9f, age) * sinCycles(vibratoPhase) + bend) / 12.0f);
         saw.setFrequency(f, rate);
         bowLp.setCutoff(std::min(f * 6.0f, 0.4f * rate), rate);
         if (std::abs(f - tunedHz) > tunedHz * 0.0005f) {
@@ -454,7 +462,7 @@ struct StringVoice {
     Env env;
     int players = 1;
     float hz = 220, targetHz = 220, glide = 0, age = 0, settle = 1, rate = 48000;
-    float position = 0.12f, brightness = 0.5f, bowNoise = 0.3f, vibratoDepth = 0.2f, vibratoDelay = 0.3f, spreadCents = 8, gain = 1;
+    float position = 0.12f, brightness = 0.5f, bowNoise = 0.3f, vibratoDepth = 0.2f, vibratoDelay = 0.3f, spreadCents = 8, gain = 1, bend = 0;
     float combDelay = 10, combLevel = 0.7f, scratch = 0, velocity = 0.8f;
     uint64_t noiseIndex = 0;
     PanGains pan { 0.7071f, 0.7071f };
@@ -510,7 +518,7 @@ struct StringVoice {
             auto& p = player[std::size_t(k)];
             p.vibratoPhase += p.vibratoHz * chunkSeconds;
             p.vibratoPhase -= std::floor(p.vibratoPhase);
-            const float f = hz * settle * std::exp2((p.detune / 100.0f + vib * sinCycles(p.vibratoPhase)) / 12.0f);
+            const float f = hz * settle * std::exp2((p.detune / 100.0f + vib * sinCycles(p.vibratoPhase) + bend) / 12.0f);
             p.saw.setFrequency(age >= p.delay ? f : 0.0f, rate);
         }
         // The bow-position comb: harmonics near multiples of 1 / position are weak.

@@ -157,6 +157,12 @@ public:
         until = -1;
     }
     bool sustains() const override { return true; }
+    void stopLive(int id) override {
+        if (held.on && held.live == id) {
+            held.until = -1.0e18;
+            until = beat;   // the crank slows after the key
+        }
+    }
     void start(const PartFrame& f, const NoteOn& n) override {
         // A key pressed: the melody string's length steps to the note (no glide), and
         // the tangent ticks against the string.
@@ -179,13 +185,13 @@ public:
         // The crank keeps turning a little after the last note, then stops.
         if (playing && f.beat >= until + 1.0) playing = false;
         const float position = 0.09f;   // the wheel touches the strings near the bridge
-        strings[Chanter].tune(music::noteHz(root, melodySemis), rate, position);
+        strings[Chanter].tune(music::noteHz(root, melodySemis + bend), rate, position);
         strings[Bourdon].tune(music::noteHz(root, -12.0f), rate, position);
         strings[Mouche].tune(music::noteHz(root, -5.0f), rate, position);
         strings[Trompette].tune(music::noteHz(root, 0.0f), rate, position);
         for (auto& s : strings) {
             s.pressure = patch.pressure;
-            s.lossGain = 0.93f + 0.05f * dsp::clamp01(patch.brightness);
+            s.lossGain = 0.93f + 0.05f * dsp::clamp01(patch.brightness + 0.5f * mod);
         }
         trompettePeriod = rate / music::noteHz(root, 0.0f);
         if (!bodyTuned) {

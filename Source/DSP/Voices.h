@@ -104,6 +104,7 @@ struct SynthVoice {
     float hz = 110, targetHz = 110, glide = 0;   // glide: fraction left per chunk (0 = jump)
     float detuneCents = 7, cutoff = 1000, envOctaves = 1, filterEnvOctaves = 0, filterEnv = 0, filterDecay = 0, q = 0.7f;
     float vibratoHz = 5, vibratoDepth = 0, vibratoDelay = 0.3f, age = 0, vibratoPhase = 0;
+    float bend = 0;   // semitones (the keyboard's pitch wheel)
     float subLevel = 0.5f, gain = 1, width = 0.6f, releaseAt = 1.0e30f;
     // Brass and Reed.
     float velocity = 0.8f, formantHz = 1200, formantLevel = 0.6f, breath = 0.05f, blat = 0, drive = 1, rate = 48000;
@@ -159,7 +160,7 @@ struct SynthVoice {
             // The scoop settles in about 30 ms with a slight overshoot.
             vib += (scoopCents * std::exp(-age / 0.028f) + 6.0f * velocity * (std::exp(-age / 0.07f) - std::exp(-age / 0.028f))) / 100.0f;
         }
-        const float f = hz * std::exp2(vib / 12.0f);
+        const float f = hz * std::exp2((vib + bend) / 12.0f);
         const float d = detuneCents / 1200.0f;
         switch (model) {
             case SynthBrass: {
@@ -304,6 +305,19 @@ struct WaveguideString {
     void setDecay(float t60, float rate, float lossGain) {
         gain = std::min(0.9995f, std::pow(10.0f, -3.0f * period / (std::max(t60, 0.02f) * rate)) / std::max(lossGain, 1.0e-3f));
     }
+    // A new pitch for a sounding string (the pitch wheel): the loop's length only, its
+    // losses as they are.
+    void retune(float hz, float rate) {
+        period = rate / std::clamp(hz, 20.0f, 0.3f * rate);
+        const float w = twoPi * hz / rate;
+        float lossDelay = 0, lossGain = 1;
+        lowpassAt(lossA, w, lossDelay, lossGain);
+        const float dispDelay = float(dispStages) * (dispStages > 0 ? allpassDelay(dispC, w) : 0.0f);
+        const float rest = period - lossDelay - dispDelay;
+        length = std::clamp(int(rest - 0.5f), 1, int(line.mask) - 2);
+        const float d = rest - float(length);
+        fracC = std::sin(0.5f * w * (1.0f - d)) / std::sin(0.5f * w * (1.0f + d));
+    }
     float tick(float in) {
         const float y = line.readInt(std::size_t(length));
         float f = fracC * y + fracX - fracC * fracY;
@@ -357,6 +371,26 @@ struct Pluck {
         dampIn = -1;
     }
     float level() const { return active ? peak + (excite > 0 ? amp : 0.0f) : 0.0f; }
+    // A key released (KEYS): the string stops over about `seconds`, the highs first. The
+    // loop's gain is set from the loss filter's real gain at the note, so high notes stop
+    // as surely as low ones.
+    void damp(float seconds) {
+        for (auto& st : string) {
+            st.lossA = std::min(st.lossA, 0.35f);
+            float delay = 0, magnitude = 1;
+            WaveguideString::lowpassAt(st.lossA, twoPi * hz * bent / rate, delay, magnitude);
+            st.setDecay(seconds, rate, magnitude);
+        }
+        dampIn = -1;
+    }
+    // The pitch wheel: the strings retuned by `ratio` from the note.
+    float bent = 1;
+    void bendTo(float ratio) {
+        if (std::abs(ratio - bent) < 1.0e-5f) return;
+        bent = ratio;
+        string[0].retune(hz * ratio, rate);
+        if (shape.course > 0.0f) string[1].retune(hz * ratio * std::exp2(shape.courseCents / 1200.0f), rate);
+    }
     // Samples to wait before the pluck (a strum reaching this string a moment later).
     int wait = 0;
     // brightness 0..1 (finger to plectrum), velocity 0..1, length: samples until the note
@@ -366,6 +400,7 @@ struct Pluck {
         rate = sampleRate;
         shape = s;
         hz = noteHz;
+        bent = 1;
         t60 = decaySeconds;
         string[0].clearRecent(hz, rate);
         if (shape.course > 0.0f) string[1].clearRecent(hz * 0.99f, rate);
