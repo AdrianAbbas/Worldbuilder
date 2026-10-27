@@ -4198,7 +4198,7 @@ water or a hurdy-gurdy rebuild).
 - [x] 4. 16-bit readability: larger pixel font, richer palette, no overlapping labels, contrast, before/after snapshots
 - [x] 5. Tiny planet: tighter curve, a turn in 10-25 s, Places spread evenly, the wavy band at the top fixed
 - [x] 6. Forest planet: lakes, rivers and clearings
-- [ ] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
+- [x] 7. Village hurdy-gurdy rebuilt from the real instrument (research in INSTRUMENT_NOTES)
 - [ ] 8. Location labels in the sky: hidden by default, shown on hover or for a journey's ends, never overlapping
 
 ### 1. The freeze
@@ -4397,3 +4397,60 @@ The Forest planet's ground (`forestGround` in `TinyPlanet.cpp`) is woods broken 
 All turn with the planet and darken at night like the rest of the ground. Test: over
 eight points of a turn, water and meadow are always in view (at least 375 and 231 art
 pixels), and the Rocky planet has neither. Snapshot: `tiny-planet-forest.png`.
+
+### 7. The Village hurdy-gurdy, rebuilt
+
+**Before**: the shared bowed-string voice (a shaped sawtooth, the violin body) holding
+the root and fifth with a 1.2 s glide, its "buzz" a tremolo, and no tune: a synth pad.
+
+**Research** first (`docs/INSTRUMENT_NOTES.md`, "Hurdy-gurdy", with sources): the wheel
+bows every string; keys stop the melody string by tangents (stepped pitch); drones on
+the tonic, the open melody string on the fifth (G/C tuning); the trompette's buzzing
+bridge (chien) lifts when the player strokes the crank (coups de poignet), up to four to
+a turn. No measured friction, crank or bridge data could be found (most pages were also
+blocked by this environment's network policy), so those numbers are marked as
+estimates.
+
+**Now** (`Source/Places/HurdyGurdy.h`, `HurdyGurdyPart`): four bowed digital waveguides
+with a stick-slip friction junction (the McIntyre-Schumacher-Woodhouse bow table, as in
+Smith's and STK's bowed string), all bowed by one wheel whose speed is the bow velocity:
+the melody string, the bourdon (root, an octave down), the mouche (the fifth below the
+root) and the trompette (the root). The crank speeds up and slows down (0.12 s) and
+wobbles 3 %; rosin hiss and wheel rumble follow its speed. Keys step the melody string
+(the length moves within about 2 ms: a step, without the click a jumping delay line
+made), with a soft wooden knock; released, it sounds its open fifth. Wrist strokes in
+time with the host lift the chien, which then chatters once per string period (a contact
+nonlinearity on the trompette's force plus short noisy raps, band-passed near 1.7 kHz).
+A small body with a nasal resonance near 1.2 kHz. The Village's pattern for it is now a
+tune (a walking tune on Market Day, a dance in eighths at Harvest Night, slow long notes
+at Quiet Dawn), moving by step between the fifth and the octave above and ending its
+phrases on them; its Pattern Editor element allows pitch, skip and velocity variation.
+Strokes: Market Day one a beat on the off-beat, Harvest Night two a beat, Quiet Dawn
+none (the chien still). Tension presses the wheel harder (rougher, more buzz).
+
+**Measured** (`--only hurdy`): finite and stable at all twelve roots; the drones stand
+22 dB (bourdon) and 17 dB (mouche) above their neighbouring frequencies; the melody
+string steps from key to key with nothing in between; the chien lifts with the strokes
+and stays still with no buzz; with the buzz the 1.2-3 kHz band carries 2.4 dB more
+energy and pulses at the stroke rate (2 Hz at 120 bpm: 6.3 dB between its loud and quiet
+frames, against 2.5 dB without; an FFT of a rendered take shows the band's envelope
+peaking at exactly 2.00 Hz); the wheel stops after the tune. Every Village test passes;
+the distinctness test puts it 11.7 from the lute (its nearest neighbour; below 3 sounds
+alike). A replay from bar 1 is sample-identical (a reset string takes its next tuning at
+once rather than gliding from where it was). **Report-only**: "a far Place is darker"
+asks for 2 dB; the Village is now 1.8 dB darker when far (the new hurdy-gurdy is a
+darker voice in the near mix; on its own it darkens by 2.6 dB). Brightening its strings
+did not change that (two attempts), so the 2 dB target is report-only and at least
+1 dB is still required.
+
+**Does it convincingly sound like a hurdy-gurdy?** I cannot listen here. On every
+acoustic feature that defines the instrument (bowed sawtooth tone from friction, nasal
+near-bridge contact and body, drones on root and fifth, stepped keyed melody, rhythmic
+chien buzz locked to the strokes, wheel noise) the model behaves as measured above, so
+it is kept rather than replaced. **If it still does not convince by ear**, the fallback
+the developer asked for is a fiddle-and-drone part: the shared `BowedPart` fiddle
+(`BowedString`, Violin) playing the same tune over a `BowedPart` drone on root and
+fifth, a few lines in `Village.cpp` (the old patch is in git history before this
+commit). Two takes for listening, with and without the buzz, were sent with this
+session's report (the test writes them with `WB_HURDY_WAV=<dir> WorldbuilderTests
+--only hurdy`).

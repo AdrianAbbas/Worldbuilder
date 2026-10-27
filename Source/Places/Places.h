@@ -3,6 +3,7 @@
 // Every instrument plays from a pattern; generate() writes the starting pattern of
 // each, from the Place's seed and settings.
 #include "Ensemble.h"
+#include "HurdyGurdy.h"
 #include <memory>
 
 namespace wb {
@@ -55,8 +56,8 @@ private:
     float echoSend = 0, hallWet = 0, hallSend = 0;
 };
 
-// Village: lute-like plucked ostinatos on the shared chords, a hurdy-gurdy drone on
-// the root and fifth, frame drum, hand drum and shaker, wooden marimba tones, a
+// Village: lute-like plucked ostinatos on the shared chords, a hurdy-gurdy (a bowed
+// wheel, drones on the root and fifth, a buzzing trompette, a keyed melody string), frame drum, hand drum and shaker, wooden marimba tones, a
 // recorder and small bell jingles, in a small wooden room through tape warmth.
 // Market Day: a lively eighth-note ostinato, shop-bell jingles, recorder phrases.
 // Harvest Night: swung sixteenths, a buzzing drone, busy drums, xylophone runs, a
@@ -80,7 +81,7 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     PluckPart lute;
-    BowedPart hurdy;
+    HurdyGurdyPart hurdy;
     DrumPart drums;
     ModalPart marimba, jingles;
     WindPart recorder;

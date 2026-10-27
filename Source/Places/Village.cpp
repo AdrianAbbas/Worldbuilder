@@ -141,13 +141,38 @@ void VillagePlace::generate(int element, const GenInputs& in, pat::Pattern& out)
     PatternWriter w { out };
 
     if (element == HurdyGurdy) {
-        // The drone holds the root and the fifth below the key (it does not follow the
-        // chords); as Tension rises the fifth sinks to a semitone above the root.
+        // The melody string's tune, in key over the drones (which the instrument plays
+        // itself): a folk line moving mostly by step between the fifth and the octave
+        // above, each phrase ending on the fifth or the octave. Keys step from note to
+        // note. Market Day: a walking tune; Harvest Night: a dance in eighths; Quiet
+        // Dawn: slow, long notes.
         out.setGrid(pat::Sixteenth, 4);
         out.followChords = false;
-        w.note(0, -size, 64, 0.9f);
-        if (tension > 0.6f) w.note(0, -size, 64, 0.6f, 1);
-        else w.note(0, music::nearestDegree(in.mood, 7) - size, 64, 0.6f);
+        const int fifth = music::nearestDegree(in.mood, 7), top = size + fifth;
+        const int unit = figure == 2 ? 2 : (figure == 1 ? 8 : 4);   // eighths, halves, quarters
+        int degree = fifth;
+        for (int bar = 0; bar < 4; ++bar) {
+            const bool cadence = bar == 1 || bar == 3;
+            for (int step = 0; step < 16; step += unit) {
+                const int at = bar * 16 + step;
+                const bool strong = step % 8 == 0;
+                // Rests: more in a sparse tune; never on the bar's first beat.
+                if (step != 0 && ch(80, at) > (0.55f + 0.4f * act) * (figure == 1 ? 0.8f : 1.0f)) continue;
+                int length = unit;
+                if (cadence && step + unit >= 16) {
+                    // The phrase ends: home to the octave (or the fifth), held.
+                    degree = bar == 3 ? size : fifth;
+                    length = 16 - step;
+                } else {
+                    const float move = ch(81, at);
+                    degree += move < 0.35f ? -1 : (move < 0.75f ? 1 : (move < 0.87f ? 2 : -2));
+                    if (tension > 0.6f && ch(82, at) < tension - 0.5f) degree += 1;   // tension: the line climbs
+                    degree = std::clamp(degree, fifth - 1, top);
+                }
+                w.note(at, degree, length, strong ? 0.85f : 0.7f + 0.1f * ch(83, at));
+                if (length > unit) break;
+            }
+        }
         return;
     }
 
@@ -245,27 +270,28 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.sympathetic = 0.08f;
         p.gain = 1.0f;
     }
-    // Hurdy-gurdy: a narrow, nasal buzz; at Harvest Night the wheel buzzes on the beats.
+    // Hurdy-gurdy: the wheel turns steadily; the trompette buzzes on the wrist strokes.
+    // Market Day: a stroke on every beat; Harvest Night: the coup de quatre (four to a
+    // turn, on the eighths) and a faster wheel; Quiet Dawn: a gentle wheel, the chien
+    // left still. Tension presses the wheel harder (rougher, more buzz); Tone opens the
+    // bridge.
     {
         auto& p = hurdy.patch;
-        // A hurdy-gurdy: a rosined wheel bowing the strings near the bridge (nasal,
-        // grinding); at Harvest Night the wheel buzzes on the beats.
-        p.model = BowedString;
-        p.size = dsp::Viola;
-        p.players = 1;
-        p.position = 0.05f;
+        p.wheel = (dawn ? 0.55f : night ? 0.85f : 0.72f) * lerp(0.9f, 1.1f, tension);
+        p.pressure = lerp(0.3f, 0.7f, tension);
         p.brightness = lerp(0.2f, 0.95f, tone) * (dawn ? 0.7f : 1.0f) * std::exp2(0.2f * drift.smooth(t, 0.06));
-        p.noisiness = 0.2f + 0.35f * tone;
-        p.attack = 2.0f;
-        p.release = 1.5f;
-        p.glide = 1.2f;
-        p.vibratoDepth = 0.0f;
-        p.spread = 0.2f;
-        p.tremoloPerBeat = night ? 2.0f : 0.0f;
-        p.tremoloDepth = night ? 0.3f : 0.0f;
-        p.voices = 2;
-        p.held = true;
-        p.gain = (dawn ? 0.6f : 1.0f) * lerp(0.8f, 1.7f, tension);
+        p.buzz = dawn ? 0.0f : lerp(0.5f, 1.0f, tension) * (night ? 1.0f : 0.8f);
+        p.strokesPerBeat = dawn ? 0.0f : night ? 2.0f : 1.0f;
+        p.strokeOffset = night ? 0.0f : 0.5f;   // Market Day pushes on the off-beat
+        p.noise = 0.3f + 0.3f * tone;
+        p.chanter = 1.0f;
+        p.bourdon = dawn ? 0.6f : 0.8f;
+        p.mouche = 0.55f;
+        p.trompette = dawn ? 0.4f : 0.75f;
+        p.body = 0.85f;
+        p.pan = 0.1f;
+        p.width = 0.3f;
+        p.gain = (dawn ? 0.6f : 1.0f) * lerp(0.85f, 1.3f, tension);
     }
     // Frame drum (tuned to the root), hand drum (on the fifth), shaker, and with
     // Machinery a mill's wooden clack.

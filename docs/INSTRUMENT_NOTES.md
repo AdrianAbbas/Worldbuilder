@@ -51,7 +51,7 @@ piano strings about 1e-4 to 1e-3 *(ref: Fletcher & Rossing, The Physics of Music
 Instruments)*; the stiffness all-pass gives near-zero stretch on low notes and a few
 cents on the 5th partial above ~800 Hz, in that range.
 
-## Bowed strings: fiddle, string sections, double basses, hurdy-gurdy
+## Bowed strings: fiddle, string sections, double basses
 
 **Model** (`dsp::StringVoice`, `BowedPart` model String):
 - Helmholtz motion: the bridge force is a sawtooth (band-limited), combed by the bow
@@ -83,6 +83,86 @@ spectral facts.
 
 The older **bowed resonator** (a bow driving a few tuned modes) stays for bowed
 metal, singing bowls rubbed, glassy hums and the spaceship hull.
+
+## Hurdy-gurdy (rebuilt in the GarageBand fix round)
+
+The developer heard the Village hurdy-gurdy as "a weird synth": it was the shared bowed
+string (a shaped sawtooth) holding the root and fifth with a 1.2 s glide, a tremolo for
+its "buzz", and no melody. It is now its own instrument, `HurdyGurdyPart`
+(`Source/Places/HurdyGurdy.h`), built from how the real one sounds.
+
+**What the instrument is** *(web, see sources)*:
+- A rosined wooden wheel, turned by a crank, bows all the strings at once, "much like the
+  bow of a violin"; a bowed string's Helmholtz motion gives a sawtooth at the bridge.
+- **Chanterelles** (melody strings) are stopped by a keybox: wooden keys push tangents
+  against the string, so the pitch jumps from key to key (no slides); between notes
+  the open string sounds.
+- **Drones**: in the common G/C tuning ("auvergnat", the other common one being D/G,
+  "bourbonnais") the drones sit on the tonic and the open chanterelle on the fifth; a
+  Marchand-type instrument lists two chanterelles in G, mouche G, petit bourdon D, gros
+  bourdon G, trompette D. Here: bourdon on the root an octave down, mouche on the
+  fifth below the root, trompette on the root, the open melody string on the fifth.
+- **The trompette's buzzing bridge** (the chien, "dog"): an asymmetrical bridge with one
+  stable foot. Accelerating the wheel makes the string's force lift the free foot, which
+  strikes the soundboard: the buzz. Players make it rhythmic with sharp wrist strokes on
+  the crank (coups de poignet); skilled players get four to a turn ("coup de quatre").
+  The design is thought to come from the tromba marina.
+
+**The model**:
+- Every string is a **bowed digital waveguide with a friction junction**: the wheel's
+  contact point splits the string into a nut-side and a bridge-side delay line; at the
+  junction the relative velocity of wheel and string goes through the bow table (sticking
+  near zero, slipping above), the friction-curve model of McIntyre, Schumacher and
+  Woodhouse in the form J. O. Smith and the STK `Bowed` instrument use (table
+  `min(1, (|slope dv| + 0.75)^-4)`, slope 5 - 4 x pressure; a one-pole loss at the
+  bridge with its pole at `0.75 - 0.2 x 22050 / rate`). The wheel speed is the bow
+  velocity (0.03 + 0.22 x speed), so the tone speaks, roughens and swells with the
+  crank. *(ref: McIntyre, Schumacher & Woodhouse, "On the oscillations of musical
+  instruments", JASA 1983; Smith, Physical Audio Signal Processing, bowed strings;
+  STK Bowed.)* The wheel touches the strings near the bridge, at 0.09 of their length
+  *(estimate: the wheel sits close to the bridge on every drawing and photograph; the
+  near-bridge contact is what makes the tone nasal)*. Every sample is guarded
+  (non-finite values become 0) because the Milestone 6 notes warned that friction
+  waveguides are hard to keep stable unattended; the tests run it over every root and
+  Character.
+- **The wheel**: it speeds up and slows down over about 0.12 s (a crank, not a switch),
+  with a 3 % wobble (no wheel is perfectly true), turning while the tune plays and a
+  beat after it. **Friction noise**: rosin hiss (band-pass around 3.2 kHz) and a low
+  wheel rumble (below 90 Hz), both with the wheel's speed.
+- **Stepped keys**: a note sets the melody string's length at once (no glide); a key
+  press adds a short wooden tick; a released key returns the string to its open fifth.
+- **The chien**: the wrist strokes, in time with the host (one a beat on Market Day's
+  off-beats, two a beat at Harvest Night, none at Quiet Dawn), push the wheel up to 25 %
+  faster for about 60 ms at 120 bpm. When the wheel's speed passes a threshold the chien
+  lifts (smoothed over a few milliseconds) and raps once per period of the trompette
+  string: a band-passed impulse-and-noise rasp around 1.7 kHz, locked to the string's
+  pitch, while the trompette's own tone thins a little (the string is busy lifting the
+  bridge).
+- **The body**: a small wooden box with a nasal colour, five resonances:
+
+| Body mode | Hz | Q | Basis |
+|---|---|---|---|
+| Air / main wood | 280 | 4 | as the violin's A0 above *(estimate: no measured hurdy-gurdy body data found)* |
+| Plate | 520 | 5 | the violin's B1 region *(estimate)* |
+| Nasal region | 1180 | 6 | the instrument's characteristic nasal formant *(estimate, by ear against recordings' descriptions)* |
+| Bright | 2400 | 5 | as the violin's bridge hill *(estimate)* |
+| Air | 3600 | 4 | *(estimate)* |
+
+**Not found**: no peer-reviewed measurement of the hurdy-gurdy's wheel friction, crank
+speed or buzzing bridge turned up (the network policy of this environment also blocked
+most pages, so the facts above come from search-result summaries of the pages listed).
+A Wolfram Cloud "interactive" model gives 1.2 crank turns a second and string
+parameters, but it says its values are placeholders, so it was not used.
+
+**Sources** *(web)*: Wikipedia, "Hurdy-gurdy" (https://en.wikipedia.org/wiki/Hurdy-gurdy);
+Study.com, "Hurdy Gurdy Instrument" (https://study.com/learn/lesson/hurdy-gurdy-instrument.html);
+waterpigs.co.uk, "Hurdy Gurdy Playing" (https://waterpigs.co.uk/articles/gurdy-playing/);
+Chiff and Fipple forum, "Hurdy Gurdy tuning" (https://www.chiffandfipple.com/t/hurdy-gurdy-tuning/35073);
+Early Music Shop, hurdy-gurdy after Marchand by John Verney
+(https://earlymusicshop.com/collections/seven-christmas-crackers/products/bosch-hurdy-gurdy-by-john-verney);
+Hurdy-gurdy mailing list, "Octave G on C/G Hurdy Gurdy" (https://groups.google.com/g/hurdygurdy/c/g3XnG9_dYvU);
+Spielleute, "The hurdy-gurdy" (https://spielleute.de/en/the-hurdy-gurdy/);
+signalfunctionset, "Wheel" (https://signalfunctionset.com/projects/wheel/).
 
 ## Brass: horns, trumpets, bugle, trombones
 
