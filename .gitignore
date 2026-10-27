@@ -3,3 +3,15 @@
 /.DS_Store
 *.user
 *.jucer.bak
+# The developer's recordings live in the private Samples repository and never in this
+# public one (CI fetches them with a token; tools/sample-prep writes into build/).
+*.mp3
+*.wav
+*.flac
+*.aif
+*.aiff
+*.m4a
+/samples/
+/samples-src/
+/prepared/
+__pycache__/
