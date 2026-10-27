@@ -105,6 +105,12 @@ install_bundle() {
         return 1
     fi
     ok "$(basename "$dest") installed, quarantine removed, signature valid ($(/usr/bin/file -b "$binary" | /usr/bin/sed 's/Mach-O universal binary with //'))"
+    # The recorded instruments travel inside the bundle (GarageBand's sandbox reads them there).
+    if [[ -f "$dest/Contents/Resources/Samples/index.json" ]]; then
+        ok "$(basename "$dest"): $(/usr/bin/find "$dest/Contents/Resources/Samples" -name '*.flac' | /usr/bin/wc -l | /usr/bin/tr -d ' ') recorded notes inside ($(/usr/bin/du -sh "$dest/Contents/Resources/Samples" | /usr/bin/cut -f1))"
+    else
+        warn "$(basename "$dest") has no recorded samples inside; its sampled instruments use the synthesised fallbacks"
+    fi
 }
 
 bold "1-3. Copying, removing quarantine, signing"

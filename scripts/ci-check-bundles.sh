@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# CI gate for the built macOS bundles: both architecture slices present, AU
-# identity and sandboxSafe in Info.plist, minimum macOS version reported.
+# CI gate for the built macOS bundles: both architecture slices present, the samples
+# in the plugin bundles, AU identity and sandboxSafe in Info.plist, minimum macOS version
+# reported.
 # Usage: scripts/ci-check-bundles.sh <artefacts dir, e.g. build/WORLDBUILDER_artefacts/Release>
 set -euo pipefail
 artefacts="$1"
@@ -19,6 +20,16 @@ for bundle in "$artefacts/AU/WORLDBUILDER.component" "$artefacts/VST3/WORLDBUILD
         minos=$(/usr/bin/otool -arch "$arch" -l "$binary" | /usr/bin/awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
         printf '    %-7s minimum macOS %s\n' "$arch" "${minos:-unknown}"
     done
+done
+
+# The developer's samples (Milestone 15) inside each plugin bundle.
+for bundle in "$artefacts/AU/WORLDBUILDER.component" "$artefacts/VST3/WORLDBUILDER.vst3"; do
+    samples="$bundle/Contents/Resources/Samples"
+    if [[ -f "$samples/index.json" ]]; then
+        printf '%-60s %s notes, %s\n' "$samples" "$(find "$samples" -name '*.flac' | wc -l | tr -d ' ')" "$(du -sh "$samples" | cut -f1)"
+    else
+        echo "::error::$bundle has no samples ($samples/index.json missing)"; status=1
+    fi
 done
 
 plist="$artefacts/AU/WORLDBUILDER.component/Contents/Info.plist"

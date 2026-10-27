@@ -87,6 +87,26 @@ if(WORLDBUILDER_PIXEL_SOURCES)
 else()
     target_compile_definitions(WORLDBUILDER PRIVATE WB_HAS_PIXEL_ART=0)
 endif()
+# The developer's recordings (Milestone 15), prepared by tools/sample-prep/prepare.py from
+# the private Samples repository. They are copied into every plugin bundle's Resources
+# (Contents/Resources/Samples), where the sampler loads them; GarageBand's sandbox may
+# read the plugin's own bundle. Without them the sampled instruments fall back to their
+# synthesised models (a build for forks or without the SAMPLES_TOKEN secret).
+set(WORLDBUILDER_SAMPLES_DIR "" CACHE PATH "Prepared samples (tools/sample-prep/prepare.py --out)")
+if(WORLDBUILDER_SAMPLES_DIR AND EXISTS "${WORLDBUILDER_SAMPLES_DIR}/index.json")
+    get_filename_component(WORLDBUILDER_SAMPLES_DIR "${WORLDBUILDER_SAMPLES_DIR}" ABSOLUTE)
+    message(STATUS "WORLDBUILDER: shipping the samples in ${WORLDBUILDER_SAMPLES_DIR}")
+    foreach(format ${WORLDBUILDER_FORMATS})
+        set(format_target WORLDBUILDER_${format})
+        add_custom_command(TARGET ${format_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${format_target}>/../Resources/Samples"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${WORLDBUILDER_SAMPLES_DIR}" "$<TARGET_FILE_DIR:${format_target}>/../Resources/Samples"
+            COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:${format_target}>/../Resources/Samples/report.json"
+            COMMENT "Copying the samples into the ${format} bundle")
+    endforeach()
+else()
+    message(STATUS "WORLDBUILDER: no prepared samples (WORLDBUILDER_SAMPLES_DIR); sampled instruments use their synthesised fallbacks")
+endif()
 target_compile_definitions(WORLDBUILDER PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0 JUCE_REPORT_APP_USAGE=0)
@@ -101,6 +121,7 @@ if(WORLDBUILDER_BUILD_TESTS)
     set_target_properties(WorldbuilderTests PROPERTIES COMPILE_DEFINITIONS "${wb_test_definitions}")
     target_sources(WorldbuilderTests PRIVATE Tests/WorldbuilderTests.cpp)
     target_link_libraries(WorldbuilderTests PRIVATE WORLDBUILDER juce::juce_audio_utils)
-    target_compile_definitions(WorldbuilderTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_compile_definitions(WorldbuilderTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
+        WB_TEST_SAMPLES_DIR="${WORLDBUILDER_SAMPLES_DIR}")
     add_test(NAME worldbuilder_tests COMMAND WorldbuilderTests)
 endif()
