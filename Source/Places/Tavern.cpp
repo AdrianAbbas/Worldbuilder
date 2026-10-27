@@ -240,10 +240,13 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.bodyAmount = 0.35f;
         p.sympathetic = 0.03f;
         p.release = 0.25f;
+        p.even = 0.8f;
         p.spread = 0.4f;
         p.pan = -0.25f;
         p.voices = byQuality(q, 5, 7, 8);
-        p.gain = 0.65f;
+        // As loud as the Tavern's other instruments (measured, Tests "balance"): the quiet
+        // corner's single arpeggio notes need more than the strummed chords.
+        p.gain = quiet ? 4.25f : (brawl ? 1.02f : 1.61f);
     }
     // A frame drum on the root and its rim.
     {

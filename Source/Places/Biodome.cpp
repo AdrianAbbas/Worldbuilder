@@ -237,7 +237,7 @@ void BiodomePlace::configure(const PlaceContext& c) {
         p.highestKey = 95;
         p.spread = 0.8f;
         p.voices = byQuality(q, 4, 5, 6);
-        p.gain = 16.0f;
+        p.gain = 7.5f;
     }
     // Vents: a hum with air in it; failing, it sputters with the power.
     {

@@ -34,7 +34,7 @@ struct SamplePatch {
     float toneHz = 16000;       // the voice's low-pass at full velocity
     float velocityTone = 1.0f;  // octaves darker at the softest velocity
     float velocityGain = 0.5f;  // how much velocity scales the level (the layers do the rest)
-    float even = 0.5f;          // evens out the recorded notes' loudness (0: as recorded)
+    float even = 0.5f;          // evens out the recorded notes' loudness within each layer (0: as recorded)
     // A second string of a course (lutes and ouds have paired strings): detuned, a little
     // later, at this level.
     float courseCents = 0, courseLevel = 0, courseMs = 0;
@@ -158,9 +158,9 @@ public:
         const float skip = quick ? patch.quickSeconds : (legato ? 0.08f : patch.startSeconds);
         v.pos = double(std::min(skip * inst->rate, float(zone->length) * 0.25f));
         if (zone->loops() && v.pos >= double(zone->loopStart)) v.pos = double(zone->loopStart);
-        // Level: velocity (the layers already differ), evened toward the instrument's
-        // median loudness, the patch.
-        const float even = std::clamp(patch.even * (inst->medianRmsDb - zone->rmsDb), -9.0f, 9.0f);
+        // Level: velocity (the layers already differ), evened toward the median loudness
+        // of the note's own layer (the layers keep their steps), the patch.
+        const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
         v.gain = (1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(velocity), 1.3f)) * dsp::dbToGain(even);
         const float attack = quick ? 0.008f : (legato ? 0.04f : patch.attack);
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;

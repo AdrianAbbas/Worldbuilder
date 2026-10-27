@@ -14,6 +14,7 @@
             ],
             "notes": ["E2", "G2", "A#2", "C#3", "E3", "G3", "A#3", "C#4", "E4", "G4", "A#4", "C#5", "E5", "G5", "A#5"],
             "takes": 1,
+            "layerStepsDb": [-9.0, -4.0, 0.0],
             "maxSeconds": 5.0,
             "partials": 3
         },
@@ -28,6 +29,7 @@
             ],
             "notes": ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5", "D5", "E5", "F5", "G5", "A5", "B5", "C6", "D6", "E6"],
             "takes": 1,
+            "layerStepsDb": [-9.0, -4.0, 0.0],
             "maxSeconds": 5.0,
             "partials": 1
         },

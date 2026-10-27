@@ -12,6 +12,8 @@
 // it changes: the audio thread reads it without locks. Notes are kept as 16-bit
 // integers (the recordings are MP3s, so 16 bits lose nothing) to halve the memory.
 #include <juce_core/juce_core.h>
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -30,7 +32,8 @@ struct Zone {
     int layer = 0, rr = 0;
     int loopStart = -1, loopEnd = -1;   // a sustain loop (end exclusive), -1: none
     int release = -1;                // where the recorded release tail starts, -1: none
-    float rmsDb = -20;               // loudness of its first 300 ms
+    float rmsDb = -20;               // level of its first 300 ms
+    float loudnessDb = -20;          // how loud it sounds (K-weighted, its loudest 400 ms; rmsDb in older maps)
     bool loops() const { return loopEnd > loopStart && loopStart >= 0; }
 };
 
@@ -43,7 +46,10 @@ public:
     std::vector<Zone> zones;
     int lowKey = 0, highKey = 127;   // the keys the zones cover
     float lowRoot = 60, highRoot = 60;
-    float medianRmsDb = -20;          // the notes' median loudness (for evening them out)
+    // The median loudness of each velocity layer's notes: notes are evened out within
+    // their own layer, so the layers keep their steps.
+    std::array<float, 8> layerMedianDb {};
+    float medianDb(int layer) const { return layerMedianDb[std::size_t(std::clamp(layer, 0, int(layerMedianDb.size()) - 1))]; }
 
     // The zone for a key and velocity (0..1); `pick` (0..1) chooses among the
     // round-robin takes. Keys outside the instrument fold in by octaves.

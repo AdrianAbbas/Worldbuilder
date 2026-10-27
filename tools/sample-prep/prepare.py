@@ -64,6 +64,33 @@ def db(x):
     return 20.0 * np.log10(np.maximum(np.abs(x), 1e-12))
 
 
+def k_weight(x, rate=RATE):
+    """ITU-R BS.1770's K-weighting (a high shelf, then a high-pass) at any rate."""
+    k = math.tan(math.pi * 1681.974450955533 / rate)
+    q = 0.7071752369554196
+    vh = 10 ** (3.999843853973347 / 20)
+    vb = vh ** 0.4996667741545416
+    a0 = 1 + k / q + k * k
+    shelf_b = [(vh + vb * k / q + k * k) / a0, 2 * (k * k - vh) / a0, (vh - vb * k / q + k * k) / a0]
+    shelf_a = [1, 2 * (k * k - 1) / a0, (1 - k / q + k * k) / a0]
+    k = math.tan(math.pi * 38.13547087602444 / rate)
+    q = 0.5003270373238773
+    a0 = 1 + k / q + k * k
+    hp_a = [1, 2 * (k * k - 1) / a0, (1 - k / q + k * k) / a0]
+    return signal.lfilter([1, -2, 1], hp_a, signal.lfilter(shelf_b, shelf_a, x))
+
+
+def note_loudness(audio):
+    """How loud a note sounds (LUFS of one channel): its loudest 400 ms, K-weighted,
+    within the first 1.5 s (a bow takes a while to speak)."""
+    y = k_weight(audio[:int(1.9 * RATE)])
+    win = int(0.4 * RATE)
+    if len(y) <= win:
+        return float(-0.691 + 10 * np.log10(np.mean(y ** 2) + 1e-24))
+    power = np.convolve(y ** 2, np.ones(win) / win, mode="valid")[:int(1.5 * RATE)]
+    return float(-0.691 + 10 * np.log10(power.max() + 1e-24))
+
+
 # ---------------------------------------------------------------------------
 # 1. Decoding and the MP3 padding
 
@@ -688,6 +715,28 @@ def process_set(spec, source, room, out_dir, report):
         for z in zones:
             z["audio"] = z["audio"] * 10 ** (trims[z["layer"]] / 20)
         report["levelling"][sid] = {spec["layers"][i]["name"]: {"floorDb": round(floors[i], 1), "trimDb": round(trims[i], 1)} for i in range(len(floors))}
+    # The noise floors bring the layers near each other, but not into a usable order: the
+    # player's touch changed across the register too (the medium guitar takes match the
+    # hard ones on the low strings and fall 12-20 dB under them above G4). With
+    # "layerStepsDb", each note's layers are set that far apart (K-weighted loudness),
+    # around the note's own level (the median over its layers), so a velocity never jumps
+    # to a much quieter or louder take; each take keeps its own tone.
+    steps = spec.get("layerStepsDb")
+    if steps and len(spec["layers"]) == len(steps):
+        changes = []
+        for label in sorted({z["label"] for z in zones}, key=midi_of):
+            mine = [z for z in zones if z["label"] == label]
+            level = {li: float(np.mean([note_loudness(z["audio"]) for z in mine if z["layer"] == li]))
+                     for li in {z["layer"] for z in mine}}
+            centre = float(np.median([level[li] - steps[li] for li in level]))
+            for z in mine:
+                trim = float(np.clip(centre + steps[z["layer"]] - note_loudness(z["audio"]), -24.0, 18.0))
+                z["audio"] = z["audio"] * 10 ** (trim / 20)
+                changes.append(trim)
+            for li in level:
+                report["layerSteps"].setdefault(sid, {}).setdefault(label, {})[spec["layers"][li]["name"]] = round(float(np.clip(
+                    centre + steps[li] - level[li], -24.0, 18.0)), 1)
+        report["warnings"].extend(f"{sid}: a layer step needed more than the limit ({c:+.1f} dB)" for c in changes if c in (-24.0, 18.0))
     # 5. One gain for the whole instrument: its loudest peak at -1 dBFS.
     peak = max(np.abs(z["audio"]).max() for z in zones)
     gain = 10 ** (-1 / 20) / max(peak, 1e-9)
@@ -700,10 +749,11 @@ def process_set(spec, source, room, out_dir, report):
         head = z["audio"][top:top + int(0.3 * RATE)]
         z["rms"] = round(float(db(np.sqrt(np.mean(head ** 2)))), 2)
         z["peak"] = round(float(db(np.abs(z["audio"]).max())), 2)
+        z["loudness"] = round(note_loudness(z["audio"]), 2)
     layers = len(spec["layers"])
     if layers > 1 and spec["layers"][0]["velocity"] != spec["layers"][1]["velocity"]:
         for label in sorted({z["label"] for z in zones}, key=midi_of):
-            levels = [next((z["rms"] for z in zones if z["label"] == label and z["layer"] == li), None) for li in range(layers)]
+            levels = [next((z["loudness"] for z in zones if z["label"] == label and z["layer"] == li), None) for li in range(layers)]
             if None not in levels and any(levels[i] >= levels[i + 1] for i in range(layers - 1)):
                 report["warnings"].append(f"{sid} {label}: the velocity layers are not in loudness order "
                                           f"({', '.join(f'{v:.1f}' for v in levels)} dB); kept as labelled")
@@ -723,7 +773,7 @@ def process_set(spec, source, room, out_dir, report):
         sf.write(os.path.join(out_dir, sid, name), z["audio"].astype(np.float32), RATE, subtype="PCM_16", format="FLAC")
         mz = {"file": f"{sid}/{name}", "label": z["label"], "root": z["root"], "loKey": lo, "hiKey": hi,
               "loVel": z["velocity"][0], "hiVel": z["velocity"][1], "layer": z["layer"], "rr": z["rr"],
-              "length": len(z["audio"]), "rms": z["rms"], "peak": z["peak"], "source": z["source"], "at": z["at"]}
+              "length": len(z["audio"]), "rms": z["rms"], "loudness": z["loudness"], "peak": z["peak"], "source": z["source"], "at": z["at"]}
         if "loop" in z:
             mz["loopStart"], mz["loopEnd"] = z["loop"]
             mz["release"] = z["release"]
@@ -751,7 +801,7 @@ def main():
     room = room_profile(room_raw)
     report = {"roomTone": {"file": manifest["roomTone"], "seconds": round(len(room_raw) / RATE, 1), "padding": room_note,
                            "levelDb": round(float(db(np.sqrt(np.mean(room_raw ** 2)))), 1)},
-              "files": [], "problems": [], "warnings": [], "sets": {}, "levelling": {}}
+              "files": [], "problems": [], "warnings": [], "sets": {}, "levelling": {}, "layerSteps": {}}
     known = {manifest["roomTone"]} | {u["file"] for u in manifest.get("unused", [])}
     only = set(args.only.split(",")) if args.only else None
     index = []
@@ -792,6 +842,8 @@ def main():
         print(f"\n{sid}: {s['zones']} notes, {s['seconds']} s of audio, {s['loops']} loops")
     for sid, lv in report["levelling"].items():
         print(f"{sid}: layers levelled by their noise floors: " + ", ".join(f"{k} {v['floorDb']} dB -> {v['trimDb']:+.1f} dB" for k, v in lv.items()))
+    for sid, notes in report["layerSteps"].items():
+        print(f"{sid}: layer steps per note (dB): " + "; ".join(f"{label} " + " ".join(f"{k} {v:+.1f}" for k, v in t.items()) for label, t in notes.items()))
     print(f"\nFLAC total: {total / 1e6:.2f} MB")
     print(f"\nCould not match ({len(report['problems'])}):" if report["problems"] else "\nEverything matched.")
     for p in report["problems"]:

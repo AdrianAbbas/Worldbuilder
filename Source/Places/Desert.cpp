@@ -212,10 +212,13 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.scoopSemis = -0.18f;
         p.scoopSeconds = 0.03f;
         p.release = 0.2f;
+        p.even = 0.8f;
         p.spread = 0.3f;
         p.pan = -0.15f;
         p.voices = byQuality(q, 4, 6, 8);
-        p.gain = 0.35f;
+        // As loud as the Desert's other instruments (measured, Tests "balance"); the dunes'
+        // sparse phrases need the most.
+        p.gain = dunes ? 1.9f : (storm ? 0.96f : 1.08f);
     }
     // Frame drums: a deep doum on the root, a sharp tek, a riq's jingles.
     {

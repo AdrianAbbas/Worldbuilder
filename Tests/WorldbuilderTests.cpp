@@ -8258,7 +8258,132 @@ double worstStep(const std::vector<float>& y, std::size_t from, std::size_t to) 
 }
 } // namespace sampleTest
 
+// Loudness as ITU-R BS.1770 measures it (LUFS): K-weighted (a high shelf and a
+// high-pass), 400 ms blocks overlapping by 75%, gated at -70 LUFS and 10 LU under the
+// ungated mean, from `from` seconds. The gate leaves out the silences between a sparse
+// part's notes, so a few loud notes and a steady pad compare by how loud they sound.
+// `loudest`: the loudest 400 ms instead (a single note's loudness, as the sample
+// preparation measures it).
+double loudness(const Audio& a, double from = 2.0, bool loudest = false) {
+    // The two K-weighting biquads, from their analogue prototypes at any rate.
+    struct Biquad {
+        double b0, b1, b2, a1, a2, z1 = 0, z2 = 0;
+        double tick(double x) {
+            const double y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2;
+            z2 = b2 * x - a2 * y;
+            return y;
+        }
+    };
+    const double fs = a.rate;
+    Biquad shelf {}, hp {};
+    {
+        const double f0 = 1681.974450955533, g = 3.999843853973347, q = 0.7071752369554196;
+        const double k = std::tan(M_PI * f0 / fs), vh = std::pow(10.0, g / 20.0), vb = std::pow(vh, 0.4996667741545416);
+        const double a0 = 1.0 + k / q + k * k;
+        shelf = { (vh + vb * k / q + k * k) / a0, 2.0 * (k * k - vh) / a0, (vh - vb * k / q + k * k) / a0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0 };
+    }
+    {
+        const double f0 = 38.13547087602444, q = 0.5003270373238773, k = std::tan(M_PI * f0 / fs);
+        const double a0 = 1.0 + k / q + k * k;
+        hp = { 1.0, -2.0, 1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0 };
+    }
+    Biquad shelfR = shelf, hpR = hp;
+    std::vector<double> power(a.l.size());
+    for (std::size_t i = 0; i < a.l.size(); ++i) {
+        const double l = hp.tick(shelf.tick(a.l[i])), r = hpR.tick(shelfR.tick(a.r[i]));
+        power[i] = l * l + r * r;
+    }
+    const auto block = std::size_t(0.4 * fs), hop = block / 4;
+    std::vector<double> blocks;
+    for (std::size_t at = std::size_t(from * fs); at + block <= power.size(); at += hop) {
+        double sum = 0;
+        for (std::size_t i = at; i < at + block; ++i) sum += power[i];
+        blocks.push_back(sum / double(block));
+    }
+    const auto lufs = [](double z) { return -0.691 + 10.0 * std::log10(std::max(z, 1.0e-24)); };
+    if (loudest) return blocks.empty() ? -120.0 : lufs(*std::max_element(blocks.begin(), blocks.end()));
+    const auto gated = [&](double gate) {
+        double sum = 0;
+        int n = 0;
+        for (double z : blocks)
+            if (lufs(z) > gate) sum += z, ++n;
+        return n > 0 ? sum / n : 0.0;
+    };
+    const double ungated = gated(-70.0);
+    if (ungated <= 0.0) return -120.0;
+    const double result = gated(lufs(ungated) - 10.0);
+    return result > 0.0 ? lufs(result) : -120.0;
+}
+
 bool expectSamples = true;
+
+
+// The recorded guitars (the Tavern's lute, the Desert's oud) against the other
+// instruments in their Places, and the report for every Place with recordings: each
+// instrument alone at the Place's defaults, its gated loudness in every Character.
+void testBalance(Suite& s) {
+    using namespace sampleTest;
+    auto& bank = samples::Bank::get();
+    bank.load();
+    if (!bank.waitUntilLoaded(30000) || !expectSamples) {
+        std::cout << "  [report] no samples: the balance is measured with the recordings only\n";
+        return;
+    }
+    // Each element's loudness alone (LUFS) per Character; -120 for none.
+    const auto measureElements = [](int type, int character) {
+        std::array<double, placeElements> out {};
+        for (int e = 0; e < placeElements; ++e) {
+            out[std::size_t(e)] = -120.0;
+            if (placeInfo(type).element[std::size_t(e)].kind == NoPattern) continue;
+            auto h = instrumentHost(type, character, e);
+            out[std::size_t(e)] = loudness(h.render(34.0), 2.0);
+        }
+        return out;
+    };
+    // The median of the Place's other instruments (rhythm, melody, pads; not the
+    // environmental textures, which a Place keeps in the background).
+    const auto medianOthers = [](const std::array<double, placeElements>& v, int skip, std::initializer_list<int> background) {
+        std::vector<double> o;
+        for (int e = 0; e < placeElements; ++e) {
+            if (e == skip || v[std::size_t(e)] < -100.0) continue;
+            if (std::find(background.begin(), background.end(), e) != background.end()) continue;
+            o.push_back(v[std::size_t(e)]);
+        }
+        std::sort(o.begin(), o.end());
+        return o.empty() ? -120.0 : (o.size() % 2 == 1 ? o[o.size() / 2] : 0.5 * (o[o.size() / 2 - 1] + o[o.size() / 2]));
+    };
+    struct Guitar { int type, element; const char* name; std::initializer_list<int> background; };
+    const std::array<Guitar, 2> guitars { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute", {} },
+                                            { Desert, DesertPlace::Oud, "Desert Oud", { DesertPlace::Wind } } } };
+    for (int type : { Tavern, Desert, Forest, Biodome, Ruins }) {
+        const std::string place = placeNames[std::size_t(type)];
+        s.section(("balance: " + place + ", every instrument alone (LUFS, gated)").c_str());
+        std::array<std::array<double, placeElements>, placeCharacters> all {};
+        for (int c = 0; c < placeCharacters; ++c) {
+            all[std::size_t(c)] = measureElements(type, c);
+            std::string line = "  [report] " + place + " / " + std::string(placeInfo(type).characters[std::size_t(c)]) + ":";
+            for (int e = 0; e < placeElements; ++e)
+                if (all[std::size_t(c)][std::size_t(e)] > -100.0)
+                    line += " " + std::string(placeInfo(type).element[std::size_t(e)].name) + " " + fmt(all[std::size_t(c)][std::size_t(e)]);
+            std::cout << line << "\n";
+        }
+        for (const auto& g : guitars) {
+            if (g.type != type) continue;
+            double sum = 0;
+            std::string detail;
+            bool each = true;
+            for (int c = 0; c < placeCharacters; ++c) {
+                const double d = all[std::size_t(c)][std::size_t(g.element)] - medianOthers(all[std::size_t(c)], g.element, g.background);
+                sum += d / placeCharacters;
+                each = each && std::abs(d) < 4.5;
+                detail += (c > 0 ? ", " : "") + fmt(d) + " LU";
+            }
+            s.metric(std::string(g.name) + ": loudness against the Place's other instruments (mean over Characters)", sum, " LU");
+            s.check(std::abs(sum) < 2.5 && each, std::string(g.name) + ": as loud as the other instruments of its Place (within 2.5 LU on average, 4.5 in every Character)", detail);
+        }
+    }
+}
 
 void testSamples(Suite& s) {
     using namespace sampleTest;
@@ -8350,11 +8475,38 @@ void testSamples(Suite& s) {
             ++notes;
         }
         s.check(ordered == notes, "guitar: soft, medium and hard velocities pick their layers", std::to_string(ordered) + " of " + std::to_string(notes));
-        s.check(louder >= notes - 1, "guitar: the hard layer is louder than the soft one (as recorded, levelled by noise floor)",
-                std::to_string(louder) + " of " + std::to_string(notes));
+        s.check(louder == notes, "guitar: the hard layer is louder than the soft one", std::to_string(louder) + " of " + std::to_string(notes));
         s.check(brighter >= 5, "guitar: the hard layer is brighter than the soft one (E2 to A#4; the soft E4 has open strings ringing over it)",
                 std::to_string(brighter) + " of 6;" + bright);
         std::cout << "  [report] guitar brightness, soft/hard (dB, upper partials over the lowest):" << bright << "\n";
+        // The layers were recorded at different input gains (and the player's touch changed
+        // across the register): the preparation sets each note's soft, medium and hard
+        // takes 9 and 4 dB apart (K-weighted). Measured as played, every note of both.
+        for (const char* id : { "guitar", "kalimba" }) {
+            const auto* inst = bank.instrument(id);
+            int stepped = 0, checked = 0;
+            std::string off;
+            for (const auto& z : inst->zones) {
+                if (z.layer != 2) continue;
+                const int key = int(std::lround(z.root));
+                std::array<double, 3> level {};
+                for (int layer = 0; layer < 3; ++layer) {
+                    const float velocity = std::array<float, 3> { 0.2f, 0.6f, 0.95f }[std::size_t(layer)];
+                    const auto y = play(id, key, velocity, 0.5f, 2.0, 1.6, false, [](SamplePatch& p) { p.velocityGain = 0; });
+                    Audio a;
+                    a.l = y;
+                    a.r.assign(y.size(), 0.0f);
+                    level[std::size_t(layer)] = loudness(a, 0.0, true);
+                }
+                const double soft = level[1] - level[0], hard = level[2] - level[1];
+                const bool ok = soft > 2.5 && soft < 7.5 && hard > 1.5 && hard < 6.5;
+                stepped += ok ? 1 : 0;
+                ++checked;
+                if (!ok) off += " " + std::to_string(key) + " (" + fmt(soft) + ", " + fmt(hard) + " dB)";
+            }
+            s.check(checked > 10 && stepped == checked, std::string(id) + ": every note's soft, medium and hard takes step up evenly (medium 5 dB over soft, hard 4 over medium, +-2.5)",
+                    std::to_string(stepped) + " of " + std::to_string(checked) + off);
+        }
         const auto* kalimba = bank.instrument("kalimba");
         int kOrdered = 0;
         for (int key = 60; key <= 88; key += 2) kOrdered += kalimba->find(key, 0.1f, 0.5f)->layer == 0 && kalimba->find(key, 0.9f, 0.5f)->layer == 2 ? 1 : 0;
@@ -8474,7 +8626,11 @@ void testSamples(Suite& s) {
         }
         s.check(audible, std::string(x.name) + ": the recordings play, audible and finite in every Character", levels + " dBFS");
         s.check(differs, std::string(x.name) + ": plays the recordings (differs from the synthesised fallback)");
-        s.check(near, std::string(x.name) + ": sits at the level the Place was mixed for (within 4 dB of the model it replaced)", levels);
+        // The guitars were raised to the level of their Places' other instruments (the
+        // "balance" group checks them); the others sit where the models they replaced sat.
+        if (x.element != TavernPlace::LuteStrum || x.type != Tavern)
+            if (x.type != Desert)
+                s.check(near, std::string(x.name) + ": sits at the level the Place was mixed for (within 4 dB of the model it replaced)", levels);
     }
 }
 
@@ -8569,6 +8725,7 @@ int main(int argc, char** argv) {
     if (run("transport")) testTransport(s);
     if (run("single")) testSingle(s);
     if (run("samples")) testSamples(s);
+    if (run("balance")) testBalance(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

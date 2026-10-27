@@ -5,6 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**Hotfix after Milestone 15a, in progress** (the guitars' levels, Scoop / Glide, the violin
+pad): checklist and handoff at the end, in
+[Hotfix after Milestone 15a](#hotfix-after-milestone-15a-guitar-levels-scoop--glide-violin-pad-2026-10-27).
+
 **Milestone 15a is done** (the first recorded instruments: preparation script, CI fetch of
 the private samples, the sampler, six instruments replaced; handoff at the end:
 [Milestone 15a](#milestone-15a-the-first-recorded-instruments-2026-10-27)). **The CI needs the
@@ -5129,4 +5133,69 @@ ear, from the keyboard too; long held fiddle notes (loops); levels in the mix.
 - Milestone 15b (more recordings, the hybrid sample + model option, more instruments) is
   next, when the next batch is in the Samples repository: add its files to
   `tools/sample-prep/manifest.json` and rerun.
+
+---
+
+## Hotfix after Milestone 15a: guitar levels, Scoop / Glide, violin pad (2026-10-27)
+
+The developer tested 15a in GarageBand (the sampled instruments work and are liked) and
+asked for a small hotfix: the guitars (Tavern lute, Desert oud) were barely audible, with
+the soft/medium/hard balance to check; no forced pitch slides (a per-instrument "Scoop /
+Glide" option, off by default unless the slide is the instrument); optionally the Forest
+string pad from the recorded violin sustains.
+
+### Progress checklist
+
+- [x] 1. Guitar levels: velocity layers balanced per note, notes evened within their layer, lute and oud set by measured loudness (`--only balance`)
+- [ ] 2. Scoop / Glide per instrument (Off / On, amount, time), every instrument checked
+- [ ] 3. (Optional) Forest string pad from the violin sustain samples
+- [ ] 4. Tests, docs, this handoff, final push without `[skip ci]`
+
+### 1. The guitars' levels
+
+**What was wrong** (measured, each instrument alone in its Place, gated K-weighted
+loudness as BS.1770 defines it, so a sparse part's silences do not count against it):
+
+- The lute sat 0.7, 9.1 and -3.0 LU under the median of the Tavern's other instruments
+  (Lively Night, Quiet Corner, Brawl); the oud 3.0, 7.4 and 1.8 LU under the Desert's.
+- **The velocity layers.** 15a levelled each guitar layer by its noise floor (one gain per
+  layer). That left them out of step: on the low strings the medium takes were as loud as
+  the hard ones (within 1-2 dB), and from G4 up they were 12-20 dB under the hard ones, near
+  the soft takes. The player's touch changed across the register, so no gain per layer can
+  fix it. Most of the lute's and oud's notes are in the medium layer in that register: a
+  velocity just under 0.75 played a take 15 dB quieter than one just over it.
+- **The register.** The guitar's notes from G4 up are about 15 dB weaker than its low
+  strings (K-weighted), and the sampler evened notes toward the median of *all* layers,
+  which also pulled the soft and hard layers toward each other.
+
+**What changed:**
+
+- `prepare.py`: a set may give `layerStepsDb` (the guitar and the kalimba: soft -9, medium
+  -4, hard 0). After the noise-floor levelling, each note's takes are set those steps apart
+  (K-weighted, the loudest 400 ms of the note), around the note's own level (the median
+  over its layers, so one odd take does not move the others; boosts at most +18 dB, cuts
+  at most -24). Each take keeps its own tone. All guitar and kalimba notes are now in
+  order (the three guitar notes and their warnings in 15a are gone). The mapping files gain
+  a `loudness` per note.
+- `SampleBank` / `SamplePart`: notes are evened toward the median loudness of their own
+  layer (`even`), on the K-weighted loudness, so the layers keep their steps; the limit is
+  now +-12 dB. The lute and the oud even at 0.8 (their upper register comes up).
+- Levels: the lute and oud gains set from the measurements, per Character, to sit about
+  1.5 LU above their Place's median (plucked notes decay and are masked by the sustained
+  parts, so a little above reads as level): Tavern -0.6 / +2.9 / +2.0 LU; Desert +0.9 /
+  +2.1 / +1.5 LU. Quiet Corner needs the most (single arpeggio notes where the others strum
+  chords), and the Endless Dunes' sparse phrases.
+- The kalimba came up about 6.6 LU with the new layer steps (its soft takes were flattened
+  before): the Forest kalimba and the Biodome water plucks were brought back down by that
+  much (both within 1 LU of where they were in every Character).
+
+**Tests:** a new `balance` group (in the CI shards) reports every instrument of the five
+Places with recordings, per Character, and checks the lute and the oud against their
+Place's other instruments (within 2.5 LU on average and 4.5 in every Character; the
+Desert's wind is left out as background). `samples`: every guitar and kalimba note's
+layers step up evenly (measured as played), and the hard guitar layer is louder than the
+soft on all eight checked notes (was seven). The 15a check "within 4 dB of the model it
+replaced" no longer applies to the two guitars (they are meant to be louder now).
+
+Full suite (Linux, six shards): 3845 passed, 0 failed.
 

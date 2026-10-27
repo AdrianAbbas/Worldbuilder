@@ -331,7 +331,7 @@ void ForestPlace::configure(const PlaceContext& c) {
         p.highestKey = 95;
         p.spread = 0.7f;
         p.voices = byQuality(q, 4, 5, 6);
-        p.gain = 9.0f;
+        p.gain = 4.2f;
     }
     // Strings: a soft section pad; in dark woods it trembles with Tension.
     {

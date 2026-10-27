@@ -33,11 +33,13 @@ void Instrument::index() {
         lowRoot = std::min(lowRoot, z.root);
         highRoot = std::max(highRoot, z.root);
     }
-    std::vector<float> levels;
-    for (const auto& z : zones) levels.push_back(z.rmsDb);
-    if (!levels.empty()) {
+    for (int layer = 0; layer < int(layerMedianDb.size()); ++layer) {
+        std::vector<float> levels;
+        for (const auto& z : zones)
+            if (z.layer == layer) levels.push_back(z.loudnessDb);
+        if (levels.empty()) continue;
         std::nth_element(levels.begin(), levels.begin() + std::ptrdiff_t(levels.size() / 2), levels.end());
-        medianRmsDb = levels[levels.size() / 2];
+        layerMedianDb[std::size_t(layer)] = levels[levels.size() / 2];
     }
     lowKey = std::clamp(lowKey, 0, 127);
     highKey = std::clamp(highKey, lowKey, 127);
@@ -246,6 +248,7 @@ bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<i
         zone.layer = std::clamp(int(z["layer"]), 0, into.layers - 1);
         zone.rr = int(z["rr"]);
         zone.rmsDb = float(double(z["rms"]));
+        zone.loudnessDb = z.hasProperty("loudness") ? float(double(z["loudness"])) : zone.rmsDb;
         if (z.hasProperty("loopStart")) {
             zone.loopStart = int(z["loopStart"]);
             zone.loopEnd = int(z["loopEnd"]);
