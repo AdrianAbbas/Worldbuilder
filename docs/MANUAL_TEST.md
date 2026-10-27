@@ -747,3 +747,16 @@ Nothing in the sound changed; this is about the look and that every control stil
 - [ ] **Location names**: none in the sky until you hover a star or moon; during a
   journey only the start and the destination are named; never over the PLANET plate or
   the Places.
+
+## Arrangement persistence check (fix after the GarageBand round)
+
+- [ ] In a new instance, open ARRANGE and add a few sections (or a template). The top bar
+  now reads **ARRANGEMENT: ON - INTRO**; PLAY MODE in the footer says Arrangement.
+- [ ] PREVIEW, then close ARRANGE and close the plugin window. Press play in GarageBand:
+  the sections play, and the top bar names each one as it plays.
+- [ ] Save the project, close it, reopen it: the arrangement is there and plays.
+- [ ] Add or change a Place, press INSPIRE: the arrangement keeps its sections.
+- [ ] Click the indicator (OFF): Play Mode goes back to Transport and the host plays the
+  plain world. Click it again (ON): the sections play again.
+- [ ] An older project with an arrangement that never played opens with Play Mode
+  Arrangement.

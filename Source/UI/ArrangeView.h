@@ -62,6 +62,8 @@ public:
     void setLocation(int location);
     void setPlanet(int planet);
     void setWorldOverride(int control, int percent);
+    // Previews from a section (the PREVIEW button; also used by the tests).
+    void startPreview(int section);
 
 private:
     void timerCallback() override;
@@ -78,7 +80,6 @@ private:
     void showRowMenu(int slot, int element);
     void showWorldMenu();
     void refreshLocations();
-    void startPreview(int section);
     // The grid's rows: a header per active slot, then its six instruments.
     struct Row {
         int slot = 0, element = -1;   // element -1: the slot's header

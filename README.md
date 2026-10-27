@@ -148,6 +148,9 @@ the first Location and whose climax travels to the last.
   play in the host plays its sections and travels between its Locations. In Transport
   mode you hear its first Location as it stands.
 - It keeps your session settings: Power, Master Level, Quality and Place Outputs.
+- **INSPIRE** keeps an arrangement you have built (its sections then play the new
+  Places); with none, it brings its own. Loading a factory scene replaces it with the
+  scene's.
 - **UNDO** (beside INSPIRE) brings back the world from before the last scene or
   INSPIRE, including your arrangement, Locations and Play Mode.
 - A scene is a starting point: change anything, save it as a `.world` file or with the
@@ -246,6 +249,13 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
 - **Pattern variants:** in the Pattern Editor every instrument has tabs **A, B, C** and
   **FILL**. Until you edit them, B is a busier take on A, C a sparser one and the Fill
   the busiest, building over its bar.
+- **Your arrangement is saved and played.** Building the first sections switches Play
+  Mode to **Arrangement**, so pressing play in the host plays them. The top bar shows
+  **ARRANGEMENT: ON** with the section playing (or **OFF**); click it to switch. If you
+  choose Free or Transport yourself, the arrangement stays saved in the project and plays
+  again when you switch back. Closing ARRANGE or the plugin window, changing Places,
+  INSPIRE and saving or reopening the project keep it. PREVIEW and the host's playback
+  sound exactly the same.
 - **Play Mode Arrangement** (footer): like Transport, the plugin plays while the host
   plays and follows its song position, and plays the section the arrangement has
   there. Starting playback at bar 37 plays exactly what bar 37 holds, so playback and

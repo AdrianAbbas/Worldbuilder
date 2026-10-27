@@ -11,6 +11,10 @@ and sent eight fixes; their checklist and handoff are in the
 milestone starts its own progress checklist; a resumed session continues from the first
 unticked item.
 
+After that round the developer reported that arrangements did not persist; the fix is in
+[Arrangement persistence fix](#arrangement-persistence-fix-2026-10-27). Milestone 14 (MIDI
+keyboard play and record) follows it.
+
 ---
 
 ## Lessons carried over from VEIL
@@ -4509,3 +4513,67 @@ balance and the ENVIRONMENT slider; levels after INSPIRE and in the arrangement;
 - At 150 % UI size on a non-Retina screen a font pixel is 1 or 2 device pixels (crisp but
   slightly uneven); whole at 100 %, 200 % and on Retina.
 - Carried over: 4/4 only; the `push-access-check` branch can be deleted.
+
+## Arrangement persistence fix (2026-10-27)
+
+The developer: "When I build an arrangement and leave the ARRANGE preview, it no longer
+plays. It feels like it wasn't saved." Reported during the Milestone 14 session and
+fixed first.
+
+### Progress checklist
+
+- [x] Find out whether the arrangement data was lost or only the Play Mode changed
+- [x] The arrangement always persists and plays when the host plays (Arrangement mode on the first sections)
+- [x] ARRANGEMENT: ON / OFF indicator with the section name in the top bar (click to switch)
+- [x] Preview and playback identical (test); a chosen Free or Transport keeps the arrangement for later
+- [x] Test: build, close and reopen the editor, save and restore, play from the host
+
+### Which it was
+
+**The data was not being lost; the Play Mode was the cause** (with one real loss, Inspire).
+A new test built an arrangement in the ARRANGE view, previewed, closed the view and the
+editor, reopened it, saved and restored the state into a fresh instance: with the old
+code the arrangement came through every step identical. What failed was playback: a new
+instance's Play Mode is **Transport**, and the host's playback follows the arrangement
+only in Play Mode **Arrangement**. PREVIEW plays the arrangement in any Play Mode, so it
+sounded right in the view and stopped the moment the host played. The ARRANGE view's
+status line said so in small print, which is easy to miss.
+
+One real loss: **INSPIRE replaced the arrangement** with its own scene's (on purpose at
+the time; UNDO brought it back). It now keeps the composer's arrangement when there is
+one. Changing Places, closing views, reopening the editor and saving never touched it.
+
+### What changed
+
+- **Play Mode follows the arrangement.** When an arrangement goes from no sections to some
+  (the first + SECTION, a template, Auto-arrange), Play Mode switches to Arrangement
+  (`WorldbuilderProcessor::serviceArrangement`, on the processor's 10 Hz timer, so it
+  works with the editor closed). A Play Mode chosen after that is kept; the arrangement
+  stays saved and plays again when Arrangement is chosen again.
+- **Older projects** (state version < 4) that hold an arrangement with Play Mode
+  Transport open in Arrangement: that combination was the bug. From version 4 the saved
+  Play Mode is respected.
+- **The top bar** has an **ARRANGEMENT: ON - <SECTION>** / **ARRANGEMENT: OFF** button left
+  of ARRANGE. A click switches Arrangement on, or off back to the Play Mode before it;
+  with no sections it opens ARRANGE.
+- **Inspire** keeps an existing arrangement (and Play Mode Arrangement unless Free).
+- Preview and playback were already the same path; the new test confirms it sample for
+  sample (5 s of a five-section arrangement over two Places, max difference 0).
+- The indicator draws its two lines (state over section) in a 132 px button, so the scene
+  browser keeps its 150 px in the header (the existing layout check caught the first,
+  wider version).
+
+### Tests (`--only arrpersist`, 11 checks)
+
+Build three sections in the ARRANGE view, preview, close the view and the editor: kept,
+Play Mode Arrangement, the reopened editor says ARRANGEMENT: ON; save and restore into a
+fresh instance: identical and still Arrangement; a Place added and Inspire: kept; the
+host plays from bar 1: sections 0, 1, 2 in turn; Transport chosen on purpose stays
+Transport with the arrangement saved; back to Arrangement: it plays again; PREVIEW and
+host playback identical. With the fix disabled, 6 of the 11 fail (Play Mode, the
+indicator, the playback and Inspire), the persistence checks pass: the evidence for the
+diagnosis above.
+
+Full Linux suite with the fix: 3684 passed and 1 failed on the first run (the header
+layout check, fixed as above); the groups touched (arrpersist, editor, arrangement,
+scenes, state) then passed 155 of 155.

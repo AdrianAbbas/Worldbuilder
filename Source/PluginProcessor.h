@@ -100,6 +100,15 @@ public:
     juce::String sceneName() const;
     int factoryIndex() const;   // -1: not a factory scene
 
+    // The arrangement plays when the host plays (the fix after Milestone 13): the first
+    // sections built switch Play Mode to Arrangement; a Play Mode chosen afterwards is
+    // kept (the arrangement stays saved either way). The timer calls it; the tests too.
+    void serviceArrangement();
+    // Whether the host's playback follows the arrangement (it has sections and Play Mode
+    // is Arrangement), and switching that on or off (off: back to the Play Mode before).
+    bool arrangementOn() const;
+    void setArrangementOn(bool on);
+
 private:
     wb::EngineControls readControls() const noexcept;
     wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
@@ -112,7 +121,10 @@ private:
     void timerCallback() override {
         serviceLocations();
         patterns.syncTypes(slotTypes());
+        serviceArrangement();
     }
+    int arrangementSeen = 0;   // sections when last looked at (0 -> some: Play Mode Arrangement)
+    float modeBeforeArrangement = float(wb::PlayTransport);
     static constexpr int travelPiece = 128;   // samples per piece while a journey is under way
     uint32_t appliedArrival = 0;
     juce::String sceneUndo;   // the world before the last scene load or Inspire (a .world text)

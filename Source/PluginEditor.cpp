@@ -291,6 +291,19 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     ui::setIcon(arrangeToggle, ui::Icon::Path);
     arrangeToggle.onClick = [this] { arrange->isVisible() ? closeArrange() : openArrange(); };
     addAndMakeVisible(arrangeToggle);
+    arrangementState.setTooltip("Whether the host's playback follows the arrangement (Play Mode Arrangement), and the section playing. "
+                                "Click to switch: OFF goes back to the Play Mode before (the arrangement stays saved). With no "
+                                "sections yet, a click opens ARRANGE.");
+    arrangementState.setColour(juce::TextButton::buttonOnColourId, ui::colours::brass);
+    arrangementState.onClick = [this] {
+        if (processor.arrangement.get().count <= 0) {
+            openArrange();
+            return;
+        }
+        processor.setArrangementOn(!processor.arrangementOn());
+        refreshArrangementState();
+    };
+    addAndMakeVisible(arrangementState);
 
     // Scenes: the factory scenes (previous, the menu, next), INSPIRE and its UNDO.
     scenePrev.setTooltip("The previous factory scene");
@@ -596,11 +609,12 @@ void WorldbuilderEditor::resized() {
         knobFor[std::size_t(PIntensity)]->setBounds(block.withLeft(block.getRight() - 46).withSizeKeepingCentre(46, 46));
         intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(124, 30);
         arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 16 - 100, header.getCentreY() - 13, 100, 26));
+        arrangementState.setBounds(juce::Rectangle<int>(arrangeToggle.getX() - 4 - 132, header.getCentreY() - 13, 132, 26));
         // The scene browser, INSPIRE and UNDO, right of the title.
-        auto row = juce::Rectangle<int>(headerTitle.getRight() + 14, header.getCentreY() - 13, arrangeToggle.getX() - 18 - headerTitle.getRight() - 14, 26);
+        auto row = juce::Rectangle<int>(headerTitle.getRight() + 14, header.getCentreY() - 13, arrangementState.getX() - 6 - headerTitle.getRight() - 14, 26);
         sceneUndo.setBounds(row.removeFromRight(62));
         row.removeFromRight(4);
-        inspireToggle.setBounds(row.removeFromRight(90));
+        inspireToggle.setBounds(row.removeFromRight(84));
         row.removeFromRight(10);
         scenePrev.setBounds(row.removeFromLeft(24));
         sceneNext.setBounds(row.removeFromRight(24));
@@ -1518,6 +1532,36 @@ void WorldbuilderEditor::paintOverChildren(juce::Graphics&) {
     paintStarted = -1;
 }
 
+void WorldbuilderEditor::TwoLineButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
+    getLookAndFeel().drawButtonBackground(g, *this, findColour(getToggleState() ? buttonOnColourId : buttonColourId), highlighted, down);
+    const auto& pal = pixel::theme().colours;
+    const auto text = getButtonText();
+    const int split = text.indexOf(" - ");
+    const auto top = split < 0 ? text : text.substring(0, split), bottom = split < 0 ? juce::String() : text.substring(split + 3);
+    auto r = getLocalBounds().reduced(4, 2);
+    const auto font = pixel::textWidthLogical(top, pixel::Font::Small) <= r.getWidth() ? pixel::Font::Small : pixel::Font::Tiny;
+    if (bottom.isEmpty()) {
+        pixel::drawText(g, top, r, pal.ink, juce::Justification::centred, font);
+        return;
+    }
+    pixel::drawText(g, top, r.removeFromTop(r.getHeight() / 2), pal.ink, juce::Justification::centred, font);
+    pixel::drawTinyText(g, bottom, r, getToggleState() ? pal.ink : pal.inkDim, juce::Justification::centred);
+}
+
+void WorldbuilderEditor::refreshArrangementState() {
+    const auto a = processor.arrangement.get();
+    const bool on = processor.arrangementOn();
+    juce::String text = on ? "ARRANGEMENT: ON" : "ARRANGEMENT: OFF";
+    if (on) {
+        // The section playing; stopped, the first one (where playback from bar 1 starts).
+        const int section = processor.engine.arrangeSection.load(std::memory_order_relaxed);
+        if (section == -2) text << " - END";
+        else if (a.count > 0) text << " - " << juce::String(a.sections[std::size_t(std::clamp(section, 0, a.count - 1))].nameText()).toUpperCase();
+    }
+    if (arrangementState.getButtonText() != text) arrangementState.setButtonText(text);
+    if (arrangementState.getToggleState() != on) arrangementState.setToggleState(on, juce::dontSendNotification);
+}
+
 void WorldbuilderEditor::settle(float seconds) {
     for (float t = 0; t < seconds; t += 1.0f / 30.0f) stepAnimation(1.0f / 30.0f);
 }
@@ -1532,6 +1576,7 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         if (sceneMenu.getButtonText() != name) sceneMenu.setButtonText(name);
         if (sceneUndo.isEnabled() != processor.canUndoScene()) sceneUndo.setEnabled(processor.canUndoScene());
     }
+    refreshArrangementState();
     updateTheme(seconds);
     // The whole interface repaints while the Places' colours are moving.
     if (themeMoving) repaint();

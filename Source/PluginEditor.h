@@ -43,6 +43,8 @@ public:
     void closeArrange();
     wb::ui::ArrangeView& arrangeView() { return *arrange; }
     juce::Button& arrangeButton() { return arrangeToggle; }
+    // The top bar's ARRANGEMENT: ON / OFF (with the section playing); a click switches it.
+    juce::TextButton& arrangementIndicator() { return arrangementState; }
     wb::ui::CapturePanel& capturePanel() { return *capture; }
     wb::ui::LocationBar& locationBar() { return *locationRow; }
     // Where Location i's marker sits on the globe's orbit.
@@ -187,6 +189,13 @@ private:
     std::unique_ptr<wb::ui::PatternEditor> patterns;
     std::unique_ptr<wb::ui::ArrangeView> arrange;
     juce::TextButton arrangeToggle { "ARRANGE" };
+    // Two lines in the space of one: ARRANGEMENT: ON / OFF over the section's name.
+    struct TwoLineButton final : juce::TextButton {
+        using juce::TextButton::TextButton;
+        void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
+    };
+    TwoLineButton arrangementState { "ARRANGEMENT: OFF" };
+    void refreshArrangementState();
     juce::TextButton scenePrev { "<" }, sceneNext { ">" }, sceneMenu, inspireToggle { "INSPIRE" }, sceneUndo { "UNDO" };
     // After a scene loads: the strips, the panels and the ARRANGE view show it.
     void sceneChanged();

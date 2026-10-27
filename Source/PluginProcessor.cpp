@@ -482,6 +482,7 @@ void WorldbuilderProcessor::loadScene(const scenes::Scene& scene) {
         locations.setColour(i, l.colour);
     }
     arrangement.set(scenes::arrangement(scene), true);
+    arrangementSeen = arrangement.get().count;
     parameters.state.setProperty("scene", juce::String(scene.name), nullptr);
 }
 
@@ -493,7 +494,39 @@ bool WorldbuilderProcessor::loadFactoryScene(int index) {
 
 void WorldbuilderProcessor::inspire() {
     const auto seed = scenes::nextSeed(uint32_t(juce::roundToInt(raw[PSeed]->load())));
+    // The composer's own arrangement stays (UNDO brings the whole world back anyway);
+    // with none, Inspire's scene brings one.
+    const auto kept = arrangement.get();
     loadScene(scenes::inspire(seed));
+    if (kept.count > 0) {
+        arrangement.set(kept, false);
+        if (juce::roundToInt(raw[PPlayMode]->load()) != PlayFree) setValue(PPlayMode, float(PlayArrangement));
+    }
+    arrangementSeen = arrangement.get().count;
+}
+
+void WorldbuilderProcessor::serviceArrangement() {
+    const int count = arrangement.get().count;
+    const int mode = juce::roundToInt(raw[PPlayMode]->load());
+    if (arrangementSeen == 0 && count > 0 && mode != PlayArrangement) {
+        modeBeforeArrangement = float(mode);
+        setValue(PPlayMode, float(PlayArrangement));
+    }
+    arrangementSeen = count;
+}
+
+bool WorldbuilderProcessor::arrangementOn() const {
+    return arrangement.get().count > 0 && juce::roundToInt(raw[PPlayMode]->load()) == PlayArrangement;
+}
+
+void WorldbuilderProcessor::setArrangementOn(bool on) {
+    const int mode = juce::roundToInt(raw[PPlayMode]->load());
+    if (on && mode != PlayArrangement) {
+        modeBeforeArrangement = float(mode);
+        setValue(PPlayMode, float(PlayArrangement));
+    } else if (!on && mode == PlayArrangement) {
+        setValue(PPlayMode, juce::roundToInt(modeBeforeArrangement) == PlayArrangement ? float(PlayTransport) : modeBeforeArrangement);
+    }
 }
 
 bool WorldbuilderProcessor::undoScene() {
@@ -525,7 +558,7 @@ juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new W
 
 void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = parameters.copyState();
-    state.setProperty("version", 3, nullptr);
+    state.setProperty("version", 4, nullptr);
     patterns.syncTypes(slotTypes());
     state.removeChild(state.getChildWithName("Patterns"), nullptr);
     state.appendChild(patterns.toValueTree(), nullptr);
@@ -585,6 +618,14 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     travel.requestReset();
     // The arrangement (Milestone 11); older projects have none.
     arrangement.fromValueTree(state.getChildWithName("Arrangement"));
+    // Projects saved before version 4 could hold an arrangement that never played: Play
+    // Mode stayed Transport after it was built. They open playing it; later projects keep
+    // the Play Mode they were saved with.
+    arrangementSeen = arrangement.get().count;
+    if (int(state.getProperty("version", 0)) < 4 && arrangementSeen > 0 && juce::roundToInt(raw[PPlayMode]->load()) == PlayTransport) {
+        modeBeforeArrangement = float(PlayTransport);
+        parameters.getParameter(specs[PPlayMode].id)->setValueNotifyingHost(parameters.getParameter(specs[PPlayMode].id)->convertTo0to1(float(PlayArrangement)));
+    }
     // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
     // project stored Full, the old default, so those open with the new default (Off).
     const int overlays = int(state.getProperty("version", 0)) >= 3 ? int(state.getProperty("overlays", ui::defaultOverlayMode)) : ui::defaultOverlayMode;

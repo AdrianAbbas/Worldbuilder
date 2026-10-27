@@ -4065,6 +4065,123 @@ void play(Host& h, int64_t position = 0) {
 }
 } // namespace arrangeTest
 
+// The arrangement persists (the fix after Milestone 13): built in the ARRANGE view, it
+// survives closing the view and the editor, a saved and restored project, Place changes
+// and Inspire, and the host then plays its sections without the composer touching
+// Play Mode. Also: the ARRANGE preview sounds exactly as the host's playback.
+void testArrangementPersists(Suite& s) {
+    s.section("arrangement: persists and plays (editor closed and reopened, state saved and restored)");
+    std::vector<int> sectionsHeard;
+    {
+        Host h;
+        // A new instance: the plugin's own default Play Mode (Transport), not the tests' Free.
+        h.set("playmode", float(PlayTransport));
+        h.set("p1_type", float(Castle));
+        h.render(0.2);
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+            auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+            view->arrangeButton().onClick();
+            view->settle(0.1f);
+            auto& arrange = view->arrangeView();
+            for (int i = 0; i < 3; ++i) arrange.addSection();
+            for (int i = 0; i < 3; ++i) h.p->arrangement.resize(i, 1);
+            // The preview, then the view and the editor closed.
+            arrange.startPreview(0);
+            h.render(0.5);
+            view->arrangeButton().onClick();
+            view->settle(0.1f);
+        }
+        h.p->serviceArrangement();
+        s.check(h.p->arrangement.get().count == 3, "closing the ARRANGE view and the editor keeps the arrangement", std::to_string(h.p->arrangement.get().count));
+        s.check(juce::roundToInt(h.get("playmode")) == PlayArrangement, "building the first sections switches Play Mode to Arrangement",
+                std::to_string(juce::roundToInt(h.get("playmode"))));
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+            auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+            view->settle(0.1f);
+            s.check(view->arrangementIndicator().getButtonText().startsWith("ARRANGEMENT: ON"), "the top bar says ARRANGEMENT: ON",
+                    view->arrangementIndicator().getButtonText().toStdString());
+        }
+        // Saved and restored into a fresh instance.
+        juce::MemoryBlock state;
+        h.p->getStateInformation(state);
+        Host r;
+        r.set("playmode", float(PlayTransport));
+        r.p->setStateInformation(state.getData(), int(state.getSize()));
+        r.p->serviceArrangement();
+        s.check(r.p->arrangement.get() == h.p->arrangement.get(), "a saved and reopened project has the same arrangement");
+        s.check(juce::roundToInt(r.get("playmode")) == PlayArrangement, "and still plays it (Play Mode Arrangement restored)");
+        // Another Place in a slot, and Inspire: the arrangement stays.
+        r.set("p2_type", float(Tavern));
+        r.render(0.1);
+        r.p->serviceArrangement();
+        s.check(r.p->arrangement.get().count == 3, "adding a Place keeps the arrangement");
+        const auto before = r.p->arrangement.get();
+        r.p->inspire();
+        r.p->serviceArrangement();
+        s.check(r.p->arrangement.get().count == 3 && r.p->arrangement.get().sections[1].bars == before.sections[1].bars,
+                "Inspire keeps the composer's arrangement", std::to_string(r.p->arrangement.get().count));
+        r.set("p1_type", float(Castle));
+        // The host plays from bar 1: the sections play in turn.
+        r.playHead.playing = true;
+        r.playHead.position = 0;
+        for (int b = 0; b < int(3.5 * 2.0 * 48000 / 512); ++b) {
+            r.processOne(512);
+            const int section = r.p->engine.arrangeSection.load();
+            if (sectionsHeard.empty() || sectionsHeard.back() != section) sectionsHeard.push_back(section);
+        }
+        std::string seq;
+        for (int x : sectionsHeard) seq += std::to_string(x) + " ";
+        s.check(sectionsHeard.size() >= 3 && sectionsHeard[0] == 0 && sectionsHeard[1] == 1 && sectionsHeard[2] == 2,
+                "the host's playback plays the sections in turn", seq);
+        // Switched to Transport on purpose: saved, not played; back to Arrangement: it plays again.
+        r.playHead.playing = false;
+        r.processOne(512);
+        r.set("playmode", float(PlayTransport));
+        r.p->serviceArrangement();
+        r.playHead.playing = true;
+        r.playHead.position = 0;
+        r.render(0.3);
+        s.check(r.p->engine.arrangeSection.load() == -1 && r.p->arrangement.get().count == 3 && juce::roundToInt(r.get("playmode")) == PlayTransport,
+                "Play Mode switched to Transport on purpose stays there; the arrangement stays saved");
+        r.playHead.playing = false;
+        r.processOne(512);
+        r.set("playmode", float(PlayArrangement));
+        r.playHead.playing = true;
+        r.playHead.position = 0;
+        r.render(0.3);
+        s.check(r.p->engine.arrangeSection.load() == 0, "switched back to Arrangement, it plays again");
+    }
+    s.section("arrangement: the ARRANGE preview sounds as the host's playback");
+    {
+        const auto build = [](Host& h) {
+            h.set("p1_type", float(Castle));
+            h.set("p2_type", float(Tavern));
+            auto a = arrangeTest::classicArc();
+            for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].bars = 1;
+            h.p->arrangement.set(a);
+            h.render(0.3);
+        };
+        Host played, previewed;
+        build(played);
+        build(previewed);
+        played.set("playmode", float(PlayArrangement));
+        played.playHead.playing = true;
+        played.playHead.position = 0;
+        const auto a = played.render(5.0);
+        previewed.set("playmode", float(PlayTransport));
+        previewed.p->previewFrom(0);
+        const auto b = previewed.render(5.0);
+        double worst = 0, energy = 0;
+        for (std::size_t i = 0; i < a.l.size(); ++i) {
+            worst = std::max({ worst, double(std::abs(a.l[i] - b.l[i])), double(std::abs(a.r[i] - b.r[i])) });
+            energy += double(a.l[i]) * a.l[i];
+        }
+        s.check(energy > 1.0e-3 && worst < 1.0e-5, "preview and playback from bar 1 are the same, sample for sample", "max difference " + std::to_string(worst));
+    }
+}
+
 void testArrangement(Suite& s) {
     using namespace arrangeTest;
     s.section("arrangement: model");
@@ -7210,6 +7327,7 @@ int main(int argc, char** argv) {
         testTinyPlanetMotion(s);
     }
     if (run("arrangement")) testArrangement(s);
+    if (run("arrpersist")) testArrangementPersists(s);
     if (run("transitions")) {
         testTransitions(s);
         transitionTest::testInterface(s);
