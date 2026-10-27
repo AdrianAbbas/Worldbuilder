@@ -11,6 +11,8 @@
 // follow the chords) and has no swing. Its length is the pattern's, or Auto: whole bars
 // covering the take, at most eight. Notes from the song keep their place in it: a note
 // played at bar 9 of the song plays at bar 9 again (the pattern repeats from bar 1).
+// With a punch region, Replace keeps the pattern (its grid and the notes outside the
+// region) and replaces only the notes inside it.
 //
 // While the take is under way its notes carry pat::Note::takeFlag, so the pattern does
 // not play them again on top of what is being played; they appear in the Pattern Editor
@@ -25,6 +27,10 @@ struct RecordSettings {
     int mode = Replace, variant = 0, quantise = QuantiseOff;
     float strength = 1.0f;
     bool autoLength = false;
+    // Punch (the Pattern Editor's transport): Replace and Into variant replace only the
+    // notes starting inside [punchIn, punchOut) beats and keep the rest of the pattern.
+    bool punch = false;
+    double punchIn = 0, punchOut = 0;
 };
 
 class Recorder {
@@ -74,7 +80,8 @@ private:
     bool open = false, isFree = false, transportTake = false, pushedUndo = false;
     int slot = 0, type = 0, element = 0, variant = 0, mode = Replace, grid = QuantiseOff;
     float strength = 1;
-    bool autoLength = false, kit = false;
+    bool autoLength = false, kit = false, punch = false;
+    double punchIn = 0, punchOut = 0;
     uint32_t changes = 0;
     double startBeat = 0, lastBeat = 0;
     pat::Element before;      // the element when the take started

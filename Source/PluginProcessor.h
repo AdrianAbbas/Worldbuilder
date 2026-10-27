@@ -128,6 +128,44 @@ public:
     void setArmed(bool on);
     wb::keys::RecordSettings recordSettings() const;
 
+    // The Pattern Editor's own transport (the hotfix after Milestone 14), so recording
+    // works like a small DAW without touching the host: Play and Stop from a playhead,
+    // a loop region, count-in and punch. It runs while the host is stopped, at the host
+    // tempo, on the world's own clock (as the ARRANGE preview does); the host starting
+    // playback ends it and the editor follows the host. Positions are beats from bar 1
+    // (the song's beats: a pattern repeats from bar 1, so they are the pattern's too).
+    enum TransportState { TransportStopped, TransportCountIn, TransportRolling };
+    static constexpr double countInBeats = 4;   // one bar (4/4)
+    struct EditorTransport {
+        std::atomic<double> playhead { 0 };             // where Play starts
+        std::atomic<bool> loop { true };
+        std::atomic<double> loopStart { 0 }, loopEnd { 16 };
+        std::atomic<bool> loopSet { false };            // dragged by the composer (else it follows the pattern's length)
+        std::atomic<bool> punch { false };              // REC records only inside the punch region
+        std::atomic<double> punchIn { 0 }, punchOut { 16 };
+        std::atomic<double> length { 16 };              // the target pattern's length (punch repeats with it)
+        // The audio thread's side: where the transport stands.
+        std::atomic<int> state { TransportStopped };
+        std::atomic<double> beat { 0 };                 // the beat playing now (rolling)
+        std::atomic<float> countLeft { 0 };             // beats of count-in left
+        // Requests from the editor (the serial says there is a new one).
+        std::atomic<bool> wanted { false };
+        std::atomic<uint32_t> serial { 0 };
+    };
+    EditorTransport transport;
+    // Play from the playhead (inside the loop region when Loop is on; after a bar of
+    // count-in when REC is armed with COUNT-IN). While rolling: plays on from the
+    // playhead again. Does nothing while the host plays.
+    void transportPlay();
+    // Stops, and REC with it (the take ends). Stopped already: the playhead goes back to
+    // the loop's start (or bar 1).
+    void transportStop();
+    // Moves the playhead; while rolling the transport plays on from there.
+    void transportLocate(double beat);
+    int transportState() const { return transport.state.load(std::memory_order_relaxed); }
+    // Whether the host's transport is playing (as the last block said).
+    bool hostRolling() const { return hostRollingOut.load(std::memory_order_relaxed); }
+
 private:
     wb::EngineControls readControls() const noexcept;
     wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
@@ -161,6 +199,14 @@ private:
     std::atomic<uint32_t> previewSerial { 0 };
     std::atomic<bool> previewOn { false };
     uint32_t previewSeen = 0;
+    // The editor's transport on the audio thread: its state, the count-in, and where a
+    // take started (a loop wraps back to its start).
+    int txState = TransportStopped;
+    uint32_t txSeen = 0;
+    double txFrom = 0, txCountBeat = 0;
+    wb::keys::Click countClick;
+    std::array<float, 256> clickScratch {}, clickScratchR {};
+    std::atomic<bool> hostRollingOut { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorldbuilderProcessor)
 };

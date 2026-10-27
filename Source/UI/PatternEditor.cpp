@@ -15,6 +15,15 @@ void setSelected(pat::Note& n, bool on) { n.flags = uint8_t(on ? (n.flags | sele
 
 juce::Colour accentFor(int type) { return placeAccent(type); }
 
+// Where the playhead stands, in beats from bar 1: the slot's beat while anything rolls
+// (the host, the editor's transport, the ARRANGE preview), else where Play starts.
+double playheadBeat(WorldbuilderProcessor& p, int slot, bool& rolling) {
+    rolling = p.engine.transportRolling.load(std::memory_order_relaxed) || p.transportState() == WorldbuilderProcessor::TransportCountIn;
+    if (rolling && p.transportState() != WorldbuilderProcessor::TransportCountIn)
+        return p.engine.slotBeat[std::size_t(std::clamp(slot, 0, placeSlots - 1))].load(std::memory_order_relaxed);
+    return p.transport.playhead.load(std::memory_order_relaxed);
+}
+
 } // namespace
 
 //==============================================================================
@@ -106,9 +115,8 @@ public:
             const int x = int(xForStep(s));
             if (x < keyWidth) continue;
             const bool bar = s % perBar == 0, beat = std::abs(std::fmod(double(s), perBeat)) < 1.0e-9;
+            // (The bars are numbered on the ruler above.)
             pixel::fillArt(g, { x, 0, u, getHeight() }, bar ? pal.rim.withAlpha(0.7f) : beat ? pal.wellLight.brighter(0.2f) : pal.wellLight.withAlpha(0.5f));
-            if (bar && s < pattern.lengthSteps)
-                pixel::drawText(g, juce::String(s / perBar + 1), { x + 4, 2, 30, 12 }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         }
         // Beyond the end of the pattern.
         if (const int end = int(xForStep(pattern.lengthSteps)); end < right) pixel::fillArt(g, { end, 0, right - end, getHeight() }, pal.well.withAlpha(0.75f));
@@ -142,13 +150,13 @@ public:
             pixel::frameArt(g, r, pal.inlay.withAlpha(0.8f));
         }
 
-        // The playhead: a bright column with a short trail.
-        const double beat = owner.processor.engine.slotBeat[std::size_t(std::max(0, owner.slotIndex))].load(std::memory_order_relaxed);
+        // The playhead: a bright column with a short trail (stopped: where Play starts).
+        bool rolling = false;
+        const double beat = playheadBeat(owner.processor, owner.slotIndex, rolling);
         if (pattern.lengthSteps > 0) {
             const double steps = beat * perBeat;
             const double pos = steps - std::floor(steps / pattern.lengthSteps) * pattern.lengthSteps;
             const int x = pixel::snap(int(xForStep(pos)));
-            const bool rolling = owner.processor.engine.transportRolling.load(std::memory_order_relaxed);
             for (int k = 1; k <= 3; ++k) pixel::fillArt(g, { x - k * u, 0, u, getHeight() }, pal.accent.withAlpha((rolling ? 0.28f : 0.1f) / float(k)));
             pixel::fillArt(g, { x, 0, u, getHeight() }, pal.accent.withAlpha(rolling ? 0.95f : 0.45f));
         }
@@ -279,16 +287,26 @@ public:
                                 : (owner.drawTool ? juce::MouseCursor::CrosshairCursor : juce::MouseCursor::NormalCursor));
     }
 
-    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override {
-        if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
-            stepWidth = std::clamp(stepWidth * (w.deltaY > 0 ? 1.15 : 1.0 / 1.15), 4.0, 48.0);
+    // Scroll and zoom with the mouse or trackpad: the wheel (or a two-finger swipe)
+    // scrolls, sideways or with Shift across the steps; Cmd/Ctrl zooms the steps around
+    // the pointer (as a pinch does), Alt zooms the rows.
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override { wheel(e.position.x, e.mods, w); }
+    void mouseMagnify(const juce::MouseEvent& e, float scale) override { owner.zoomAround(e.position.x, double(scale)); }
+    void wheel(float x, const juce::ModifierKeys& mods, const juce::MouseWheelDetails& w) {
+        const float dy = w.isReversed ? -w.deltaY : w.deltaY, dx = w.isReversed ? -w.deltaX : w.deltaX;
+        if (mods.isCommandDown() || mods.isCtrlDown()) {
+            owner.zoomAround(x, std::pow(1.15, double(dy != 0.0f ? dy : dx) * 4.0));
+        } else if (mods.isAltDown()) {
+            rowZoom = std::clamp(rowZoom * std::pow(1.15, double(dy) * 4.0), 0.6, 3.0);
             owner.resized();
-        } else if (e.mods.isShiftDown() || std::abs(w.deltaX) > std::abs(w.deltaY)) {
-            owner.hScroll.setCurrentRangeStart(owner.hScroll.getCurrentRangeStart() - (w.deltaX != 0 ? w.deltaX : w.deltaY) * 24.0);
+        } else if (mods.isShiftDown() || std::abs(dx) > std::abs(dy)) {
+            const double by = double(dx != 0.0f ? dx : dy) * 24.0 * 12.0 / stepWidth;
+            owner.hScroll.setCurrentRangeStart(owner.hScroll.getCurrentRangeStart() - by);
         } else {
-            owner.vScroll.setCurrentRangeStart(owner.vScroll.getCurrentRangeStart() - w.deltaY * 6.0);
+            owner.vScroll.setCurrentRangeStart(owner.vScroll.getCurrentRangeStart() - dy * 6.0);
         }
     }
+    double rowZoom = 1;   // Alt-wheel: taller or shorter rows than fit
 
 private:
     enum Mode { None, Move, Resize, Band };
@@ -300,6 +318,138 @@ private:
     bool moved = false, band = false;
     juce::Point<float> bandStart;
     juce::Rectangle<float> bandRect;
+};
+
+//==============================================================================
+// The bar ruler over the grid (the hotfix after Milestone 14): bar numbers and the
+// playhead (click or drag to set where Play starts; while playing, it plays on from
+// there), the loop region (drag in its lane; double-click: the whole pattern) and the
+// punch region (drag in the lowest lane; that switches PUNCH on).
+class PatternEditor::Ruler final : public juce::Component, public juce::SettableTooltipClient {
+public:
+    explicit Ruler(PatternEditor& o) : owner(o) {
+        setTooltip("Click or drag the top of the ruler to set the playhead (where PLAY and REC start). Drag in the middle lane to set the "
+                   "loop (double-click: the whole pattern), in the lowest lane to set a punch region (REC records only inside it).");
+    }
+    static constexpr int numbersHeight = 12, loopHeight = 7;
+    const auto& grid() const { return *owner.gridView; }
+    // The ruler starts where the grid's steps do.
+    float xForBeat(double beat) const { return grid().xForStep(beat * perBeat()) - float(keyWidth); }
+    double beatAt(float x) const { return grid().stepAt(x + float(keyWidth)) / perBeat(); }
+    double perBeat() const { return pat::stepsPerBeat(owner.working.pattern.resolution); }
+    double lengthBeats() const { return std::max(0.25, owner.working.pattern.lengthBeats()); }
+
+    void paint(juce::Graphics& g) override {
+        const auto& pal = pixel::theme().colours;
+        const int u = pixel::unit;
+        const auto& p = owner.working.pattern;
+        auto& t = owner.processor.transport;
+        pixel::fillArt(g, getLocalBounds(), pal.panelDark);
+        const int loopY = numbersHeight, punchY = numbersHeight + loopHeight;
+        pixel::fillArt(g, { 0, loopY, getWidth(), loopHeight }, pal.well);
+        pixel::fillArt(g, { 0, punchY, getWidth(), getHeight() - punchY }, pal.well.darker(0.2f));
+        // Bars (numbered) and beats.
+        const int perBar = pat::stepsPerBar(p.resolution);
+        const int bars = int(std::ceil(double(p.lengthSteps) / double(std::max(1, perBar)) - 1.0e-9));
+        for (int b = 0; b <= int(std::ceil(lengthBeats())); ++b) {
+            const int x = pixel::snap(int(xForBeat(b)));
+            if (x < 0 || x > getWidth()) continue;
+            const bool bar = b % 4 == 0;
+            pixel::fillArt(g, { x, bar ? 0 : numbersHeight - 4, u, bar ? getHeight() : 4 }, bar ? pal.rim.withAlpha(0.8f) : pal.wellLight);
+            if (bar && b / 4 < bars) pixel::drawText(g, juce::String(b / 4 + 1), { x + 3 * u, 0, 28, numbersHeight }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+        }
+        if (const int end = pixel::snap(int(xForBeat(lengthBeats()))); end < getWidth()) pixel::fillArt(g, { end, 0, getWidth() - end, getHeight() }, pal.well.withAlpha(0.75f));
+        // The loop region (dim when Loop is off) and the punch region (when PUNCH is on).
+        const auto band = [&](double from, double to, int y, int h, juce::Colour c) {
+            const int x0 = pixel::snap(int(xForBeat(from))), x1 = pixel::snap(int(xForBeat(to)));
+            if (x1 <= x0) return;
+            pixel::blockArt(g, { x0, y + u, x1 - x0, h - 2 * u }, c, c.brighter(0.3f), c.darker(0.3f), pal.outline);
+        };
+        band(t.loopStart.load(), t.loopEnd.load(), loopY, loopHeight, t.loop.load() ? colours::brass : pal.faceDark);
+        if (t.punch.load()) band(t.punchIn.load(), t.punchOut.load(), punchY, getHeight() - punchY, pal.peak);
+        pixel::frameArt(g, getLocalBounds(), pal.outline);
+        // The playhead (over the frame, so it shows at bar 1 too): a marker on the numbers
+        // and a line down the ruler.
+        bool rolling = false;
+        double beat = playheadBeat(owner.processor, owner.slotIndex, rolling);
+        beat -= std::floor(beat / lengthBeats()) * lengthBeats();
+        const int x = pixel::snap(int(xForBeat(beat)));
+        const auto c = rolling ? pal.accent : pal.glow;
+        pixel::fillArt(g, { x, 0, u, getHeight() }, c);
+        pixel::fillArt(g, { x - 2 * u, 0, 5 * u, u }, c);
+        pixel::fillArt(g, { x - u, u, 3 * u, u }, c);
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        auto& t = owner.processor.transport;
+        lane = e.y < numbersHeight ? Playhead : e.y < numbersHeight + loopHeight ? Loop : Punch;
+        const double at = beatAt(e.position.x);
+        if (lane == Playhead) {
+            setPlayhead(e);
+            return;
+        }
+        // On a region's edge: move that edge; elsewhere: draw a new region from here.
+        const bool loop = lane == Loop;
+        const double from = loop ? t.loopStart.load() : t.punchIn.load(), to = loop ? t.loopEnd.load() : t.punchOut.load();
+        const bool shown = loop || t.punch.load();
+        const float edge = 5.0f;
+        if (shown && std::abs(e.position.x - xForBeat(from)) <= edge) anchor = to;
+        else if (shown && std::abs(e.position.x - xForBeat(to)) <= edge) anchor = from;
+        else anchor = snapBeat(at, e.mods);
+        dragRegion(e);
+    }
+    void mouseDrag(const juce::MouseEvent& e) override {
+        if (lane == Playhead) setPlayhead(e);
+        else dragRegion(e);
+    }
+    void mouseUp(const juce::MouseEvent&) override {
+        // The playhead's new place: while playing, it plays on from there.
+        if (lane == Playhead) owner.processor.transportLocate(owner.processor.transport.playhead.load());
+        lane = None;
+    }
+    void mouseDoubleClick(const juce::MouseEvent& e) override {
+        if (e.y < numbersHeight || e.y >= numbersHeight + loopHeight) return;
+        owner.processor.transport.loopSet.store(false);
+        owner.syncTransport();
+        repaint();
+    }
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override { owner.gridView->wheel(e.position.x + float(keyWidth), e.mods, w); }
+    void mouseMagnify(const juce::MouseEvent& e, float scale) override { owner.zoomAround(e.position.x + float(keyWidth), double(scale)); }
+
+private:
+    enum Lane { None, Playhead, Loop, Punch };
+    // Regions snap to beats (with Shift: to the grid's steps); the playhead to steps.
+    double snapBeat(double beat, const juce::ModifierKeys& mods) const {
+        const double grain = mods.isShiftDown() ? 1.0 / perBeat() : 1.0;
+        return std::clamp(std::round(beat / grain) * grain, 0.0, lengthBeats());
+    }
+    void setPlayhead(const juce::MouseEvent& e) {
+        const double step = std::floor(grid().stepAt(e.position.x + float(keyWidth)) + 0.5);
+        const double beat = std::clamp(step / perBeat(), 0.0, std::max(0.0, lengthBeats() - 1.0 / perBeat()));
+        owner.processor.transport.playhead.store(beat);
+        repaint();
+        owner.gridView->repaint();
+    }
+    void dragRegion(const juce::MouseEvent& e) {
+        auto& t = owner.processor.transport;
+        const double at = snapBeat(beatAt(e.position.x), e.mods);
+        const double from = std::min(anchor, at), to = std::max(anchor, at);
+        if (to - from < 1.0e-6) return;
+        if (lane == Loop) {
+            t.loopStart.store(from);
+            t.loopEnd.store(to);
+            t.loopSet.store(true);
+        } else {
+            t.punchIn.store(from);
+            t.punchOut.store(to);
+            t.punch.store(true);
+            owner.keys->refresh();
+        }
+        repaint();
+    }
+    PatternEditor& owner;
+    Lane lane = None;
+    double anchor = 0;
 };
 
 //==============================================================================
@@ -442,6 +592,35 @@ private:
 PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     setWantsKeyboardFocus(true);
     gridView = std::make_unique<Grid>(*this);
+    ruler = std::make_unique<Ruler>(*this);
+    addAndMakeVisible(*ruler);
+    // The transport (the hotfix after Milestone 14): WORLDBUILDER's own Play, Stop and
+    // Loop, at the host tempo, while the host is stopped.
+    setIcon(playButton, Icon::Play);
+    setIcon(stopButton, Icon::Stop);
+    setIcon(loopButton, Icon::Loop);
+    playButton.setTooltip("Play from the playhead (the triangle on the ruler), at the host tempo, while the host is stopped. "
+                          "While the host plays, the editor follows it.");
+    stopButton.setTooltip("Stop (and stop recording). The playhead goes back to where Play started; stop again: back to the loop's start.");
+    loopButton.setTooltip("Loop: play the loop region (the bar on the ruler, dragged to set it) round and round. Recording, each pass is a new "
+                          "take (Replace) or adds to the last (Overdub).");
+    loopButton.setClickingTogglesState(true);
+    for (auto* b : { &playButton, &loopButton }) b->setColour(juce::TextButton::buttonOnColourId, colours::brass);
+    playButton.onClick = [this] {
+        processor.transportPlay();
+        keys->refresh();
+    };
+    stopButton.onClick = [this] {
+        processor.transportStop();
+        keys->refresh();
+        gridView->repaint();
+        ruler->repaint();
+    };
+    loopButton.onClick = [this] {
+        processor.transport.loop.store(loopButton.getToggleState());
+        ruler->repaint();
+    };
+    for (auto* b : { &playButton, &stopButton, &loopButton }) addAndMakeVisible(*b);
     velocityLane = std::make_unique<Lane>(*this, true);
     probabilityLane = std::make_unique<Lane>(*this, false);
     dragOut = std::make_unique<DragOut>(*this);
@@ -680,10 +859,57 @@ PatternEditor::~PatternEditor() {
     vScroll.removeListener(this);
 }
 
+juce::Component& PatternEditor::rulerView() { return *ruler; }
+double PatternEditor::gridStepWidth() const { return gridView->stepWidth; }
+double PatternEditor::gridFirstStep() const { return gridView->firstStep; }
+
+void PatternEditor::zoomAround(float x, double factor) {
+    if (!std::isfinite(factor) || factor <= 0.0) return;
+    // The step under the pointer stays under it.
+    const double at = gridView->stepAt(std::max(float(keyWidth), x));
+    gridView->stepWidth = std::clamp(gridView->stepWidth * factor, 2.0, 64.0);
+    gridView->firstStep = std::max(0.0, at - double(std::max(float(keyWidth), x) - float(keyWidth)) / gridView->stepWidth);
+    resized();
+    repaint();
+}
+
+void PatternEditor::followPlayhead() {
+    bool rolling = false;
+    const double beat = playheadBeat(processor, slotIndex, rolling);
+    const auto& p = working.pattern;
+    if (!rolling || p.lengthSteps <= 0) return;
+    double step = beat * pat::stepsPerBeat(p.resolution);
+    step -= std::floor(step / p.lengthSteps) * p.lengthSteps;
+    const double first = gridView->firstStep, shown = double(gridView->visibleSteps());
+    // The playhead out of view: a page on, so it stays visible while it plays.
+    if (step < first || step > first + shown - 1.0) {
+        hScroll.setCurrentRangeStart(std::max(0.0, step - 1.0));
+        scrollBarMoved(&hScroll, hScroll.getCurrentRangeStart());   // now, not when the scroll bar's async update comes
+    }
+}
+
+void PatternEditor::syncTransport() {
+    auto& t = processor.transport;
+    const double length = std::max(0.25, working.pattern.lengthBeats());
+    t.length.store(length);
+    const bool set = t.loopSet.load();
+    if (!set || t.loopEnd.load() > length + 1.0e-6) {
+        t.loopStart.store(set ? std::min(t.loopStart.load(), length - 0.25) : 0.0);
+        t.loopEnd.store(length);
+    }
+    if (t.punchOut.load() > length + 1.0e-6 || t.punchOut.load() <= t.punchIn.load()) {
+        t.punchIn.store(std::min(t.punchIn.load(), std::max(0.0, length - 1.0)));
+        t.punchOut.store(length);
+    }
+    if (t.playhead.load() >= length) t.playhead.store(0.0);
+    loopButton.setToggleState(t.loop.load(), juce::dontSendNotification);
+}
+
 void PatternEditor::scrollBarMoved(juce::ScrollBar* bar, double start) {
     if (bar == &hScroll) gridView->firstStep = start;
     else gridView->firstRow = int(start);
     gridView->repaint();
+    ruler->repaint();
     velocityLane->repaint();
     probabilityLane->repaint();
 }
@@ -841,6 +1067,7 @@ void PatternEditor::refreshControls() {
     undoButton.setEnabled(!undoStack.empty());
     redoButton.setEnabled(!redoStack.empty());
     pasteButton.setEnabled(!clipboard.empty());
+    syncTransport();
     repaint(statusArea);
 }
 
@@ -1185,7 +1412,16 @@ void PatternEditor::timerCallback() {
         refreshFromStore();
         resized();
     }
+    // The transport's buttons: lit while it plays; the host playing leads instead.
+    const bool host = processor.hostRolling();
+    const int state = processor.transportState();
+    playButton.setToggleState(!host && state != WorldbuilderProcessor::TransportStopped, juce::dontSendNotification);
+    playButton.setEnabled(!host);
+    stopButton.setEnabled(!host);
+    loopButton.setToggleState(processor.transport.loop.load(), juce::dontSendNotification);
+    followPlayhead();
     gridView->repaint();
+    ruler->repaint();
 }
 
 void PatternEditor::setMuteSolo(bool mute, bool solo) {
@@ -1310,18 +1546,28 @@ void PatternEditor::resized() {
     r.removeFromTop(4);
     statusArea = r.removeFromBottom(16);
     r.removeFromBottom(2);
-    auto lanes = r.removeFromBottom(30);
+    auto lanes = r.removeFromBottom(24);
     probabilityLane->setBounds(lanes.withTrimmedRight(12));
     r.removeFromBottom(3);
-    velocityLane->setBounds(r.removeFromBottom(44).withTrimmedRight(12));
+    velocityLane->setBounds(r.removeFromBottom(34).withTrimmedRight(12));
     r.removeFromBottom(3);
     hScroll.setBounds(r.removeFromBottom(10).withTrimmedLeft(keyWidth).withTrimmedRight(12));
     r.removeFromBottom(2);
     vScroll.setBounds(r.removeFromRight(10));
     r.removeFromRight(2);
-    // Rows: as tall as fits, between 10 and 22 px.
+    {
+        // The transport over the key column, the ruler over the steps.
+        auto top = r.removeFromTop(26);
+        auto buttons = top.removeFromLeft(keyWidth);
+        const int w = buttons.getWidth() / 3;
+        for (auto* b : { &playButton, &stopButton, &loopButton }) b->setBounds(buttons.removeFromLeft(w).reduced(1, 1));
+        ruler->setBounds(top);
+        r.removeFromTop(2);
+    }
+    // Rows: as tall as fits, between 10 and 22 px (Alt-wheel zooms them).
     const int count = std::max(1, int(rows.size()));
-    gridView->rowHeight = std::clamp(r.getHeight() / count, isKit() ? 22 : 12, isKit() ? 96 : 18);
+    const int fit = std::clamp(r.getHeight() / count, isKit() ? 22 : 12, isKit() ? 96 : 18);
+    gridView->rowHeight = std::clamp(int(std::lround(double(fit) * gridView->rowZoom)), 8, isKit() ? 96 : 48);
     gridView->setBounds(r);
 
     const int total = working.pattern.lengthSteps;

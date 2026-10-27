@@ -36,6 +36,14 @@ public:
     void addNote(int step, int degree, int length = 1, int velocity = 100);
     const pat::Element& shown() const { return working; }
     KeysPanel& keysPanel() { return *keys; }
+    // The transport (the hotfix after Milestone 14): Play, Stop, Loop and the bar ruler.
+    juce::TextButton& playControl() { return playButton; }
+    juce::TextButton& stopControl() { return stopButton; }
+    juce::TextButton& loopControl() { return loopButton; }
+    juce::Component& rulerView();
+    // The grid's horizontal zoom (px per step) and first step shown, for the tests.
+    double gridStepWidth() const;
+    double gridFirstStep() const;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -48,6 +56,7 @@ private:
     class Lane;
     class DragOut;
     class ElementTab;
+    class Ruler;
     struct Row {
         int degree = 0, alter = 0;
         juce::String label;
@@ -82,6 +91,16 @@ private:
     void setGrid(int resolution, int bars, int steps);
     void setFollowChords(bool on);
     juce::File tempMidiFile(int element) const;
+    // The transport's loop follows the pattern's length until the composer drags it; its
+    // positions stay inside the pattern.
+    void syncTransport();
+public:
+    // Zooms the grid around an x position (px in the grid).
+    void zoomAround(float x, double factor);
+    // Rolling: the grid scrolls to keep the playhead in view (the editor's timer calls it).
+    void followPlayhead();
+private:
+
 
     // One variant of an element as the editor works on it (its pattern in `pattern`, its
     // edited flag and Generate count in the controls), and back into the element.
@@ -130,6 +149,8 @@ private:
     std::unique_ptr<KeysPanel> keys;   // KEYS (Milestone 14)
     juce::Rectangle<int> keysArea;
     std::unique_ptr<Grid> gridView;
+    std::unique_ptr<Ruler> ruler;
+    juce::TextButton playButton { "PLAY" }, stopButton { "STOP" }, loopButton { "LOOP" };
     std::unique_ptr<Lane> velocityLane, probabilityLane;
     juce::ScrollBar hScroll { false }, vScroll { true };
     std::unique_ptr<juce::FileChooser> chooser;

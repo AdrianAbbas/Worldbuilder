@@ -169,6 +169,14 @@ void drawIcon(juce::Graphics& g, Icon icon, juce::Rectangle<float> area, juce::C
             rect(3, 5, 18, 14, 1.5f); for (float x : { 6.0f, 9.0f, 12.0f, 15.0f, 18.0f }) line(x, 5, x, 19);
             for (float x : { 7.5f, 10.5f, 16.5f }) solid.addRectangle(box.getX() + (x - 0.9f) * k, box.getY() + 5 * k, 1.8f * k, 8 * k);
             break;
+        case Icon::Play:   // a solid triangle
+            solid.startNewSubPath(P(6, 3)); solid.lineTo(P(21, 12)); solid.lineTo(P(6, 21)); solid.closeSubPath();
+            break;
+        case Icon::Stop: solid.addRectangle(box.getX() + 4 * k, box.getY() + 4 * k, 16 * k, 16 * k); break;
+        case Icon::Loop:   // over and back (crisp at small sizes)
+            line(3, 8, 19, 8); arrowHead(20, 8, 1, 0); line(21, 16, 5, 16); arrowHead(4, 16, -1, 0);
+            break;
+        case Icon::Record: dot(12, 12, 8.5f); break;
         case Icon::None:
         case Icon::Count: break;
     }

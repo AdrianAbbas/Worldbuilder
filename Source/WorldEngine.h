@@ -72,6 +72,8 @@ public:
     static constexpr float defaultBpm = 96;
     // The beat the next chunk starts on (audio thread).
     double nextBeat() const { return beat; }
+    // The beat of the next sample out (the FIFO holds a few samples rendered ahead).
+    double outputBeat() const { return beat - double(dsp::chunk - fifoRead) * double(bpm) / 60.0 / rate; }
     void process(float* left, float* right, int n, const EngineControls& controls);
     // As process(), also writing each slot's own output: slotOut[2 * s] and [2 * s + 1]
     // (nullptr: that slot has none). A Place's output carries its dry sound (its own

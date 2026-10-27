@@ -7286,11 +7286,20 @@ void testKeys(Suite& s) {
         view->settle(0.1f);
         auto& panel = view->patternEditor().keysPanel();
         panel.refresh();
-        s.check(panel.isVisible() && panel.getHeight() >= 60 && panel.targetChoice().getNumItems() == 1 + placeElements,
-                "KEYS shows a Play target list (OFF and each instrument of the Place)", std::to_string(panel.targetChoice().getNumItems()));
-        s.check(panel.statusText().startsWith("No Play target"), "with no target it says the keyboard does nothing");
-        panel.targetChoice().setSelectedId(ui::KeysPanel::targetId(0, CastlePlace::Bells), juce::sendNotificationSync);
-        s.check(h.p->keys.slot == 0 && h.p->keys.element == CastlePlace::Bells, "choosing a target sets it");
+        // The hotfix after Milestone 14: no target list; the tab shown is the target.
+        s.check(panel.isVisible() && panel.getHeight() >= 60 && h.p->keys.slot == 0 && h.p->keys.element == CastlePlace::Harp,
+                "opening an instrument's tab makes it the Play target (no target list)",
+                std::to_string(h.p->keys.slot.load()) + "/" + std::to_string(h.p->keys.element.load()));
+        s.check(panel.targetText() == "PLAYS HARP", "the KEYS row says what the keyboard plays", panel.targetText().toStdString());
+        view->patternEditor().selectElement(CastlePlace::Bells);
+        panel.refresh();
+        s.check(h.p->keys.slot == 0 && h.p->keys.element == CastlePlace::Bells && panel.targetText() == "PLAYS BELLS",
+                "switching tabs switches the target with it", panel.targetText().toStdString());
+        {
+            bool list = false;
+            for (auto* c : panel.getChildren()) list |= dynamic_cast<juce::ComboBox*>(c) != nullptr && dynamic_cast<juce::ComboBox*>(c)->getNumItems() > 1 + placeElements;
+            s.check(!list, "no Play target list in the KEYS rows");
+        }
         const auto click = [](juce::Button& b) {
             b.setToggleState(!b.getToggleState(), juce::dontSendNotification);
             b.onClick();
@@ -7836,6 +7845,251 @@ void testOverlap(Suite& s) {
     check("the ARRANGE view");
 }
 
+// The Pattern Editor's own transport (the hotfix after Milestone 14): Play / Stop / Loop
+// from a playhead at the host tempo while the host is stopped, REC from the playhead,
+// a new take each loop pass, punch, count-in, and the editor following the host.
+namespace transportTest {
+using namespace keysTest;
+// The keys host in Play Mode Transport with the host stopped (bpm 120: a beat is 0.5 s).
+Host stopped(double bpm = 120.0) {
+    auto h = host(Castle, CastlePlace::Horns, bpm);
+    h.set("playmode", float(PlayTransport));
+    h.playHead.playing = false;
+    h.render(0.3);
+    return h;
+}
+// Renders `seconds`, playing note-ons (offs a sixteenth later) at the given seconds.
+void playNotes(Host& h, const std::vector<double>& at, double seconds, int midi = 62) {
+    std::vector<std::pair<int64_t, bool>> todo;
+    for (double t : at) {
+        todo.push_back({ int64_t(t * 48000.0), true });
+        todo.push_back({ int64_t((t + 0.125) * 48000.0), false });
+    }
+    for (int64_t done = 0; done < int64_t(seconds * 48000.0); done += h.block) {
+        for (const auto& [when, on] : todo)
+            if (when >= done && when < done + h.block) {
+                if (on) note(h, midi, 100, int(when - done));
+                else off(h, midi, int(when - done));
+            }
+        h.processOne(h.block);
+        h.p->serviceKeys();
+    }
+}
+std::vector<int> stepsOf(Host& h) { return steps(h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern); }
+} // namespace transportTest
+
+void testTransport(Suite& s) {
+    using namespace transportTest;
+    s.section("transport: Play, Stop and Loop from the playhead, while the host is stopped");
+    {
+        auto h = stopped();
+        const auto quiet = measure(h.render(0.5), 0.0);
+        h.set("p1_activity", 0.6f);
+        auto el = h.p->patterns.element(0, Castle, CastlePlace::Horns);
+        el.controls.mute = false;
+        el.pattern.clear();
+        for (int st = 0; st < 64; st += 4) {
+            pat::Note n;
+            n.step = int16_t(st);
+            n.length = 2;
+            n.velocity = 100;
+            el.pattern.add(n);
+        }
+        h.p->patterns.setElement(0, Castle, CastlePlace::Horns, el);
+        h.render(0.2);
+        h.p->transport.playhead = 4.0;
+        h.p->transport.loop = false;
+        h.p->transportPlay();
+        h.processOne(h.block);
+        const double first = h.p->engine.slotBeat[0].load();
+        const auto rolling = measure(h.render(1.0), 0.1);
+        s.check(h.p->transportState() == WorldbuilderProcessor::TransportRolling && h.p->engine.transportRolling.load(),
+                "PLAY with the host stopped runs WORLDBUILDER's own transport");
+        s.check(first >= 3.95 && first < 4.2, "it starts on the playhead (bar 2)", fmt(first));
+        s.check(rolling.rmsDb > quiet.rmsDb + 20.0, "the world plays (Transport mode: silent while stopped before)", fmt(quiet.rmsDb) + " -> " + fmt(rolling.rmsDb) + " dB");
+        const double beat = h.p->engine.slotBeat[0].load();
+        s.check(std::abs(beat - (4.0 + 2.0 * (1.0 + double(h.block) / 48000.0))) < 0.1, "at the host tempo (120 bpm: two beats a second)", fmt(beat));
+        h.p->transportStop();
+        h.render(0.6);
+        s.check(h.p->transportState() == WorldbuilderProcessor::TransportStopped && measure(h.render(0.3), 0.0).rmsDb < quiet.rmsDb + 6.0,
+                "STOP stops it (and the world fades out, as when the host stops)");
+        s.check(std::abs(h.p->transport.playhead.load() - 4.0) < 1.0e-9, "the playhead stays where Play started");
+        h.p->transport.loop = true;
+        h.p->transport.loopStart = 0.0;
+        h.p->transport.loopEnd = 16.0;
+        h.p->transportStop();
+        s.check(h.p->transport.playhead.load() == 0.0, "STOP again: back to the loop's start");
+
+        // Loop: bar 2 to bar 3 (beats 4..8, 2 s) round and round.
+        h.p->transport.loopStart = 4.0;
+        h.p->transport.loopEnd = 8.0;
+        h.p->transport.playhead = 5.0;
+        h.p->transportPlay();
+        double lo = 1.0e9, hi = -1.0e9;
+        int wraps = 0;
+        double last = -1;
+        for (int i = 0; i < int(5.0 * 48000.0 / h.block); ++i) {
+            h.processOne(h.block);
+            const double b = h.p->transport.beat.load();
+            lo = std::min(lo, b);
+            hi = std::max(hi, b);
+            if (last >= 0 && b < last - 1.0) ++wraps;
+            last = b;
+        }
+        s.check(lo >= 4.0 - 1.0e-6 && hi < 8.0 + 1.0e-6 && wraps >= 2, "LOOP plays the loop region round and round", fmt(lo) + ".." + fmt(hi) + ", " + std::to_string(wraps) + " passes");
+        // The playhead outside the loop: Play starts at its start.
+        h.p->transportStop();
+        h.p->transport.playhead = 12.0;
+        h.p->transportPlay();
+        s.check(h.p->transport.playhead.load() == 4.0, "with Loop on, Play from outside the loop starts at its start");
+        h.render(0.2);
+        // The host starting playback ends it: the editor follows the host.
+        h.playHead.position = 0;
+        h.playHead.playing = true;
+        h.render(0.2);
+        s.check(h.p->transportState() == WorldbuilderProcessor::TransportStopped && !h.p->transport.wanted.load(), "the host starting playback ends it");
+        h.p->transportPlay();
+        h.render(0.1);
+        s.check(h.p->transportState() == WorldbuilderProcessor::TransportStopped, "PLAY does nothing while the host plays");
+        const double hostBeat = h.p->engine.slotBeat[0].load();
+        s.check(hostBeat > 0.3 && hostBeat < 1.0, "the playhead follows the host's position", fmt(hostBeat));
+        h.playHead.playing = false;
+        h.render(0.1);
+    }
+    s.section("transport: REC from the playhead, a take each loop pass (Replace / Overdub), punch, count-in");
+    {
+        auto h = stopped();
+        // The loop is bar 1 (beats 0..4, 2 s): REC plays it from the playhead and records.
+        h.p->transport.loop = true;
+        h.p->transport.loopStart = 0.0;
+        h.p->transport.loopEnd = 4.0;
+        h.p->transport.length = 16.0;
+        h.p->transport.playhead = 0.0;
+        h.p->keys.mode = keys::Replace;
+        h.p->setArmed(true);
+        h.p->transportPlay();
+        // Pass 1: a note on beat 1 (0.5 s); pass 2: on beat 2 (2 s + 1 s); pass 3: nothing.
+        playNotes(h, { 0.5, 3.0 }, 6.1);
+        const auto during = stepsOf(h);
+        h.p->transportStop();
+        h.render(0.1);
+        h.p->serviceKeys();
+        const auto replaced = stepsOf(h);
+        s.check(!h.p->keys.armed.load(), "STOP ends the take and disarms REC");
+        // The new pattern is on 1/32 steps: beat 2 is step 16.
+        s.check(replaced.size() == 1 && replaced[0] == 16, "Replace, looping: each pass is a new take (the last pass with notes wins)", list(replaced) + "(during: " + list(during) + ")");
+        h.p->recorder.undo();
+        const auto undone = stepsOf(h);
+        s.check(undone.size() == 1 && undone[0] == 8, "one undo goes back one pass (the first take)", list(undone));
+        h.p->recorder.undo();
+        s.check(stepsOf(h).empty(), "and another to before recording");
+
+        h.p->keys.mode = keys::Overdub;
+        auto el = h.p->patterns.element(0, Castle, CastlePlace::Horns);
+        el.pattern.setGrid(pat::Sixteenth, 4);
+        el.pattern.clear();
+        h.p->patterns.setElement(0, Castle, CastlePlace::Horns, el);
+        h.p->transport.playhead = 0.0;
+        h.p->setArmed(true);
+        h.p->transportPlay();
+        playNotes(h, { 0.5, 3.0 }, 4.1);
+        h.p->transportStop();
+        h.render(0.1);
+        h.p->serviceKeys();
+        const auto overdub = stepsOf(h);
+        s.check(overdub.size() == 2 && overdub[0] == 4 && overdub[1] == 8, "Overdub, looping: each pass adds to the last (1/16 steps 4 and 8)", list(overdub));
+
+        // Punch: beats 2..3 only, Replace keeps the rest of the pattern.
+        h.p->keys.mode = keys::Replace;
+        h.p->transport.punch = true;
+        h.p->transport.punchIn = 2.0;
+        h.p->transport.punchOut = 3.0;
+        h.p->transport.playhead = 0.0;
+        h.p->setArmed(true);
+        h.p->transportPlay();
+        // Notes on beats 0.5 and 2.5 (0.25 s, 1.25 s): only the one inside is recorded; the
+        // pattern's note on beat 2 (step 8, inside) is replaced, the one on beat 1 kept.
+        playNotes(h, { 0.25, 1.25 }, 1.9);
+        h.p->transportStop();
+        h.render(0.1);
+        h.p->serviceKeys();
+        const auto punched = stepsOf(h);
+        s.check(punched.size() == 2 && punched[0] == 4 && punched[1] == 10, "punch: only notes inside the region are recorded; Replace keeps the notes outside it",
+                list(punched));
+        h.p->transport.punch = false;
+
+        // Count-in: a bar of clicks from the playhead (bar 2), then the take starts there.
+        el = h.p->patterns.element(0, Castle, CastlePlace::Horns);
+        el.pattern.setGrid(pat::Sixteenth, 4);
+        el.pattern.clear();
+        h.p->patterns.setElement(0, Castle, CastlePlace::Horns, el);
+        h.p->transport.loop = false;
+        h.p->transport.playhead = 4.0;
+        h.p->keys.countIn = true;
+        h.p->setArmed(true);
+        h.p->transportPlay();
+        h.processOne(h.block);
+        const bool counting = h.p->transportState() == WorldbuilderProcessor::TransportCountIn;
+        // A note during the count-in (0.5 s) is not recorded; one 0.5 s after it (beat 5) is.
+        playNotes(h, { 0.5, 2.5 }, 3.2);
+        const double startedOn = h.p->engine.slotBeat[0].load();
+        h.p->transportStop();
+        h.render(0.1);
+        h.p->serviceKeys();
+        const auto counted = stepsOf(h);
+        s.check(counting, "COUNT-IN: REC counts a bar in first");
+        // Replace makes a new pattern on 1/32 steps: beat 5 is step 40.
+        s.check(counted.size() == 1 && counted[0] == 40, "the take starts on the playhead after the count-in (a note on beat 5: step 40)", list(counted));
+        s.check(startedOn > 5.5 && startedOn < 7.0, "and the transport plays on from the playhead", fmt(startedOn));
+        h.p->keys.countIn = false;
+    }
+    s.section("transport: the ruler, PLAY / STOP / LOOP, zoom and the playhead in view");
+    {
+        auto h = stopped();
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->openPatterns(0, CastlePlace::Horns);
+        view->settle(0.1f);
+        auto& pe = view->patternEditor();
+        auto& ruler = pe.rulerView();
+        s.check(ruler.isVisible() && ruler.getWidth() > 200 && pe.playControl().isVisible() && pe.stopControl().isVisible() && pe.loopControl().isVisible(),
+                "the Pattern Editor has a bar ruler with PLAY, STOP and LOOP");
+        s.check(std::abs(h.p->transport.loopEnd.load() - 16.0) < 1.0e-9 && h.p->transport.loopStart.load() == 0.0,
+                "the loop region defaults to the pattern's length (4 bars)", fmt(h.p->transport.loopEnd.load()));
+        // A click on the ruler's top at bar 3 sets the playhead there.
+        const auto& p = pe.shown().pattern;
+        const double perBeat = pat::stepsPerBeat(p.resolution);
+        const float x = float((8.0 * perBeat - pe.gridFirstStep()) * pe.gridStepWidth()) + 1.0f;
+        const auto at = juce::Point<float>(x, 4.0f);
+        ruler.mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1.0f, 0, 0, 0, 0, &ruler, &ruler, juce::Time::getCurrentTime(), at,
+                                         juce::Time::getCurrentTime(), 1, false));
+        s.check(std::abs(h.p->transport.playhead.load() - 8.0) < 1.0e-6, "clicking the ruler sets the playhead (bar 3)", fmt(h.p->transport.playhead.load()));
+        pe.playControl().onClick();
+        h.render(0.2);
+        s.check(h.p->transportState() == WorldbuilderProcessor::TransportRolling && h.p->engine.slotBeat[0].load() > 8.0, "PLAY plays from it");
+        pe.stopControl().onClick();
+        h.render(0.05);
+        s.check(h.p->transportState() == WorldbuilderProcessor::TransportStopped, "STOP stops it");
+        pe.loopControl().setToggleState(false, juce::dontSendNotification);
+        pe.loopControl().onClick();
+        s.check(!h.p->transport.loop.load(), "LOOP switches looping");
+        // Zoom (Cmd/Ctrl-wheel or a pinch) and the playhead kept in view while playing.
+        const double before = pe.gridStepWidth();
+        pe.zoomAround(300.0f, 2.0);
+        s.check(pe.gridStepWidth() > before * 1.9, "a pinch (or Cmd/Ctrl-wheel) zooms the grid", fmt(before) + " -> " + fmt(pe.gridStepWidth()));
+        h.p->transport.playhead = 14.0;
+        pe.playControl().onClick();
+        h.render(0.3);
+        pe.followPlayhead();
+        const double step = h.p->engine.slotBeat[0].load() * perBeat;
+        const double first = pe.gridFirstStep();
+        s.check(step >= first && step < first + double(ruler.getWidth()) / pe.gridStepWidth(), "while it plays the grid scrolls to keep the playhead in view",
+                fmt(step) + " in view from " + fmt(first));
+        pe.stopControl().onClick();
+        h.render(0.05);
+    }
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -7917,6 +8171,7 @@ int main(int argc, char** argv) {
     if (run("hurdy")) testHurdyGurdy(s);
     if (run("keys")) testKeys(s);
     if (run("overlap")) testOverlap(s);
+    if (run("transport")) testTransport(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

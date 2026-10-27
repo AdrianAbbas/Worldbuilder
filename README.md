@@ -295,13 +295,12 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
 ## Play and record with a MIDI keyboard (KEYS)
 
 In GarageBand and Logic, a MIDI keyboard plays the instrument plugin on the selected
-track, so WORLDBUILDER receives your keyboard. The **KEYS** rows in the Pattern Editor
-choose what it plays and record what you play.
+track, so WORLDBUILDER receives your keyboard. The **instrument tab you are looking at**
+in the Pattern Editor is what it plays and what REC records into (the KEYS row says
+"PLAYS ..."); open another tab to play another instrument. Until you open a tab, an
+older project keeps the target it had (none: notes do nothing).
 
 **Playing**
-- **Play target**: a Place and one of its instruments (e.g. "1. TAVERN > FIDDLE"), or
-  **THIS** for the instrument the Pattern Editor shows. **OFF** (the default, and every
-  older project): incoming notes do nothing, as before.
 - The keyboard plays that instrument live, through its own effects: **velocity** (level
   and brightness), **note length** (released keys stop; plucked strings are damped, struck
   bells and drums ring on), the **sustain pedal** (CC64), **pitch bend** (a tone; an octave
@@ -316,11 +315,34 @@ choose what it plays and record what you play.
   Mode Transport with the song stopped the world is silent, and the keyboard alone sounds.
 - The small keyboard on the right lights up the notes arriving (dim: held by the pedal).
 
+**The transport: Play, Stop, Loop**
+The Pattern Editor has its own transport, so you never have to start and stop the host
+to record. It plays at the host's tempo while the host is stopped; when the host plays,
+the editor follows the host instead.
+- The **bar ruler** over the grid: click or drag its top to set the **playhead** (where
+  PLAY and REC start). While it plays, dropping the playhead somewhere plays on from
+  there.
+- **PLAY** (the triangle) plays from the playhead, **STOP** (the square) stops and goes
+  back to where Play started (stop again: to the loop's start), **LOOP** plays the
+  **loop region** round and round: the brass bar in the ruler's middle lane, the whole
+  pattern until you drag a new one there (double-click it: the whole pattern again).
+- Scroll the grid with the mouse wheel or a two-finger swipe (sideways, or with Shift,
+  across the steps); **zoom** with Cmd/Ctrl + wheel or a pinch (around the pointer), and
+  the rows with Alt + wheel. While it plays, the grid scrolls to keep the playhead in view.
+
 **Recording (REC)**
-- Arm **REC**, then press **Record** or **Play** in GarageBand or Logic: the notes go into
-  the target's pattern, on the host's bars and tempo. **COUNT-IN** gives a bar of clicks
-  first. With the song stopped, just play: a **free take** starts on your first note, with
-  a metronome at the host tempo. Press REC again to stop.
+- **REC** with the host stopped starts the transport from the playhead and records. With
+  **LOOP** on, **each pass is a new take**: with REPLACE the last pass you played on is
+  the pattern (a pass with no notes changes nothing); with OVERDUB every pass adds to the
+  last. **UNDO TAKE** goes back one pass at a time. REC again stops recording (the
+  transport plays on); STOP stops both.
+- **COUNT-IN**: a bar of clicks before the take, then it starts on the playhead.
+- **PUNCH**: only notes inside the **punch region** are recorded (the red bar in the
+  ruler's lowest lane; dragging there switches PUNCH on). REPLACE then replaces only the
+  notes inside it and keeps the rest of the pattern.
+- While the host plays, REC records along with it, on its bars and tempo (COUNT-IN: from
+  the next bar). With the host stopped and REC armed but the transport stopped, just
+  play: a **free take** starts on your first note, with a metronome.
 - **REPLACE** (a new pattern, from your first note; a take with no notes changes
   nothing), **OVERDUB** (added to the notes there) or **INTO VARIANT** (a new pattern in A,
   B, C or the Fill, for the Arrangement).

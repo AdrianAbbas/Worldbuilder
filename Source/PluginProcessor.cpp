@@ -95,10 +95,16 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
     k.scale = keys.scale.load(std::memory_order_relaxed);
     k.octave = keys.octave.load(std::memory_order_relaxed);
     k.monitor = keys.monitor.load(std::memory_order_relaxed);
-    k.armed = keys.armed.load(std::memory_order_relaxed);
-    k.countIn = keys.countIn.load(std::memory_order_relaxed);
+    // The Pattern Editor's transport counts in itself (REC waits for it), then the take
+    // starts on the playhead: the host's count-in is for the host's transport only.
+    k.armed = keys.armed.load(std::memory_order_relaxed) && txState != TransportCountIn;
+    k.countIn = keys.countIn.load(std::memory_order_relaxed) && txState == TransportStopped;
     k.variant = keys.mode.load(std::memory_order_relaxed) == keys::IntoVariant ? keys.variant.load(std::memory_order_relaxed) : 0;
     k.hostPlaying = hostPlayingNow;
+    k.punch = transport.punch.load(std::memory_order_relaxed);
+    k.punchIn = transport.punchIn.load(std::memory_order_relaxed);
+    k.punchOut = transport.punchOut.load(std::memory_order_relaxed);
+    k.length = transport.length.load(std::memory_order_relaxed);
     return c;
 }
 
@@ -193,8 +199,11 @@ void WorldbuilderProcessor::prepareToPlay(double sampleRate, int) {
     rate = std::isfinite(sampleRate) ? juce::jlimit(8000.0, 384000.0, sampleRate) : 48000.0;
     travel.prepare(rate);
     engine.prepare(rate, readControls());
+    countClick.prepare(float(rate));
     expectedHostPosition = -1;
     hostWasPlaying = false;
+    txState = TransportStopped;
+    transport.state.store(TransportStopped);
 }
 
 // Hosts call reset() on transport stops and locates. The world is continuous, so it
@@ -277,11 +286,46 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             restartAt = uint64_t(restartBeat * 60.0 / tempo * rate);
         }
     }
+    // The Pattern Editor's transport: Play, Stop and locates from the editor; the host
+    // starting playback ends it (the editor then follows the host).
+    const float tempoNow = hostBpm.load(std::memory_order_relaxed);
+    const double tempo = tempoNow >= 20.0f && tempoNow <= 999.0f ? double(tempoNow) : double(WorldEngine::defaultBpm);
+    const double perSample = tempo / 60.0 / rate;
+    const auto samplesFor = [&](double beats) { return uint64_t(std::max(0.0, beats) * 60.0 / tempo * rate); };
+    int restartOffset = 0;
+    bool restartResync = false;   // Play Mode Free: the world plays on from the new position (no restart from silence)
+    if (playing) {
+        if (txState != TransportStopped) transport.wanted.store(false, std::memory_order_relaxed);
+        txState = TransportStopped;
+        txSeen = transport.serial.load(std::memory_order_acquire);
+    } else if (const auto serial = transport.serial.load(std::memory_order_acquire); serial != txSeen) {
+        txSeen = serial;
+        if (transport.wanted.load(std::memory_order_relaxed)) {
+            txFrom = transport.playhead.load(std::memory_order_relaxed);
+            previewOn.store(false, std::memory_order_relaxed);
+            if (keys.armed.load(std::memory_order_relaxed) && keys.countIn.load(std::memory_order_relaxed)) {
+                // A bar of clicks first; the transport starts on the playhead after it.
+                txState = TransportCountIn;
+                txCountBeat = 0;
+                countClick.reset();
+            } else {
+                txState = TransportRolling;
+                restart = true;
+                restartResync = !transportMode;
+                restartBeat = txFrom;
+                restartAt = samplesFor(txFrom);
+            }
+        } else {
+            txState = TransportStopped;
+        }
+    }
     const bool previewing = !playing && previewOn.load(std::memory_order_relaxed);
-    engine.transportRolling.store(playing || previewing, std::memory_order_relaxed);
-    gateOpen = !transportMode || playing || previewing;
+    const auto editorRolling = [&] { return !playing && txState == TransportRolling; };
+    engine.transportRolling.store(playing || previewing || editorRolling(), std::memory_order_relaxed);
+    gateOpen = !transportMode || playing || previewing || editorRolling();
     hostWasPlaying = playing;
-    hostPlayingNow = playing;
+    hostRollingOut.store(playing, std::memory_order_relaxed);
+    hostPlayingNow = playing || editorRolling();
     // The host's MIDI: the keyboard (KEYS). With "Host regions play the target" off, notes
     // arriving while the host plays (a recorded region playing back) are left out unless
     // REC is armed (then they are the take).
@@ -356,8 +400,39 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         hasOut[std::size_t(slot)] = anyOut = true;
     }
     for (int done = 0; done < n;) {
+        // The editor's transport: the count-in ends, or the loop goes round, on its sample.
+        int limit = n - done;
+        if (txState == TransportCountIn) {
+            const auto left = int64_t(std::ceil((countInBeats - txCountBeat) / perSample - 1.0e-6));
+            if (left <= 0) {
+                txState = TransportRolling;
+                restart = true;
+                restartOffset = done;
+                restartResync = !transportMode;
+                restartBeat = txFrom;
+                restartAt = samplesFor(txFrom);
+                gateOpen = true;
+                hostPlayingNow = true;
+                engine.transportRolling.store(true, std::memory_order_relaxed);
+            } else {
+                limit = int(std::min<int64_t>(limit, left));
+            }
+        }
+        const bool restartHere = restart && done == restartOffset;
+        if (txState == TransportRolling && !restartHere && transport.loop.load(std::memory_order_relaxed)) {
+            const double from = transport.loopStart.load(std::memory_order_relaxed), to = transport.loopEnd.load(std::memory_order_relaxed);
+            if (to > from + 1.0e-6) {
+                const double at = engine.outputBeat();
+                if (at >= to - 1.0e-9) {
+                    // Round the loop: the world plays on from its start (its tails ring on).
+                    engine.resync(samplesFor(from), from);
+                } else {
+                    limit = std::min(limit, std::max(1, int(std::ceil((to - at) / perSample - 1.0e-6))));
+                }
+            }
+        }
         // The Journey Path follows the song: the beat this piece starts on.
-        in.beat = restart && done == 0 ? (restartBeat >= 0 ? restartBeat : double(restartAt) / rate * in.bpm / 60.0) : engine.nextBeat();
+        in.beat = restartHere ? (restartBeat >= 0 ? restartBeat : double(restartAt) / rate * in.bpm / 60.0) : engine.nextBeat();
         if (located != nullptr) {
             // The journey to the next section's Location takes the Travel Time and arrives
             // on its first downbeat.
@@ -368,8 +443,8 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             in.arranged = in.journeyOn = true;
             in.pathOn = false;
         }
-        const auto& world = travel.advance(live, livePatterns, in, restart && done == 0);
-        const int count = travel.active() ? std::min(n - done, travelPiece) : n - done;
+        const auto& world = travel.advance(live, livePatterns, in, restartHere);
+        const int count = std::min(limit, travel.active() ? std::min(n - done, travelPiece) : n - done);
         auto controls = controlsFor(world.v);
         controls.arrangement = arranged;
         for (int slot = 0; slot < placeSlots; ++slot) {
@@ -377,7 +452,10 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             controls.patterns[std::size_t(slot)] = world.patterns[std::size_t(slot)];
         }
         controls.slotOut = hasOut;
-        if (restart && done == 0) engine.restart(restartAt, restartBeat, controls);
+        if (restartHere) {
+            if (restartResync) engine.resync(restartAt, restartBeat);
+            else engine.restart(restartAt, restartBeat, controls);
+        }
         if (done == 0) engine.keysBlock(keyEvents.data(), keyCount, controls);
         if (right != nullptr && anyOut) {
             std::array<float*, 2 * placeSlots> outs {};
@@ -394,9 +472,26 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
                 for (int i = 0; i < part; ++i) left[start + i] = 0.5f * (left[start + i] + scratch[std::size_t(i)]);
             }
         }
+        if (txState == TransportCountIn) {
+            // The count-in's clicks, over whatever the world plays meanwhile.
+            for (int start = 0; start < count; start += int(clickScratch.size())) {
+                const int part = std::min(int(clickScratch.size()), count - start);
+                std::fill_n(clickScratch.begin(), part, 0.0f);
+                std::fill_n(clickScratchR.begin(), part, 0.0f);
+                countClick.render(clickScratch.data(), clickScratchR.data(), part, txCountBeat, perSample, true);
+                txCountBeat += perSample * double(part);
+                for (int i = 0; i < part; ++i) {
+                    left[done + start + i] += clickScratch[std::size_t(i)];
+                    if (right != nullptr) right[done + start + i] += clickScratchR[std::size_t(i)];
+                }
+            }
+        }
         travel.step(count, in, live);
         done += count;
     }
+    transport.state.store(txState, std::memory_order_relaxed);
+    transport.countLeft.store(txState == TransportCountIn ? float(std::max(0.0, countInBeats - txCountBeat)) : 0.0f, std::memory_order_relaxed);
+    if (txState == TransportRolling) transport.beat.store(engine.outputBeat(), std::memory_order_relaxed);
     // Channels nothing wrote (a mono main's second channel, Place outputs not in use).
     for (int ch = std::max(1, mainChannels); ch < buffer.getNumChannels(); ++ch) {
         bool written = false;
@@ -425,7 +520,37 @@ TravelInputs WorldbuilderProcessor::travelInputs(const WorldValues& v) const noe
     return in;
 }
 
+void WorldbuilderProcessor::transportPlay() {
+    if (hostRolling()) return;   // the host plays: the editor follows it
+    stopPreview();
+    // Looping: Play starts inside the loop region.
+    if (transport.loop.load()) {
+        const double from = transport.loopStart.load(), to = transport.loopEnd.load(), at = transport.playhead.load();
+        if (to > from && (at < from || at >= to)) transport.playhead.store(from);
+    }
+    transport.wanted.store(true);
+    transport.serial.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void WorldbuilderProcessor::transportStop() {
+    if (transport.state.load() == TransportStopped && !transport.wanted.load()) {
+        // Stopped already: back to the start.
+        transport.playhead.store(transport.loop.load() ? transport.loopStart.load() : 0.0);
+    }
+    if (keys.armed.load()) setArmed(false);
+    transport.wanted.store(false);
+    transport.serial.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void WorldbuilderProcessor::transportLocate(double beat) {
+    transport.playhead.store(std::max(0.0, beat));
+    // Rolling: it plays on from there.
+    if (transport.wanted.load() && !hostRolling()) transport.serial.fetch_add(1, std::memory_order_acq_rel);
+}
+
 void WorldbuilderProcessor::previewFrom(int bar) {
+    // The preview and the Pattern Editor's transport share the world's clock: one at a time.
+    if (transport.wanted.exchange(false)) transport.serial.fetch_add(1, std::memory_order_acq_rel);
     previewBar.store(std::max(0, bar), std::memory_order_relaxed);
     previewOn.store(true, std::memory_order_relaxed);
     previewSerial.fetch_add(1, std::memory_order_acq_rel);
@@ -566,6 +691,9 @@ keys::RecordSettings WorldbuilderProcessor::recordSettings() const {
     r.quantise = keys.quantise.load();
     r.strength = keys.strength.load();
     r.autoLength = keys.autoLength.load();
+    r.punch = transport.punch.load();
+    r.punchIn = transport.punchIn.load();
+    r.punchOut = transport.punchOut.load();
     return r;
 }
 
@@ -666,6 +794,15 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
         k.setProperty("quantise", keys.quantise.load(), nullptr);
         k.setProperty("strength", keys.strength.load(), nullptr);
         k.setProperty("tip", keys.tipShown, nullptr);
+        // The Pattern Editor's transport: loop and punch.
+        k.setProperty("loop", transport.loop.load(), nullptr);
+        k.setProperty("loopset", transport.loopSet.load(), nullptr);
+        k.setProperty("loopstart", transport.loopStart.load(), nullptr);
+        k.setProperty("loopend", transport.loopEnd.load(), nullptr);
+        k.setProperty("punch", transport.punch.load(), nullptr);
+        k.setProperty("punchin", transport.punchIn.load(), nullptr);
+        k.setProperty("punchout", transport.punchOut.load(), nullptr);
+        k.setProperty("playhead", transport.playhead.load(), nullptr);
         state.appendChild(k, nullptr);
     }
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
@@ -745,6 +882,18 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         keys.strength.store(std::isfinite(strength) ? juce::jlimit(0.0f, 1.0f, strength) : 1.0f);
         keys.tipShown = bool(k.getProperty("tip", false));
         keys.armed.store(false);
+        const auto beats = [&](const char* id, double fallback) {
+            const double v = double(k.getProperty(id, fallback));
+            return std::isfinite(v) ? juce::jlimit(0.0, 4.0 * pat::maxBars, v) : fallback;
+        };
+        transport.loop.store(bool(k.getProperty("loop", true)));
+        transport.loopSet.store(bool(k.getProperty("loopset", false)));
+        transport.loopStart.store(beats("loopstart", 0.0));
+        transport.loopEnd.store(std::max(transport.loopStart.load() + 0.25, beats("loopend", 16.0)));
+        transport.punch.store(bool(k.getProperty("punch", false)));
+        transport.punchIn.store(beats("punchin", 0.0));
+        transport.punchOut.store(std::max(transport.punchIn.load() + 0.25, beats("punchout", 16.0)));
+        transport.playhead.store(beats("playhead", 0.0));
     }
     // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
     // project stored Full, the old default, so those open with the new default (Off).

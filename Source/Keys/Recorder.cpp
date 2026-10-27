@@ -39,7 +39,10 @@ void Recorder::begin(const Captured& c, const RecordSettings& s) {
     variant = s.mode == IntoVariant ? pat::Element::clampVariant(s.variant) : 0;
     grid = s.quantise;
     strength = s.strength;
-    autoLength = s.autoLength && s.mode != Overdub;
+    punch = s.punch && s.punchOut > s.punchIn && s.mode != Overdub;
+    punchIn = s.punchIn;
+    punchOut = s.punchOut;
+    autoLength = s.autoLength && s.mode != Overdub && !punch;
     kit = c.kit;
     startBeat = lastBeat = c.beat;
     before = store.element(slot, type, element);
@@ -52,6 +55,14 @@ void Recorder::rebuild(int mood, double until) {
     pat::Pattern p;
     if (mode == Overdub) {
         p = base;
+    } else if (punch) {
+        // Punched in: the pattern stays, less what it had inside the region.
+        p = base;
+        const double perBeat = pat::stepsPerBeat(p.resolution);
+        for (int i = p.count - 1; i >= 0; --i) {
+            const double at = double(p.notes[std::size_t(i)].step) / perBeat;
+            if (at >= punchIn - 1.0e-9 && at < punchOut - 1.0e-9) p.remove(i);
+        }
     } else {
         // A new pattern on the finest grid, as long as the pattern was (or Auto).
         int bars = base.bars > 0 ? int(base.bars) : std::clamp(int(std::ceil(base.lengthBeats() / 4.0 - 1.0e-6)), 1, pat::maxBars);

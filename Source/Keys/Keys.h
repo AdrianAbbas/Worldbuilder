@@ -59,7 +59,16 @@ struct Controls {
     bool armed = false;           // REC: capture notes into the pattern
     bool countIn = false;         // a bar of clicks before a take with the transport
     int variant = 0;              // the variant recorded into (and heard while armed)
-    bool hostPlaying = false;     // the host transport is rolling (not the ARRANGE preview)
+    bool hostPlaying = false;     // the host transport (or the Pattern Editor's) is rolling (not the ARRANGE preview)
+    // Punch: a take records only notes inside [punchIn, punchOut) beats of the pattern
+    // (which repeats every `length` beats).
+    bool punch = false;
+    double punchIn = 0, punchOut = 0, length = 16;
+    bool inPunch(double beat) const {
+        if (!punch || punchOut <= punchIn) return true;
+        const double at = length > 0 ? beat - std::floor(beat / length) * length : beat;
+        return at >= punchIn - 1.0e-9 && at < punchOut - 1.0e-9;
+    }
     bool valid() const { return slot >= 0 && slot < 4 && element >= 0 && element < pat::elementsPerPlace; }
 };
 
@@ -278,6 +287,7 @@ public:
     void reset() {
         state = Idle;
         freeBeat = 0;
+        lastEnd = 0;
         stateOut.store(Idle, std::memory_order_relaxed);
     }
     State current() const { return state; }
@@ -290,6 +300,14 @@ public:
     // at the piece start; perSample its beats per sample.
     void step(const Controls& k, double beat, double perSample, int n, Captured base) {
         const bool rolling = k.hostPlaying;
+        punch = k;
+        // The song went back (a loop around, or the host cycling): the pass ends and the
+        // next one is a new take.
+        if (state == Taking && rolling && k.armed && beat < lastEnd - perSample - 1.0e-9) {
+            end(base, lastEnd);
+            start(base, beat, false);
+        }
+        lastEnd = beat + perSample * double(n);
         if (!k.armed || !k.valid()) {
             if (state == Taking || state == CountIn || state == FreeTaking) end(base, state == FreeTaking ? freeBeat : beat);
             state = Idle;
@@ -330,6 +348,7 @@ public:
         }
         if (state == Taking) {
             if (beat < takeFrom - 1.0e-9) return false;
+            if (c.kind == Captured::NoteOn && !punch.inPunch(beat)) return false;   // outside the punch region
             c.beat = beat;
             c.free = false;
         } else if (state == FreeTaking) {
@@ -357,7 +376,8 @@ private:
         out.push(c);
     }
     State state = Idle;
-    double takeFrom = 0, freeBeat = 0;
+    double takeFrom = 0, freeBeat = 0, lastEnd = 0;
+    Controls punch;   // the punch region in force
 };
 
 //==============================================================================

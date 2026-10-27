@@ -9,7 +9,7 @@ logs="${2:-build/test-logs}"
 mkdir -p "$logs"
 first="castle,village,spaceport,factory,city,forest,hive,temple,cavern,ruins,station,megacity,bridge"
 second="spaceship,biodome,seaship,suburbs,mall,military,beach,desert,palace,tavern,mining,alienruins,nebula"
-rest="smoke,arrangement,arrpersist,keys,overlap,transitions,gameaudio,outputs,locations,parameters,rates,world,layers,climate,music,slots,patterns,playmode,determinism,power,tonal,state,models,distinct,editor,overlays,intensity,capture,automation,planet,pixel"
+rest="smoke,arrangement,arrpersist,keys,overlap,transport,transitions,gameaudio,outputs,locations,parameters,rates,world,layers,climate,music,slots,patterns,playmode,determinism,power,tonal,state,models,distinct,editor,overlays,intensity,capture,automation,planet,pixel"
 
 "$tests" --only instruments --place "$first" > "$logs/1-instruments-a.txt" 2>&1 &
 "$tests" --only instruments --place "$second" > "$logs/2-instruments-b.txt" 2>&1 &

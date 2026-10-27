@@ -14,7 +14,8 @@ namespace wb::ui::pixel {
 namespace {
 constexpr const char* toolNames[] { "none", "power", "dice", "edit", "close", "patterns", "save", "load", "render", "midi", "dragout",
                                     "path", "journey", "undo", "redo", "copy", "paste", "clear", "generate", "up", "down", "lock",
-                                    "draw", "select", "back", "snap", "note", "sync", "import", "double", "half", "chords", "tone12" };
+                                    "draw", "select", "back", "snap", "note", "sync", "import", "double", "half", "chords", "tone12",
+                                    "play", "stop", "loop", "record" };
 static_assert(std::size(toolNames) == std::size_t(Icon::Count), "a file name for every tool icon");
 constexpr const char* instrumentNames[] { "drone", "bell", "horn", "timpani", "harp", "choir", "lute", "marimba", "flute", "jingle",
                                           "pulse", "pad", "riser", "pa", "engine", "blip", "handdrum", "anvil", "piston", "steam",

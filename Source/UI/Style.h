@@ -23,7 +23,7 @@ juce::Colour inkFor(const SurfaceState& state, juce::Colour accent);
 
 enum class Icon {
     None, Power, Dice, Edit, Close, Patterns, Save, Load, Render, Midi, DragOut, Path, Journey, Undo, Redo, Copy, Paste, Clear,
-    Generate, Up, Down, Lock, Draw, Select, Back, Snap, Note, Sync, Import, Double, Half, Chords, Tone12, Count
+    Generate, Up, Down, Lock, Draw, Select, Back, Snap, Note, Sync, Import, Double, Half, Chords, Tone12, Play, Stop, Loop, Record, Count
 };
 // One icon in `area` (kept square, centred), stroked in `colour`.
 void drawIcon(juce::Graphics& g, Icon icon, juce::Rectangle<float> area, juce::Colour colour);
