@@ -4593,7 +4593,7 @@ and went first.
 - [x] 14b. REC: follows the host transport, count-in, Replace / Overdub / Into variant, quantise + strength (on input and afterwards), Auto length
 - [x] 14b. Generator and randomness paused while armed, "edited" afterwards, notes shown at once, one-step undo, free record with a metronome
 - [x] 14c. Host regions safeguard (HOST MIDI), README section, first-time tip
-- [x] Tests (`--only keys`, 55 checks), AU harness MIDI check (macOS CI)
+- [x] Tests (`--only keys`, 59 checks), AU harness MIDI check (macOS CI; its Play target fixed after the first CI run)
 
 ### Decisions
 
@@ -4693,6 +4693,38 @@ Full Linux suite: 3734 passed, 0 failed (four shards, then the CPU and 60 s stre
 before the six KEYS-interface checks were added; after them `--only keys,editor`: 98 passed,
 0 failed. The AU harness check runs on the macOS CI only.
 
+### Fix: the AU harness's KEYS check set no Play target
+
+CI for the Milestone 14 push failed one AU host harness check on all four routes (v2
+in-process and out-of-process, arm64 and x86_64): `KEYS: a MIDI note plays the target
+instrument (audible) :: -84.1 dBFS vs -71.1 dBFS without`.
+
+**Cause: the harness, not the plugin.** The harness set the Play target by adding
+`<Keys slot="0" element="2" monitor="1"/>` before the state's closing tag. But
+`getStateInformation` always saves a `Keys` element (with no target, `slot="-1"`), and
+`setStateInformation` reads the first one, so the instance kept no target and the note did
+nothing. The "quieter" reading was only the bed settling after the instruments were
+switched off (the note's run is later and shorter). Reproduced on Linux by putting that
+state through `setStateInformation`: the target stays `slot=-1` and the note adds nothing.
+Ruled out in the plugin, by reading the code: incoming MIDI touches no pattern, scene or
+mute; with no transport HOST MIDI cannot drop notes (it acts only while the host plays);
+the arrangement plays only in Play Mode Arrangement or the preview; the target instrument
+sounds at its own level with its switch off (`Ensemble`: `max(element, liveLevel)`, and
+`liveLevel` follows the level, not the switch).
+
+**Fix (`tools/au-harness/WorldbuilderAUHarness.mm`).** The harness replaces the saved
+`Keys` element instead of adding a second one, then reads the state back and checks that
+the plugin saved `slot="0" element="2"` before it sends the note (so "a Play target set
+through the state" now means the target took). The audibility check is unchanged.
+
+**Verified through `processBlock` (`--only keys`, new section "a Play target set through
+the saved state plays over the world (the AU harness's route)").** A fresh instance with
+Play Mode Transport and no play head, as a host loads it; the target comes only from the
+saved state; Place 1's switches off. Over the default environment: the note is -30.2 dB
+with the bed, the bed -38.6 dB; the note's own power is 7.7 dB over the bed's (the check
+asks for 6). With the environment down (the harness setup): -30.4 dB against -72.6 dB
+(that bed level matches CI's -71.1). `--only keys`: 59 passed, 0 failed.
+
 ### Milestone 14 handoff
 
 **Done**: 14a, 14b and 14c, plus the arrangement persistence fix pushed before them. This
@@ -4705,6 +4737,10 @@ together.)
 (velocity, pedal, bend, mod wheel, snap, octave), the keyboard alone with the song
 stopped, a REC take with the transport (and count-in), a free take, Overdub / Into variant,
 UNDO TAKE, and that the GarageBand region does not double the part afterwards.
+
+**CI**: the first Milestone 14 run failed only the AU harness KEYS check, because the
+harness set no Play target (see the fix above; the plugin was not at fault). The fix push
+is without `[skip ci]`; the harness check is the one to watch on all four routes.
 
 **Known issues / limits**:
 - Not heard on a Mac yet: everything above is measured on Linux through `processBlock`.

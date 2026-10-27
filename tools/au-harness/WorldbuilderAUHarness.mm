@@ -602,9 +602,18 @@ void v2Suite(Report& r, AudioComponent component, bool outOfProcess, bool useWin
                     std::memcpy(&length, bytes + 4, 4);
                     if (magic == 0x21324356 && length + 8 <= UInt32(CFDataGetLength(data))) {
                         std::string xml(reinterpret_cast<const char*>(bytes + 8), strnlen(reinterpret_cast<const char*>(bytes + 8), length));
+                        // The saved state already holds a Keys element (no target) and the
+                        // plugin reads the first one: replace it rather than add a second.
+                        const std::string target = "<Keys slot=\"0\" element=\"2\" monitor=\"1\"/>";
+                        const auto keys = xml.find("<Keys");
+                        const auto keysEnd = keys != std::string::npos ? xml.find("/>", keys) : std::string::npos;
                         const auto end = xml.rfind("</");
+                        if (keysEnd != std::string::npos && xml.find('>', keys) == keysEnd + 1) {
+                            xml.replace(keys, keysEnd + 2 - keys, target);
+                        } else if (end != std::string::npos) {
+                            xml.insert(end, target);
+                        }
                         if (end != std::string::npos) {
-                            xml.insert(end, "<Keys slot=\"0\" element=\"2\" monitor=\"1\"/>");
                             std::vector<UInt8> out(8 + xml.size() + 1, 0);
                             const uint32_t size2 = uint32_t(xml.size() + 1);
                             std::memcpy(out.data(), &magic, 4);
@@ -621,7 +630,27 @@ void v2Suite(Report& r, AudioComponent component, bool outOfProcess, bool useWin
                 CFRelease(dict);
             }
             if (info != nullptr) CFRelease(info);
-            if (r.check(targeted, "KEYS: a Play target set through the state")) {
+            // The plugin saves the target back: it took (not just a state it accepted).
+            std::string savedKeys;
+            if (targeted) {
+                host.render(0.1, 0.0);
+                pump(0.2);
+                CFPropertyListRef back = nullptr;
+                UInt32 backSize = sizeof(back);
+                if (AudioUnitGetProperty(unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &back, &backSize) == noErr && back != nullptr
+                    && CFGetTypeID(back) == CFDictionaryGetTypeID()) {
+                    const auto data = static_cast<CFDataRef>(CFDictionaryGetValue(static_cast<CFDictionaryRef>(back), CFSTR("jucePluginState")));
+                    if (data != nullptr && CFGetTypeID(data) == CFDataGetTypeID() && CFDataGetLength(data) > 8) {
+                        const std::string xml(reinterpret_cast<const char*>(CFDataGetBytePtr(data) + 8),
+                                              strnlen(reinterpret_cast<const char*>(CFDataGetBytePtr(data) + 8), size_t(CFDataGetLength(data) - 8)));
+                        const auto keys = xml.find("<Keys");
+                        if (keys != std::string::npos) savedKeys = xml.substr(keys, xml.find('>', keys) - keys + 1);
+                    }
+                }
+                if (back != nullptr) CFRelease(back);
+                targeted = savedKeys.find(" slot=\"0\"") != std::string::npos && savedKeys.find(" element=\"2\"") != std::string::npos;
+            }
+            if (r.check(targeted, "KEYS: a Play target set through the state", savedKeys)) {
                 std::vector<std::pair<AudioUnitParameterID, float>> restore;
                 for (const auto& p : params) {
                     const bool elementSwitch = p.name.rfind("Place 1 Element", 0) == 0 && p.name.size() > 3 && p.name.compare(p.name.size() - 3, 3, " On") == 0;

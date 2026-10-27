@@ -7374,6 +7374,54 @@ void testKeys(Suite& s) {
         }
         s.check(calls == 0, "playing and recording allocate nothing on the audio thread", std::to_string(calls));
     }
+    s.section("keys: a Play target set through the saved state plays over the world (the AU harness's route)");
+    {
+        // A fresh instance as a host loads it: the default world, Play Mode Transport and
+        // no transport. The target arrives only through the state, which already holds a
+        // Keys element with no target.
+        Host h;
+        h.p->setPlayHead(nullptr);
+        h.set("playmode", float(PlayTransport));
+        juce::MemoryBlock state;
+        h.p->getStateInformation(state);
+        auto xml = juce::AudioProcessor::getXmlFromBinary(state.getData(), int(state.getSize()));
+        auto* k = xml != nullptr ? xml->getChildByName("Keys") : nullptr;
+        s.check(k != nullptr && int(k->getIntAttribute("slot", 0)) == -1, "a new instance saves a Keys element with no Play target");
+        if (k != nullptr) {
+            k->setAttribute("slot", 0);
+            k->setAttribute("element", CastlePlace::Horns);
+            k->setAttribute("monitor", 1);
+        }
+        if (xml != nullptr) {
+            state.reset();
+            juce::AudioProcessor::copyXmlToBinary(*xml, state);
+            h.p->setStateInformation(state.getData(), int(state.getSize()));
+        }
+        s.check(h.p->keys.slot == 0 && h.p->keys.element == CastlePlace::Horns, "the Play target loads from the state");
+        // Place 1's instruments switched off (the target still plays): over the environment
+        // as it comes, then with it down as the AU harness has it.
+        for (int e = 0; e < placeElements; ++e) h.set(slotId(0, PlElementOn + e), 0.0f);
+        for (const bool bed : { true, false }) {
+            if (!bed) h.set("environment", -60.0f);
+            const auto quiet = measure(h.render(4.0), 3.0);
+            note(h, 57, 110);
+            const auto played = measure(h.render(1.0), 0.2);
+            off(h, 57);
+            h.render(1.0);
+            if (bed) {
+                // The note's own power (what it added) at least 6 dB over the bed's.
+                const double added = std::pow(10.0, played.rmsDb / 10.0) - std::pow(10.0, quiet.rmsDb / 10.0);
+                const double noteDb = added > 0.0 ? 10.0 * std::log10(added) : -240.0;
+                s.check(played.finite && noteDb > -60.0 && noteDb > quiet.rmsDb + 6.0,
+                        "a MIDI note through processBlock plays the target clearly over the environment bed",
+                        "note " + fmt(noteDb) + " dB over a " + fmt(quiet.rmsDb) + " dB bed (" + fmt(played.rmsDb) + " dB together)");
+            } else {
+                s.check(played.finite && played.rmsDb > -60.0 && played.rmsDb > quiet.rmsDb + 15.0,
+                        "a MIDI note through processBlock plays the target instrument (the AU harness's setup)",
+                        fmt(played.rmsDb) + " dB vs " + fmt(quiet.rmsDb) + " dB without");
+            }
+        }
+    }
 }
 
 void testHurdyGurdy(Suite& s) {
