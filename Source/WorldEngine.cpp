@@ -214,8 +214,10 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
     {
         const auto& k = controls.keys;
         const bool wanted = k.valid() && controls.power && (keysAwake > 0 || capture.clicking() || keysInput.anySounding() || keysInput.pending());
-        const bool alone = !controls.gate && wanted;
-        if (alone && !keysOnly && gateRamp <= 0.0f) {
+        // Single-instrument mode: always the target alone (the gate open for it).
+        const bool alone = (!controls.gate && wanted) || (k.single && k.valid() && controls.power);
+        // (Switching to a single instrument clears the rest of the scene at once too.)
+        if (alone && !keysOnly && (gateRamp <= 0.0f || k.single)) {
             for (auto& g : layerGain) g.snap(0);
             for (int s = 0; s < placeSlots; ++s) {
                 if (s == k.slot) slots[std::size_t(s)].wake();

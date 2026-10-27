@@ -112,6 +112,11 @@ bool renderToWav(const Scene& scene, const Pass& pass, int bars, const juce::Fil
     return ok;
 }
 
+juce::String trackName(int type, int element) {
+    if (type <= NoPlace || type >= PlaceTypeCount) return {};
+    return juce::String(placeNames[std::size_t(type)]) + " - " + placeInfo(type).element[std::size_t(std::clamp(element, 0, placeElements - 1))].name;
+}
+
 std::vector<Track> sceneTracks(const Scene& scene) {
     const auto& c = scene.controls;
     const bool anySolo = anySoloIn(c);
@@ -146,7 +151,7 @@ std::vector<Track> sceneTracks(const Scene& scene) {
             const auto* pattern = engine->placeSlot(slot).playingPattern(e);
             if (pattern == nullptr || pattern->count <= 0) continue;
             Track t;
-            t.name = juce::String(placeNames[std::size_t(pc.type)]) + " - " + placeInfo(pc.type).element[std::size_t(e)].name;
+            t.name = trackName(pc.type, e);
             t.slot = slot;
             t.element = e;
             t.pattern = *pattern;

@@ -73,11 +73,15 @@ bool renderToWav(const Scene& scene, const Pass& pass, int bars, const juce::Fil
 // One MIDI track: the instrument's name ("Castle - Bells"), the pattern it plays from
 // bar 1, and how to write it out (key, kit or melodic).
 struct Track {
-    juce::String name;
+    juce::String name;   // trackName()
     int slot = 0, element = 0;
     pat::Pattern pattern;
     pat::MidiTarget target;
 };
+// An instrument's track name, "Place - Instrument" ("Spaceport - Pads"): the name a single-
+// instrument WORLDBUILDER (KEYS > SINGLE) shows, so each GarageBand track's region and
+// instance match. A plain hyphen: a MIDI track name has no defined text encoding.
+juce::String trackName(int type, int element);
 // Every active instrument with a pattern: audible slots (mutes and solos as in the mix),
 // switched on, not muted in the Pattern Editor, with at least one note. Generated
 // patterns come from a fresh engine started at bar 1, so they are the ones a render

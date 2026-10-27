@@ -763,8 +763,8 @@ Nothing in the sound changed; this is about the look and that every control stil
 
 ## Milestone 14 check: MIDI keyboard (KEYS and REC)
 
-- [ ] Open a Place's Pattern Editor (EDIT on a Place, then an instrument tab). In KEYS choose
-  a target (or THIS). Play the keyboard: the instrument sounds, louder and brighter when
+- [ ] Open a Place's Pattern Editor (EDIT on a Place, then an instrument tab): KEYS says
+  PLAYS <that instrument> (no target list since the hotfix). Play the keyboard: the instrument sounds, louder and brighter when
   played harder; the small keyboard lights up.
 - [ ] Sustain pedal holds notes; pitch bend bends (a tone); the mod wheel adds vibrato (or
   brightness on plucks and bells). SNAP TO SCALE corrects wrong notes; OCT moves octaves;
@@ -781,3 +781,34 @@ Nothing in the sound changed; this is about the look and that every control stil
   GarageBand recorded does not play the instrument twice. Delete the region (or switch HOST
   MIDI back on to use the region instead).
 - [ ] The tip appears the first time REC is armed.
+
+## Hotfix check after Milestone 14 (transport, tab target, single instrument)
+
+- [ ] **Labels**: the top bar's ARRANGEMENT: OFF (and ON - <SECTION>) is one clean label;
+  the Pattern Editor's STEPS (LENGTH: FREE) shows its number once. Look over the other
+  buttons and labels for any text drawn twice or on top of another control.
+- [ ] **Tab = target**: in the Pattern Editor, click through the instrument tabs: KEYS says
+  PLAYS <tab>, and the keyboard plays that instrument. Chromatic/Snap, OCT, MONITOR and HOST
+  MIDI work as before.
+- [ ] **Transport, song stopped**: click the top of the bar ruler (or drag): the playhead
+  moves. PLAY plays from it at the song's tempo; STOP stops and returns to where Play
+  started; STOP again goes to the loop's start. LOOP on: the brass loop bar (drag in the
+  ruler's middle lane to set it; double-click it for the whole pattern) plays round.
+- [ ] **REC**: song stopped, REC plays from the playhead and records. Looping with REPLACE:
+  play something different on each pass; the last pass you played on is the pattern, and
+  UNDO TAKE steps back pass by pass. OVERDUB: each pass adds. COUNT-IN: a bar of clicks,
+  then the take starts on the playhead.
+- [ ] **PUNCH**: drag in the ruler's lowest lane (red bar; PUNCH switches on). REC with LOOP:
+  only notes inside the red bar are recorded; with REPLACE the notes outside it stay.
+- [ ] **Following the host**: press play in GarageBand: WORLDBUILDER's transport stops and
+  the playhead follows the song; REC records with the host as before.
+- [ ] **Scroll and zoom**: wheel / two-finger swipe scrolls (sideways or Shift: across
+  steps); Cmd + wheel or a pinch zooms around the pointer; Alt + wheel makes rows taller.
+  While playing, the playhead never leaves the view.
+- [ ] **Single instrument**: export the scene's MIDI (CAPTURE > MIDI), drag it into
+  GarageBand (tracks named "Place - Instrument"). On one track add WORLDBUILDER, load the
+  scene, open that instrument's tab and switch SINGLE on: the top bar says SINGLE
+  INSTRUMENT - <PLACE - INSTRUMENT>, the region plays only that instrument with its
+  effects, the rest of the scene is silent. Library > Save... as a patch; load the patch on
+  another track and check it comes back in single mode. (README: "Exporting parts to
+  separate GarageBand tracks".)

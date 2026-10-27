@@ -115,6 +115,7 @@ public:
     struct KeysSettings {
         std::atomic<int> slot { -1 }, element { 0 }, scale { wb::keys::Chromatic }, octave { 0 };
         std::atomic<bool> monitor { true }, hostRegions { true }, armed { false }, countIn { false }, autoLength { false };
+        std::atomic<bool> single { false };   // single-instrument mode: the instance plays only the target, from host MIDI
         std::atomic<int> mode { wb::keys::Replace }, variant { 0 }, quantise { wb::keys::QuantiseOff };
         std::atomic<float> strength { 1.0f };
         bool tipShown = false;         // the first-time tip about host regions
@@ -124,8 +125,21 @@ public:
     wb::keys::Recorder recorder { patterns, engine.capture };
     // Takes what REC captured into the patterns (the timer and the editor call it; the tests too).
     void serviceKeys();
-    // REC on or off for the Play target.
+    // REC on or off for the Play target (never in single-instrument mode).
     void setArmed(bool on);
+
+    // Single-instrument mode (the hotfix after Milestone 14), for multi-track MIDI in
+    // GarageBand: a MIDI file cannot choose the instrument of a new GarageBand track, so
+    // each track gets its own WORLDBUILDER that plays one instrument of the scene (the
+    // Play target, e.g. "Spaceport - Pads") from the host's MIDI, through its effects
+    // (its own, its Place's and the shared reverbs and delays). The environment, the other
+    // Places and instruments, its own pattern and the arrangement are silent; host
+    // regions always play it; REC is off. Saved with the project (and a GarageBand patch).
+    void setSingle(bool on);
+    bool single() const { return keys.single.load(); }
+    // The instrument it plays, "Spaceport - Pads" (as the scene MIDI names its track);
+    // empty when there is none.
+    juce::String singleName() const;
     wb::keys::RecordSettings recordSettings() const;
 
     // The Pattern Editor's own transport (the hotfix after Milestone 14), so recording

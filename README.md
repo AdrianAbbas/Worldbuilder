@@ -390,7 +390,9 @@ record. Three ways to get it onto the timeline:
    The notes are the patterns as written (randomness, Evolve and swing are the
    plugin's playing and are not written). Use it to double a part with another
    instrument, or edit it and drop it back onto a Pattern Editor tab. The single
-   pattern DRAG MIDI in the Pattern Editor still works too.
+   pattern DRAG MIDI in the Pattern Editor still works too. To hear each track as its
+   WORLDBUILDER instrument in GarageBand, see
+   [Exporting parts to separate GarageBand tracks](#exporting-parts-to-separate-garageband-tracks).
 
 **From the arrangement** (CAPTURE, BARS: **Arrangement**):
 - **Mix** or **Stems** renders the whole arrangement exactly as the host plays it in Play
@@ -429,6 +431,41 @@ and Journey), the Planet and Planet Influence. In GarageBand,
 show automation (A) and choose WORLDBUILDER's parameters on the track; in Logic, the
 same in the track's automation lane. Draw Score Intensity rising into a climax, bring a
 Place in by its level, or switch Characters at a scene change.
+
+## Exporting parts to separate GarageBand tracks
+
+A scene's **MIDI** (footer, CAPTURE) has one track per instrument, named
+"Place - Instrument" (e.g. "Spaceport - Pads"). Dragged into GarageBand it becomes one
+software-instrument track per MIDI track, but a MIDI file cannot choose the instrument of
+a new GarageBand track: each gets GarageBand's default sound. To hear each part as its
+WORLDBUILDER instrument, give every track its own WORLDBUILDER in **single-instrument
+mode**: it plays only that one instrument of the scene, from the track's MIDI, with all
+its effects (its own, its Place's and the shared reverbs and delays), and the rest of
+the scene stays silent.
+
+1. In the WORLDBUILDER with your scene, click **MIDI** (CAPTURE) and save the file (or
+   drag it out). Drag the file onto GarageBand's tracks area: one track per instrument,
+   each named "Place - Instrument".
+2. On the first new track, open Smart Controls (B) → Plug-ins → Instrument slot → AU
+   Instruments → Veil Audio → WORLDBUILDER. Load the same scene
+   (the scene browser, or copy the world with SAVE .WORLD / LOAD .WORLD).
+3. Open the Place's **EDIT > PATTERNS**, click the tab of the instrument the track is
+   named after (e.g. Spaceport > Pads) and switch **SINGLE** on in the KEYS row. The top
+   bar now says **SINGLE INSTRUMENT - SPACEPORT - PADS**; the track's region plays it
+   (HOST MIDI is ignored in this mode: the region always plays it). REC is off.
+4. **Save it as a GarageBand patch** for one-click reuse: in the Library (Y), click
+   **Save...** at the bottom and name it after the instrument ("WB Spaceport Pads"). The
+   patch keeps WORLDBUILDER, its scene and its SINGLE instrument. Next time, select a
+   track and click the patch in the Library.
+5. Repeat for each track (each patch loads its own instrument). Mute or remove the
+   original whole-scene WORLDBUILDER track if you don't want the scene twice.
+
+Notes: every instance plays its instrument with the scene's Root, Mood, Characters and
+effects as they were when you saved the patch; change the scene in one instance and the
+others don't follow. A single-instrument instance ignores the arrangement and plays in
+any Play Mode, with the song stopped too (so you can play it from the keyboard). Click
+the top bar's SINGLE INSTRUMENT to get back to its tab; SINGLE off plays the whole scene
+again.
 
 ## Control guide
 

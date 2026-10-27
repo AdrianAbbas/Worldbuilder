@@ -87,6 +87,18 @@ KeysPanel::KeysPanel(WorldbuilderProcessor& p) : processor(p) {
         processor.keys.regionsNotice = false;
     };
 
+    single.setClickingTogglesState(true);
+    single.setTooltip("Single instrument: this WORLDBUILDER plays only this instrument, from the host's MIDI, with its effects; the rest "
+                      "of the scene is silent. For a scene's MIDI on separate GarageBand tracks: one WORLDBUILDER per track, each on "
+                      "its instrument (the tracks are named \"Place - Instrument\" to match). Saved with the project and a patch.");
+    single.onClick = [this] {
+        // On: the tab shown is the instrument; off: the tab shown is the target again.
+        const bool on = single.getToggleState();
+        processor.setSingle(false);
+        if (slotShown >= 0) setTarget(slotShown, elementShown);
+        processor.setSingle(on);
+        refresh();
+    };
     rec.setClickingTogglesState(true);
     rec.setTooltip("REC: record the keyboard into this instrument's pattern. With the host stopped, WORLDBUILDER's transport plays from "
                    "the playhead (after a bar of count-in with COUNT-IN) and records; looping, each pass is a take. While the host plays, "
@@ -156,11 +168,11 @@ KeysPanel::KeysPanel(WorldbuilderProcessor& p) : processor(p) {
         if (processor.recorder.undo() && onPatternsChanged) onPatternsChanged();
         refresh();
     };
-    for (auto* c : std::initializer_list<juce::Component*> { &scale, &octDown, &octUp, &monitor, &regions, &rec, &mode, &variant,
+    for (auto* c : std::initializer_list<juce::Component*> { &single, &scale, &octDown, &octUp, &monitor, &regions, &rec, &mode, &variant,
                                                              &quantise, &strength, &countIn, &punch, &length, &quantiseNow, &undoTake })
         addAndMakeVisible(*c);
     setIcon(rec, Icon::Record);
-    for (auto* b : { &monitor, &regions, &countIn, &punch, &rec }) b->setColour(juce::TextButton::buttonOnColourId, colours::brass);
+    for (auto* b : { &monitor, &regions, &countIn, &punch, &rec, &single }) b->setColour(juce::TextButton::buttonOnColourId, colours::brass);
     typesShown = processor.slotTypes();
     refresh();
     startTimerHz(30);
@@ -172,8 +184,9 @@ void KeysPanel::setContext(int slot, int element, int v) {
     slotShown = slot;
     elementShown = element;
     variantShown = v;
-    // The tab shown is what the keyboard plays and REC records into.
-    if (slot >= 0 && element >= 0) setTarget(slot, element);
+    // The tab shown is what the keyboard plays and REC records into (a single-instrument
+    // instance keeps its instrument).
+    if (slot >= 0 && element >= 0 && !processor.single()) setTarget(slot, element);
     refresh();
 }
 
@@ -190,6 +203,8 @@ juce::String KeysPanel::targetText() const {
     if (slot < 0 || slot >= placeSlots) return "PLAYS NOTHING";
     const int t = typesShown[std::size_t(slot)];
     if (t == NoPlace || patternInfo(t, element).kind == NoPattern) return "PLAYS NOTHING";
+    // A single-instrument instance may play another tab than the one shown: its Place too.
+    if (processor.single() && (slot != slotShown || element != elementShown)) return "PLAYS " + processor.singleName().toUpperCase();
     return "PLAYS " + juce::String(placeInfo(t).element[std::size_t(element)].name).toUpperCase();
 }
 
@@ -202,6 +217,9 @@ void KeysPanel::refresh() {
     monitor.setToggleState(k.monitor.load(), juce::dontSendNotification);
     regions.setToggleState(k.hostRegions.load(), juce::dontSendNotification);
     rec.setToggleState(k.armed.load(), juce::dontSendNotification);
+    single.setToggleState(processor.single(), juce::dontSendNotification);
+    for (auto* c : std::initializer_list<juce::Component*> { &rec, &mode, &countIn, &punch, &quantise, &strength, &length, &monitor, &regions })
+        c->setEnabled(!processor.single());
     mode.setSelectedId(k.mode.load() + 1, juce::dontSendNotification);
     variant.setSelectedId(k.variant.load() + 1, juce::dontSendNotification);
     variant.setEnabled(k.mode.load() == keys::IntoVariant);
@@ -235,7 +253,10 @@ void KeysPanel::refresh() {
     } else if (own) {
         text = processor.transport.loop.load() ? "PLAYING the loop at the host tempo. REC records from here; STOP stops." : "PLAYING at the host tempo. STOP stops.";
     }
-    if (juce::Time::getMillisecondCounterHiRes() < tipUntil)
+    if (processor.single())
+        text = "SINGLE INSTRUMENT: this WORLDBUILDER plays only " + processor.singleName().toUpperCase()
+               + " from the host's MIDI, with its effects. The rest of the scene is silent. SINGLE again: the whole scene.";
+    else if (juce::Time::getMillisecondCounterHiRes() < tipUntil)
         text = "TIP: GarageBand/Logic also record your notes as a MIDI region. Record into WORLDBUILDER's pattern (recommended) OR a DAW "
                "region, not both: after a take, HOST MIDI switches off so the region won't play the instrument twice.";
     else if (k.regionsNotice && !k.armed.load())
@@ -286,6 +307,8 @@ void KeysPanel::resized() {
         auto t = playRow.withTrimmedLeft(40);
         const auto place = [&t](juce::Component& c, int w) { c.setBounds(t.removeFromLeft(w).reduced(1, 1)); };
         targetArea = t.removeFromLeft(150).withTrimmedLeft(2);
+        place(single, 62);
+        t.removeFromLeft(4);
         place(scale, 104);
         t.removeFromLeft(6);
         place(octDown, 22);

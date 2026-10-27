@@ -4757,3 +4757,151 @@ is without `[skip ci]`; the harness check is the one to watch on all four routes
 - The Pattern Editor's grid is about 50 px shorter for the KEYS rows (it scrolls).
 - Milestone 15 (samples) is next; per Direction Update 8 the repository must be private
   before any samples are committed.
+
+## Hotfixes after the Milestone 14 GarageBand test (2026-10-27)
+
+The developer confirmed Milestone 14 in GarageBand (keyboard recording works) and sent
+four hotfixes. Each was pushed when done with `[skip ci]`; this last push is without it.
+Fixes 3 and 2 went up as one commit: the tab-as-target change and the transport share
+the KEYS rows and were built and tested together (fix 3 first, since REC from the
+playhead records into the tab shown).
+
+### Progress checklist
+
+- [x] 1. ARRANGEMENT: OFF drew two labels on top of each other; every other button and label checked
+- [x] 3. The tab shown is the play and record target (the KEYS target list and THIS removed)
+- [x] 2. The Pattern Editor's own transport: ruler and playhead, Play / Stop / Loop, loop and punch regions, REC from the playhead, a take per loop pass, count-in, follows the host, scroll and zoom
+- [x] 4. Single-instrument mode, scene MIDI tracks named "Place - Instrument", README "Exporting parts to separate GarageBand tracks"
+
+### 1. Text drawn twice
+
+- **Cause**: the pixel look bakes a TextButton's label into its sprite in
+  `drawButtonBackground` (`drawButtonText` is empty). The top bar's two-line
+  `TwoLineButton` drew that background, so the sprite's one-line "ARRANGEMENT: OFF" sat
+  under its own two lines. A button that draws its own text now sets the property
+  `pixelOwnText` and gets the face alone.
+- **The audit**: snapshots of the main view, a detail panel, the Pattern Editor and ARRANGE
+  (`--snapshots`) looked at by eye, close up, plus a new test. One more of the same kind:
+  the Pattern Editor's **STEPS** bar drew its value in the bar's sprite and again in its
+  text box (JUCE lays a bar's text box over the whole bar). Bars now hide their text box's
+  text (`createSliderTextBox`) and keep their full width; STEPS has no text box.
+- Looked at and left: ARRANGE's instrument names with four Places are tight (9 px rows,
+  the 7 px Tiny face) but do not overlap.
+- **Tests (`--only overlap`, 9 checks)**: the indicator's face is identical with and without
+  a label (539 pixels differ with the fix taken out); in the four views no two sibling
+  controls overlap and no bar slider shows its text box's text.
+
+### 3. The tab shown is the target
+
+`KeysPanel::setContext` (called whenever the Pattern Editor lays out a tab) makes that tab's
+instrument the Play target; the KEYS row says "PLAYS <INSTRUMENT>". The target list, THIS
+and `targetId` are gone. Until a tab is opened a project keeps its saved target (older
+projects: none, so incoming notes do nothing, as before). Switching tabs while armed ends
+the take (as changing the target did).
+
+### 2. The Pattern Editor's transport
+
+- **Where it runs.** `WorldbuilderProcessor::EditorTransport` (atomics): playhead, loop on and
+  region, punch on and region, the pattern's length; the audio thread's state (Stopped,
+  CountIn, Rolling), beat and count-in left. It runs only while the host is stopped, at the
+  host tempo, on the world's own clock like the ARRANGE preview (the two stop each other).
+  Rolling counts as "the transport rolls" everywhere the host's would: the Transport gate
+  opens, `transportRolling` (the playheads) and the keys' `hostPlaying` (REC). The host
+  starting playback ends it, so the editor follows the host; PLAY does nothing then.
+- **Starting.** Play Mode Transport/Arrangement: `engine.restart` at the playhead (from
+  silence, deterministic, as a host locate). Play Mode Free: `engine.resync` (the world plays
+  on). It does not follow the arrangement: it is the pattern's loop tool.
+- **Looping.** The processor's piece loop stops a piece on the loop end (from
+  `WorldEngine::outputBeat`, the beat of the next sample out, the FIFO's lead taken off) and
+  `resync`s to the loop start, so the tails ring on across the wrap. With Loop on, Play
+  from outside the loop starts at its start.
+- **A take per pass.** `keys::Capture::step` ends the take and starts a new one when the
+  song goes back (the loop wrapping, or a host cycling). Replace: the last pass with notes
+  is the pattern (a pass with no notes changes nothing, as before); Overdub: each pass
+  adds; each pass is one undo step.
+- **Punch.** Capture drops note-ons outside [in, out) (modulo the pattern's length);
+  Recorder's Replace / Into variant with a punch keep the pattern (its grid) and remove only
+  the notes starting inside the region.
+- **Count-in.** REC with COUNT-IN: the processor clicks a bar (`keys::Click`, its own), REC is
+  held off meanwhile (a note in the count-in is not recorded), then the transport restarts
+  on the playhead, split on the exact sample. The host's count-in (next bar line) is
+  unchanged and applies only to the host's transport.
+- **Buttons.** PLAY / STOP / LOOP (new pixel icons Play, Stop, Loop, Record) over the key
+  column, the ruler over the steps. REC with everything stopped starts the transport; REC
+  again stops recording (the transport plays on); STOP stops both (REC disarms); STOP when
+  stopped: the playhead to the loop's start.
+- **The ruler** (`PatternEditor::Ruler`): bar numbers and the playhead (click or drag; while
+  playing, the drop point plays on), the loop lane (drag a region or its edges; snaps to
+  beats, Shift: steps; double-click: the whole pattern) and the punch lane (dragging there
+  switches PUNCH on). The loop follows the pattern's length until dragged (`loopSet`). Loop,
+  punch and the playhead save in the `Keys` state.
+- **Scroll and zoom.** Cmd/Ctrl-wheel and a pinch (`mouseMagnify`) zoom around the pointer,
+  Alt-wheel zooms the rows, wheel and swipes scroll (both on the ruler too). While playing,
+  `followPlayhead` pages the grid so the playhead stays in view. The grid's bar numbers moved
+  to the ruler; the velocity and chance lanes are 10 and 6 px shorter so the grid keeps its
+  height.
+- **Tests (`--only transport`, 29 checks)**: Play from bar 2 at 120 bpm, Stop (and the fade),
+  Stop again, the loop going round (beats stay in 4..8, three passes), Play from outside the
+  loop, the host taking over; REC looping with Replace (the last pass wins, undo per pass),
+  Overdub (passes add), punch (only inside, outside kept), count-in (nothing recorded in it,
+  the take on the playhead); the ruler sets the playhead, the buttons, zoom, the playhead
+  kept in view.
+
+### 4. Single-instrument mode
+
+- `KeysSettings::single`, saved in the `Keys` state (so a GarageBand patch keeps it). The
+  instrument is the Play target; SINGLE (KEYS row) makes the tab shown the instrument, and
+  while it is on other tabs do not retarget.
+- **Engine**: single forces the "keyboard alone" path from Milestone 14 (`keysOnly`): the
+  environment, the other slots and every pattern silent, the target played by the live
+  notes at its level through its own effects, its Place's and the shared buses; the gate
+  open in any Play Mode. Switching it on clears the rest of the scene at once (it had
+  faded over ~8 s: the Castle's tails, -49 to -61 dB).
+- **Processor**: host notes always pass (HOST MIDI is ignored: the track's regions are the
+  part); Monitor forced on; REC cannot arm (the transport stops); no arrangement, no
+  arrangement Locations.
+- **Names**: `capture::trackName(type, element)` names both the scene MIDI's tracks and the
+  single instrument: "Spaceport - Pads". The developer wrote "Place – Instrument" with an
+  en dash; the tracks already used " - ", which is kept, since a MIDI track name has no
+  defined text encoding and GarageBand may not show a UTF-8 dash.
+- **Interface**: the top bar's indicator reads SINGLE INSTRUMENT / <PLACE - INSTRUMENT> and
+  opens that tab; the KEYS line explains the mode.
+- **README**: "Exporting parts to separate GarageBand tracks" (MIDI out, one WORLDBUILDER per
+  track in single mode, save as a patch with Library > Save...).
+- **Tests (`--only single`, 13 checks)**: the scene silent in single mode (-25.6 dB to
+  silence), a host note with HOST MIDI off plays the instrument, with the song stopped too,
+  under an arrangement (not arranged), REC refused, the name, state round trip, SINGLE off
+  brings the scene back, the indicator and the KEYS button.
+
+### Tests (Linux, GCC)
+
+Fix 1: shards 1-5 3741 passed, 0 failed; the stress group failed once on its first run
+(one 545 ms message-thread tick at editor creation, cold start) and passed on the rerun
+(12/12). Fixes 3 and 2: 3783 passed, 0 failed (all six shards). Fix 4 (the final state):
+3796 passed, 0 failed (all six shards, the new `single` group in the parallel script).
+
+### Hotfix handoff
+
+**Done**: the four hotfixes. This push is without `[skip ci]`, so CI builds and packages it
+once.
+
+**What to test first** ([MANUAL_TEST.md](MANUAL_TEST.md), "Hotfix check after Milestone
+14"): the top bar's label; the tabs as the target; the transport with the song stopped
+(playhead, PLAY/STOP/LOOP, REC looping with Replace and Overdub, punch, count-in), the host
+taking over; scroll and zoom; a scene's MIDI on GarageBand tracks with single-instrument
+WORLDBUILDERs saved as patches.
+
+**Known issues / limits**:
+- Nothing here has been heard or clicked on a Mac: measured on Linux through `processBlock`
+  and the editor's components. GarageBand's Library "Save..." keeping the plugin state is
+  how GarageBand patches work, but not tried with WORLDBUILDER.
+- The transport restarts the world from silence at Play and at each locate in Play Mode
+  Transport (as the host does), and wraps the loop with a resync (tails ring on). A wrap or
+  a count-in end lands within the engine's 32-sample chunk at worst (the FIFO is dropped).
+- The editor's transport plays the plain world, not the arrangement.
+- Single-instrument instances each hold the whole scene (their own copy): editing the scene
+  in one does not change the others.
+- Track names keep a plain hyphen (see 4).
+- The Pattern Editor's grid is a little shorter again for the ruler (it scrolls and now
+  zooms).
+- Carried over: Milestone 15 (samples) is next; the repository must be private first.

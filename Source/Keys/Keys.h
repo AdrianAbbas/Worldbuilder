@@ -60,6 +60,9 @@ struct Controls {
     bool countIn = false;         // a bar of clicks before a take with the transport
     int variant = 0;              // the variant recorded into (and heard while armed)
     bool hostPlaying = false;     // the host transport (or the Pattern Editor's) is rolling (not the ARRANGE preview)
+    // Single-instrument mode: this instance plays only the target, from host MIDI, with
+    // its effects; the rest of the scene (and its pattern) is silent.
+    bool single = false;
     // Punch: a take records only notes inside [punchIn, punchOut) beats of the pattern
     // (which repeats every `length` beats).
     bool punch = false;

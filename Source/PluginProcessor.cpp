@@ -97,7 +97,8 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
     k.monitor = keys.monitor.load(std::memory_order_relaxed);
     // The Pattern Editor's transport counts in itself (REC waits for it), then the take
     // starts on the playhead: the host's count-in is for the host's transport only.
-    k.armed = keys.armed.load(std::memory_order_relaxed) && txState != TransportCountIn;
+    k.single = keys.single.load(std::memory_order_relaxed);
+    k.armed = keys.armed.load(std::memory_order_relaxed) && txState != TransportCountIn && !k.single;
     k.countIn = keys.countIn.load(std::memory_order_relaxed) && txState == TransportStopped;
     k.variant = keys.mode.load(std::memory_order_relaxed) == keys::IntoVariant ? keys.variant.load(std::memory_order_relaxed) : 0;
     k.hostPlaying = hostPlayingNow;
@@ -105,6 +106,7 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
     k.punchIn = transport.punchIn.load(std::memory_order_relaxed);
     k.punchOut = transport.punchOut.load(std::memory_order_relaxed);
     k.length = transport.length.load(std::memory_order_relaxed);
+    if (k.single) k.monitor = true;   // it is what the track plays
     return c;
 }
 
@@ -333,7 +335,8 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     {
         const bool armed = keys.armed.load(std::memory_order_relaxed);
         const bool regions = keys.hostRegions.load(std::memory_order_relaxed);
-        const bool notes = !(playing && !armed && !regions);
+        // Single-instrument mode: the track's regions are the part, so they always play.
+        const bool notes = keys.single.load(std::memory_order_relaxed) || !(playing && !armed && !regions);
         for (const auto meta : midi) {
             if (keyCount >= int(keyEvents.size())) break;
             const auto m = meta.getMessage();
@@ -367,10 +370,12 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     }
     // Play Mode Arrangement (with the host playing) and the preview follow the arrangement.
     engine.arrangementIn.update();
-    const arr::Arrangement* arranged = (transportMode && mode == PlayArrangement && playing) || previewing ? &engine.arrangementIn.read() : nullptr;
+    // (A single-instrument instance plays its instrument whatever the arrangement says.)
+    const bool soloInstrument = keys.single.load(std::memory_order_relaxed);
+    const arr::Arrangement* arranged = !soloInstrument && ((transportMode && mode == PlayArrangement && playing) || previewing) ? &engine.arrangementIn.read() : nullptr;
     // Its sections' Locations: while the host plays or is stopped in Arrangement mode
     // (the world stays where the song stopped), and during the preview.
-    const arr::Arrangement* located = (transportMode && mode == PlayArrangement) || previewing ? &engine.arrangementIn.read() : nullptr;
+    const arr::Arrangement* located = !soloInstrument && ((transportMode && mode == PlayArrangement) || previewing) ? &engine.arrangementIn.read() : nullptr;
     if (located != nullptr && !located->usesLocations()) located = nullptr;
 
     // The world: the parameters, or a journey between Locations. While one is under way
@@ -710,8 +715,25 @@ void WorldbuilderProcessor::serviceKeys() {
 }
 
 void WorldbuilderProcessor::setArmed(bool on) {
+    if (on && keys.single.load()) return;
     keys.armed.store(on);
     if (!on) serviceKeys();
+}
+
+void WorldbuilderProcessor::setSingle(bool on) {
+    if (on) {
+        setArmed(false);
+        if (transport.wanted.load()) transportStop();
+    }
+    keys.single.store(on && keys.slot.load() >= 0);
+}
+
+juce::String WorldbuilderProcessor::singleName() const {
+    const int slot = keys.slot.load();
+    if (slot < 0 || slot >= placeSlots) return {};
+    const int type = slotTypes()[std::size_t(slot)];
+    if (type == NoPlace || patternInfo(type, keys.element.load()).kind == NoPattern) return {};
+    return capture::trackName(type, keys.element.load());
 }
 
 void WorldbuilderProcessor::serviceArrangement() {
@@ -794,6 +816,7 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
         k.setProperty("quantise", keys.quantise.load(), nullptr);
         k.setProperty("strength", keys.strength.load(), nullptr);
         k.setProperty("tip", keys.tipShown, nullptr);
+        k.setProperty("single", keys.single.load(), nullptr);
         // The Pattern Editor's transport: loop and punch.
         k.setProperty("loop", transport.loop.load(), nullptr);
         k.setProperty("loopset", transport.loopSet.load(), nullptr);
@@ -881,6 +904,7 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         const float strength = float(double(k.getProperty("strength", 1.0)));
         keys.strength.store(std::isfinite(strength) ? juce::jlimit(0.0f, 1.0f, strength) : 1.0f);
         keys.tipShown = bool(k.getProperty("tip", false));
+        keys.single.store(bool(k.getProperty("single", false)) && keys.slot.load() >= 0);
         keys.armed.store(false);
         const auto beats = [&](const char* id, double fallback) {
             const double v = double(k.getProperty(id, fallback));

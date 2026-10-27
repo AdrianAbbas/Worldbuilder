@@ -26,6 +26,7 @@ public:
     // Also used by the tests.
     juce::TextButton& recButton() { return rec; }
     juce::TextButton& punchButton() { return punch; }
+    juce::TextButton& singleButton() { return single; }
     juce::String statusText() const { return status; }
     // What the keyboard plays, as the row says it ("PLAYS BELLS").
     juce::String targetText() const;
@@ -41,7 +42,7 @@ private:
     std::array<int, placeSlots> typesShown {};
     uint32_t recorderSeen = 0;
     juce::ComboBox scale, mode, variant, quantise, length;
-    juce::TextButton octDown { "-" }, octUp { "+" }, monitor { "MONITOR" }, regions { "HOST MIDI" };
+    juce::TextButton octDown { "-" }, octUp { "+" }, monitor { "MONITOR" }, regions { "HOST MIDI" }, single { "SINGLE" };
     juce::TextButton rec { "REC" }, countIn { "COUNT-IN" }, punch { "PUNCH" }, quantiseNow { "QUANTISE" }, undoTake { "UNDO TAKE" };
     juce::Slider strength;
     std::unique_ptr<Keyboard> keyboard;

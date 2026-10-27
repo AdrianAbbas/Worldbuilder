@@ -8090,6 +8090,91 @@ void testTransport(Suite& s) {
     }
 }
 
+// Single-instrument mode (the hotfix after Milestone 14): a WORLDBUILDER per GarageBand
+// track, each playing one instrument of the scene from host MIDI, with its effects.
+void testSingle(Suite& s) {
+    using namespace keysTest;
+    s.section("single: one instrument of the scene from host MIDI, the rest silent");
+    // Castle and Village with their patterns playing and the environment up: a full scene.
+    Host h;
+    h.set("playmode", float(PlayTransport));
+    h.set("p1_type", float(Castle));
+    h.set("p2_type", float(Village));
+    h.p->patterns.syncTypes(h.p->slotTypes());
+    h.playHead.playing = true;
+    h.render(3.0);
+    const auto scene = measure(h.render(1.0), 0.0);
+    h.p->keys.slot = 0;
+    h.p->keys.element = CastlePlace::Bells;
+    h.p->setSingle(true);
+    h.p->keys.hostRegions = false;   // the safeguard would drop region notes: single mode plays them anyway
+    h.render(0.2);
+    const auto silent = measure(h.render(1.0), 0.0);
+
+    s.check(h.p->single() && silent.rmsDb < scene.rmsDb - 40.0, "SINGLE: the rest of the scene (environment, other Places and instruments, its own pattern) is silent",
+            fmt(scene.rmsDb) + " -> " + fmt(silent.rmsDb) + " dB");
+    note(h, 69, 110);
+    const auto played = h.render(1.0);
+    const auto bells = measure(played, 0.0, 0.8);
+    s.check(bells.finite && bells.rmsDb > silent.rmsDb + 30.0, "a host MIDI note (a region playing, HOST MIDI off) plays the instrument", fmt(bells.rmsDb) + " dB");
+    off(h, 69);
+    h.render(0.2);
+    h.p->setArmed(true);
+    s.check(!h.p->keys.armed.load(), "REC cannot arm a single-instrument instance");
+    s.check(h.p->singleName() == "Castle - Bells", "it is named as the scene MIDI names the track", h.p->singleName().toStdString());
+    s.check(capture::trackName(Village, 0) == juce::String("Village - ") + placeInfo(Village).element[0].name,
+            "scene MIDI tracks are named \"Place - Instrument\" (the same function names both)");
+    // Stopped, in Transport mode: it still plays (a GarageBand track's live keyboard).
+    h.playHead.playing = false;
+    h.render(0.5);
+    note(h, 72, 110);
+    const auto stoppedPlay = measure(h.render(0.6), 0.0);
+    off(h, 72);
+    s.check(stoppedPlay.rmsDb > silent.rmsDb + 30.0, "with the song stopped it plays too", fmt(stoppedPlay.rmsDb) + " dB");
+    // The arrangement does not mute it.
+    h.p->arrangement.set(arrangeTest::classicArc());
+    h.set("playmode", float(PlayArrangement));
+    h.playHead.position = 0;
+    h.playHead.playing = true;
+    h.render(0.3);
+    note(h, 69, 110);
+    const auto arranged = measure(h.render(0.6), 0.0);
+    off(h, 69);
+    s.check(arranged.rmsDb > silent.rmsDb + 30.0 && h.p->engine.arrangeSection.load() == -1, "the arrangement does not apply to it", fmt(arranged.rmsDb) + " dB");
+    // Saved with the project (and so in a GarageBand patch).
+    juce::MemoryBlock state;
+    h.p->getStateInformation(state);
+    auto fresh = std::make_unique<WorldbuilderProcessor>();
+    fresh->setStateInformation(state.getData(), int(state.getSize()));
+    s.check(fresh->single() && fresh->keys.slot.load() == 0 && fresh->keys.element.load() == CastlePlace::Bells, "saved and restored with the project");
+    // Back to the whole scene.
+    h.p->setSingle(false);
+    h.set("playmode", float(PlayTransport));
+    h.render(2.0);
+    const auto back = measure(h.render(1.0), 0.0);
+    s.check(!h.p->single() && back.rmsDb > silent.rmsDb + 30.0, "SINGLE off: the whole scene again", fmt(back.rmsDb) + " dB");
+    {
+        // The interface: SINGLE in the KEYS row and the top bar says it.
+        h.p->setSingle(true);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->settle(0.1f);
+        s.check(view->arrangementIndicator().getButtonText() == "SINGLE INSTRUMENT - CASTLE - BELLS", "the top bar shows the instrument it plays",
+                view->arrangementIndicator().getButtonText().toStdString());
+        view->openPatterns(0, CastlePlace::Horns);
+        view->settle(0.1f);
+        auto& panel = view->patternEditor().keysPanel();
+        panel.refresh();
+        s.check(h.p->keys.element.load() == CastlePlace::Bells && panel.singleButton().getToggleState(), "another tab shown keeps its instrument");
+        panel.singleButton().setToggleState(false, juce::dontSendNotification);
+        panel.singleButton().onClick();
+        s.check(!h.p->single() && h.p->keys.element.load() == CastlePlace::Horns, "SINGLE off in the KEYS row: the whole scene, and the tab shown is the target again");
+        panel.singleButton().setToggleState(true, juce::dontSendNotification);
+        panel.singleButton().onClick();
+        s.check(h.p->single() && h.p->singleName() == "Castle - Horns", "SINGLE on: the tab shown becomes the single instrument", h.p->singleName().toStdString());
+    }
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     juce::String snapshot;
@@ -8172,6 +8257,7 @@ int main(int argc, char** argv) {
     if (run("keys")) testKeys(s);
     if (run("overlap")) testOverlap(s);
     if (run("transport")) testTransport(s);
+    if (run("single")) testSingle(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

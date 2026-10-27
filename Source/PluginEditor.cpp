@@ -293,9 +293,16 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     addAndMakeVisible(arrangeToggle);
     arrangementState.setTooltip("Whether the host's playback follows the arrangement (Play Mode Arrangement), and the section playing. "
                                 "Click to switch: OFF goes back to the Play Mode before (the arrangement stays saved). With no "
-                                "sections yet, a click opens ARRANGE.");
+                                "sections yet, a click opens ARRANGE. A single-instrument WORLDBUILDER (KEYS > SINGLE) shows its instrument "
+                                "here instead; a click opens its tab.");
     arrangementState.setColour(juce::TextButton::buttonOnColourId, ui::colours::brass);
     arrangementState.onClick = [this] {
+        if (processor.single()) {
+            // Its instrument's tab, where SINGLE switches it back to the whole scene.
+            openPatterns(processor.keys.slot.load(), processor.keys.element.load());
+            refreshArrangementState();
+            return;
+        }
         if (processor.arrangement.get().count <= 0) {
             openArrange();
             return;
@@ -1550,6 +1557,13 @@ void WorldbuilderEditor::TwoLineButton::paintButton(juce::Graphics& g, bool high
 
 void WorldbuilderEditor::refreshArrangementState() {
     const auto a = processor.arrangement.get();
+    // A single-instrument instance plays its instrument, whatever the arrangement says.
+    if (processor.single()) {
+        const juce::String text = "SINGLE INSTRUMENT - " + processor.singleName().toUpperCase();
+        if (arrangementState.getButtonText() != text) arrangementState.setButtonText(text);
+        if (!arrangementState.getToggleState()) arrangementState.setToggleState(true, juce::dontSendNotification);
+        return;
+    }
     const bool on = processor.arrangementOn();
     juce::String text = on ? "ARRANGEMENT: ON" : "ARRANGEMENT: OFF";
     if (on) {
