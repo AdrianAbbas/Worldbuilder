@@ -5072,7 +5072,7 @@ gave 8.1 / 7.8 / 11.0).
 Full suite before the fix: 3842 passed, 1 failed (the Biodome check above), across the six
 shards (including `samples`, the CPU groups and the 60 s stress test). After the fix:
 Biodome's places, instruments and samples groups 114 passed, 0 failed; the Places shard
-(places, placeworld, scenes, envbalance, envkept, hurdy) SHARD3_RESULT. The AU harness
+(places, placeworld, scenes, envbalance, envkept, hurdy) was still running locally when this was pushed; the CI Linux job runs it with the full suite. The AU harness
 check runs on the macOS CI only.
 
 ### Milestone 15a handoff
