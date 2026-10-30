@@ -479,24 +479,33 @@ OverlayArt forest(const Layout& L) {
 // Alien Hive: tendrils curling from the corners along the frames, a honeycomb of
 // cells in the gaps and the open space, veins along the bottoms, clusters of egg
 // pods; the pods pulse, spores rise, the tendril tips glow.
+//
+// The honeycomb is the costly part: thousands of small cells. Each cell's wall is an
+// outer and an inner hexagon filled even-odd (14 path segments), never a stroke (a
+// rounded stroke of a hexagon is about ten times as many), and the cells are capped, so
+// the overlay stays as light as the others whatever the layout (Tests: "overlays").
+constexpr int maxHiveCells = 2400;
 OverlayArt hive(const Layout& L) {
     OverlayArt a;
     juce::Random r(707);
     juce::Path bodies, suckers, comb, cells, veins, pods, podLight;
+    comb.setUsingNonZeroWinding(false);
     std::vector<Point> podSpots, tips;
+    int cellCount = 0;
     const auto hexes = [&](Rect area, float size) {
-        const float h = size * 1.732f;
+        if (area.isEmpty()) return;
+        const float h = size * 1.732f, wall = 0.45f;
         int row = 0;
-        for (float y = area.getY(); y < area.getBottom() + h; y += h * 0.5f, ++row)
-            for (float x = area.getX() + ((row & 1) != 0 ? size * 1.5f : 0.0f); x < area.getRight() + size; x += size * 3.0f) {
-                juce::Path hex;
-                hex.addPolygon({ x, y }, 6, size * 0.92f, 0.5236f);
-                comb.addPath(hex);
-                if (r.nextFloat() < 0.18f) cells.addPath(hex);
+        for (float y = area.getY(); y < area.getBottom() + h && cellCount < maxHiveCells; y += h * 0.5f, ++row)
+            for (float x = area.getX() + ((row & 1) != 0 ? size * 1.5f : 0.0f); x < area.getRight() + size && cellCount < maxHiveCells; x += size * 3.0f) {
+                ++cellCount;
+                comb.addPolygon({ x, y }, 6, size * 0.92f + wall, 0.5236f);
+                comb.addPolygon({ x, y }, 6, size * 0.92f - wall, 0.5236f);
+                if (r.nextFloat() < 0.18f) cells.addPolygon({ x, y }, 6, size * 0.92f - wall, 0.5236f);
             }
     };
     for (auto gap : L.gutters) hexes(gap, 4.0f);
-    for (auto ledge : L.ledges) hexes(ledge, 3.0f);
+    for (auto ledge : L.ledges) hexes(ledge, 3.5f);
     for (auto o : L.open) hexes(o.reduced(2.0f), 5.0f);
     for (auto p : L.panels) {
         // Tendrils from the corners, along the frames.
@@ -553,7 +562,7 @@ OverlayArt hive(const Layout& L) {
             }
             podSpots.push_back(at.translated(0.0f, -2.0f));
         }
-    a.shapes.push_back({ comb, juce::Colour(0xff5a2470), 0.9f });
+    a.shapes.push_back({ comb, juce::Colour(0xff5a2470) });
     a.shapes.push_back({ cells, juce::Colour(0xff2a1236) });
     a.shapes.push_back({ veins, juce::Colour(0xffa04ab8) });
     a.shapes.push_back({ bodies, juce::Colour(0xff6a2a7a) });

@@ -261,6 +261,7 @@ void PlaceOverlays::rebuildArea() {
     layout.bounds = getLocalBounds().toFloat();
     layout.panels.clear();
     layout.gutters.clear();
+    layout.ledges.clear();   // (once missing: every layout change added the ledges again, and the Hive's honeycomb on them grew without end)
     layout.open.clear();
     layout.top = panelList.empty() ? 0.0f : float(panelList.front().getY());
     for (auto p : panelList) {
@@ -402,7 +403,18 @@ std::vector<juce::Rectangle<int>> PlaceOverlays::movingParts(int type) const {
     return marks;
 }
 
+const PlaceOverlays::Layout& PlaceOverlays::currentLayout() const { return layout; }
+
+std::size_t PlaceOverlays::stillSegments(int type) const {
+    if (type <= NoPlace || type >= PlaceTypeCount) return 0;
+    std::size_t n = 0;
+    for (const auto& shape : still[std::size_t(type)].shapes)
+        for (juce::Path::Iterator it(shape.path); it.next();) ++n;
+    return n;
+}
+
 void PlaceOverlays::build(int type) {
+    ++builds;
     auto& s = still[std::size_t(type)];
     s = {};
     std::vector<Point> lanterns;

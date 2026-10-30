@@ -32,9 +32,10 @@ public:
     static constexpr int baseWidth = 1160, baseHeight = 812;
 
     // For the tests: add a Place to the first empty slot (as a card click does) and
-    // open a slot's detail panel.
+    // open or close a slot's detail panel.
     int addPlace(int type);
     void openDetail(int slot);
+    void closeDetail();
     // Opens the Pattern Editor on a slot's Place (on `element`, or its first pattern).
     void openPatterns(int slot, int element = -1);
     wb::ui::PatternEditor& patternEditor() { return *patterns; }
@@ -130,7 +131,6 @@ private:
     void paintPlaceStrips(juce::Graphics&);
     void paintDetail(juce::Graphics&);
     void layoutDetail();
-    void closeDetail();
     void updateDetailLabels();
     void refreshPlaceStrips();
     void setParam(int param, float value);

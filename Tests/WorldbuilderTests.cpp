@@ -3333,6 +3333,50 @@ void testOverlays(Suite& s, const juce::String& snapshotPath) {
         b.p->setStateInformation(state.getData(), int(state.getSize()));
         s.check(int(b.p->parameters.state.getProperty("overlays", -1)) == ui::OverlaysSubtle, "the Overlays setting is saved and restored");
     }
+    // The Alien Hive's freeze (hotfix after 15a): every Place's overlay, alone and Full,
+    // stays the same size however often the layout changes (a detail panel opening and
+    // closing), and is cheap enough to build and paint. (The Hive's honeycomb was ~400k
+    // path segments and grew by ~630k with each open and close.)
+    s.section("overlays: every Place's art is bounded and does not grow with layout changes");
+    {
+        juce::Image target(juce::Image::ARGB, WorldbuilderEditor::baseWidth, WorldbuilderEditor::baseHeight, true);
+        std::string heaviest;
+        std::size_t heaviestSegments = 0;
+        for (int type : overlaid) {
+            World w({ type });
+            auto& overlays = w.view->placeOverlays();
+            const auto paint = [&] {
+                const double a = juce::Time::getMillisecondCounterHiRes();
+                juce::Graphics g(target);
+                w.editor->paintEntireComponent(g, true);
+                return juce::Time::getMillisecondCounterHiRes() - a;
+            };
+            paint();
+            const auto segments = overlays.stillSegments(type);
+            const auto ledges = overlays.currentLayout().ledges.size();
+            double slowest = 0;
+            for (int k = 0; k < 4; ++k) {
+                w.view->openDetail(0);
+                w.view->settle(0.1f);
+                slowest = std::max(slowest, paint());
+                w.view->closeDetail();
+                w.view->settle(0.1f);
+                slowest = std::max(slowest, paint());
+            }
+            const auto name = std::string(placeNames[std::size_t(type)]);
+            if (segments > heaviestSegments) {
+                heaviestSegments = segments;
+                heaviest = name;
+            }
+            s.check(overlays.currentLayout().ledges.size() == ledges && overlays.stillSegments(type) == segments,
+                    name + ": its overlay does not grow when the layout changes (a detail panel opened and closed 4 times)",
+                    std::to_string(ledges) + " -> " + std::to_string(overlays.currentLayout().ledges.size()) + " ledges, " + std::to_string(segments) + " -> "
+                        + std::to_string(overlays.stillSegments(type)) + " segments");
+            s.check(segments > 0 && segments < 100000, name + ": its overlay's still art is under 100k path segments", std::to_string(segments));
+            s.check(slowest < 250.0, name + ": a frame with its overlay rebuilt after a layout change paints in under 250 ms (software renderer)", fmt(slowest) + " ms");
+        }
+        std::cout << "  [report] the heaviest overlay: " << heaviest << ", " << heaviestSegments << " path segments\n";
+    }
 }
 } // namespace
 
@@ -7626,6 +7670,138 @@ long residentKilobytes() {
     return resident * (sysconf(_SC_PAGESIZE) / 1024);
 }
 
+
+// One stress run: these Places, overlays Full, the editor open for 4 s at a time (a
+// detail panel opened and closed in each) for 62 s, the audio thread rendering beside it.
+void stressRun(Suite& s, const std::string& label, const std::vector<int>& places) {
+    s.section(("stress: " + label + ", overlays Full, the editor opening and closing, 60 s").c_str());
+    Host h(48000, 512);
+    for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlType), float(NoPlace));
+    for (std::size_t slot = 0; slot < places.size(); ++slot) h.set(slotId(int(slot), PlType), float(places[slot]));
+    h.p->parameters.state.setProperty("overlays", int(ui::OverlaysFull), nullptr);
+    h.render(1.0);
+    // The audio thread: blocks back to back, timed.
+    std::atomic<bool> stop { false };
+    std::vector<double> blockMs;
+    blockMs.reserve(200000);
+    std::thread audio([&] {
+        while (!stop.load()) {
+            const double a = juce::Time::getMillisecondCounterHiRes();
+            h.processOne(512);
+            blockMs.push_back(juce::Time::getMillisecondCounterHiRes() - a);
+            std::this_thread::sleep_for(std::chrono::microseconds(5333));   // about half real time
+        }
+    });
+    const double begin = juce::Time::getMillisecondCounterHiRes();
+    const double length = 62000;
+    std::vector<double> tickMs, paintMs;
+    long memoryAfterWarmUp = 0, memoryPeak = 0;
+    int opened = 0;
+    int64_t drawn = 0, skipped = 0;
+    double busy = 0;
+    bool stayedFull = true;
+    std::string memoryTrail;
+    std::size_t firstSegments = 0, lastSegments = 0, firstLedges = 0, lastLedges = 0;
+    const auto segments = [&](WorldbuilderEditor& view) {
+        std::size_t n = 0;
+        for (int type : places) n += view.placeOverlays().stillSegments(type);
+        return n;
+    };
+    while (juce::Time::getMillisecondCounterHiRes() - begin < length) {
+        // Open the editor for 4 s, close it, open it again.
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        ++opened;
+        juce::Image target(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+        const double openedAt = juce::Time::getMillisecondCounterHiRes();
+        double next = openedAt;
+        bool detailOpened = false, detailClosed = false;
+        while (juce::Time::getMillisecondCounterHiRes() - openedAt < 4000 && juce::Time::getMillisecondCounterHiRes() - begin < length) {
+            const double a = juce::Time::getMillisecondCounterHiRes();
+            // A layout change in each session: a detail panel opens at 1.5 s and closes at 2.5 s.
+            if (!detailOpened && a - openedAt > 1500) {
+                view->openDetail(0);
+                detailOpened = true;
+            } else if (detailOpened && !detailClosed && a - openedAt > 2500) {
+                view->closeDetail();
+                detailClosed = true;
+                view->settle(1.0f / 30.0f);
+                // The overlays' size after each layout change, the same layout every time.
+                lastSegments = segments(*view);
+                lastLedges = view->placeOverlays().currentLayout().ledges.size();
+                if (firstSegments == 0) {
+                    firstSegments = lastSegments;
+                    firstLedges = lastLedges;
+                }
+            }
+            const auto before = view->frameGovernor().drawn;
+            view->frameTick(a);
+            if (view->frameGovernor().drawn != before) {
+                // The host paints the frame (the software renderer, the whole editor).
+                const double p0 = juce::Time::getMillisecondCounterHiRes();
+                juce::Graphics g(target);
+                editor->paintEntireComponent(g, true);
+                paintMs.push_back(juce::Time::getMillisecondCounterHiRes() - p0);
+            }
+            const double work = juce::Time::getMillisecondCounterHiRes() - a;
+            tickMs.push_back(work);
+            busy += work;
+            next += 1000.0 / 30.0;
+            const double wait = next - juce::Time::getMillisecondCounterHiRes();
+            if (wait > 0) std::this_thread::sleep_for(std::chrono::microseconds(int64_t(wait * 1000.0)));
+            else next = juce::Time::getMillisecondCounterHiRes();
+        }
+        drawn += view->frameGovernor().drawn;
+        skipped += view->frameGovernor().skippedBusy + view->frameGovernor().skippedLate + view->frameGovernor().skippedBudget;
+        stayedFull = stayedFull && !view->overlaysDroppedToSubtle() && view->placeOverlays().mode() == ui::OverlaysFull;
+        editor.reset();
+        const long kb = residentKilobytes();
+        if (juce::Time::getMillisecondCounterHiRes() - begin > 12000 && memoryAfterWarmUp == 0) memoryAfterWarmUp = kb;
+        memoryPeak = std::max(memoryPeak, kb);
+        memoryTrail += " " + std::to_string(kb / 1024);
+    }
+    std::cout << "  [report] memory after each editor (MB):" << memoryTrail << "\n";
+    stop = true;
+    audio.join();
+    const double elapsed = juce::Time::getMillisecondCounterHiRes() - begin;
+    const auto percentile = [](std::vector<double> v, double q) {
+        if (v.empty()) return 0.0;
+        std::sort(v.begin(), v.end());
+        return v[std::min(v.size() - 1, std::size_t(q * double(v.size())))];
+    };
+    const long memoryEnd = residentKilobytes();
+    s.metric("stress: run length", elapsed / 1000.0, " s");
+    s.metric("stress: editor opened and closed", opened);
+    s.metric("stress: frames drawn", double(drawn));
+    s.metric("stress: ticks skipped by the governor", double(skipped));
+    s.metric("stress: paint, median (ms)", percentile(paintMs, 0.5));
+    s.metric("stress: paint, 99th percentile (ms)", percentile(paintMs, 0.99));
+    s.metric("stress: message-thread work per tick, max (ms)", percentile(tickMs, 1.0));
+    s.metric("stress: message thread busy with the editor (%)", 100.0 * busy / elapsed);
+    s.metric("stress: audio block, 99th percentile (ms)", percentile(blockMs, 0.99));
+    s.metric("stress: audio block, max (ms)", percentile(blockMs, 1.0));
+    s.metric("stress: memory after warm-up (MB)", double(memoryAfterWarmUp) / 1024.0);
+    s.metric("stress: memory at the end (MB)", double(memoryEnd) / 1024.0);
+    s.metric("stress: memory peak (MB)", double(memoryPeak) / 1024.0);
+    s.metric("stress: sprite cache (MB)", double(ui::pixel::sharedCache().memory()) / 1048576.0);
+    s.metric("stress: overlay path segments, last editor", double(lastSegments));
+    s.check(elapsed >= 60000, "the stress test ran for at least 60 s", fmt(elapsed / 1000.0) + " s");
+    s.check(opened >= 12, "the editor opened and closed repeatedly", std::to_string(opened));
+    s.check(!paintMs.empty() && percentile(paintMs, 0.99) < 120.0, "frame time stays bounded (99 % of frames under 120 ms, software renderer)", fmt(percentile(paintMs, 0.99)) + " ms");
+    s.check(percentile(tickMs, 1.0) < 400.0, "the message thread never stalls (no tick over 400 ms, editor creation and detail panels included)", fmt(percentile(tickMs, 1.0)) + " ms");
+    s.check(busy / elapsed < 0.6, "the editor leaves the message thread free most of the time", fmt(100.0 * busy / elapsed) + " %");
+    // (The test paints the whole editor every frame, where a host repaints only what
+    // moved, so the governor may drop the overlays to Subtle here: reported.)
+    std::cout << "  [report] the overlays " << (stayedFull ? "stayed on Full" : "were dropped to Subtle by the frame governor at least once") << "\n";
+    s.check(firstLedges == lastLedges && firstSegments == lastSegments && lastSegments < 100000 * places.size(),
+            "the overlays' art does not grow with layout changes (same ledges and path segments after each detail panel closed, under 100k a Place)",
+            std::to_string(firstLedges) + " / " + std::to_string(lastLedges) + " ledges, " + std::to_string(firstSegments) + " / " + std::to_string(lastSegments) + " segments");
+    s.check(memoryAfterWarmUp > 0 && memoryEnd - memoryAfterWarmUp < 64 * 1024, "memory does not grow (under 64 MB after warm-up, sprite caches bounded)",
+            fmt(double(memoryEnd - memoryAfterWarmUp) / 1024.0) + " MB");
+    s.check(percentile(blockMs, 0.99) < 512.0 / 48.0, "the audio thread keeps up while the editor works (99 % of blocks within real time)", fmt(percentile(blockMs, 0.99)) + " ms");
+    s.check(percentile(blockMs, 1.0) < 512.0 / 48.0 * 4.0, "no audio block waits on the editor (the slowest under four blocks' time)", fmt(percentile(blockMs, 1.0)) + " ms");
+}
+
 void testStress(Suite& s) {
     s.section("stress: the frame governor");
     {
@@ -7669,94 +7845,14 @@ void testStress(Suite& s) {
         s.check(view->overlaysDroppedToSubtle() && view->placeOverlays().mode() == ui::OverlaysSubtle, "slow frames drop the overlays from Full to Subtle");
     }
 
-    s.section("stress: four Places, overlays Full, the editor opening and closing, 60 s");
-    Host h(48000, 512);
-    for (int slot = 0; slot < 4; ++slot) h.set(slotId(slot, PlType), float(std::array<int, 4> { Castle, Village, Spaceport, Megacity }[std::size_t(slot)]));
-    h.p->parameters.state.setProperty("overlays", int(ui::OverlaysFull), nullptr);
-    h.render(1.0);
-    // The audio thread: blocks back to back, timed.
-    std::atomic<bool> stop { false };
-    std::vector<double> blockMs;
-    blockMs.reserve(200000);
-    std::thread audio([&] {
-        while (!stop.load()) {
-            const double a = juce::Time::getMillisecondCounterHiRes();
-            h.processOne(512);
-            blockMs.push_back(juce::Time::getMillisecondCounterHiRes() - a);
-            std::this_thread::sleep_for(std::chrono::microseconds(5333));   // about half real time
-        }
-    });
-    const double begin = juce::Time::getMillisecondCounterHiRes();
-    const double length = 62000;
-    std::vector<double> tickMs, paintMs;
-    long memoryAfterWarmUp = 0, memoryPeak = 0;
-    int opened = 0;
-    int64_t drawn = 0, skipped = 0;
-    double busy = 0;
-    while (juce::Time::getMillisecondCounterHiRes() - begin < length) {
-        // Open the editor for 4 s, close it, open it again.
-        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
-        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
-        ++opened;
-        juce::Image target(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
-        const double openedAt = juce::Time::getMillisecondCounterHiRes();
-        double next = openedAt;
-        while (juce::Time::getMillisecondCounterHiRes() - openedAt < 4000 && juce::Time::getMillisecondCounterHiRes() - begin < length) {
-            const double a = juce::Time::getMillisecondCounterHiRes();
-            const auto before = view->frameGovernor().drawn;
-            view->frameTick(a);
-            if (view->frameGovernor().drawn != before) {
-                // The host paints the frame (the software renderer, the whole editor).
-                const double p0 = juce::Time::getMillisecondCounterHiRes();
-                juce::Graphics g(target);
-                editor->paintEntireComponent(g, true);
-                paintMs.push_back(juce::Time::getMillisecondCounterHiRes() - p0);
-            }
-            const double work = juce::Time::getMillisecondCounterHiRes() - a;
-            tickMs.push_back(work);
-            busy += work;
-            next += 1000.0 / 30.0;
-            const double wait = next - juce::Time::getMillisecondCounterHiRes();
-            if (wait > 0) std::this_thread::sleep_for(std::chrono::microseconds(int64_t(wait * 1000.0)));
-            else next = juce::Time::getMillisecondCounterHiRes();
-        }
-        drawn += view->frameGovernor().drawn;
-        skipped += view->frameGovernor().skippedBusy + view->frameGovernor().skippedLate + view->frameGovernor().skippedBudget;
-        editor.reset();
-        const long kb = residentKilobytes();
-        if (juce::Time::getMillisecondCounterHiRes() - begin > 12000 && memoryAfterWarmUp == 0) memoryAfterWarmUp = kb;
-        memoryPeak = std::max(memoryPeak, kb);
-    }
-    stop = true;
-    audio.join();
-    const double elapsed = juce::Time::getMillisecondCounterHiRes() - begin;
-    const auto percentile = [](std::vector<double> v, double q) {
-        if (v.empty()) return 0.0;
-        std::sort(v.begin(), v.end());
-        return v[std::min(v.size() - 1, std::size_t(q * double(v.size())))];
-    };
-    const long memoryEnd = residentKilobytes();
-    s.metric("stress: run length", elapsed / 1000.0, " s");
-    s.metric("stress: editor opened and closed", opened);
-    s.metric("stress: frames drawn", double(drawn));
-    s.metric("stress: ticks skipped by the governor", double(skipped));
-    s.metric("stress: paint, median (ms)", percentile(paintMs, 0.5));
-    s.metric("stress: paint, 99th percentile (ms)", percentile(paintMs, 0.99));
-    s.metric("stress: message-thread work per tick, max (ms)", percentile(tickMs, 1.0));
-    s.metric("stress: message thread busy with the editor (%)", 100.0 * busy / elapsed);
-    s.metric("stress: audio block, 99th percentile (ms)", percentile(blockMs, 0.99));
-    s.metric("stress: audio block, max (ms)", percentile(blockMs, 1.0));
-    s.metric("stress: memory after warm-up (MB)", double(memoryAfterWarmUp) / 1024.0);
-    s.metric("stress: memory at the end (MB)", double(memoryEnd) / 1024.0);
-    s.metric("stress: sprite cache (MB)", double(ui::pixel::sharedCache().memory()) / 1048576.0);
-    s.check(elapsed >= 60000, "the stress test ran for at least 60 s", fmt(elapsed / 1000.0) + " s");
-    s.check(opened >= 12, "the editor opened and closed repeatedly", std::to_string(opened));
-    s.check(!paintMs.empty() && percentile(paintMs, 0.99) < 120.0, "frame time stays bounded (99 % of frames under 120 ms, software renderer)", fmt(percentile(paintMs, 0.99)) + " ms");
-    s.check(percentile(tickMs, 1.0) < 400.0, "the message thread never stalls (no tick over 400 ms, editor creation included)", fmt(percentile(tickMs, 1.0)) + " ms");
-    s.check(busy / elapsed < 0.6, "the editor leaves the message thread free most of the time", fmt(100.0 * busy / elapsed) + " %");
-    s.check(memoryAfterWarmUp > 0 && memoryEnd - memoryAfterWarmUp < 64 * 1024, "memory does not grow (under 64 MB after warm-up, sprite caches bounded)",
-            fmt(double(memoryEnd - memoryAfterWarmUp) / 1024.0) + " MB");
-    s.check(percentile(blockMs, 0.99) < 512.0 / 48.0, "the audio thread keeps up while the editor works (99 % of blocks within real time)", fmt(percentile(blockMs, 0.99)) + " ms");
+    // The Alien Hive froze and crashed GarageBand with the overlays on, even alone: its
+    // honeycomb was ~400k path segments and grew by ~630k each time the layout changed
+    // (a detail panel opened or closed), because the overlays' ledges were never
+    // cleared. Each run opens the editor for 4 s at a time, opens and closes a detail
+    // panel in each, and checks the frames, the message and audio threads and memory.
+    stressRun(s, "the Alien Hive alone", { Hive });
+    stressRun(s, "the Alien Hive and three other Places", { Hive, Castle, Forest, Nebula });
+    stressRun(s, "four Places", { Castle, Village, Spaceport, Megacity });
 }
 
 // The hotfix after Milestone 14: no text drawn twice or on top of another control's. The
@@ -8606,6 +8702,8 @@ void testBalance(Suite& s) {
         std::sort(o.begin(), o.end());
         return o.empty() ? -120.0 : (o.size() % 2 == 1 ? o[o.size() / 2] : 0.5 * (o[o.size() / 2 - 1] + o[o.size() / 2]));
     };
+    // Each is held near a target against the median of its Place's others: the guitars
+    // level with them, the pad (sustained, so it masks more) about 2 LU under.
     struct Guitar { int type, element; const char* name; std::initializer_list<int> background; };
     const std::array<Guitar, 2> guitars { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute", {} },
                                             { Desert, DesertPlace::Oud, "Desert Oud", { DesertPlace::Wind } } } };

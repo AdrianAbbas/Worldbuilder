@@ -54,6 +54,12 @@ public:
     const juce::RectangleList<int>& roamingArea() const { return roamingDrawable; }
     // What the last frame repainted (empty when it repainted everything, or nothing).
     const std::vector<juce::Rectangle<int>>& lastRepaint() const { return repainted; }
+    // For the tests: the layout the overlays are built from, how many times overlays were
+    // built (each is costly), and how many path segments a Place's still parts hold.
+    struct Layout;
+    const Layout& currentLayout() const;
+    int buildCount() const { return builds; }
+    std::size_t stillSegments(int type) const;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -127,7 +133,7 @@ private:
     std::vector<juce::Rectangle<int>> repainted;
     std::array<Still, PlaceTypeCount> still;
     std::vector<juce::Rectangle<int>> panelList, openList;
-    int overlayMode = OverlaysFull, frame = 0, areaVersion = 0;
+    int overlayMode = OverlaysFull, frame = 0, areaVersion = 0, builds = 0;
     float time = 0;
     bool shownLastFrame = false, fadingNow = false;
     // The still images combined at their strengths (when nothing fades).
