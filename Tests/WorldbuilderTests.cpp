@@ -8702,12 +8702,17 @@ void testBalance(Suite& s) {
         std::sort(o.begin(), o.end());
         return o.empty() ? -120.0 : (o.size() % 2 == 1 ? o[o.size() / 2] : 0.5 * (o[o.size() / 2 - 1] + o[o.size() / 2]));
     };
+    // The recorded instruments set by measured loudness: the guitars (15a hotfix) and the
+    // Forest's violin pad (it was too loud: the next hotfix). The Forest's rustle is
+    // background, like the Desert's wind.
     // Each is held near a target against the median of its Place's others: the guitars
     // level with them, the pad (sustained, so it masks more) about 2 LU under.
-    struct Guitar { int type, element; const char* name; std::initializer_list<int> background; };
-    const std::array<Guitar, 2> guitars { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute", {} },
-                                            { Desert, DesertPlace::Oud, "Desert Oud", { DesertPlace::Wind } } } };
+    struct Guitar { int type, element; const char* name; std::initializer_list<int> background; double target, mean, each; };
+    const std::array<Guitar, 3> guitars { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute", {}, 0.0, 2.5, 4.5 },
+                                            { Desert, DesertPlace::Oud, "Desert Oud", { DesertPlace::Wind }, 0.0, 2.5, 4.5 },
+                                            { Forest, ForestPlace::Strings, "Forest Strings", { ForestPlace::Rustle }, -2.0, 1.0, 2.0 } } };
     for (int type : { Tavern, Desert, Forest, Biodome, Ruins }) {
+        if (!placeFilter.empty() && std::find(placeFilter.begin(), placeFilter.end(), type) == placeFilter.end()) continue;
         const std::string place = placeNames[std::size_t(type)];
         s.section(("balance: " + place + ", every instrument alone (LUFS, gated)").c_str());
         std::array<std::array<double, placeElements>, placeCharacters> all {};
@@ -8727,12 +8732,66 @@ void testBalance(Suite& s) {
             for (int c = 0; c < placeCharacters; ++c) {
                 const double d = all[std::size_t(c)][std::size_t(g.element)] - medianOthers(all[std::size_t(c)], g.element, g.background);
                 sum += d / placeCharacters;
-                each = each && std::abs(d) < 4.5;
+                each = each && std::abs(d - g.target) < g.each;
                 detail += (c > 0 ? ", " : "") + fmt(d) + " LU";
             }
             s.metric(std::string(g.name) + ": loudness against the Place's other instruments (mean over Characters)", sum, " LU");
-            s.check(std::abs(sum) < 2.5 && each, std::string(g.name) + ": as loud as the other instruments of its Place (within 2.5 LU on average, 4.5 in every Character)", detail);
+            const std::string where = g.target == 0.0 ? "as loud as the other instruments of its Place" : "about " + fmt(-g.target) + " LU under the other instruments of its Place";
+            s.check(std::abs(sum - g.target) < g.mean && each,
+                    std::string(g.name) + ": " + where + " (within " + fmt(g.mean) + " LU on average, " + fmt(g.each) + " in every Character)", detail);
         }
+    }
+    if (!placeFilter.empty() && std::find(placeFilter.begin(), placeFilter.end(), int(Forest)) == placeFilter.end()) return;
+    // The Forest strings swell with Tension while the birds and the kalimba hush: even at
+    // full Tension they stay a bed, not the loudest part by far.
+    s.section("balance: the Forest strings at full Tension and in the factory scenes");
+    for (int c = 0; c < placeCharacters; ++c) {
+        std::array<double, placeElements> v {};
+        for (int e = 0; e < placeElements; ++e) {
+            v[std::size_t(e)] = -120.0;
+            if (placeInfo(Forest).element[std::size_t(e)].kind == NoPattern) continue;
+            auto h = instrumentHost(Forest, c, e, { { "p1_tension", 1.0f } });
+            v[std::size_t(e)] = loudness(h.render(34.0), 2.0);
+        }
+        double loudestOther = -120.0;
+        for (int e = 0; e < placeElements; ++e)
+            if (e != ForestPlace::Strings && e != ForestPlace::Rustle) loudestOther = std::max(loudestOther, v[std::size_t(e)]);
+        const double d = v[ForestPlace::Strings] - loudestOther;
+        s.check(d < 1.5, std::string("Forest / ") + placeInfo(Forest).characters[std::size_t(c)] + ", Tension 100 %: the strings at most 1.5 LU over the loudest other instrument",
+                fmt(d) + " LU (strings " + fmt(v[ForestPlace::Strings]) + " LUFS)");
+    }
+    // Every factory scene with a Forest, as it loads (its Character, levels, Activity,
+    // Tension, World Controls; Play Mode Free): the strings against the Forest's others.
+    for (int i = 0; i < scenes::factoryCount(); ++i) {
+        const auto& sc = scenes::factory(i);
+        int slot = -1;
+        for (int k = 0; k < placeSlots; ++k)
+            if (sc.slots[std::size_t(k)].type == Forest) slot = k;
+        if (slot < 0) continue;
+        std::array<double, placeElements> v {};
+        for (int e = 0; e < placeElements; ++e) {
+            v[std::size_t(e)] = -120.0;
+            if (placeInfo(Forest).element[std::size_t(e)].kind == NoPattern) continue;
+            Host h;
+            h.p->loadFactoryScene(i);
+            h.set("playmode", float(PlayFree));
+            h.set(slotId(slot, PlSolo), 1.0f);
+            h.p->patterns.syncTypes(h.p->slotTypes());
+            auto el = h.p->patterns.element(slot, Forest, e);
+            el.controls.solo = true;
+            h.p->patterns.setElement(slot, Forest, e, el);
+            v[std::size_t(e)] = loudness(h.render(34.0), 2.0);
+        }
+        const double d = v[ForestPlace::Strings] - medianOthers(v, ForestPlace::Strings, { ForestPlace::Rustle });
+        double loudestOther = -120.0;
+        for (int e = 0; e < placeElements; ++e)
+            if (e != ForestPlace::Strings && e != ForestPlace::Rustle) loudestOther = std::max(loudestOther, v[std::size_t(e)]);
+        const double top = v[ForestPlace::Strings] - loudestOther;
+        std::string line = "  [report] " + sc.name + " (Forest in slot " + std::to_string(slot + 1) + "):";
+        for (int e = 0; e < placeElements; ++e) line += " " + std::string(placeInfo(Forest).element[std::size_t(e)].name) + " " + fmt(v[std::size_t(e)]);
+        std::cout << line << "\n";
+        s.check(top < -2.0 && d > -7.0, sc.name + ": the Forest strings sit under the Forest's other instruments (2 LU or more under the loudest, within 7 LU of their median)",
+                fmt(top) + " LU against the loudest, " + fmt(d) + " LU against the median");
     }
 }
 

@@ -411,8 +411,12 @@ void ForestPlace::configure(const PlaceContext& c) {
     const float hush = 1.0f - 0.7f * tension;
     // An enchanted wood rings; the dark woods swallow sound (moss, dense trees).
     sendScale.fill(enchanted ? 1.35f : (dark ? 0.7f : 1.0f));
+    // The strings are a bed: about 2 LU under the median of the flute, birds, wood and
+    // kalimba in every Character (measured alone, gated, Tests "balance"; they were 4.6
+    // LU over it in the Enchanted wood, the loudest part of the Forest). Tension swells
+    // them by up to about 4 dB (it was 7).
     level = { 0.1f, 0.13f * lerp(0.6f, 1.4f, s.life) * hush, 0.4f * (1.0f + 0.8f * s.machinery) * (glade ? 1.3f : 1.0f), 0.18f * hush,
-              0.06f * (enchanted ? 1.4f : (glade ? 0.6f : 1.0f)) * (0.5f + 2.0f * tension), 1.2f * (glade ? 0.7f : 1.0f) };
+              0.06f * (enchanted ? 0.65f : (glade ? 0.6f : 0.75f)) * (0.85f + 0.85f * tension), 1.2f * (glade ? 0.7f : 1.0f) };
 
     // Soft diffusion and a damped forest space; Tone opens the canopy.
     space.set(lerp(0.4f, 0.95f, s.size), lerp(1.2f, 3.5f, s.size) * (dark ? 1.3f : 1.0f) * (1.0f + 0.4f * s.magic), lerpExp(1200.0f, 4500.0f, tone));
