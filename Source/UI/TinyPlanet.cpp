@@ -351,11 +351,20 @@ const pixel::Canvas& TinyPlanet::sky(const TinyPlanetScene& scene, int planet, c
 const pixel::Canvas& TinyPlanet::placeSprite(int type, int iconFrame, int angleStep, int scaleStep, int dimStep, bool highlight, const pixel::Palette& p) {
     const auto key = juce::String(type) + "/" + juce::String(iconFrame) + "/" + juce::String(angleStep) + "/" + juce::String(scaleStep) + "/" + juce::String(dimStep) + "/"
                      + juce::String(int(highlight)) + p.outline.toString();
+    lastSpriteKey = key;
     if (auto it = sprites.find(key); it != sprites.end()) return it->second;
-    if (sprites.size() > 512) sprites.clear();
+    if (sprites.size() > 512) {
+        sprites.clear();
+        spriteBounds.clear();
+    }
     const auto icon = pixel::placeIcon(type, iconFrame, p.outline);
     const float angle = juce::degreesToRadians(float(angleStep) * 2.0f), scale = float(scaleStep) / 16.0f, dim = float(dimStep) / 8.0f;
-    const int size = 48;
+    // The icon's farthest corner from its foot is its top corner, hypot(16, 31) = 34.9
+    // icon pixels away: the canvas reaches that far around the foot at any angle, plus
+    // the glow and a pixel. (It was 48 square, 24 pixels above the foot: a full-size
+    // icon at the top of the turn lost its top 7 rows, the castle's flag.)
+    const int half = int(std::ceil(std::hypot(16.0f, 31.0f) * scale)) + 2;
+    const int size = 2 * half;
     pixel::Canvas k(size, size);
     // The icon's foot (bottom centre) sits at the canvas centre; rotate about it.
     const float ca = std::cos(angle), sa = std::sin(angle);
@@ -380,7 +389,17 @@ const pixel::Canvas& TinyPlanet::placeSprite(int type, int iconFrame, int angleS
                     glow.set(x, y, p.glow);
         k.paste(glow, 0, 0);
     }
+    juce::Rectangle<int> visible;
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+            if (k.get(x, y).getAlpha() != 0) visible = visible.isEmpty() ? juce::Rectangle<int>(x, y, 1, 1) : visible.getUnion({ x, y, 1, 1 });
+    spriteBounds[key] = visible;
     return sprites[key] = std::move(k);
+}
+
+void TinyPlanet::pasteLandmark(int type, const pixel::Canvas& sprite, const juce::String& key, int x, int y) {
+    frame.paste(sprite, x, y);
+    if (auto it = spriteBounds.find(key); it != spriteBounds.end()) drawn.push_back({ type, it->second.translated(x, y) });
 }
 
 // ---- The frame -----------------------------------------------------------------------
@@ -388,6 +407,7 @@ const pixel::Canvas& TinyPlanet::placeSprite(int type, int iconFrame, int angleS
 const pixel::Canvas& TinyPlanet::render(const TinyPlanetScene& s, const pixel::Palette& p) {
     const int w = std::max(16, s.width), h = std::max(16, s.height);
     if (frame.width() != w || frame.height() != h) frame = pixel::Canvas(w, h);
+    drawn.clear();
     const int planet = juce::jlimit(0, int(PlanetTypeCount) - 1, s.planet), previous = juce::jlimit(0, int(PlanetTypeCount) - 1, s.previous);
     const bool fading = s.blend < 1.0f && previous != planet;
     // Which planet a pixel shows during a crossfade: an ordered dither by the blend.
@@ -441,7 +461,7 @@ const pixel::Canvas& TinyPlanet::render(const TinyPlanetScene& s, const pixel::P
         placePoint(w, h, Space, lm.longitude, s.turn, s.time, middle, tilt);
         const auto& sprite = placeSprite(lm.type, lm.frame, 0, juce::roundToInt((0.6f + 0.3f * lm.near) * 16.0f), juce::roundToInt((0.3f + night * 0.2f) * 8.0f), lm.highlight, p);
         const float up = 16.0f * (0.6f + 0.3f * lm.near);
-        frame.paste(sprite, int(std::round(middle.x)) - sprite.width() / 2, int(std::round(middle.y + up)) - sprite.height() / 2);
+        pasteLandmark(lm.type, sprite, lastSpriteKey, int(std::round(middle.x)) - sprite.width() / 2, int(std::round(middle.y + up)) - sprite.height() / 2);
     }
     const auto o = centre(w, h);
     const float r = radius(w, h);
@@ -565,7 +585,7 @@ const pixel::Canvas& TinyPlanet::render(const TinyPlanetScene& s, const pixel::P
         // icon below the middle (along its tilt) for orbiting ones.
         const float up = 16.0f * scale;
         const auto foot = lm.kind == Ground ? horizonPoint(w, h, tilt, -1.0f) : middle.translated(-std::sin(tilt) * up, std::cos(tilt) * up);
-        frame.paste(sprite, int(std::round(foot.x)) - sprite.width() / 2, int(std::round(foot.y)) - sprite.height() / 2);
+        pasteLandmark(lm.type, sprite, lastSpriteKey, int(std::round(foot.x)) - sprite.width() / 2, int(std::round(foot.y)) - sprite.height() / 2);
     }
 
     // The Locations: stars and moons on the sky arc; a comet on a journey.

@@ -5,6 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**The hotfixes after the 15a hotfix are done** (the Alien Hive freeze with Overlays on, the
+Forest strings' level, tall landmarks cut off at the top of the planet): checklist and
+handoff at the end, in
+[Hotfixes after the 15a hotfix](#hotfixes-after-the-15a-hotfix-alien-hive-freeze-forest-strings-tall-landmarks-2026-10-30).
+
 **The hotfix after Milestone 15a is done** (the guitars' levels, Scoop / Glide, the violin
 pad): checklist and handoff at the end, in
 [Hotfix after Milestone 15a](#hotfix-after-milestone-15a-guitar-levels-scoop--glide-violin-pad-2026-10-27).
@@ -5328,3 +5333,153 @@ instruments, saved with the project.
   processing chunk's first sample is let go before the next one starts, so that pair is
   not played legato. With Scoop / Glide off it makes no audible difference.
 
+
+## Hotfixes after the 15a hotfix: Alien Hive freeze, Forest strings, tall landmarks (2026-10-30)
+
+From GarageBand testing on the developer's MacBook Air: (1) the Alien Hive froze and then
+crashed the plugin whenever it was used, even alone, with Overlays on; (2) the Forest
+strings were too loud; (3) tall landmarks were cut off at the top of the planet's turn
+(the castle's flag at the peak). Each fix was pushed with `[skip ci]`; the last push is
+without it.
+
+### Progress checklist
+
+- [x] 1. Alien Hive freeze: the cause found and fixed, every Place's overlay checked, the stress test for the Hive alone and with three other Places
+- [x] 2. Forest strings lowered by measured loudness, Tension's swell softened, the factory scenes with a Forest checked
+- [x] 3. Tall landmarks never cut off: the sprite canvas holds the whole icon at any angle; all 27 Places checked at every angle
+- [x] 4. Tests, docs, this handoff, final push without `[skip ci]`
+
+### 1. The Alien Hive freeze
+
+**The cause** (measured in the editor, Linux, the software renderer): two things in the
+overlays, neither touching the audio thread.
+
+- `PlaceOverlays::rebuildArea()` cleared the layout's panels, gutters and open space but
+  **never its ledges** (the gaps between stacked panels). Every layout change, such as a
+  detail panel opening or closing, appended the same ledges again: 6 at first, 12 after
+  the editor opened, then 22 more per open and close (144 after six). Each overlay is
+  rebuilt from the layout after such a change.
+- The **Hive** draws a 3 px honeycomb on every ledge, each cell a rounded stroke of a tiny
+  hexagon. Its still art was **~400,000 path segments** to begin with (15-20 times any
+  other Place; Nebula next at 82k) and grew by about **630,000 per open and close** (4
+  million after six; paint 93 ms, then 137, 183, 234, 281, 315 ms). In GarageBand
+  (CoreGraphics, a fanless Air) that becomes a freeze within a few layout changes, then
+  memory runs out: the crash. The **Factory**'s hazard stripes on the ledges grew the same
+  way, more slowly; the others only used the ledges as areas (no growth in their art).
+
+**The fix:**
+- `rebuildArea()` clears the ledges.
+- The Hive's honeycomb: each cell's wall is an outer and an inner hexagon filled even-odd
+  (14 segments, no stroke), cells on the ledges a little larger (3.5 px), and the cells
+  capped at 2400 (normal layouts need at most ~2030; the cap is only a safety net). The
+  Hive's still art is now **46k segments**, stable; its first paint 37 ms (was 60-210).
+- Test hooks: `PlaceOverlays::currentLayout()`, `buildCount()`, `stillSegments(type)`;
+  `WorldbuilderEditor::closeDetail()` is public, as `openDetail` was.
+
+**Tests:**
+- `overlays` group, new section: for each of the 26 overlays, alone at Full, a detail panel
+  opened and closed four times: the same ledges and path segments after as before, under
+  100k segments, every frame under 250 ms. With the ledge fix taken out the first check
+  fails (12 -> 100 ledges; the Factory's art 5.9k -> 29k segments).
+- `stress` group: three 62 s runs, each opening the editor for 4 s at a time (16 times) with
+  a detail panel opened and closed in each, overlays Full, the audio thread rendering beside
+  it: **the Hive alone**, **the Hive with Castle, Forest and Nebula**, and the earlier four
+  Places. Checked (the final suite's run): frame time (99 % under 120 ms: 56 / 105 / 80 ms),
+  no message-thread tick over 400 ms (110 / 121 / 92 ms), the editor under 60 % of the
+  message thread, the overlays' art the same after every detail panel close, memory flat
+  (it rises in the first editor, then stays to the MB: 205 / 236 / 251 MB), 99 % of audio
+  blocks within real time (2.6 / 4.9 / 5.0 ms of 10.7) and none over four blocks' time
+  (max 10 / 33 / 11 ms).
+- Reported, not checked: the frame governor drops Full to Subtle in all three runs here,
+  because the test paints the *whole* editor every frame (a host repaints only what moved);
+  it did so before this fix too.
+
+### 2. The Forest strings
+
+**Measured** (each instrument alone at the Place's defaults, gated K-weighted loudness, as
+the guitars were in the 15a hotfix), the strings against the median of the flute, birds,
+wood and kalimba (the rustle is background):
+
+| Character | before | after |
+|---|---|---|
+| Enchanted | +4.6 LU (the loudest part of the Forest) | -2.0 LU |
+| Dark Woods | +0.5 LU | -2.0 LU |
+| Morning Glade | -2.5 LU | -2.4 LU (unchanged) |
+
+- The target is about **2 LU under** the median: a sustained pad masks more than the plucked
+  and sparse parts (gated loudness already favours those), so it sits a little below to read
+  as level, as a bed. Per-Character element level: Enchanted 1.4 -> 0.65, Dark Woods 1.0 ->
+  0.75, Morning Glade 0.6 kept. It applies to the recorded pad and to its synthesised
+  fallback alike (their 4 dB match is unchanged).
+- **Tension**: the strings swelled by (0.5 + 2 x Tension), +7.1 dB from the default 0.3 to
+  100 % (while the birds and the kalimba hush). Now (0.85 + 0.85 x Tension): the same at the
+  default, +3.7 dB at 100 %, -2.3 dB at 0.
+- **The factory scenes with a Forest** (Ambush at the Tavern, Market at Dawn, Haunted Moor,
+  Elven Canopy, Alien Jungle), loaded as they are (their Character, levels, Activity,
+  Tension, World Controls; Play Mode Free): the strings sit 2.9-8.2 LU under the loudest
+  other Forest instrument in each. Before, Elven Canopy (Enchanted at 0 dB) had them on top.
+  No scene changes were needed (the scenes set no element levels).
+- Tests (`balance`, now also narrowed by `--place`): the Forest Strings within 1 LU of the
+  -2 LU target on average and 2 in every Character; at 100 % Tension, at most 1.5 LU over
+  the loudest other instrument in each Character; each factory scene with a Forest: 2 LU or
+  more under the loudest other, within 7 LU of the median.
+
+### 3. Tall landmarks cut off at the top of the turn
+
+**The cause:** `TinyPlanet::placeSprite` drew each landmark (the 32 x 32 icon, rotated and
+scaled) into a 48 x 48 canvas with the icon's foot at its centre: 24 art pixels above the
+foot for an icon 31 tall. Near the top of the turn a Place is drawn at full size, upright,
+so its top 7 rows were lost: the castle's flag (69 of its 783 pixels), and a few rows of
+most other icons (the City 64, the Factory 34, the Spaceport 25 pixels). At the
+sides a Place is smaller, so it fitted, which is why it showed only at the peak. The panel
+itself had room: the highest landmark pixel is 13 art pixels below the panel's top.
+
+**The fix:** the canvas reaches the icon's farthest corner from its foot (hypot(16, 31) =
+34.9 icon pixels, times the scale) all round, plus the glow and a pixel: 74 x 74 at full
+size, smaller when scaled down. Placement is unchanged (the foot stays at the centre).
+Sprites stay cached (512 at most).
+
+**Tests** (`planet` group, new section): every Place's sprite, every idle frame, every 2°
+from -80° to 80°, at three sizes, highlighted and not (25,920 sprites): nothing touches the
+canvas border, and upright at full size every pixel of every icon frame is drawn (with the
+old 48 x 48 canvas: both fail, the castle 714 of 783). And all 27 Places drawn on the
+editor's scene, turned in half-degree steps across the whole arc in view, near and far,
+highlighted and not, each idle frame (14,360 landmarks): every one inside the panel (the
+Nebula, which drifts in and out at the sides by design, checked at its top only).
+`TinyPlanet::lastLandmarks()` reports where the last frame drew each Place.
+
+### Tests (Linux, GCC)
+
+After fix 1: 4097 passed, 0 failed (all six shards). The final state (all three fixes): **4110 passed, 0 failed** (all six shards). The AU harness runs on the macOS CI only.
+
+### Hotfix handoff
+
+**Done**: the three fixes. This push is without `[skip ci]`, so CI builds and packages it
+once.
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Hotfix check after the 15a hotfix"):
+the Hive alone and with three others at Overlays Full, opening and closing detail panels and
+the plugin window; the Forest strings in each Character, with Tension, and in the five
+scenes with a Forest; the castle (and other tall Places) at the top of the turn.
+
+**Known issues / limits**:
+- Nothing here has been seen or heard on a Mac: the freeze is measured on Linux with the
+  software renderer (path segments, paint times, memory). The cause found explains a
+  freeze growing with each layout change; if the Hive still stutters in GarageBand, the
+  next suspect is the first build of its art (37 ms here) on the Air.
+- The Hive's honeycomb on the ledges is a little coarser (3.5 px cells, were 3) and its
+  walls are crisp-cornered fills instead of rounded strokes; otherwise the overlay looks as
+  before.
+- The Forest strings are set by measurement (about 2 LU under the others); whether that is
+  right in the full mix is for your ears (raise the element level if they are now too far
+  back). The Tension swell is softer (+3.7 dB at 100 %, was +7.1).
+- Morning Glade's strings were already 2.4 LU under and are unchanged; in Market at Dawn
+  (Morning Glade at -5 dB, Life 65) they are 6 LU under the median of the others.
+- The test's frame governor drops Full overlays to Subtle (it paints the whole editor every
+  frame); reported, as before this fix.
+- The stress run with the Hive and three other Places paints its 99th-percentile frame in
+  105 ms here against a 120 ms limit (the whole editor, software renderer, a shared 4-core
+  machine): if CI's runner is slower it could fail on time alone; the art-size and memory
+  checks are the ones that catch the freeze.
+- Carried over: the Ruins' Violin Textures stay very quiet in Overgrown and Desolate; the
+  Alien Ruins "Tone brightens it" check stays report-only.

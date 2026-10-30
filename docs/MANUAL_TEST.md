@@ -861,3 +861,24 @@ Nothing in the sound changed; this is about the look and that every control stil
 - [ ] **An older project** with the Forest or Biodome: it opens with their pads no longer
   gliding (the new defaults), everything else as it was.
 
+
+## Hotfix check after the 15a hotfix (Alien Hive freeze, Forest strings, tall landmarks)
+
+- [ ] **Alien Hive, Overlays Full**: add the Hive alone, set Overlays to Full. The interface
+  keeps moving smoothly (tendrils, honeycomb, glowing pods, rising spores). Open and close
+  the Hive's detail panel ten times, close and reopen the plugin window a few times: no
+  slowdown, no beachball, no crash. Then the Hive with three other Places (e.g. Castle,
+  Forest, Nebula) for a minute or two, the same.
+- [ ] **Overlays on other Places**: switch through a few Places with Overlays Full, opening and
+  closing their detail panels; the Factory especially (its hazard stripes grew the same
+  way). Nothing gets slower over time.
+- [ ] **Forest strings** (each Character): the Strings pad now sits under the flute, kalimba,
+  wood and birds as a bed, not on top (Enchanted was the loudest part before). Raise the
+  Forest's Tension: the strings still swell and tremble, but less (about +4 dB at 100 %
+  instead of +7). Load **Elven Canopy**, **Market at Dawn**, **Ambush at the Tavern**,
+  **Haunted Moor** and **Alien Jungle**: the Forest strings sit under the other Forest
+  parts in each.
+- [ ] **Tall landmarks**: add the Castle (and other tall Places: Palace, Temple, City,
+  Spaceport, Megacity) and watch the planet turn: at the top of the turn the castle's flag
+  and every tower top are whole, with their idle animations (the flag waving). Drag a Place
+  to Near (full size) and check again.

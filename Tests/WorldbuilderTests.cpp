@@ -6822,6 +6822,105 @@ void testEnvironmentKept(Suite& s) {
 
 // The tiny planet's motion (the GarageBand fix round): a tight curve, a quick turn,
 // Places spread evenly so some are always in view, and no band across the sky.
+// The hotfix after 15a: tall landmarks were cut off at the top of the turn (the
+// castle's flag at the peak). Every Place's icon, in every idle frame, at every
+// rotation and size the planet draws it, must fit its sprite, and its highest point
+// must stay inside the panel wherever the planet has turned it.
+void testTinyPlanetHeadroom(Suite& s) {
+    s.section("tiny planet: tall landmarks are never cut off (every Place, every angle)");
+    const auto& pal = ui::pixel::theme().colours;
+    ui::TinyPlanet planet;
+    // Sprites: nothing touches the canvas's border (a cut icon would), and at full size,
+    // upright, every visible pixel of the icon is there.
+    {
+        std::string cut, lost;
+        int sprites = 0;
+        for (int type = NoPlace + 1; type < PlaceTypeCount; ++type)
+            for (int f = 0; f < ui::pixel::placeIconFrames(type); ++f) {
+                const auto icon = ui::pixel::placeIcon(type, f, pal.outline);
+                int iconPixels = 0;
+                for (int y = 0; y < icon.height(); ++y)
+                    for (int x = 0; x < icon.width(); ++x) iconPixels += icon.get(x, y).getAlpha() != 0 ? 1 : 0;
+                for (int angle = -40; angle <= 40; ++angle)
+                    for (int scale : { 16, 12, 6 })
+                        for (bool highlight : { false, true }) {
+                            if (highlight && scale != 16) continue;
+                            const auto& k = planet.placeSprite(type, f, angle, scale, 0, highlight, pal);
+                            ++sprites;
+                            bool touches = false;
+                            for (int i = 0; i < k.width() && !touches; ++i)
+                                touches = k.get(i, 0).getAlpha() != 0 || k.get(i, k.height() - 1).getAlpha() != 0 || k.get(0, i).getAlpha() != 0
+                                          || k.get(k.width() - 1, i).getAlpha() != 0;
+                            if (touches && cut.size() < 300) cut += " " + std::string(placeKeys[std::size_t(type)]) + "/" + std::to_string(f) + "@" + std::to_string(angle * 2) + "deg";
+                            if (angle == 0 && scale == 16 && !highlight) {
+                                int pixels = 0;
+                                for (int y = 0; y < k.height(); ++y)
+                                    for (int x = 0; x < k.width(); ++x) pixels += k.get(x, y).getAlpha() != 0 ? 1 : 0;
+                                if (pixels != iconPixels) lost += " " + std::string(placeKeys[std::size_t(type)]) + "/" + std::to_string(f) + " " + std::to_string(pixels) + " of " + std::to_string(iconPixels);
+                            }
+                        }
+            }
+        s.check(cut.empty(), "every Place's sprite holds its whole icon at every angle from -80 to 80 degrees and every size, glow included",
+                std::to_string(sprites) + " sprites;" + cut);
+        s.check(lost.empty(), "upright at full size (the top of the turn) every pixel of every icon frame is drawn", lost.empty() ? "all" : lost);
+    }
+    // Scenes the size the editor draws: all 27 Places at once at the same longitude (each
+    // one's pixels are noted separately, so overlapping does not matter), the planet
+    // turned in half-degree steps across the whole arc in view (orbiting Places turn
+    // 1.8 times as fast, so they cross it too); near (full size) and far, highlighted
+    // and not, each idle frame. Each one's visible pixels must lie inside the panel. (The
+    // Nebula drifts across the sky and in and out at the sides by design: only its top
+    // is checked.)
+    Host h;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    const int w = view->planetArea().getWidth() / ui::pixel::unit, hgt = view->planetArea().getHeight() / ui::pixel::unit;
+    std::vector<int> all;
+    for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) all.push_back(type);
+    std::string outside;
+    int drawnCount = 0, highest = hgt;
+    std::set<int> seen;
+    const float arc = ui::TinyPlanet::visibleArc + 0.05f;
+    for (float near : { 1.0f, 0.0f })
+        for (float turn = -arc; turn <= arc; turn += juce::degreesToRadians(0.5f)) {
+            const int step = int(std::lround(juce::radiansToDegrees(turn) * 2.0f));
+            ui::TinyPlanetScene scene;
+            scene.width = w;
+            scene.height = hgt;
+            scene.turn = turn;
+            scene.time = 0.37f * float(step);
+            scene.day = 1;
+            for (int type : all) {
+                ui::TinyPlanetScene::Landmark lm;
+                lm.type = type;
+                lm.kind = ui::TinyPlanet::kindOf(type);
+                lm.longitude = lm.kind == ui::TinyPlanet::Space ? turn : 0.0f;
+                lm.near = near;
+                lm.frame = (step + 1000) % ui::pixel::placeIconFrames(type);
+                lm.highlight = step % 2 == 0;
+                scene.landmarks.push_back(lm);
+            }
+            planet.render(scene, pal);
+            for (const auto& d : planet.lastLandmarks()) {
+                ++drawnCount;
+                seen.insert(d.type);
+                highest = std::min(highest, d.bounds.getY());
+                const bool fits = ui::TinyPlanet::kindOf(d.type) == ui::TinyPlanet::Space ? d.bounds.getY() >= 0
+                                                                                           : juce::Rectangle<int>(0, 0, w, hgt).contains(d.bounds);
+                if (!fits && outside.size() < 300)
+                    outside += " " + std::string(placeKeys[std::size_t(d.type)]) + " at " + fmt(juce::radiansToDegrees(turn)) + " deg (" + d.bounds.toString().toStdString() + ")";
+            }
+        }
+    s.metric("tiny planet: Places drawn in the sweep", drawnCount);
+    s.metric("tiny planet: the highest landmark pixel (art pixels from the panel's top)", highest);
+    std::string missing;
+    for (int type : all)
+        if (seen.count(type) == 0) missing += " " + std::string(placeKeys[std::size_t(type)]);
+    s.check(int(seen.size()) == int(all.size()), "all 27 Places were drawn in the sweep", std::to_string(seen.size()) + (missing.empty() ? "" : "; missing:" + missing));
+    s.check(outside.empty(), "every Place, at every turn, near and far, highlighted or not, fits inside the panel (nothing cut off at the top or the sides)",
+            std::to_string(w) + " x " + std::to_string(hgt) + ";" + outside);
+}
+
 void testTinyPlanetMotion(Suite& s) {
     s.section("tiny planet: curve, turn, spread, aurora");
     {
@@ -9135,6 +9234,7 @@ int main(int argc, char** argv) {
     if (run("planet")) {
         testPlanet(s);
         testTinyPlanetMotion(s);
+        testTinyPlanetHeadroom(s);
     }
     if (run("arrangement")) testArrangement(s);
     if (run("arrpersist")) testArrangementPersists(s);

@@ -75,12 +75,28 @@ public:
     const pixel::Canvas& render(const TinyPlanetScene& scene, const pixel::Palette& palette);
     const pixel::Canvas& lastFrame() const { return frame; }
 
+    // A Place's icon rotated by `angleStep` x 2 degrees and scaled by `scaleStep` / 16,
+    // its foot (bottom centre) at the canvas centre. The canvas is sized to hold the
+    // whole icon at any angle (the highest point of a castle's flag included), with room
+    // for the highlight's glow.
+    const pixel::Canvas& placeSprite(int type, int iconFrame, int angleStep, int scaleStep, int dimStep, bool highlight, const pixel::Palette& palette);
+    // Where the last frame drew each Place: its sprite's visible pixels in the frame's
+    // coordinates (not clipped to the frame), for the tests.
+    struct Drawn {
+        int type = 0;
+        juce::Rectangle<int> bounds;
+    };
+    const std::vector<Drawn>& lastLandmarks() const { return drawn; }
+
 private:
     const pixel::Canvas& sky(const TinyPlanetScene& scene, int planet, const pixel::Palette& palette);
-    const pixel::Canvas& placeSprite(int type, int iconFrame, int angleStep, int scaleStep, int dimStep, bool highlight, const pixel::Palette& palette);
+    void pasteLandmark(int type, const pixel::Canvas& sprite, const juce::String& key, int x, int y);
 
     pixel::Canvas frame;
     std::map<juce::String, pixel::Canvas> skies, sprites;
+    std::map<juce::String, juce::Rectangle<int>> spriteBounds;   // each sprite's visible pixels
+    juce::String lastSpriteKey;
+    std::vector<Drawn> drawn;
 };
 
 } // namespace wb::ui
