@@ -8082,6 +8082,8 @@ void playNotes(Host& h, const std::vector<double>& at, double seconds, int midi 
 std::vector<int> stepsOf(Host& h) { return steps(h.p->patterns.element(0, Castle, CastlePlace::Horns).pattern); }
 } // namespace transportTest
 
+#include "ClipEditorTests.inc"
+
 void testTransport(Suite& s) {
     using namespace transportTest;
     s.section("transport: Play, Stop and Loop from the playhead, while the host is stopped");
@@ -9437,7 +9439,10 @@ int main(int argc, char** argv) {
         testTinyPlanetHeadroom(s);
     }
     if (run("arrangement")) testArrangement(s);
-    if (run("clips")) testClips(s);
+    if (run("clips")) {
+        testClips(s);
+        testClipEditor(s);
+    }
     if (run("arrpersist")) testArrangementPersists(s);
     if (run("transitions")) {
         testTransitions(s);

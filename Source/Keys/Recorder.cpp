@@ -22,6 +22,12 @@ bool Recorder::undo() {
     if (open || undoStack.empty()) return false;
     const auto u = undoStack.back();
     undoStack.pop_back();
+    if (u.section >= 0) {
+        if (arrangement == nullptr) return false;
+        arrangement->setClip(u.section, u.slot, u.element, u.clip, true);
+        ++changes;
+        return true;
+    }
     if (store.get(u.slot).type != u.type) return false;   // the slot holds another Place now
     store.setElement(u.slot, u.type, u.element, u.element_);
     ++changes;
@@ -48,10 +54,77 @@ void Recorder::begin(const Captured& c, const RecordSettings& s) {
     before = store.element(slot, type, element);
     base = store.playing(slot, type, element, variant);
     notes.clear();
+    clipSection = arrangement != nullptr ? s.clipSection : -1;
+    clipOrigin = s.clipOrigin;
+    clipBeats = s.clipBeats;
+    clipSpan = s.clipSpan;
+    clipUndoPushed = false;
+    clipBefore = clipSection >= 0 ? arrangement->clipOf(clipSection, slot, element) : nullptr;
+    if (clipSection >= 0 && clipBefore == nullptr) clipSection = -1;   // not unique (the processor makes it so): the pattern
+}
+
+void Recorder::rebuildClip(int mood, double until) {
+    if (notes.empty() || clipBefore == nullptr) return;
+    auto c = std::make_shared<pat::Clip>(*clipBefore);
+    const int bars = std::max(1, int(std::lround(clipBeats / 4.0)));
+    if (mode == Overdub) {
+        // as it was
+    } else if (punch) {
+        const double perBeat = pat::stepsPerBeat(c->resolution);
+        for (int i = c->count - 1; i >= 0; --i) {
+            const double at = clipOrigin + double(c->notes[std::size_t(i)].step) / perBeat;
+            if (at >= punchIn - 1.0e-9 && at < punchOut - 1.0e-9) c->remove(i);
+        }
+    } else {
+        // A new clip on the finest grid, its section's length, fixed in the key.
+        c->setLength(tripletGrid(grid) ? pat::ThirtySecondT : pat::ThirtySecond, bars);
+        c->followChords = false;
+        c->base = 0;
+        c->swing = 0;
+        c->ownSwing = true;
+        c->clear();
+    }
+    const double perBeat = pat::stepsPerBeat(c->resolution);
+    const double length = c->lengthBeats();
+    for (const auto& t : notes) {
+        const double at = quantiseBeat(t.on, grid, strength) - (isFree ? 0.0 : clipOrigin);
+        // Inside the section only; its repeats fold onto the clip.
+        if (at < -1.0e-6 || (clipSpan > 0 && at >= clipSpan - 1.0e-6)) continue;
+        const double pos = std::max(0.0, at) - std::floor(std::max(0.0, at) / length) * length;
+        auto step = int(std::lround(pos * perBeat));
+        if (step >= c->lengthSteps) step -= c->lengthSteps;
+        pat::Note n;
+        n.step = int16_t(std::clamp(step, 0, int(c->lengthSteps) - 1));
+        const double end = t.off >= 0 ? t.off : std::max(t.on, until);
+        n.length = int16_t(std::clamp(int(std::lround((end - t.on) * perBeat)), 1, int(c->lengthSteps)));
+        n.velocity = t.velocity;
+        n.probability = 100;
+        n.flags = open ? pat::Note::takeFlag : 0;
+        if (kit) {
+            n.degree = int8_t(t.pitch);
+        } else {
+            int degree = 0, alter = 0;
+            pat::Pattern p;
+            p.followChords = c->followChords;
+            p.base = c->base;
+            toDegree(p, mood, t.chord, t.pitch, degree, alter);
+            n.degree = int8_t(std::clamp(degree, -60, 60));
+            n.alter = int8_t(std::clamp(alter, -6, 6));
+        }
+        c->add(n);
+    }
+    // One undo step for the whole take (in ARRANGE's undo and in REC's).
+    arrangement->setClip(clipSection, slot, element, c, !clipUndoPushed);
+    clipUndoPushed = true;
+    ++changes;
 }
 
 void Recorder::rebuild(int mood, double until) {
     if (notes.empty()) return;
+    if (clipSection >= 0) {
+        rebuildClip(mood, until);
+        return;
+    }
     pat::Pattern p;
     if (mode == Overdub) {
         p = base;
@@ -140,6 +213,10 @@ bool Recorder::service(const RecordSettings& settings, int mood) {
                 if (!open || c.slot != slot || c.element != element) break;
                 if (!pushedUndo) {
                     pushUndo(slot, type, element, before);
+                    if (clipSection >= 0) {
+                        undoStack.back().section = clipSection;
+                        undoStack.back().clip = clipBefore;
+                    }
                     pushedUndo = true;
                 }
                 notes.push_back({ c.note, c.pitch, c.chord, c.velocity, c.beat, -1 });

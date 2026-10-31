@@ -19,6 +19,7 @@
 // at once. One undo removes a whole take; quantising afterwards is undone the same way.
 #include "Keys.h"
 #include "../Patterns/PatternStore.h"
+#include "../Arrangement/ArrangementStore.h"
 #include <vector>
 
 namespace wb::keys {
@@ -31,11 +32,17 @@ struct RecordSettings {
     // notes starting inside [punchIn, punchOut) beats and keep the rest of the pattern.
     bool punch = false;
     double punchIn = 0, punchOut = 0;
+    // Milestone 16: into an arrangement section's clip of the target (-1: its pattern):
+    // notes land at their place in the clip (beats from `clipOrigin`, the section's first
+    // downbeat; a repeat of the section folds onto the clip, `clipBeats` long); notes
+    // outside the section (`clipSpan` beats; 0: endless) are left out.
+    int clipSection = -1;
+    double clipOrigin = 0, clipBeats = 0, clipSpan = 0;
 };
 
 class Recorder {
 public:
-    Recorder(PatternStore& s, Capture& c) : store(s), capture(c) {}
+    Recorder(PatternStore& s, Capture& c, ArrangementStore* a = nullptr) : store(s), capture(c), arrangement(a) {}
 
     // Takes what the audio thread captured into the patterns (the Root's Mood for the
     // pitches). Returns true when a pattern changed.
@@ -77,6 +84,13 @@ private:
 
     PatternStore& store;
     Capture& capture;
+    ArrangementStore* arrangement = nullptr;
+    // A take into a clip: its section and place, the clip as the take started.
+    int clipSection = -1;
+    double clipOrigin = 0, clipBeats = 0, clipSpan = 0;
+    arr::ClipRef clipBefore;
+    bool clipUndoPushed = false;
+    void rebuildClip(int mood, double until);
     bool open = false, isFree = false, transportTake = false, pushedUndo = false;
     int slot = 0, type = 0, element = 0, variant = 0, mode = Replace, grid = QuantiseOff;
     float strength = 1;
@@ -90,6 +104,8 @@ private:
     struct Undo {
         int slot = 0, type = 0, element = 0;
         pat::Element element_;
+        int section = -1;          // a take into a clip: its section, and the clip before
+        arr::ClipRef clip;
     };
     std::vector<Undo> undoStack;
     static constexpr std::size_t undoLimit = 32;

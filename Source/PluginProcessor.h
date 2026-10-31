@@ -127,12 +127,14 @@ public:
         std::atomic<bool> monitor { true }, hostRegions { true }, armed { false }, countIn { false }, autoLength { false };
         std::atomic<bool> single { false };   // single-instrument mode: the instance plays only the target, from host MIDI
         std::atomic<int> mode { wb::keys::Replace }, variant { 0 }, quantise { wb::keys::QuantiseOff };
+        // Milestone 16: REC records into this section's clip of the target (-1: its pattern).
+        std::atomic<int> clipSection { -1 };
         std::atomic<float> strength { 1.0f };
         bool tipShown = false;         // the first-time tip about host regions
         bool regionsNotice = false;    // a take with the transport switched host regions off (the editor says so)
     };
     KeysSettings keys;
-    wb::keys::Recorder recorder { patterns, engine.capture };
+    wb::keys::Recorder recorder { patterns, engine.capture, &arrangement };
     // Takes what REC captured into the patterns (the timer and the editor call it; the tests too).
     void serviceKeys();
     // REC on or off for the Play target (never in single-instrument mode).
@@ -168,6 +170,9 @@ public:
         std::atomic<bool> punch { false };              // REC records only inside the punch region
         std::atomic<double> punchIn { 0 }, punchOut { 16 };
         std::atomic<double> length { 16 };              // the target pattern's length (punch repeats with it)
+        // Milestone 16: the editor shows a clip or the song view: the transport plays the
+        // arrangement (positions are song beats).
+        std::atomic<bool> arranged { false };
         // The audio thread's side: where the transport stands.
         std::atomic<int> state { TransportStopped };
         std::atomic<double> beat { 0 };                 // the beat playing now (rolling)

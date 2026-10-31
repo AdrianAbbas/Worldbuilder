@@ -69,7 +69,7 @@ public:
 
     // The note under a point, and whether the point is on its right edge (resize).
     int noteAt(juce::Point<float> p, bool& edge) const {
-        const auto& pattern = owner.working.pattern;
+        const auto& pattern = owner.notes();
         for (int i = pattern.count - 1; i >= 0; --i) {
             const auto b = noteBounds(pattern.notes[std::size_t(i)]);
             if (b.expanded(0, 0.5f).contains(p)) {
@@ -85,7 +85,7 @@ public:
         // The piano roll on the art grid: rows, beats and bars as whole art pixels, notes
         // as raised pixel blocks (brightness: velocity; opacity: probability).
         const auto& pal = pixel::theme().colours;
-        const auto& pattern = owner.working.pattern;
+        const auto& pattern = owner.notes();
         const auto accent = accentFor(owner.type());
         const int u = pixel::unit;
         pixel::fillArt(g, getLocalBounds(), pal.well);
@@ -150,12 +150,18 @@ public:
             pixel::frameArt(g, r, pal.inlay.withAlpha(0.8f));
         }
 
+        // The song view: each section's start, and the linked sections dimmed.
+        if (owner.viewMode == View::Song)
+            for (const auto& seg : owner.segments) {
+                const int x0 = int(xForStep(seg.viewStart * perBeat)), x1 = int(xForStep((seg.viewStart + seg.beats) * perBeat));
+                if (seg.linked && x1 > keyWidth) pixel::fillArt(g, { std::max(x0, keyWidth), 0, x1 - std::max(x0, keyWidth), getHeight() }, pal.well.withAlpha(0.35f));
+                if (x0 >= keyWidth && x0 < right) pixel::fillArt(g, { x0, 0, 2 * u, getHeight() }, pal.glow.withAlpha(0.85f));
+            }
         // The playhead: a bright column with a short trail (stopped: where Play starts).
         bool rolling = false;
-        const double beat = playheadBeat(owner.processor, owner.slotIndex, rolling);
-        if (pattern.lengthSteps > 0) {
-            const double steps = beat * perBeat;
-            const double pos = steps - std::floor(steps / pattern.lengthSteps) * pattern.lengthSteps;
+        const double beat = owner.toView(playheadBeat(owner.processor, owner.slotIndex, rolling));
+        if (pattern.lengthSteps > 0 && beat >= 0) {
+            const double pos = beat * perBeat;
             const int x = pixel::snap(int(xForStep(pos)));
             for (int k = 1; k <= 3; ++k) pixel::fillArt(g, { x - k * u, 0, u, getHeight() }, pal.accent.withAlpha((rolling ? 0.28f : 0.1f) / float(k)));
             pixel::fillArt(g, { x, 0, u, getHeight() }, pal.accent.withAlpha(rolling ? 0.95f : 0.45f));
@@ -167,7 +173,7 @@ public:
     void mouseDown(const juce::MouseEvent& e) override {
         owner.grabKeyboardFocus();
         if (e.x < keyWidth || owner.rows.empty()) return;
-        auto& pattern = owner.working.pattern;
+        auto& pattern = owner.notes();
         bool edge = false;
         const int hit = noteAt(e.position, edge);
         const int step = std::clamp(int(std::floor(stepAt(e.position.x))), 0, std::max(0, int(pattern.lengthSteps) - 1));
@@ -178,7 +184,7 @@ public:
             if (hit >= 0) {
                 owner.pushUndo();
                 owner.beginEdit();
-                owner.working.pattern.remove(hit);
+                owner.notes().remove(hit);
                 owner.commit();
             }
             return;
@@ -186,7 +192,7 @@ public:
         if (hit >= 0 && e.getNumberOfClicks() >= 2) {
             owner.pushUndo();
             owner.beginEdit();
-            auto& n = owner.working.pattern.notes[std::size_t(hit)];
+            auto& n = owner.notes().notes[std::size_t(hit)];
             n.setLocked(!n.locked());
             owner.commit();
             return;
@@ -196,16 +202,16 @@ public:
         if (hit >= 0) {
             owner.pushUndo();
             owner.beginEdit();
-            auto& n = owner.working.pattern.notes[std::size_t(hit)];
+            auto& n = owner.notes().notes[std::size_t(hit)];
             if (e.mods.isShiftDown()) setSelected(n, !isSelected(n));
             else if (!isSelected(n)) {
                 owner.selectAll(false);
-                setSelected(owner.working.pattern.notes[std::size_t(hit)], true);
+                setSelected(owner.notes().notes[std::size_t(hit)], true);
             }
             mode = edge ? Resize : Move;
-            origin = owner.working.pattern;
+            origin = captureNotes(owner.notes());
             moved = false;
-            owner.lastVelocity = owner.working.pattern.notes[std::size_t(hit)].velocity;
+            owner.lastVelocity = owner.notes().notes[std::size_t(hit)].velocity;
             repaint();
             return;
         }
@@ -220,10 +226,10 @@ public:
             n.alter = int8_t(owner.rows[std::size_t(row)].alter);
             n.velocity = uint8_t(owner.lastVelocity);
             setSelected(n, true);
-            owner.working.pattern.add(n);
+            owner.notes().add(n);
             owner.commit();
             mode = Resize;
-            origin = owner.working.pattern;
+            origin = captureNotes(owner.notes());
             anchorStep = double(step + n.length);
             moved = true;
             return;
@@ -240,8 +246,8 @@ public:
         if (mode == Move || mode == Resize) {
             const int dSteps = int(std::lround(stepAt(e.position.x) - anchorStep));
             const int dRows = rowAt(e.position.y) - anchorRow;
-            auto& p = owner.working.pattern;
-            p = origin;
+            auto& p = owner.notes();
+            restoreNotes(p, origin);
             const int rowCount = int(owner.rows.size());
             for (int i = 0; i < p.count; ++i) {
                 auto& n = p.notes[std::size_t(i)];
@@ -263,7 +269,7 @@ public:
             owner.commit();
         } else if (mode == Band) {
             bandRect = juce::Rectangle<float>(bandStart, e.position);
-            auto& p = owner.working.pattern;
+            auto& p = owner.notes();
             for (int i = 0; i < p.count; ++i) {
                 auto& n = p.notes[std::size_t(i)];
                 if (noteBounds(n).intersects(bandRect)) setSelected(n, true);
@@ -312,7 +318,7 @@ private:
     enum Mode { None, Move, Resize, Band };
     PatternEditor& owner;
     Mode mode = None;
-    pat::Pattern origin;
+    NotesSnap origin;
     double anchorStep = 0;
     int anchorRow = 0;
     bool moved = false, band = false;
@@ -336,13 +342,13 @@ public:
     // The ruler starts where the grid's steps do.
     float xForBeat(double beat) const { return grid().xForStep(beat * perBeat()) - float(keyWidth); }
     double beatAt(float x) const { return grid().stepAt(x + float(keyWidth)) / perBeat(); }
-    double perBeat() const { return pat::stepsPerBeat(owner.working.pattern.resolution); }
-    double lengthBeats() const { return std::max(0.25, owner.working.pattern.lengthBeats()); }
+    double perBeat() const { return pat::stepsPerBeat(owner.notes().resolution); }
+    double lengthBeats() const { return std::max(0.25, owner.notes().lengthBeats()); }
 
     void paint(juce::Graphics& g) override {
         const auto& pal = pixel::theme().colours;
         const int u = pixel::unit;
-        const auto& p = owner.working.pattern;
+        const auto& p = owner.notes();
         auto& t = owner.processor.transport;
         pixel::fillArt(g, getLocalBounds(), pal.panelDark);
         const int loopY = numbersHeight, punchY = numbersHeight + loopHeight;
@@ -356,7 +362,7 @@ public:
             if (x < 0 || x > getWidth()) continue;
             const bool bar = b % 4 == 0;
             pixel::fillArt(g, { x, bar ? 0 : numbersHeight - 4, u, bar ? getHeight() : 4 }, bar ? pal.rim.withAlpha(0.8f) : pal.wellLight);
-            if (bar && b / 4 < bars) pixel::drawText(g, juce::String(b / 4 + 1), { x + 3 * u, 0, 28, numbersHeight }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+            if (bar && b / 4 < bars) pixel::drawText(g, owner.barLabel(b / 4), { x + 3 * u, 0, 28, numbersHeight }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         }
         if (const int end = pixel::snap(int(xForBeat(lengthBeats()))); end < getWidth()) pixel::fillArt(g, { end, 0, getWidth() - end, getHeight() }, pal.well.withAlpha(0.75f));
         // The loop region (dim when Loop is off) and the punch region (when PUNCH is on).
@@ -365,14 +371,14 @@ public:
             if (x1 <= x0) return;
             pixel::blockArt(g, { x0, y + u, x1 - x0, h - 2 * u }, c, c.brighter(0.3f), c.darker(0.3f), pal.outline);
         };
-        band(t.loopStart.load(), t.loopEnd.load(), loopY, loopHeight, t.loop.load() ? colours::brass : pal.faceDark);
-        if (t.punch.load()) band(t.punchIn.load(), t.punchOut.load(), punchY, getHeight() - punchY, pal.peak);
+        band(view(t.loopStart.load()), view(t.loopEnd.load(), true), loopY, loopHeight, t.loop.load() ? colours::brass : pal.faceDark);
+        if (t.punch.load()) band(view(t.punchIn.load()), view(t.punchOut.load(), true), punchY, getHeight() - punchY, pal.peak);
         pixel::frameArt(g, getLocalBounds(), pal.outline);
         // The playhead (over the frame, so it shows at bar 1 too): a marker on the numbers
         // and a line down the ruler.
         bool rolling = false;
-        double beat = playheadBeat(owner.processor, owner.slotIndex, rolling);
-        beat -= std::floor(beat / lengthBeats()) * lengthBeats();
+        const double beat = owner.toView(playheadBeat(owner.processor, owner.slotIndex, rolling));
+        if (beat < 0) return;
         const int x = pixel::snap(int(xForBeat(beat)));
         const auto c = rolling ? pal.accent : pal.glow;
         pixel::fillArt(g, { x, 0, u, getHeight() }, c);
@@ -390,7 +396,7 @@ public:
         }
         // On a region's edge: move that edge; elsewhere: draw a new region from here.
         const bool loop = lane == Loop;
-        const double from = loop ? t.loopStart.load() : t.punchIn.load(), to = loop ? t.loopEnd.load() : t.punchOut.load();
+        const double from = view(loop ? t.loopStart.load() : t.punchIn.load()), to = view(loop ? t.loopEnd.load() : t.punchOut.load(), true);
         const bool shown = loop || t.punch.load();
         const float edge = 5.0f;
         if (shown && std::abs(e.position.x - xForBeat(from)) <= edge) anchor = to;
@@ -418,6 +424,8 @@ public:
 
 private:
     enum Lane { None, Playhead, Loop, Punch };
+    // A transport position (song beats) on the ruler (view beats); `end`: a region's end.
+    double view(double songBeat, bool end = false) const { return owner.toViewEdge(songBeat, end); }
     // Regions snap to beats (with Shift: to the grid's steps); the playhead to steps.
     double snapBeat(double beat, const juce::ModifierKeys& mods) const {
         const double grain = mods.isShiftDown() ? 1.0 / perBeat() : 1.0;
@@ -426,7 +434,7 @@ private:
     void setPlayhead(const juce::MouseEvent& e) {
         const double step = std::floor(grid().stepAt(e.position.x + float(keyWidth)) + 0.5);
         const double beat = std::clamp(step / perBeat(), 0.0, std::max(0.0, lengthBeats() - 1.0 / perBeat()));
-        owner.processor.transport.playhead.store(beat);
+        owner.processor.transport.playhead.store(owner.toSong(beat));
         repaint();
         owner.gridView->repaint();
     }
@@ -436,12 +444,12 @@ private:
         const double from = std::min(anchor, at), to = std::max(anchor, at);
         if (to - from < 1.0e-6) return;
         if (lane == Loop) {
-            t.loopStart.store(from);
-            t.loopEnd.store(to);
+            t.loopStart.store(owner.toSong(from));
+            t.loopEnd.store(owner.toSong(to, true));
             t.loopSet.store(true);
         } else {
-            t.punchIn.store(from);
-            t.punchOut.store(to);
+            t.punchIn.store(owner.toSong(from));
+            t.punchOut.store(owner.toSong(to, true));
             t.punch.store(true);
             owner.keys->refresh();
         }
@@ -464,7 +472,7 @@ public:
         pixel::fillArt(g, getLocalBounds(), pal.well);
         pixel::drawText(g, isVelocity ? "VELOCITY" : "CHANCE", { 4, 0, keyWidth - 8, getHeight() }, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
         const auto& grid = *owner.gridView;
-        const auto& p = owner.working.pattern;
+        const auto& p = owner.notes();
         const auto accent = accentFor(owner.type());
         g.saveState();
         g.reduceClipRegion(keyWidth, 0, getWidth() - keyWidth, getHeight());
@@ -493,7 +501,7 @@ public:
 private:
     void apply(const juce::MouseEvent& e) {
         if (e.x < keyWidth) return;
-        auto& p = owner.working.pattern;
+        auto& p = owner.notes();
         const int step = int(std::floor(owner.gridView->stepAt(e.position.x)));
         const float value = juce::jlimit(0.0f, 1.0f, 1.0f - (e.position.y - 2.0f) / float(getHeight() - 4));
         bool anySelectedHere = false;
@@ -750,7 +758,7 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     button(clear, "Remove every note", [this] {
         pushUndo();
         beginEdit();
-        working.pattern.clear();
+        notes().clear();
         commit();
     });
     button(generateButton, "A fresh pattern from the Place's generator (its Seed and settings). It follows the Place's knobs until you edit it.",
@@ -782,12 +790,12 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     length.onChange = [this] {
         if (updating) return;
         const int id = length.getSelectedId();
-        setGrid(working.pattern.resolution, id == 99 ? 0 : id, int(steps.getValue()));
+        setGrid(notes().resolution, id == 99 ? 0 : id, int(steps.getValue()));
     };
     for (int r = 0; r < pat::ResolutionCount; ++r) grid.addItem(pat::resolutionNames[std::size_t(r)], r + 1);
     grid.setTooltip("Step resolution");
     grid.onChange = [this] {
-        if (!updating) setGrid(grid.getSelectedId() - 1, working.pattern.bars, working.pattern.lengthSteps);
+        if (!updating) setGrid(grid.getSelectedId() - 1, notes().bars, notes().lengthSteps);
     };
     returnEvery.addItem("Never", 1);
     for (std::size_t i = 1; i < pat::returnChoices.size(); ++i)
@@ -813,14 +821,15 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     // The bar draws its value: no text box (it would draw the value a second time).
     steps.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     steps.onValueChange = [this] {
-        if (!updating && working.pattern.bars == 0) setGrid(working.pattern.resolution, 0, int(steps.getValue()));
+        if (!updating && notes().bars == 0) setGrid(notes().resolution, 0, int(steps.getValue()));
     };
     slider(swing, 0, 1, "Swing: delays the off-beat steps");
     swing.onDragStart = [this] { pushUndo(); };
     swing.onValueChange = [this] {
         if (updating) return;
         beginEdit();
-        working.pattern.swing = float(swing.getValue());
+        notes().swing = float(swing.getValue());
+        if (viewMode != View::Pattern) clipOwnSwing = true;   // the clip swings by its own Swing from now on
         commit();
     };
     slider(randomness, 0, 1, "Randomness: 0 % plays the pattern exactly; higher lets each note change, only in the ways switched on to the right. "
@@ -857,6 +866,7 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
             if (c.getResult().existsAsFile()) importMidi(c.getResult(), elementIndex, snap);
         });
     });
+    setupClipControls();
     button(saveButton, "Save this pattern as a MIDI file", [this] {
         const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).element[std::size_t(std::max(0, elementIndex))].name + ".mid";
         chooser = std::make_unique<juce::FileChooser>("Save the pattern as MIDI", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(name),
@@ -865,6 +875,40 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
             if (c.getResult() != juce::File()) saveMidi(c.getResult().withFileExtension("mid"), elementIndex);
         });
     });
+}
+
+void PatternEditor::setupClipControls() {
+    // Milestone 16: the clip and song views' buttons, and the linked-clip question.
+    const auto button = [this](juce::TextButton& b, const char* tip, std::function<void()> f) {
+        b.setTooltip(tip);
+        b.onClick = std::move(f);
+        b.setColour(juce::TextButton::buttonOnColourId, colours::brass);
+        addChildComponent(b);
+    };
+    button(songButton, "SONG: this instrument's clips across the whole arrangement as one piano roll (section boundaries marked; dimmed "
+                       "sections are still linked to their variant). CLIP: back to the section's own clip.", [this] {
+        if (viewMode == View::Song) {
+            // Back to the clip of the section under the playhead (or the first).
+            const auto a = processor.arrangement.get();
+            const auto at = a.locate(processor.transport.playhead.load());
+            openClip(slotIndex, elementIndex, at.section >= 0 ? at.section : 0);
+        } else {
+            openSong(slotIndex, elementIndex, clipSection);
+        }
+    });
+    button(clipUnique, "Make this section's clip unique: it keeps its notes when the variant changes, and edits change this section only", [this] {
+        processor.makeClipUnique(clipSection, slotIndex, elementIndex);
+        refreshFromStore();
+        repaint();
+    });
+    button(clipRelink, "Re-link: this section plays the instrument's variant again (its own notes go; UNDO in ARRANGE brings them back)", [this] {
+        processor.relinkClip(clipSection, slotIndex, elementIndex);
+        refreshFromStore();
+        repaint();
+    });
+    button(uniqueButton, "Make the clip unique: the edit changes this section only", [this] { resolveLinked(1); });
+    button(variantButton, "Edit the variant instead: it opens in the Pattern Editor, and edits show up in every section linked to it", [this] { resolveLinked(2); });
+    button(cancelLinked, "Take the edit back", [this] { resolveLinked(0); });
 }
 
 PatternEditor::~PatternEditor() {
@@ -889,11 +933,10 @@ void PatternEditor::zoomAround(float x, double factor) {
 
 void PatternEditor::followPlayhead() {
     bool rolling = false;
-    const double beat = playheadBeat(processor, slotIndex, rolling);
-    const auto& p = working.pattern;
-    if (!rolling || p.lengthSteps <= 0) return;
-    double step = beat * pat::stepsPerBeat(p.resolution);
-    step -= std::floor(step / p.lengthSteps) * p.lengthSteps;
+    const double beat = toView(playheadBeat(processor, slotIndex, rolling));
+    const auto& p = notes();
+    if (!rolling || p.lengthSteps <= 0 || beat < 0) return;
+    const double step = beat * pat::stepsPerBeat(p.resolution);
     const double first = gridView->firstStep, shown = double(gridView->visibleSteps());
     // The playhead out of view: a page on, so it stays visible while it plays.
     if (step < first || step > first + shown - 1.0) {
@@ -904,19 +947,110 @@ void PatternEditor::followPlayhead() {
 
 void PatternEditor::syncTransport() {
     auto& t = processor.transport;
-    const double length = std::max(0.25, working.pattern.lengthBeats());
+    // Clips and the song view play the arrangement (the transport's positions are song
+    // beats: a clip's start is its section's first downbeat).
+    t.arranged.store(viewMode != View::Pattern);
+    const double length = std::max(0.25, notes().lengthBeats());
+    const double from = viewMode == View::Pattern ? 0.0 : toSong(0.0), to = viewMode == View::Pattern ? length : toSong(length, true);
     t.length.store(length);
     const bool set = t.loopSet.load();
-    if (!set || t.loopEnd.load() > length + 1.0e-6) {
-        t.loopStart.store(set ? std::min(t.loopStart.load(), length - 0.25) : 0.0);
-        t.loopEnd.store(length);
+    if (!set || t.loopEnd.load() > to + 1.0e-6 || t.loopStart.load() < from - 1.0e-6) {
+        t.loopStart.store(set ? std::clamp(t.loopStart.load(), from, to - 0.25) : from);
+        t.loopEnd.store(to);
     }
-    if (t.punchOut.load() > length + 1.0e-6 || t.punchOut.load() <= t.punchIn.load()) {
-        t.punchIn.store(std::min(t.punchIn.load(), std::max(0.0, length - 1.0)));
-        t.punchOut.store(length);
+    if (t.punchOut.load() > to + 1.0e-6 || t.punchOut.load() <= t.punchIn.load() || t.punchIn.load() < from - 1.0e-6) {
+        t.punchIn.store(std::clamp(t.punchIn.load(), from, std::max(from, to - 1.0)));
+        t.punchOut.store(to);
     }
-    if (t.playhead.load() >= length) t.playhead.store(0.0);
+    if (t.playhead.load() >= to || t.playhead.load() < from - 1.0e-6) t.playhead.store(from);
     loopButton.setToggleState(t.loop.load(), juce::dontSendNotification);
+}
+
+double PatternEditor::viewOrigin() const {
+    if (viewMode != View::Clip) return 0.0;
+    const auto a = processor.arrangement.get();
+    return double(a.startOf(clipSection)) * arr::beatsPerBar;
+}
+
+double PatternEditor::toSong(double v, bool end) const {
+    switch (viewMode) {
+        case View::Clip: return viewOrigin() + v;
+        case View::Song:
+            for (std::size_t i = 0; i < segments.size(); ++i) {
+                const auto& seg = segments[i];
+                const bool last = i + 1 == segments.size();
+                if (v < seg.viewStart + seg.beats - (end ? -1.0e-9 : 1.0e-9) || last) return seg.songStart + std::max(0.0, v - seg.viewStart);
+            }
+            return v;
+        default: return v;
+    }
+}
+
+double PatternEditor::toViewEdge(double songBeat, bool end) const {
+    switch (viewMode) {
+        case View::Clip: return songBeat - viewOrigin();
+        case View::Song:
+            for (const auto& seg : segments)
+                if (songBeat >= seg.songStart - 1.0e-9 && (songBeat < seg.songStart + seg.beats - 1.0e-9 || (end && songBeat <= seg.songStart + seg.beats + 1.0e-9)))
+                    return seg.viewStart + (songBeat - seg.songStart);
+            return segments.empty() ? songBeat : segments.back().viewStart + segments.back().beats;
+        default: return songBeat;
+    }
+}
+
+double PatternEditor::toView(double songBeat) const {
+    const double length = std::max(0.25, notes().lengthBeats());
+    switch (viewMode) {
+        case View::Clip: {
+            // The section's passes repeat its clip; elsewhere the clip is not playing.
+            const auto a = processor.arrangement.get();
+            if (clipSection < 0 || clipSection >= a.count) return -1;
+            const auto at = a.locate(songBeat);
+            if (at.section != clipSection || at.ended) return -1;
+            return at.bar * arr::beatsPerBar;
+        }
+        case View::Song: {
+            const auto a = processor.arrangement.get();
+            const auto at = a.locate(songBeat);
+            if (at.ended) return -1;
+            for (const auto& seg : segments)
+                if (seg.section == at.section) return seg.viewStart + at.bar * arr::beatsPerBar;
+            return -1;
+        }
+        default: return songBeat - std::floor(songBeat / length) * length;
+    }
+}
+
+juce::String PatternEditor::barLabel(int viewBar) const {
+    if (viewMode == View::Pattern) return juce::String(viewBar + 1);
+    return juce::String(int(std::floor(toSong(double(viewBar) * arr::beatsPerBar) / arr::beatsPerBar + 1.0e-6)) + 1);
+}
+
+float PatternEditor::placeSwing() const {
+    return slotIndex < 0 ? 0.0f : processor.parameters.getRawParameterValue(specs[std::size_t(placeParam(slotIndex, PlSwing))].id)->load();
+}
+
+PatternEditor::NotesSnap PatternEditor::captureNotes(const pat::Long& p) {
+    NotesSnap n;
+    n.resolution = p.resolution;
+    n.bars = p.bars;
+    n.lengthSteps = p.lengthSteps;
+    n.followChords = p.followChords;
+    n.base = p.base;
+    n.swing = p.swing;
+    n.notes.assign(p.notes.begin(), p.notes.begin() + p.count);
+    return n;
+}
+
+void PatternEditor::restoreNotes(pat::Long& p, const NotesSnap& n) {
+    p.resolution = n.resolution;
+    p.bars = n.bars;
+    p.lengthSteps = n.lengthSteps;
+    p.followChords = n.followChords;
+    p.base = n.base;
+    p.swing = n.swing;
+    p.count = int16_t(std::min<std::size_t>(n.notes.size(), std::size_t(pat::Long::capacity)));
+    std::copy_n(n.notes.begin(), p.count, p.notes.begin());
 }
 
 void PatternEditor::scrollBarMoved(juce::ScrollBar* bar, double start) {
@@ -936,7 +1070,29 @@ bool PatternEditor::isKit() const { return patternInfo(type(), elementIndex).kin
 int PatternEditor::mood() const { return juce::roundToInt(processor.parameters.getRawParameterValue("mood")->load()); }
 int PatternEditor::root() const { return juce::roundToInt(processor.parameters.getRawParameterValue("root")->load()); }
 
+void PatternEditor::openClip(int slot, int element, int sectionIndex) {
+    viewMode = View::Clip;
+    clipSection = sectionIndex;
+    uniqueConfirmed = false;
+    open(slot, element, true);
+}
+
+void PatternEditor::openSong(int slot, int element, int sectionIndex) {
+    viewMode = View::Song;
+    clipSection = sectionIndex;
+    uniqueConfirmed = false;
+    open(slot, element, true);
+}
+
 void PatternEditor::open(int slot, int element) {
+    viewMode = View::Pattern;
+    clipSection = -1;
+    open(slot, element, true);
+}
+
+void PatternEditor::open(int slot, int element, bool) {
+    pendingLinked = false;
+    processor.transport.loopSet.store(false);
     slotIndex = slot;
     for (int k = 0; k < placeSlots; ++k) processor.engine.showVariants[std::size_t(k)].store(k == slot, std::memory_order_relaxed);
     shownType = type();
@@ -968,15 +1124,15 @@ void PatternEditor::selectElement(int element) {
     attachEffects(element);
     refreshFromStore();
     // Fit the pattern, and show the rows around its notes.
-    const int count = working.pattern.lengthSteps;
+    const int count = notes().lengthSteps;
     const int width = std::max(100, gridView->getWidth() - keyWidth);
     gridView->stepWidth = std::clamp(double(width) / double(std::max(1, count)), 8.0, 40.0);
     gridView->firstStep = 0;
     resized();
     int top = int(rows.size()) / 3;
-    if (working.pattern.count > 0) {
+    if (notes().count > 0) {
         int highest = int(rows.size());
-        for (int i = 0; i < working.pattern.count; ++i) highest = std::min(highest, std::max(0, gridView->rowOf(working.pattern.notes[std::size_t(i)])));
+        for (int i = 0; i < notes().count; ++i) highest = std::min(highest, std::max(0, gridView->rowOf(notes().notes[std::size_t(i)])));
         top = std::max(0, highest - 2);
     }
     vScroll.setCurrentRangeStart(std::min(top, std::max(0, int(rows.size()) - gridView->visibleRows())));
@@ -1051,11 +1207,31 @@ void PatternEditor::selectVariant(int v) {
 void PatternEditor::refreshFromStore() {
     if (slotIndex < 0 || elementIndex < 0) return;
     const int t = type();
-    working = viewOf(processor.patterns.element(slotIndex, t, elementIndex), variantIndex);
-    if (!working.controls.edited) {
-        working.pattern = processor.patterns.playing(slotIndex, t, elementIndex, variantIndex);
-        working.pattern.swing = processor.parameters.getRawParameterValue(specs[std::size_t(placeParam(slotIndex, PlSwing))].id)->load();
+    pendingLinked = false;
+    if (viewMode != View::Pattern) {
+        const auto a = processor.arrangement.get();
+        if (a.count <= 0) {
+            viewMode = View::Pattern;
+        } else {
+            clipSection = std::clamp(clipSection, viewMode == View::Song ? -1 : 0, a.count - 1);
+            variantIndex = std::min<int>(a.sections[std::size_t(std::max(clipSection, 0))].cells[std::size_t(slotIndex)][std::size_t(elementIndex)].variant, arr::VariantC);
+        }
     }
+    working = viewOf(processor.patterns.element(slotIndex, t, elementIndex), variantIndex);
+    if (viewMode == View::Clip) {
+        loadClip();
+    } else if (viewMode == View::Song) {
+        loadSong();
+    } else {
+        notes().copyFrom(working.pattern);
+        if (!working.controls.edited) {
+            notes().copyFrom(processor.patterns.playing(slotIndex, t, elementIndex, variantIndex));
+            notes().swing = placeSwing();
+        }
+        working.pattern.copyFrom(notes());
+    }
+    shownArrangement = processor.arrangement.revision();
+    updateModeControls();
     lastGeneratedSerial = processor.patterns.generated(slotIndex).serial;
     rebuildRows();
     refreshControls();
@@ -1063,7 +1239,8 @@ void PatternEditor::refreshFromStore() {
 
 void PatternEditor::refreshControls() {
     const juce::ScopedValueSetter<bool> guard(updating, true);
-    const auto& p = working.pattern;
+    updateModeControls();
+    const auto& p = notes();
     muteButton.setToggleState(working.controls.mute, juce::dontSendNotification);
     soloButton.setToggleState(working.controls.solo, juce::dontSendNotification);
     length.setSelectedId(p.bars == 0 ? 99 : p.bars, juce::dontSendNotification);
@@ -1099,7 +1276,7 @@ void PatternEditor::rebuildRows() {
         for (int r = info.rows - 1; r >= 0; --r) rows.push_back({ r, 0, info.kit[std::size_t(r)], r == 0, true });
     } else {
         const int m = mood(), size = music::scaleFor(m).size;
-        const auto& p = working.pattern;
+        const auto& p = notes();
         int lo = -size, hi = 2 * size;
         for (int i = 0; i < p.count; ++i) {
             lo = std::min(lo, int(p.notes[std::size_t(i)].degree) - 2);
@@ -1123,27 +1300,246 @@ void PatternEditor::rebuildRows() {
 }
 
 //==============================================================================
+// Milestone 16: clips and the song view.
+
+bool PatternEditor::clipIsLinked() const {
+    return viewMode == View::Clip && processor.arrangement.clipOf(clipSection, slotIndex, elementIndex) == nullptr;
+}
+
+void PatternEditor::loadClip() {
+    const auto a = processor.arrangement.get();
+    const int bars = a.sections[std::size_t(clipSection)].bars;
+    clipShown = processor.sectionClip(clipSection, slotIndex, elementIndex);
+    if (clipShown == nullptr) {
+        auto empty = std::make_shared<pat::Clip>();
+        empty->setLength(pat::Sixteenth, bars);
+        empty->clear();
+        clipShown = empty;
+    }
+    notes().copyFrom(*clipShown);
+    notes().bars = uint8_t(bars);
+    clipOwnSwing = clipShown->ownSwing;
+    if (!clipOwnSwing) notes().swing = placeSwing();
+}
+
+void PatternEditor::loadSong() {
+    const auto a = processor.arrangement.get();
+    segments.clear();
+    songBase.clear();
+    songShown.clear();
+    // Every section once through (to the first endless one), up to the view's 512 bars.
+    std::vector<arr::ClipRef> clips;
+    double view = 0;
+    const int last = std::min(a.firstEndless(), a.count - 1);
+    for (int i = 0; i <= last; ++i) {
+        const auto& sec = a.sections[std::size_t(i)];
+        const double beats = double(sec.bars) * arr::beatsPerBar;
+        if ((view + beats) / arr::beatsPerBar > double(pat::Long::barLimit)) break;
+        auto clip = processor.sectionClip(i, slotIndex, elementIndex);
+        if (clip == nullptr) {
+            auto empty = std::make_shared<pat::Clip>();
+            empty->setLength(pat::Sixteenth, sec.bars);
+            clip = empty;
+        }
+        segments.push_back({ i, view, double(a.startOf(i)) * arr::beatsPerBar, beats, sec.cells[std::size_t(slotIndex)][std::size_t(elementIndex)].clip == nullptr });
+        clips.push_back(clip);
+        view += beats;
+    }
+    songBase = clips;
+    // One grid for the whole song: the finest that holds every clip's (straight or triplet).
+    int perBar = 0;
+    bool straight = false, triplet = false;
+    for (const auto& c : clips) {
+        perBar = std::max(perBar, pat::stepsPerBar(c->resolution));
+        (pat::stepsPerBar(c->resolution) % 3 == 0 ? triplet : straight) = true;
+    }
+    int resolution = pat::Sixteenth;
+    if (triplet && straight) resolution = perBar == 32 ? pat::ThirtySecond : pat::ThirtySecondT;
+    else
+        for (int r = 0; r < pat::ResolutionCount; ++r)
+            if (pat::stepsPerBar(r) == std::max(perBar, 4)) resolution = r;
+    auto& n = notes();
+    n.setLength(resolution, std::max(1, int(std::lround(view / arr::beatsPerBar))));
+    n.clear();
+    const bool any = !clips.empty();
+    n.followChords = any ? clips.front()->followChords : true;
+    n.base = any ? clips.front()->base : int8_t(0);
+    n.swing = any ? clips.front()->swing : 0.0f;
+    clipOwnSwing = any && clips.front()->ownSwing;
+    if (!clipOwnSwing) n.swing = placeSwing();
+    const double newPerBeat = pat::stepsPerBeat(resolution);
+    for (std::size_t k = 0; k < clips.size(); ++k) {
+        const auto& c = *clips[k];
+        const double scale = newPerBeat / pat::stepsPerBeat(c.resolution);
+        for (int i = 0; i < c.count; ++i) {
+            auto note = c.notes[std::size_t(i)];
+            note.step = int16_t(std::lround(double(note.step) * scale + segments[k].viewStart * newPerBeat));
+            note.length = int16_t(std::max(1L, std::lround(double(note.length) * scale)));
+            n.add(note);
+        }
+    }
+    // What each section shows, on the song's grid (an edit is a difference from it).
+    for (std::size_t k = 0; k < segments.size(); ++k) songShown.push_back(segmentClip(int(k)));
+}
+
+arr::ClipRef PatternEditor::segmentClip(int k) const {
+    const auto& seg = segments[std::size_t(k)];
+    const auto& n = notes();
+    const double perBeat = pat::stepsPerBeat(n.resolution);
+    const auto from = int64_t(std::lround(seg.viewStart * perBeat)), to = int64_t(std::lround((seg.viewStart + seg.beats) * perBeat));
+    auto c = std::make_shared<pat::Clip>();
+    c->setLength(n.resolution, int(std::lround(seg.beats / arr::beatsPerBar)));
+    c->followChords = n.followChords;
+    c->base = n.base;
+    c->swing = n.swing;
+    c->ownSwing = clipOwnSwing;
+    c->clear();
+    for (int i = 0; i < n.count; ++i) {
+        auto note = n.notes[std::size_t(i)];
+        if (note.step < from || note.step >= to) continue;
+        note.step = int16_t(note.step - from);
+        note.flags &= uint8_t(~selectedFlag);
+        c->add(note);
+    }
+    return c;
+}
+
+void PatternEditor::publishClip(bool undoable) {
+    auto c = std::make_shared<pat::Clip>();
+    c->copyFrom(notes());
+    c->ownSwing = clipOwnSwing;
+    for (int i = 0; i < c->count; ++i) c->notes[std::size_t(i)].flags &= uint8_t(~selectedFlag);
+    // A linked clip unchanged stays linked (a click that only selected, a control moved).
+    if (clipIsLinked()) {
+        if (clipShown != nullptr && c->sameNotes(*clipShown) && c->ownSwing == clipShown->ownSwing) return;
+        if (!uniqueConfirmed) {
+            pendingLinked = true;
+            return;
+        }
+    }
+    processor.arrangement.setClip(clipSection, slotIndex, elementIndex, c, undoable);
+    clipShown = c;
+    shownArrangement = processor.arrangement.revision();
+}
+
+void PatternEditor::publishSong(bool undoable) {
+    auto a = processor.arrangement.get();
+    bool changed = false, linkedChange = false;
+    std::vector<arr::ClipRef> fresh;
+    for (std::size_t k = 0; k < segments.size(); ++k) {
+        auto c = segmentClip(int(k));
+        fresh.push_back(c);
+        if (k < songShown.size() && songShown[k] != nullptr && c->sameNotes(*songShown[k]) && c->ownSwing == songShown[k]->ownSwing) continue;
+        changed = true;
+        linkedChange |= segments[k].linked;
+    }
+    if (!changed) return;
+    if (linkedChange && !uniqueConfirmed) {
+        pendingLinked = true;
+        return;
+    }
+    for (std::size_t k = 0; k < segments.size(); ++k) {
+        if (k < songShown.size() && songShown[k] != nullptr && fresh[k]->sameNotes(*songShown[k]) && fresh[k]->ownSwing == songShown[k]->ownSwing) continue;
+        const int i = segments[k].section;
+        if (i >= a.count) continue;
+        a.sections[std::size_t(i)].cells[std::size_t(slotIndex)][std::size_t(elementIndex)].clip = ArrangementStore::conform(fresh[k], a.sections[std::size_t(i)].bars);
+        segments[k].linked = false;
+        songShown[k] = fresh[k];
+    }
+    processor.arrangement.set(a, undoable);
+    shownArrangement = processor.arrangement.revision();
+}
+
+void PatternEditor::resolveLinked(int choice) {
+    if (!pendingLinked) return;
+    pendingLinked = false;
+    if (choice == 1) {
+        uniqueConfirmed = true;
+        storeUndoPending = true;
+        commit();
+        return;
+    }
+    // Cancel, or edit the variant: the edit is taken back; the variant opens in the
+    // Pattern Editor (edits there show up everywhere it is linked).
+    restoreNotes(notes(), beforeLinked);
+    if (choice == 2 && viewMode == View::Clip) {
+        const int slot = slotIndex, element = elementIndex, variant = variantIndex;
+        open(slot, element);
+        selectVariant(variant);
+        return;
+    }
+    if (!undoStack.empty()) undoStack.pop_back();
+    rebuildRows();
+    refreshControls();
+    resized();
+    repaint();
+}
+
+void PatternEditor::updateModeControls() {
+    const bool pattern = viewMode == View::Pattern, clip = viewMode == View::Clip;
+    for (auto& tab : variantTabs) tab.setVisible(pattern);
+    generateButton.setVisible(pattern);
+    for (auto* c : std::initializer_list<juce::Component*> { &length, &steps, &twice, &half }) c->setVisible(pattern);
+    grid.setEnabled(viewMode != View::Song);
+    songButton.setVisible(!pattern || processor.arrangement.get().count > 0);
+    songButton.setButtonText(viewMode == View::Song ? "CLIP" : pattern ? "SONG" : "SONG");
+    clipUnique.setVisible(clip);
+    clipRelink.setVisible(clip);
+    const bool linked = clipIsLinked();
+    clipUnique.setEnabled(clip && linked);
+    clipRelink.setEnabled(clip && !linked);
+    for (auto* b : { &uniqueButton, &cancelLinked }) b->setVisible(pendingLinked);
+    variantButton.setVisible(pendingLinked && clip);
+    if (keys != nullptr) keys->setVisible(!pendingLinked);
+}
+
 void PatternEditor::pushUndo() {
-    undoStack.push_back({ working });
+    if (!pendingLinked && (clipIsLinked() || viewMode == View::Song)) beforeLinked = captureNotes(notes());
+    undoStack.push_back({ working, captureNotes(notes()) });
     if (undoStack.size() > 100) undoStack.erase(undoStack.begin());
     redoStack.clear();
+    storeUndoPending = true;
 }
 
 void PatternEditor::beginEdit() {
+    if (viewMode != View::Pattern) return;
     if (!working.controls.edited) {
         working.controls.edited = true;
-        working.pattern.swing = processor.parameters.getRawParameterValue(specs[std::size_t(placeParam(slotIndex, PlSwing))].id)->load();
+        notes().swing = processor.parameters.getRawParameterValue(specs[std::size_t(placeParam(slotIndex, PlSwing))].id)->load();
     }
 }
 
 void PatternEditor::commit() {
     if (slotIndex < 0 || elementIndex < 0) return;
-    working.pattern.normalise();
-    auto view = working;
-    for (int i = 0; i < view.pattern.count; ++i) view.pattern.notes[std::size_t(i)].flags &= uint8_t(~selectedFlag);
+    notes().normalise();
     auto published = processor.patterns.element(slotIndex, type(), elementIndex);
-    mergeInto(published, view, variantIndex);
-    processor.patterns.setElement(slotIndex, type(), elementIndex, published);
+    if (viewMode == View::Pattern) {
+        // A pattern holds at most 256 notes and 8 bars.
+        working.pattern.copyFrom(notes());
+        auto view = working;
+        for (int i = 0; i < view.pattern.count; ++i) view.pattern.notes[std::size_t(i)].flags &= uint8_t(~selectedFlag);
+        mergeInto(published, view, variantIndex);
+        processor.patterns.setElement(slotIndex, type(), elementIndex, published);
+    } else {
+        // The instrument's Randomness, Evolve, mute and solo are shared by its patterns and
+        // clips; the notes go into the section's clip (or clips, in the song view).
+        const auto& c = working.controls;
+        auto& to = published.controls;
+        if (to.randomness != c.randomness || to.vary != c.vary || to.evolve != c.evolve || to.returnBars != c.returnBars || to.mute != c.mute || to.solo != c.solo) {
+            to.randomness = c.randomness;
+            to.vary = c.vary;
+            to.evolve = c.evolve;
+            to.returnBars = c.returnBars;
+            to.mute = c.mute;
+            to.solo = c.solo;
+            processor.patterns.setElement(slotIndex, type(), elementIndex, published);
+        }
+        const bool undoable = storeUndoPending;
+        if (viewMode == View::Clip) publishClip(undoable);
+        else publishSong(undoable);
+        if (!pendingLinked) storeUndoPending = false;
+        updateModeControls();
+    }
     rebuildRows();
     refreshControls();
     resized();
@@ -1152,38 +1548,43 @@ void PatternEditor::commit() {
 
 void PatternEditor::undo() {
     if (undoStack.empty()) return;
-    redoStack.push_back({ working });
+    pendingLinked = false;
+    redoStack.push_back({ working, captureNotes(notes()) });
     working = undoStack.back().element;
+    restoreNotes(notes(), undoStack.back().notes);
     undoStack.pop_back();
+    storeUndoPending = true;
     commit();
 }
 
 void PatternEditor::redo() {
     if (redoStack.empty()) return;
-    undoStack.push_back({ working });
+    undoStack.push_back({ working, captureNotes(notes()) });
     working = redoStack.back().element;
+    restoreNotes(notes(), redoStack.back().notes);
     redoStack.pop_back();
+    storeUndoPending = true;
     commit();
 }
 
 bool PatternEditor::anySelected() const {
-    for (int i = 0; i < working.pattern.count; ++i)
-        if (isSelected(working.pattern.notes[std::size_t(i)])) return true;
+    for (int i = 0; i < notes().count; ++i)
+        if (isSelected(notes().notes[std::size_t(i)])) return true;
     return false;
 }
 
 void PatternEditor::selectAll(bool on) {
-    for (int i = 0; i < working.pattern.count; ++i) setSelected(working.pattern.notes[std::size_t(i)], on);
+    for (int i = 0; i < notes().count; ++i) setSelected(notes().notes[std::size_t(i)], on);
     repaint();
 }
 
 void PatternEditor::copySelection() {
     clipboard.clear();
     int first = INT_MAX;
-    for (int i = 0; i < working.pattern.count; ++i)
-        if (isSelected(working.pattern.notes[std::size_t(i)])) first = std::min(first, int(working.pattern.notes[std::size_t(i)].step));
-    for (int i = 0; i < working.pattern.count; ++i) {
-        auto n = working.pattern.notes[std::size_t(i)];
+    for (int i = 0; i < notes().count; ++i)
+        if (isSelected(notes().notes[std::size_t(i)])) first = std::min(first, int(notes().notes[std::size_t(i)].step));
+    for (int i = 0; i < notes().count; ++i) {
+        auto n = notes().notes[std::size_t(i)];
         if (!isSelected(n)) continue;
         n.step = int16_t(n.step - first);
         clipboard.push_back(n);
@@ -1199,7 +1600,7 @@ void PatternEditor::paste() {
     for (auto n : clipboard) {
         n.step = int16_t(n.step + cursorStep);
         setSelected(n, true);
-        working.pattern.add(n);
+        notes().add(n);
     }
     commit();
 }
@@ -1208,8 +1609,8 @@ void PatternEditor::deleteSelection() {
     if (!anySelected()) return;
     pushUndo();
     beginEdit();
-    for (int i = working.pattern.count - 1; i >= 0; --i)
-        if (isSelected(working.pattern.notes[std::size_t(i)])) working.pattern.remove(i);
+    for (int i = notes().count - 1; i >= 0; --i)
+        if (isSelected(notes().notes[std::size_t(i)])) notes().remove(i);
     commit();
 }
 
@@ -1218,8 +1619,8 @@ void PatternEditor::transpose(int direction) {
     beginEdit();
     const bool all = !anySelected();
     const auto& info = patternInfo(type(), elementIndex);
-    for (int i = 0; i < working.pattern.count; ++i) {
-        auto& n = working.pattern.notes[std::size_t(i)];
+    for (int i = 0; i < notes().count; ++i) {
+        auto& n = notes().notes[std::size_t(i)];
         if (!all && !isSelected(n)) continue;
         if (info.kind == Kit) {
             n.degree = int8_t(std::clamp(n.degree + direction, 0, info.rows - 1));
@@ -1238,7 +1639,7 @@ void PatternEditor::transpose(int direction) {
 void PatternEditor::resizeLength(bool doubleIt) {
     pushUndo();
     beginEdit();
-    auto& p = working.pattern;
+    auto& p = notes();
     const int oldLength = p.lengthSteps;
     if (doubleIt) {
         const int bars = p.bars > 0 ? std::min(int(pat::maxBars), p.bars * 2) : 0;
@@ -1266,17 +1667,17 @@ void PatternEditor::toggleLock() {
     pushUndo();
     beginEdit();
     bool allLocked = true;
-    for (int i = 0; i < working.pattern.count; ++i)
-        if (isSelected(working.pattern.notes[std::size_t(i)])) allLocked &= working.pattern.notes[std::size_t(i)].locked();
-    for (int i = 0; i < working.pattern.count; ++i)
-        if (isSelected(working.pattern.notes[std::size_t(i)])) working.pattern.notes[std::size_t(i)].setLocked(!allLocked);
+    for (int i = 0; i < notes().count; ++i)
+        if (isSelected(notes().notes[std::size_t(i)])) allLocked &= notes().notes[std::size_t(i)].locked();
+    for (int i = 0; i < notes().count; ++i)
+        if (isSelected(notes().notes[std::size_t(i)])) notes().notes[std::size_t(i)].setLocked(!allLocked);
     commit();
 }
 
 void PatternEditor::setGrid(int resolution, int bars, int stepCount) {
     pushUndo();
     beginEdit();
-    auto& p = working.pattern;
+    auto& p = notes();
     const int oldPerBar = pat::stepsPerBar(p.resolution), newPerBar = pat::stepsPerBar(resolution);
     if (oldPerBar != newPerBar) {
         // Keep the notes where they are in time.
@@ -1287,15 +1688,16 @@ void PatternEditor::setGrid(int resolution, int bars, int stepCount) {
         }
         if (bars == 0) stepCount = int(std::lround(double(stepCount) * newPerBar / oldPerBar));
     }
-    p.setGrid(resolution, bars, stepCount);
+    if (viewMode == View::Pattern) p.setGrid(resolution, bars, stepCount);
+    else p.setLength(resolution, p.bars);
     commit();
 }
 
 void PatternEditor::setFollowChords(bool on) {
-    if (on == working.pattern.followChords) return;
+    if (on == notes().followChords) return;
     pushUndo();
     beginEdit();
-    auto& p = working.pattern;
+    auto& p = notes();
     // Keep the notes sounding the same on the tonic chord.
     const int size = music::scaleFor(mood()).size;
     const int octaves = music::inRange(0, p.base) / 12;
@@ -1308,7 +1710,7 @@ void PatternEditor::setFollowChords(bool on) {
 }
 
 void PatternEditor::generate() {
-    if (slotIndex < 0 || elementIndex < 0) return;
+    if (slotIndex < 0 || elementIndex < 0 || viewMode != View::Pattern) return;
     pushUndo();
     working.controls.variant = uint8_t(working.controls.variant + 1);
     working.controls.edited = false;
@@ -1323,7 +1725,7 @@ void PatternEditor::addNote(int step, int degree, int noteLength, int velocity) 
     n.degree = int8_t(degree);
     n.length = int16_t(noteLength);
     n.velocity = uint8_t(velocity);
-    working.pattern.add(n);
+    notes().add(n);
     commit();
 }
 
@@ -1338,7 +1740,6 @@ juce::File PatternEditor::tempMidiFile(int element) const {
 bool PatternEditor::saveMidi(const juce::File& file, int element) {
     if (slotIndex < 0 || element < 0) return false;
     const int t = type();
-    const auto pattern = element == elementIndex ? working.pattern : processor.patterns.playing(slotIndex, t, element, variantIndex);
     pat::MidiTarget target;
     target.root = root();
     target.mood = mood();
@@ -1346,7 +1747,22 @@ bool PatternEditor::saveMidi(const juce::File& file, int element) {
     target.kitRows = patternInfo(t, element).rows;
     target.bpm = processor.engine.frame().bpm;
     target.danger = processor.parameters.getRawParameterValue("danger")->load();
-    const auto midi = pat::toMidi(pattern, target);
+    juce::MidiFile midi;
+    if (viewMode == View::Song && element == elementIndex) {
+        // The whole song: every section's notes at its place in the song.
+        juce::MidiMessageSequence track;
+        track.addEvent(juce::MidiMessage::timeSignatureMetaEvent(4, 4), 0);
+        track.addEvent(juce::MidiMessage::tempoMetaEvent(int(60000000.0 / std::clamp(double(target.bpm), 20.0, 999.0))), 0);
+        for (std::size_t k = 0; k < segments.size(); ++k) pat::appendNotes(track, *segmentClip(int(k)), target, 0, 1, segments[k].songStart);
+        track.updateMatchedPairs();
+        midi.setTicksPerQuarterNote(pat::ticksPerBeat);
+        midi.addTrack(track);
+    } else if (element == elementIndex) {
+        // A clip from its section's first downbeat (its chords there).
+        midi = pat::toMidi(notes(), target, viewOrigin());
+    } else {
+        midi = pat::toMidi(processor.patterns.playing(slotIndex, t, element, variantIndex), target);
+    }
     file.deleteFile();
     juce::FileOutputStream out(file);
     if (!out.openedOk()) return false;
@@ -1368,13 +1784,20 @@ bool PatternEditor::importMidi(const juce::File& file, int element, bool snapToS
     target.kitRows = patternInfo(t, element).rows;
     target.bpm = processor.engine.frame().bpm;
     if (element != elementIndex) selectElement(element);
-    auto p = working.pattern;
-    if (pat::fromMidi(midi, p, target, snapToScale, working.controls.edited ? working.pattern.resolution : pat::Sixteenth) <= 0) return false;
+    auto p = std::make_unique<pat::Long>(notes());
+    // A clip keeps its section's length; the song view takes the file from its start.
+    const int bars = viewMode == View::Pattern ? 0 : std::max(1, int(std::lround(notes().lengthBeats() / arr::beatsPerBar)));
+    const int resolution = viewMode != View::Pattern || working.controls.edited ? notes().resolution : int(pat::Sixteenth);
+    if (pat::fromMidi(midi, *p, target, snapToScale, resolution, bars) <= 0) return false;
     pushUndo();
     beginEdit();
-    working.pattern = p;
+    if (viewMode != View::Pattern) {
+        p->bars = notes().bars;
+        clipOwnSwing = true;
+    }
+    notes() = *p;
     commit();
-    selectElement(element);
+    if (!pendingLinked) selectElement(element);   // (waiting for the linked-clip answer: keep the import shown)
     return true;
 }
 
@@ -1427,11 +1850,24 @@ void PatternEditor::timerCallback() {
         }
         open(slotIndex);
     }
-    // A generated pattern follows the Place's knobs: show the newest.
-    if (!working.controls.edited && processor.patterns.generated(slotIndex).serial != lastGeneratedSerial) {
+    // A generated pattern follows the Place's knobs: show the newest (a linked clip too).
+    const bool follows = viewMode == View::Pattern ? !working.controls.edited : viewMode == View::Clip ? clipIsLinked() : false;
+    if (!pendingLinked && follows && processor.patterns.generated(slotIndex).serial != lastGeneratedSerial) {
         refreshFromStore();
         resized();
     }
+    // The arrangement changed elsewhere (ARRANGE, its undo, a take recorded into the clip).
+    if (viewMode != View::Pattern && !pendingLinked && processor.arrangement.revision() != shownArrangement
+        && !juce::ModifierKeys::getCurrentModifiersRealtime().isAnyMouseButtonDown()) {
+        refreshFromStore();
+        resized();
+        repaint();
+    }
+    // REC records into the clip shown (the song view: the section under the playhead).
+    int recordInto = -1;
+    if (viewMode == View::Clip) recordInto = clipSection;
+    else if (viewMode == View::Song) recordInto = processor.arrangement.get().locate(processor.transport.playhead.load()).section;
+    if (!processor.recorder.taking()) processor.keys.clipSection.store(recordInto);
     // The transport's buttons: lit while it plays; the host playing leads instead.
     const bool host = processor.hostRolling();
     const int state = processor.transportState();
@@ -1531,6 +1967,11 @@ void PatternEditor::resized() {
         place(half, 36);
         place(lock, 50);
         generateButton.setBounds(t.removeFromRight(92).reduced(2, 2));
+        // Clips: SONG / CLIP, MAKE UNIQUE and RE-LINK where GENERATE is for a pattern.
+        auto c = toolbarArea;
+        songButton.setBounds(c.removeFromRight(64).reduced(2, 2));
+        clipRelink.setBounds(c.removeFromRight(76).reduced(2, 2));
+        clipUnique.setBounds(c.removeFromRight(70).reduced(2, 2));
     }
     r.removeFromTop(4);
     settingsArea = r.removeFromTop(84);
@@ -1570,6 +2011,14 @@ void PatternEditor::resized() {
     r.removeFromTop(4);
     keysArea = r.removeFromTop(64);
     keys->setBounds(keysArea);
+    {
+        // The linked-clip question, in the KEYS row while it waits.
+        linkedArea = keysArea;
+        auto b = linkedArea.withTrimmedTop(30).withTrimmedLeft(10);
+        uniqueButton.setBounds(b.removeFromLeft(120).reduced(2, 2));
+        variantButton.setBounds(b.removeFromLeft(130).reduced(2, 2));
+        cancelLinked.setBounds(b.removeFromLeft(80).reduced(2, 2));
+    }
     keys->setContext(slotIndex, elementIndex, variantIndex);
     r.removeFromTop(4);
     statusArea = r.removeFromBottom(16);
@@ -1598,7 +2047,7 @@ void PatternEditor::resized() {
     gridView->rowHeight = std::clamp(int(std::lround(double(fit) * gridView->rowZoom)), 8, isKit() ? 96 : 48);
     gridView->setBounds(r);
 
-    const int total = working.pattern.lengthSteps;
+    const int total = notes().lengthSteps;
     hScroll.setRangeLimits(0.0, double(std::max(total, 1)), juce::dontSendNotification);
     hScroll.setCurrentRange(gridView->firstStep, double(gridView->visibleSteps()), juce::dontSendNotification);
     gridView->firstStep = hScroll.getCurrentRangeStart();
@@ -1625,7 +2074,27 @@ void PatternEditor::paint(juce::Graphics& g) {
     title.removeFromLeft(40);
     pixel::drawText(g, juce::String(placeNames[std::size_t(std::clamp(t, 0, PlaceTypeCount - 1))]).toUpperCase(), title.removeFromTop(24), pal.ink,
                     juce::Justification::centredLeft, pixel::Font::Large);
-    pixel::drawText(g, "PATTERNS - PLACE " + juce::String(slotIndex + 1), title, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    juce::String heading = "PATTERNS - PLACE " + juce::String(slotIndex + 1);
+    const auto a = processor.arrangement.get();
+    if (viewMode == View::Clip && clipSection >= 0 && clipSection < a.count) {
+        const auto& sec = a.sections[std::size_t(clipSection)];
+        const int first = a.startOf(clipSection) + 1;
+        heading = "CLIP - " + juce::String::fromUTF8(sec.nameText()).toUpperCase() + " BARS " + juce::String(first) + "-" + juce::String(first + sec.bars - 1)
+                  + (clipIsLinked() ? " - LINKED TO " + juce::String(arr::variantNames[std::size_t(variantIndex)]) : " - UNIQUE");
+    } else if (viewMode == View::Song) {
+        heading = "SONG - " + juce::String(int(segments.size())) + " SECTIONS";
+    }
+    pixel::drawText(g, heading, title, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    if (pendingLinked) {
+        pixel::fillArt(g, linkedArea, pal.panelDark);
+        pixel::frameArt(g, linkedArea, pal.peak);
+        g.setFont(juce::Font(juce::FontOptions(12.5f)));
+        g.setColour(pal.ink);
+        g.drawText(viewMode == View::Clip ? "This clip is linked to pattern " + juce::String(arr::variantNames[std::size_t(variantIndex)])
+                                                + ": make it unique (this section only), or edit the variant (every section linked to it)?"
+                                          : "Some of these sections are linked to their variant: make the edited ones unique?",
+                   linkedArea.reduced(10, 4).withHeight(24), juce::Justification::centredLeft, true);
+    }
 
     const auto above = [&](juce::Component& c, const juce::String& text, int extra = 30) {
         pixel::drawText(g, text, c.getBounds().translated(0, -13).withHeight(12).withWidth(c.getWidth() + extra), pal.heading, juce::Justification::centredLeft,
@@ -1680,8 +2149,15 @@ void PatternEditor::paint(juce::Graphics& g) {
 
     // Status: generated or edited, and what the rows mean (a sentence: a clean font).
     juce::String status;
-    if (variantIndex != 0) status = "Pattern " + juce::String(arr::variantNames[std::size_t(variantIndex)]) + " (chosen per section in ARRANGE). ";
-    if (working.controls.edited)
+    if (viewMode == View::Clip)
+        status = clipIsLinked() ? "Linked: this section plays pattern " + juce::String(arr::variantNames[std::size_t(variantIndex)])
+                                      + " over its bars. An edit asks to make it unique. "
+                                : "Unique: this section's own notes for the instrument (Randomness and Evolve as set). ";
+    else if (viewMode == View::Song)
+        status = "Song view: one pass of every section, end to end (bars numbered as in the song). Dimmed sections are linked. ";
+    else if (variantIndex != 0) status = "Pattern " + juce::String(arr::variantNames[std::size_t(variantIndex)]) + " (chosen per section in ARRANGE). ";
+    if (viewMode != View::Pattern) {}
+    else if (working.controls.edited)
         status += "Edited: this pattern plays as written (with its Randomness), whatever the Place's knobs do. GENERATE replaces it.";
     else if (variantIndex == pat::VariantB)
         status += "Generated: a busier take on A, from the Place's Seed, until you edit it.";
@@ -1689,13 +2165,13 @@ void PatternEditor::paint(juce::Graphics& g) {
         status += "Generated: a sparser take on A, from the Place's Seed, until you edit it.";
     else if (variantIndex == pat::VariantFill)
         status += "Generated: the busiest take, building over its bar; it plays in a section's last bar.";
-    else
+    else if (viewMode == View::Pattern)
         status = "Generated from the Place's Seed: it follows Character, Activity, Density, Tension and Life until you edit it.";
-    if (!isKit() && working.pattern.followChords) status += "  Rows follow the chords (named on the tonic chord).";
+    if (!isKit() && notes().followChords) status += "  Rows follow the chords (named on the tonic chord).";
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
     g.setColour(working.controls.edited ? pal.ink.withAlpha(0.9f) : pal.inkDim);
     g.drawText(status, statusArea.withTrimmedRight(80), juce::Justification::centredLeft, true);
-    pixel::drawText(g, juce::String(working.pattern.count) + " NOTES", statusArea, pal.inkDim, juce::Justification::centredRight, pixel::Font::Small);
+    pixel::drawText(g, juce::String(notes().count) + " NOTES", statusArea, pal.inkDim, juce::Justification::centredRight, pixel::Font::Small);
 }
 
 } // namespace wb::ui

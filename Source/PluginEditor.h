@@ -38,6 +38,8 @@ public:
     void closeDetail();
     // Opens the Pattern Editor on a slot's Place (on `element`, or its first pattern).
     void openPatterns(int slot, int element = -1);
+    // Milestone 16: a section's clip (or the instrument's song view) in the piano roll.
+    void openClip(int slot, int element, int section, bool song = false);
     wb::ui::PatternEditor& patternEditor() { return *patterns; }
     // The ARRANGE view (Milestone 11), over the globe and the cards like the Pattern Editor.
     void openArrange();

@@ -265,6 +265,45 @@ void ArrangeView::clickCell(int section, int slot, int element, bool shift) {
     setCell(section, slot, element, cell);
 }
 
+void ArrangeView::openClip(int section, int slot, int element) {
+    if (section < 0 || section >= shown.count || slot < 0 || slot >= placeSlots || patternInfo(shownTypes[std::size_t(slot)], element).kind == NoPattern) return;
+    select(section);
+    if (onOpenClip) onOpenClip(slot, element, section);
+}
+
+void ArrangeView::toggleCell(int section, int slot, int element) { clickCell(section, slot, element, false); }
+
+void ArrangeView::copyClip(int section, int slot, int element) {
+    clipboardClip = processor.sectionClip(section, slot, element);
+    clipboardHeld = clipboardClip != nullptr;
+}
+
+bool ArrangeView::pasteClip(int section, int slot, int element) {
+    if (!clipboardHeld || clipboardClip == nullptr || section < 0 || section >= shown.count) return false;
+    if (patternInfo(shownTypes[std::size_t(slot)], element).kind == NoPattern) return false;
+    // (A drum clip pasted on a melodic instrument plays its rows as degrees: as copied.)
+    processor.arrangement.setClip(section, slot, element, clipboardClip, true);
+    return true;
+}
+
+void ArrangeView::copySectionClips(int section) {
+    if (section < 0 || section >= shown.count) return;
+    for (int slot = 0; slot < placeSlots; ++slot)
+        for (int e = 0; e < placeElements; ++e) clipboardSection[std::size_t(slot)][std::size_t(e)] = processor.sectionClip(section, slot, e);
+    sectionHeld = true;
+}
+
+bool ArrangeView::pasteSectionClips(int section) {
+    if (!sectionHeld || section < 0 || section >= shown.count) return false;
+    auto a = processor.arrangement.get();
+    auto& s = a.sections[std::size_t(section)];
+    for (int slot = 0; slot < placeSlots; ++slot)
+        for (int e = 0; e < placeElements; ++e)
+            if (const auto& c = clipboardSection[std::size_t(slot)][std::size_t(e)]) s.cells[std::size_t(slot)][std::size_t(e)].clip = ArrangementStore::conform(c, s.bars);
+    processor.arrangement.set(a, true);
+    return true;
+}
+
 void ArrangeView::startPreview(int section) {
     if (shown.count <= 0) return;
     section = std::clamp(section, 0, shown.count - 1);
@@ -414,6 +453,8 @@ void ArrangeView::refresh() {
 }
 
 void ArrangeView::timerCallback() {
+    // While ARRANGE shows, every variant is generated (clips are made from them).
+    processor.engine.arrangeVariants.store(isShowing(), std::memory_order_relaxed);
     if (!isShowing()) return;
     bool layout = false;
     if (processor.arrangement.revision() != shownRevision) {
@@ -812,7 +853,28 @@ void ArrangeView::paint(juce::Graphics& g) {
                     const int w = pixel::snap(std::min(b.getWidth(), int(pxPerBar)));
                     pixel::fillArt(g, { b.getRight() - w, b.getY() + u, w, b.getHeight() - 2 * u }, pal.ink.withAlpha(0.75f));
                 }
-                if (cell.entry != arr::EntryOff && b.getWidth() >= 12 && b.getHeight() >= 10)
+                if (cell.clip != nullptr && b.getHeight() >= 6) {
+                    // A unique clip: its notes, in miniature (every pass).
+                    const auto& clip = *cell.clip;
+                    int lo = 127, hi = -127;
+                    for (int k = 0; k < clip.count; ++k) {
+                        lo = std::min<int>(lo, clip.notes[std::size_t(k)].degree);
+                        hi = std::max<int>(hi, clip.notes[std::size_t(k)].degree);
+                    }
+                    const int span = std::max(1, hi - lo);
+                    const auto dot = (cell.entry == arr::EntryOff ? pal.inkDim : pal.inkOn).withAlpha(0.85f);
+                    const int rows = std::max(1, (b.getHeight() - 2 * u) / u);
+                    for (int pass = 0; pass < passes; ++pass)
+                        for (int k = 0; k < clip.count && k < 512; ++k) {
+                            const auto& n = clip.notes[std::size_t(k)];
+                            const float x = float(b.getX()) + passWidth * (float(pass) + float(n.step) / float(std::max<int>(clip.lengthSteps, 1)));
+                            const int y = b.getBottom() - u - (int(float(n.degree - lo) / float(span) * float(rows - 1)) + 1) * u;
+                            pixel::fillArt(g, { pixel::snap(int(x)), pixel::snap(y), u, u }, dot);
+                        }
+                    // The unique mark: a notch in the top-left corner.
+                    pixel::fillArt(g, { b.getX(), b.getY(), 3 * u, u }, pal.glow);
+                    pixel::fillArt(g, { b.getX(), b.getY(), u, 3 * u }, pal.glow);
+                } else if (cell.entry != arr::EntryOff && b.getWidth() >= 12 && b.getHeight() >= 10)
                     pixel::drawText(g, arr::variantNames[std::size_t(std::min<int>(cell.variant, 2))], b.withTrimmedLeft(4), pal.inkOn, juce::Justification::centredLeft,
                                     pixel::Font::Small, juce::Colours::transparentBlack, false);
                 const bool hover = i == hoverCellSection && row.slot == hoverCellSlot && row.element == hoverCellElement;
@@ -875,7 +937,9 @@ void ArrangeView::mouseDown(const juce::MouseEvent& e) {
     int section = -1, slot = -1, element = -1;
     if (cellAt(p, section, slot, element)) {
         if (menu) showCellMenu(section, slot, element);
-        else clickCell(section, slot, element, e.mods.isShiftDown());
+        else if (e.mods.isShiftDown()) clickCell(section, slot, element, true);
+        else if (e.mods.isCommandDown() || e.mods.isCtrlDown()) toggleCell(section, slot, element);
+        else openClip(section, slot, element);
         return;
     }
     if (labelColumn.contains(p) && menu)
@@ -1021,11 +1085,29 @@ void ArrangeView::showSectionMenu(int index) {
     m.addSeparator();
     m.addItem(4, "Every instrument on");
     m.addItem(5, "Every instrument off");
+    m.addSeparator();
+    m.addItem(6, "Copy its clips");
+    m.addItem(7, "Paste clips here", sectionHeld);
+    m.addItem(8, "Make every clip unique");
+    m.addItem(9, "Re-link every clip");
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMousePosition(), [this, index](int r) {
         select(index);
         if (r == 1) startPreview(index);
         else if (r == 2) duplicateSection();
         else if (r == 3) deleteSection();
+        else if (r == 6) copySectionClips(index);
+        else if (r == 7) pasteSectionClips(index);
+        else if (r == 8 || r == 9) {
+            // One undo step for the whole section.
+            auto all = processor.arrangement.get();
+            for (int slot = 0; slot < placeSlots; ++slot)
+                for (int e = 0; e < placeElements; ++e) {
+                    auto& cell = all.sections[std::size_t(index)].cells[std::size_t(slot)][std::size_t(e)];
+                    if (r == 9) cell.clip = nullptr;
+                    else if (cell.clip == nullptr) cell.clip = processor.sectionClip(index, slot, e);
+                }
+            processor.arrangement.set(all, true);
+        }
         else if (r == 4 || r == 5)
             edit([r](arr::Section& s) {
                 for (auto& row : s.cells)
@@ -1047,8 +1129,27 @@ void ArrangeView::showCellMenu(int section, int slot, int element) {
     m.addItem(20, "Fill in the last bar", shown.changeAfter(section), cell.fill);
     m.addSeparator();
     m.addItem(30, "The same in every section");
+    // Milestone 16: the section's clip.
+    m.addSeparator();
+    m.addItem(40, "Open the clip");
+    m.addItem(41, "Song view (every section)");
+    m.addItem(42, "Make unique", cell.clip == nullptr);
+    m.addItem(43, "Re-link to pattern " + juce::String(arr::variantNames[std::size_t(std::min<int>(cell.variant, 2))]), cell.clip != nullptr);
+    m.addItem(44, "Clear the clip");
+    m.addItem(45, "Copy the clip");
+    m.addItem(46, "Paste the clip", clipboardHeld);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMousePosition(), [this, section, slot, element, cell](int r) {
         auto c = cell;
+        switch (r) {
+            case 40: openClip(section, slot, element); return;
+            case 41: if (onOpenSong) onOpenSong(slot, element, section); return;
+            case 42: processor.makeClipUnique(section, slot, element); return;
+            case 43: processor.relinkClip(section, slot, element); return;
+            case 44: processor.clearClip(section, slot, element); return;
+            case 45: copyClip(section, slot, element); return;
+            case 46: pasteClip(section, slot, element); return;
+            default: break;
+        }
         if (r >= 1 && r <= arr::EntryCount) c.entry = uint8_t(r - 1);
         else if (r >= 10 && r < 13) c.variant = uint8_t(r - 10);
         else if (r == 20) c.fill = !c.fill;

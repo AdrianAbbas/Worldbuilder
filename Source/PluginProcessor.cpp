@@ -405,10 +405,14 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     engine.arrangementIn.update();
     // (A single-instrument instance plays its instrument whatever the arrangement says.)
     const bool soloInstrument = keys.single.load(std::memory_order_relaxed);
-    const arr::Arrangement* arranged = !soloInstrument && ((transportMode && mode == PlayArrangement && playing) || previewing) ? &engine.arrangementIn.read() : nullptr;
+    // (Milestone 16: and the Pattern Editor's transport while it shows a clip or the song.)
+    const bool editorArranges = !playing && txState != TransportStopped && transport.arranged.load(std::memory_order_relaxed);
+    const arr::Arrangement* arranged = !soloInstrument && ((transportMode && mode == PlayArrangement && playing) || previewing || editorArranges)
+                                           ? &engine.arrangementIn.read()
+                                           : nullptr;
     // Its sections' Locations: while the host plays or is stopped in Arrangement mode
     // (the world stays where the song stopped), and during the preview.
-    const arr::Arrangement* located = !soloInstrument && ((transportMode && mode == PlayArrangement) || previewing) ? &engine.arrangementIn.read() : nullptr;
+    const arr::Arrangement* located = !soloInstrument && ((transportMode && mode == PlayArrangement) || previewing || editorArranges) ? &engine.arrangementIn.read() : nullptr;
     if (located != nullptr && !located->usesLocations()) located = nullptr;
 
     // The world: the parameters, or a journey between Locations. While one is under way
@@ -732,10 +736,25 @@ keys::RecordSettings WorldbuilderProcessor::recordSettings() const {
     r.punch = transport.punch.load();
     r.punchIn = transport.punchIn.load();
     r.punchOut = transport.punchOut.load();
+    // Milestone 16: into a section's clip (its first downbeat and its length on the song).
+    const int section = keys.clipSection.load();
+    const auto a = arrangement.get();
+    if (section >= 0 && section < a.count) {
+        r.clipSection = section;
+        r.clipOrigin = double(a.startOf(section)) * arr::beatsPerBar;
+        r.clipBeats = double(a.sections[std::size_t(section)].bars) * arr::beatsPerBar;
+        r.clipSpan = a.sections[std::size_t(section)].endless() ? 0.0 : double(a.sections[std::size_t(section)].span()) * arr::beatsPerBar;
+    }
     return r;
 }
 
 void WorldbuilderProcessor::serviceKeys() {
+    // Recording into a clip that is still linked: it becomes unique first (a take is an
+    // edit of this section only).
+    if (keys.armed.load() && !recorder.taking()) {
+        const int section = keys.clipSection.load(), slot = keys.slot.load(), element = keys.element.load();
+        if (section >= 0 && slot >= 0 && arrangement.clipOf(section, slot, element) == nullptr) makeClipUnique(section, slot, element);
+    }
     recorder.service(recordSettings(), juce::roundToInt(raw[PMood]->load()));
     // A take recorded with the host rolling: the host has most likely recorded the same
     // notes as a MIDI region, which would play the instrument again on top of the

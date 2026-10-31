@@ -277,13 +277,19 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     patterns = std::make_unique<ui::PatternEditor>(processor);
     patterns->onClose = [this] {
         const int slot = patterns->slot();
+        const bool clip = patterns->view() != ui::PatternEditor::View::Pattern;
         patterns->setVisible(false);
-        openDetail(slot);
+        processor.transport.arranged.store(false);
+        if (clip) openArrange();
+        else openDetail(slot);
     };
     addChildComponent(*patterns);
 
     arrange = std::make_unique<ui::ArrangeView>(processor);
     arrange->onClose = [this] { closeArrange(); };
+    // Milestone 16: a cell opens its clip in the piano roll; BACK returns to ARRANGE.
+    arrange->onOpenClip = [this](int slot, int element, int section) { openClip(slot, element, section, false); };
+    arrange->onOpenSong = [this](int slot, int element, int section) { openClip(slot, element, section, true); };
     addChildComponent(*arrange);
     arrangeToggle.setTooltip("ARRANGE: design the track as a timeline of sections (Intro, Build, Climax...): their lengths, Score Intensity "
                              "ramps and which instruments and pattern variants play in each. Play Mode Arrangement follows it.");
@@ -532,6 +538,19 @@ void WorldbuilderEditor::openPatterns(int slot, int element) {
     patterns->toFront(false);
     overlays->toFront(false);
     patterns->open(slot, element);
+    repaint();
+}
+
+void WorldbuilderEditor::openClip(int slot, int element, int section, bool song) {
+    if (slot < 0 || slot >= placeSlotCount || !hasPatterns(placeType(slot))) return;
+    closeDetail();
+    closeArrange();
+    patterns->setVisible(true);
+    enableFineDrag(*patterns);
+    patterns->toFront(false);
+    overlays->toFront(false);
+    if (song) patterns->openSong(slot, element, section);
+    else patterns->openClip(slot, element, section);
     repaint();
 }
 

@@ -7,9 +7,14 @@
 // - The selected section's settings: name, colour, length, how many times it plays
 //   (or endlessly, a game loop), Score Intensity at its start and end, and the curve.
 // - Instrument grid: a row for every instrument of every active Place, a cell per
-//   section. Click a cell to switch the instrument on or off there; Shift-click steps
-//   its pattern variant (A, B, C); right-click (or Alt-click) for every option (enter
-//   halfway, fade in, fade out, variant, Fill).
+//   section. Click a cell to open its clip in the piano roll (Milestone 16: the
+//   section's own notes, or the variant it is linked to); Cmd/Ctrl-click switches the
+//   instrument on or off there; Shift-click steps its pattern variant (A, B, C);
+//   right-click (or Alt-click) for every option (enter halfway, fade in, fade out,
+//   variant, Fill, and the clip: open, song view, make unique, re-link, clear, copy,
+//   paste). A unique clip shows its notes in the cell.
+// - Sections: duplicate (with their clips); copy a section's clips and paste them into
+//   another (the section menu).
 // - PREVIEW plays the arrangement from the selected section while the host is
 //   stopped; the playhead and the current section show while it, or the host, plays.
 // - Milestone 11b: TEMPLATE replaces the sections with a ready-made cue and arranges
@@ -28,6 +33,8 @@ public:
     explicit ArrangeView(WorldbuilderProcessor&);
     ~ArrangeView() override;
     std::function<void()> onClose;
+    // Milestone 16: open a section's clip (or the instrument's song view) in the piano roll.
+    std::function<void(int slot, int element, int section)> onOpenClip, onOpenSong;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -64,6 +71,14 @@ public:
     void setWorldOverride(int control, int percent);
     // Previews from a section (the PREVIEW button; also used by the tests).
     void startPreview(int section);
+    // Milestone 16 (the mouse and menus; also used by the tests).
+    void openClip(int section, int slot, int element);
+    void toggleCell(int section, int slot, int element);   // Cmd/Ctrl-click
+    void copyClip(int section, int slot, int element);
+    bool pasteClip(int section, int slot, int element);
+    void copySectionClips(int section);
+    bool pasteSectionClips(int section);
+    bool hasClipboard() const { return clipboardHeld; }
 
 private:
     void timerCallback() override;
@@ -116,6 +131,11 @@ private:
     juce::Rectangle<int> titleArea, toolbarArea, inspectorArea, ruler, timeline, gridArea, labelColumn, statusArea, emptyArea;
     std::vector<Row> rows;
     bool updating = false, gestureOpen = false;
+    // The clip clipboard: one clip, or a whole section's (per slot and instrument; a
+    // linked cell copies as what it plays).
+    arr::ClipRef clipboardClip;
+    std::array<std::array<arr::ClipRef, placeElements>, placeSlots> clipboardSection {};
+    bool clipboardHeld = false, sectionHeld = false;
 };
 
 } // namespace wb::ui
