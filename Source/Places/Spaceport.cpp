@@ -224,7 +224,9 @@ void SpaceportPlace::configure(const PlaceContext& c) {
         p.transpose = -12.0f;
         p.decay = (dock ? 1.4f : 0.6f) * lerp(1.2f, 0.7f, tension);
         p.release = 0.12f;
-        p.toneHz = lerpExp(1500.0f, 9000.0f, tone) * (dock ? 0.6f : 1.0f) * lerp(1.2f, 0.7f, tension) * (launch ? 0.35f + 0.9f * build : 1.0f);
+        // Machinery brightens and pushes them (the old patch's resonance rose with it).
+        p.toneHz = lerpExp(1500.0f, 9000.0f, tone) * (dock ? 0.6f : 1.0f) * lerp(1.2f, 0.7f, tension) * (launch ? 0.35f + 0.9f * build : 1.0f)
+                   * std::exp2(1.2f * (s.machinery - 0.5f));
         p.liveTone = launch;
         p.velocityTone = 0.8f;
         p.velocityGain = 0.6f;
@@ -234,7 +236,7 @@ void SpaceportPlace::configure(const PlaceContext& c) {
         p.spread = 0.25f;
         p.voices = byQuality(q, 4, 6, 8);
         // Set by measurement (each Character) to sit where the model it replaced sat.
-        p.gain = dock ? 4.5f : (launch ? 3.4f : 3.3f);
+        p.gain = (dock ? 4.5f : (launch ? 3.4f : 3.3f)) * (0.8f + 0.4f * s.machinery);
     }
     // Pads: wide, slowly breathing, gliding with the chords.
     {

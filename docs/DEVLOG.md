@@ -5,6 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**Milestone 15b is done** (the Korg Minilogue patches: nine sci-fi instruments now play the
+developer's recordings; handoff at the end, in
+[Milestone 15b](#milestone-15b-the-korg-minilogue-patches-2026-10-31)).
+
 **The hotfixes after the 15a hotfix are done** (the Alien Hive freeze with Overlays on, the
 Forest strings' level, tall landmarks cut off at the top of the planet): checklist and
 handoff at the end, in
@@ -5622,3 +5626,51 @@ one the held long hit; a short hit rings past its written end; no click at the s
 either. And the nine new elements join the Places' recorded-instrument checks: audible and
 finite in every Character, different from their fallback, within 4 dB of it.
 
+### Fix: Spaceport's Machinery
+
+The full suite failed one check: "Spaceport: machinery changes it" (0.34 dB, 0.5 wanted).
+The synthesised pulses' filter resonance rose with Machinery; the recorded pulses had no
+Machinery response. Now Machinery brightens them (the filter up to 0.6 octave either side
+of the middle) and pushes them a little (x0.8 to x1.2): Spaceport's 36 Place checks pass,
+and the pulses still sit within 4 dB of the model they replaced.
+
+### Tests (Linux, GCC)
+
+Full suite (the CI's six shards): **4196 passed, 1 failed** (the Machinery check above).
+After the fix: the Spaceport's Places (36) and instruments (31) groups, `samples` (138), and
+`distinct`, `intensity`, `slide`, `automation` (67) all pass. In the distinctness report
+(report-only) no new instrument is among the closest pairs except Megacity Grit Bass vs
+Bridge Warp Core at 4.16 (3 or less sounds alike); the two soft-pad Places are not near
+each other. The AU harness runs on the macOS CI only.
+
+### Milestone 15b handoff
+
+**Done**: the preparation of the ten Minilogue sweeps, the nine recorded instruments, tests
+and docs. Parts 1 and 2 went up with `[skip ci]`; this last push is without it, so CI
+prepares the samples, builds and packages once. (Your "Update build.yml" run, #34, built
+part 1 only: the bundles held the new recordings, but no Place played them yet.)
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Milestone 15b check"): the installer
+reports 530 recorded notes; each of the nine instruments in its Place and Characters; the
+warp core and pads held for a while (no hiccup where the loop turns); a short and a long
+note drawn in the Pattern Editor (short hit vs held long hit); levels in the mix.
+
+**Known issues / limits**:
+- Nothing here has been heard: pitches, loops and levels are measured on Linux. Which
+  patch suits which Place is a judgement from the recordings' spectra and envelopes and
+  the Places' roles (table above); swap any of them back by putting the synthesised part
+  back in that Place's `setParts` (the patches are still configured).
+- The static-y bass's oscillators are 37 cents apart; tuned to their weighted pitch, its
+  fundamental stays about 15 cents flat (the patch's character, kept).
+- The static-y bass's files are named the wrong way round (used as they sound). If you
+  re-record or rename them, swap the two `file` entries in `tools/sample-prep/manifest.json`
+  (the preparation fails if a patch's short hits are the longer).
+- Loops are short (0.4-1.2 s) to keep memory down: a pulsing or detuned patch held a long
+  time repeats its loop; 83 of 185 match the waveform loosely (all pass the seam test).
+- A live keyboard note always plays the long hit (its length is unknown when it starts).
+- Above the soft pad's C5 the Nebula's top chord notes fold down an octave; below the
+  harsh square's C0 nothing is needed (it plays 24-36 semitones down, inside its range).
+- Size: 32.2 MB of recordings per plugin bundle (the download about 81 MB), 82.7 MB of
+  memory once per host process.
+- Carried over: the Ruins' Violin Textures stay very quiet in Overgrown and Desolate; the
+  Alien Ruins "Tone brightens it" check stays report-only.
