@@ -1,5 +1,5 @@
 {
-    "comment": "What the developer's recordings (the private AdrianAbbas/Samples repository, MP3s in its root) contain, from its notes.txt, checked against the audio by prepare.py. Note names: C4 = MIDI 60. 'takes' is how many times each note was played (round-robins); 0 means it varies (counted from the audio).",
+    "comment": "What the developer's recordings (the private AdrianAbbas/Samples repository, MP3s in its root) contain, from its notes.txt, checked against the audio by prepare.py. Note names: C4 = MIDI 60. 'takes' is how many times each note was played (round-robins); 0 means it varies (counted from the audio). Synth sweeps ('kind': 'synth', Milestone 15b): one patch per WAV, every key of the Minilogue's 37 from lowest to highest; 'articulation' short or long (held: looped), 'patch' groups the two (one gain: same input gain per patch); pitches and octaves come from the audio (sweeps.py).",
     "rate": 44100,
     "roomTone": "Room tone.mp3",
     "sets": [
@@ -8,13 +8,54 @@
             "name": "Classical guitar, fingers (no pick)",
             "kind": "pluck",
             "layers": [
-                { "file": "Soft 1 (no pick).mp3", "name": "soft", "velocity": [0.0, 0.42] },
-                { "file": "Medium 1 (no pick).mp3", "name": "medium", "velocity": [0.42, 0.75] },
-                { "file": "Hard 1 (no pick).mp3", "name": "hard", "velocity": [0.75, 1.0] }
+                {
+                    "file": "Soft 1 (no pick).mp3",
+                    "name": "soft",
+                    "velocity": [
+                        0.0,
+                        0.42
+                    ]
+                },
+                {
+                    "file": "Medium 1 (no pick).mp3",
+                    "name": "medium",
+                    "velocity": [
+                        0.42,
+                        0.75
+                    ]
+                },
+                {
+                    "file": "Hard 1 (no pick).mp3",
+                    "name": "hard",
+                    "velocity": [
+                        0.75,
+                        1.0
+                    ]
+                }
             ],
-            "notes": ["E2", "G2", "A#2", "C#3", "E3", "G3", "A#3", "C#4", "E4", "G4", "A#4", "C#5", "E5", "G5", "A#5"],
+            "notes": [
+                "E2",
+                "G2",
+                "A#2",
+                "C#3",
+                "E3",
+                "G3",
+                "A#3",
+                "C#4",
+                "E4",
+                "G4",
+                "A#4",
+                "C#5",
+                "E5",
+                "G5",
+                "A#5"
+            ],
             "takes": 1,
-            "layerStepsDb": [-9.0, -4.0, 0.0],
+            "layerStepsDb": [
+                -9.0,
+                -4.0,
+                0.0
+            ],
             "maxSeconds": 5.0,
             "partials": 3
         },
@@ -23,13 +64,56 @@
             "name": "Kalimba (17 tines, C major)",
             "kind": "pluck",
             "layers": [
-                { "file": "Soft Hits .mp3", "name": "soft", "velocity": [0.0, 0.42] },
-                { "file": "Medium Hits.mp3", "name": "medium", "velocity": [0.42, 0.75] },
-                { "file": "Hard Hits.mp3", "name": "hard", "velocity": [0.75, 1.0] }
+                {
+                    "file": "Soft Hits .mp3",
+                    "name": "soft",
+                    "velocity": [
+                        0.0,
+                        0.42
+                    ]
+                },
+                {
+                    "file": "Medium Hits.mp3",
+                    "name": "medium",
+                    "velocity": [
+                        0.42,
+                        0.75
+                    ]
+                },
+                {
+                    "file": "Hard Hits.mp3",
+                    "name": "hard",
+                    "velocity": [
+                        0.75,
+                        1.0
+                    ]
+                }
             ],
-            "notes": ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5", "D5", "E5", "F5", "G5", "A5", "B5", "C6", "D6", "E6"],
+            "notes": [
+                "C4",
+                "D4",
+                "E4",
+                "F4",
+                "G4",
+                "A4",
+                "B4",
+                "C5",
+                "D5",
+                "E5",
+                "F5",
+                "G5",
+                "A5",
+                "B5",
+                "C6",
+                "D6",
+                "E6"
+            ],
             "takes": 1,
-            "layerStepsDb": [-9.0, -4.0, 0.0],
+            "layerStepsDb": [
+                -9.0,
+                -4.0,
+                0.0
+            ],
             "maxSeconds": 5.0,
             "partials": 1
         },
@@ -37,8 +121,22 @@
             "id": "violin-sustain",
             "name": "Violin, bowed open strings",
             "kind": "bowed",
-            "layers": [ { "file": "Open sustain 1.mp3", "name": "sustain", "velocity": [0.0, 1.0] } ],
-            "notes": ["G3", "D4", "A4", "E5"],
+            "layers": [
+                {
+                    "file": "Open sustain 1.mp3",
+                    "name": "sustain",
+                    "velocity": [
+                        0.0,
+                        1.0
+                    ]
+                }
+            ],
+            "notes": [
+                "G3",
+                "D4",
+                "A4",
+                "E5"
+            ],
             "takes": 3,
             "maxSeconds": 9.0,
             "partials": 3,
@@ -49,9 +147,40 @@
             "name": "Violin, pizzicato",
             "kind": "pluck",
             "layers": [
-                { "file": "pizzicato 1.mp3", "name": "open", "velocity": [0.0, 1.0], "notes": ["G3", "D4", "A4", "E5"] },
-                { "file": "pizzicato 2 (g3 to a#5, 3 per note).mp3", "name": "stopped", "velocity": [0.0, 1.0],
-                  "notes": ["G3", "A#3", "C#4", "E4", "G4", "A#4", "C#5", "E5", "G5", "A#5"] }
+                {
+                    "file": "pizzicato 1.mp3",
+                    "name": "open",
+                    "velocity": [
+                        0.0,
+                        1.0
+                    ],
+                    "notes": [
+                        "G3",
+                        "D4",
+                        "A4",
+                        "E5"
+                    ]
+                },
+                {
+                    "file": "pizzicato 2 (g3 to a#5, 3 per note).mp3",
+                    "name": "stopped",
+                    "velocity": [
+                        0.0,
+                        1.0
+                    ],
+                    "notes": [
+                        "G3",
+                        "A#3",
+                        "C#4",
+                        "E4",
+                        "G4",
+                        "A#4",
+                        "C#5",
+                        "E5",
+                        "G5",
+                        "A#5"
+                    ]
+                }
             ],
             "takes": 3,
             "mergeLayers": true,
@@ -62,15 +191,152 @@
             "id": "violin-collegno",
             "name": "Violin, col legno (the bow's wood on each open string)",
             "kind": "pluck",
-            "layers": [ { "file": "hitting bow wood (varied number of hits per string).mp3", "name": "wood", "velocity": [0.0, 1.0] } ],
-            "notes": ["G3", "D4", "A4", "E5"],
+            "layers": [
+                {
+                    "file": "hitting bow wood (varied number of hits per string).mp3",
+                    "name": "wood",
+                    "velocity": [
+                        0.0,
+                        1.0
+                    ]
+                }
+            ],
+            "notes": [
+                "G3",
+                "D4",
+                "A4",
+                "E5"
+            ],
             "takes": 0,
             "maxSeconds": 3.0,
             "partials": 3
+        },
+        {
+            "id": "mlg-staticbass-short",
+            "name": "Korg Minilogue, static-y bassy synth, short hits",
+            "kind": "synth",
+            "patch": "mlg-staticbass",
+            "articulation": "short",
+            "file": "static-y bassy synth long hit sweep (-1 octave range compared to rest).wav",
+            "keys": 37,
+            "maxSeconds": 2.0,
+            "endStretch": 7,
+            "fileSays": "the recordings' names are swapped: the file named 'long hit' holds each note about 1 s (decaying hits) and 'short hit' about 2.5 s (held with release); used as they sound"
+        },
+        {
+            "id": "mlg-staticbass-long",
+            "name": "Korg Minilogue, static-y bassy synth, long hits",
+            "kind": "synth",
+            "patch": "mlg-staticbass",
+            "articulation": "long",
+            "file": "static-y bassy synth short hit sweep (-1 octave range compared to rest).wav",
+            "keys": 37,
+            "maxSeconds": 6.0,
+            "endStretch": 7,
+            "loop": true,
+            "fileSays": "the recordings' names are swapped (see the short hits); this one is held"
+        },
+        {
+            "id": "mlg-cyberpunk-short",
+            "name": "Korg Minilogue, cyberpunk synth, short hits",
+            "kind": "synth",
+            "patch": "mlg-cyberpunk",
+            "articulation": "short",
+            "file": "Cyberpunk Synth 1 short sweep (-1 octave range compared to rest).wav",
+            "keys": 37,
+            "maxSeconds": 2.0,
+            "endStretch": 7
+        },
+        {
+            "id": "mlg-cyberpunk-long",
+            "name": "Korg Minilogue, cyberpunk synth, long hits",
+            "kind": "synth",
+            "patch": "mlg-cyberpunk",
+            "articulation": "long",
+            "file": "Cyberpunk Synth 1 long hits sweep (-1 octave range compared to rest).wav",
+            "keys": 37,
+            "maxSeconds": 6.0,
+            "endStretch": 7,
+            "loop": true
+        },
+        {
+            "id": "mlg-pulse-short",
+            "name": "Korg Minilogue, pulsating synth, short hits",
+            "kind": "synth",
+            "patch": "mlg-pulse",
+            "articulation": "short",
+            "file": "Pulsating Synth 1 short hits sweep.wav",
+            "keys": 37,
+            "maxSeconds": 2.0,
+            "endStretch": 7
+        },
+        {
+            "id": "mlg-pulse-long",
+            "name": "Korg Minilogue, pulsating synth, long hits",
+            "kind": "synth",
+            "patch": "mlg-pulse",
+            "articulation": "long",
+            "file": "Pulsating Synth 1 long hits sweep.wav",
+            "keys": 37,
+            "maxSeconds": 6.0,
+            "endStretch": 7,
+            "loop": true
+        },
+        {
+            "id": "mlg-softpad-short",
+            "name": "Korg Minilogue, soft pad, short hits",
+            "kind": "synth",
+            "patch": "mlg-softpad",
+            "articulation": "short",
+            "file": "Soft pad 1 short hits sweep.wav",
+            "keys": 37,
+            "maxSeconds": 2.0,
+            "endStretch": 7
+        },
+        {
+            "id": "mlg-softpad-long",
+            "name": "Korg Minilogue, soft pad, long hits",
+            "kind": "synth",
+            "patch": "mlg-softpad",
+            "articulation": "long",
+            "file": "Soft pad 1 long hits sweep.wav",
+            "keys": 37,
+            "maxSeconds": 6.0,
+            "endStretch": 7,
+            "loop": true
+        },
+        {
+            "id": "mlg-square-short",
+            "name": "Korg Minilogue, harsh square (low and high oscillators), short hits",
+            "kind": "synth",
+            "patch": "mlg-square",
+            "articulation": "short",
+            "file": "harsh square low high synth short hits sweep.wav",
+            "keys": 37,
+            "maxSeconds": 2.0,
+            "endStretch": 7
+        },
+        {
+            "id": "mlg-square-long",
+            "name": "Korg Minilogue, harsh square (low and high oscillators), long hits",
+            "kind": "synth",
+            "patch": "mlg-square",
+            "articulation": "long",
+            "file": "harsh square low high synth long hits sweep.wav",
+            "keys": 37,
+            "maxSeconds": 6.0,
+            "endStretch": 7,
+            "loop": true
         }
     ],
     "unused": [
-        { "file": "Varying Sweep across all notes (or half depending).mp3", "why": "A kalimba take of seven strums across all tines with a burst of tapping in the middle; the same recording as the next file. Not needed for the note map." },
-        { "file": "Wood tapping with transients from metal.mp3", "why": "The same audio as 'Varying Sweep...' (re-encoded, one second longer)." }
+        {
+            "file": "Varying Sweep across all notes (or half depending).mp3",
+            "why": "A kalimba take of seven strums across all tines with a burst of tapping in the middle; the same recording as the next file. Not needed for the note map."
+        },
+        {
+            "file": "Wood tapping with transients from metal.mp3",
+            "why": "The same audio as 'Varying Sweep...' (re-encoded, one second longer)."
+        }
     ]
 }

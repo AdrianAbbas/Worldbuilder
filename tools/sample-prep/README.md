@@ -1,6 +1,6 @@
 # Sample preparation (Milestone 15)
 
-`prepare.py` turns the developer's recordings (MP3s in the root of the private
+`prepare.py` turns the developer's recordings (MP3s and WAVs in the root of the private
 `AdrianAbbas/Samples` repository) into what WORLDBUILDER's sampler loads: mono 16-bit
 FLAC notes and one mapping file per instrument. The recordings and the prepared notes
 never go into this public repository: CI fetches the recordings with a token
@@ -39,3 +39,31 @@ What it does, per recording:
    (crossfaded) and the point where the bow lifts (the recorded tail plays on release).
 7. **Output**: `<id>/<note>-<layer>-<take>.flac`, `<id>.json` (key ranges, velocity layers,
    round-robins, loop points, release points, loudness), `index.json`, `report.json`.
+
+**Synth sweeps** (`sweeps.py`, Milestone 15b; manifest sets with `"kind": "synth"`): the
+Korg Minilogue patches, each a WAV of all 37 keys played lowest to highest, one note at a
+time, once with short hits and once with long (held) hits. Per recording:
+
+1. **Decode**: 24-bit WAV, dual mono (one channel's worth), a 10 Hz high-pass for DC (the
+   lowest patch goes down to 16 Hz). No noise reduction (a line input).
+2. **Slicing** by the gaps between notes: a start is a rise out of the quiet before it by
+   22 dB, relaxed step by step until all 37 are found (a pad's release can overlap the
+   next note); with too many, the smallest rises (a pulse inside a note) go first.
+3. **Pitch**: a first pass (YIN down to 14 Hz) for every note; the sweep's order then
+   gives each note its key (the median offset, so the octave switch and the patch's own
+   octaves do not matter), and each note is measured within 3 semitones of its key,
+   refined on its harmonics (unless a pulsing patch's sidebands split them). Every note
+   is mapped at its own pitch; the sampler tunes it by the cents it is out. Notes the
+   first pass heard elsewhere, more than 25 cents out or wandering are reported.
+4. **Long hits**: the release point (the knee of the final fall), a loop early in the
+   hold (up to 1.2 s; waveform and envelope matched so a pulsing patch keeps its pulse;
+   crossfaded and levelled), and the rest of the hold cut out: each note is its attack,
+   its loop and its recorded release.
+5. **Trim and level**: every note ends once it has fallen 50 dB under its peak; one gain
+   per patch for both articulations (they were recorded at the same gain), loudest
+   peak at -1 dBFS.
+6. **Mapping**: `mlg-<patch>-short.json` and `mlg-<patch>-long.json`, every note on its own
+   key; only the lowest and highest notes stretch a fifth to fill the ends of the range
+   (the sampler folds anything further by octaves). The report checks that the short
+   hits really are the shorter (the static-y bass's two files are named the other way
+   round: the manifest assigns them by what they contain).

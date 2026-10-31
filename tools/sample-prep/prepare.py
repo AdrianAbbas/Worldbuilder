@@ -28,6 +28,9 @@ Steps, for every recording:
  7. Write the FLACs, the mapping files and a report of everything it could not match.
 
 Needs numpy, scipy and soundfile (libsndfile 1.1+ decodes MP3).
+
+The Korg Minilogue sweeps (WAV, one patch per recording, "kind": "synth") are prepared by
+sweeps.py: sliced by key, each note at its own detected pitch, loops for the long hits.
 """
 
 import argparse
@@ -87,8 +90,11 @@ def note_loudness(audio):
     win = int(0.4 * RATE)
     if len(y) <= win:
         return float(-0.691 + 10 * np.log10(np.mean(y ** 2) + 1e-24))
-    power = np.convolve(y ** 2, np.ones(win) / win, mode="valid")[:int(1.5 * RATE)]
-    return float(-0.691 + 10 * np.log10(power.max() + 1e-24))
+    # A running mean by cumulative sums (a 17640-tap convolution crawls on denormals in
+    # the faded tails).
+    total = np.cumsum(np.concatenate(([0.0], y ** 2)))
+    power = ((total[win:] - total[:-win]) / win)[:int(1.5 * RATE)]
+    return float(-0.691 + 10 * np.log10(max(power.max(), 0.0) + 1e-24))
 
 
 # ---------------------------------------------------------------------------
@@ -802,10 +808,17 @@ def main():
     report = {"roomTone": {"file": manifest["roomTone"], "seconds": round(len(room_raw) / RATE, 1), "padding": room_note,
                            "levelDb": round(float(db(np.sqrt(np.mean(room_raw ** 2)))), 1)},
               "files": [], "problems": [], "warnings": [], "sets": {}, "levelling": {}, "layerSteps": {}}
+    report["patches"] = {}
     known = {manifest["roomTone"]} | {u["file"] for u in manifest.get("unused", [])}
     only = set(args.only.split(",")) if args.only else None
     index = []
+    synths = []
     for spec in manifest["sets"]:
+        if spec["kind"] == "synth":
+            known.add(spec["file"])
+            if not only or spec["id"] in only:
+                synths.append(spec)
+            continue
         known |= {l["file"] for l in spec["layers"]}
         if only and spec["id"] not in only:
             continue
@@ -816,6 +829,14 @@ def main():
             seconds = sum(z["length"] for z in mapping["zones"]) / RATE
             report["sets"][spec["id"]] = {"zones": len(mapping["zones"]), "seconds": round(seconds, 1),
                                           "loops": sum(1 for z in mapping["zones"] if "loopStart" in z)}
+    # The synth sweeps (sweeps.py uses this module's helpers, so it is imported here).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import sweeps
+    for mapping in sweeps.run(synths, args.source, args.out, report):
+        index.append(mapping["id"])
+        seconds = sum(z["length"] for z in mapping["zones"]) / RATE
+        report["sets"][mapping["id"]] = {"zones": len(mapping["zones"]), "seconds": round(seconds, 1),
+                                         "loops": sum(1 for z in mapping["zones"] if "loopStart" in z)}
     for name in sorted(os.listdir(args.source)):
         if name.lower().endswith((".mp3", ".wav", ".aif", ".aiff", ".flac")) and name not in known:
             report["problems"].append(f"'{name}' is not in the manifest (not used)")
@@ -829,10 +850,15 @@ def main():
     # The report, readable.
     print(f"\nRoom tone: {report['roomTone']['seconds']} s at {report['roomTone']['levelDb']} dBFS RMS ({room_note})")
     for e in report["files"]:
-        print(f"\n{e['file']} -> {e['set']}/{e['layer']}: {e['found']} notes (expected {e['expected']}, {e['candidates']} candidates), "
-              f"{e['stereo']}, padding: {e['padding']}, noise floor {e['noiseFloorDb']} -> {e['noiseAfterDb']} dBFS")
+        if "padding" in e:
+            print(f"\n{e['file']} -> {e['set']}/{e['layer']}: {e['found']} notes (expected {e['expected']}, {e['candidates']} candidates), "
+                  f"{e['stereo']}, padding: {e['padding']}, noise floor {e['noiseFloorDb']} -> {e['noiseAfterDb']} dBFS")
+        else:
+            print(f"\n{e['file']} -> {e['set']}: {e['found']} notes (expected {e['expected']}, {e['candidates']} candidates, rise {e['riseNeededDb']:.0f} dB), "
+                  f"{e['format']}, {e['stereo']}, {e.get('range', '?')}, floor {e['noiseFloorDb']} dBFS, sounding {e.get('sounding', '?')} s (median)")
         for n in e["notes"]:
-            print(f"   {n['label']:4} at {n['at']:7.2f}s  {n['seconds']:5.2f}s  pitch {n['detected']}" + (f"  loop {n['loop']}" if "loop" in n else "")
+            print(f"   {n['label']:4} at {n['at']:7.2f}s  {n['seconds']:5.2f}s  pitch {n['detected']}" + (f"  held {n['held']}s" if "held" in n else "")
+                  + (f"  loop {n['loop']}" if "loop" in n else "")
                   + (f"  notched: {n['sympathetic']}" if "sympathetic" in n else ""))
         if e["rejected"]:
             print(f"   not notes: {', '.join(e['rejected'])}")
@@ -840,6 +866,8 @@ def main():
             print(f"   takes per note: {e['takesPerNote']}")
     for sid, s in report["sets"].items():
         print(f"\n{sid}: {s['zones']} notes, {s['seconds']} s of audio, {s['loops']} loops")
+    for pid, pt in report["patches"].items():
+        print(f"{pid}: gain {pt['gainDb']:+.1f} dB (both articulations), sounding " + ", ".join(f"{k} {v} s" for k, v in pt["sounding"].items()))
     for sid, lv in report["levelling"].items():
         print(f"{sid}: layers levelled by their noise floors: " + ", ".join(f"{k} {v['floorDb']} dB -> {v['trimDb']:+.1f} dB" for k, v in lv.items()))
     for sid, notes in report["layerSteps"].items():

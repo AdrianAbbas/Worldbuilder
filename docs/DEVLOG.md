@@ -5483,3 +5483,18 @@ scenes with a Forest; the castle (and other tall Places) at the top of the turn.
   checks are the ones that catch the freeze.
 - Carried over: the Ruins' Violin Textures stay very quiet in Overgrown and Desolate; the
   Alien Ruins "Tone brightens it" check stays report-only.
+
+
+## Milestone 15b: the Korg Minilogue patches (2026-10-31)
+
+The developer's synth recordings: five Minilogue patches, each swept across all 37 keys
+with short and long hits (ten 24-bit WAVs in the root of `AdrianAbbas/Samples`; the brief
+pointed at `07-synth/minilogue/`, but the repository has no folders: the files and
+`notes.txt` are at its root). Each note at its own detected pitch; short and long hits as
+two articulations; the patches replace synthesised instruments in the sci-fi Places.
+
+### Progress checklist
+
+- [x] 1. Preparation (`tools/sample-prep/sweeps.py`): slicing by key, pitch and octave from the audio, loops for long hits, trim, levels per patch, mapping files, report
+- [ ] 2. Sampler additions (short hits ring out in held parts, a live filter) and the Places' instruments
+- [ ] 3. Tests, size and memory, docs, this handoff; final push without `[skip ci]`
