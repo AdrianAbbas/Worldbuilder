@@ -79,6 +79,32 @@ inline bool sameClip(const ClipRef& a, const ClipRef& b) {
     return a->ownSwing == b->ownSwing && a->sameNotes(*b);
 }
 
+// What a linked instrument plays over a section's first pass, as a clip: the pattern
+// laid on the song from its bar 1 (as a linked instrument plays it), the part under
+// `bars` bars from `startBar`.
+inline std::shared_ptr<pat::Clip> clipFromPattern(const pat::Pattern& p, int startBar, int bars, bool ownSwing) {
+    auto out = std::make_shared<pat::Clip>();
+    out->followChords = p.followChords;
+    out->base = p.base;
+    out->swing = p.swing;
+    out->ownSwing = ownSwing;
+    out->setLength(p.resolution, std::clamp(bars, 1, pat::maxClipBars));
+    out->clear();
+    const int64_t length = p.lengthSteps;
+    if (length <= 0 || p.count <= 0) return out;
+    const int64_t from = int64_t(std::max(startBar, 0)) * pat::stepsPerBar(p.resolution), to = from + out->lengthSteps;
+    for (int64_t pass = from / length; pass * length < to; ++pass)
+        for (int i = 0; i < p.count; ++i) {
+            auto n = p.notes[std::size_t(i)];
+            const int64_t at = pass * length + n.step;
+            if (at < from || n.inTake()) continue;
+            if (at >= to) break;
+            n.step = int16_t(at - from);
+            out->add(n);
+        }
+    return out;
+}
+
 struct Cell {
     uint8_t entry = EntryOn;
     uint8_t variant = VariantA;   // A, B or C

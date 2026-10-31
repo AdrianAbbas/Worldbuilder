@@ -318,4 +318,150 @@ Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>
     return a;
 }
 
+//==============================================================================
+// Milestone 16: section clips.
+
+namespace {
+float unit(uint64_t key, int a, int b) { return dsp::unipolar(dsp::mix64(key ^ (uint64_t(uint32_t(a)) << 32) ^ uint64_t(uint32_t(b) * 0x9E3779B9u))); }
+} // namespace
+
+void shapeClip(pat::Clip& c, int kind, int role, bool kit, int scaleSize, uint64_t key, bool runOut) {
+    const int length = std::max<int>(c.lengthSteps, 1);
+    const int perBar = pat::stepsPerBar(c.resolution);
+    const int perBeat = std::max(1, perBar / 4);
+    const int bars = std::max(1, length / std::max(perBar, 1));
+    const bool melodic = !kit;
+    const pat::Clip in = c;
+    c.clear();
+    const auto add = [&](pat::Note n, float velocity) {
+        n.velocity = uint8_t(std::clamp(int(std::lround(float(n.velocity) * velocity)), 1, 127));
+        n.length = int16_t(std::clamp<int>(n.length, 1, length - n.step));
+        c.add(n);
+    };
+    // The notes that start a beat (or a half bar): what a sparse part keeps first.
+    const auto strong = [&](const pat::Note& n) { return n.step % std::max(1, perBar / 2) == 0; };
+    const auto onBeat = [&](const pat::Note& n) { return n.step % perBeat == 0; };
+    for (int i = 0; i < in.count; ++i) {
+        auto n = in.notes[std::size_t(i)];
+        const float t = float(n.step) / float(length);   // 0..1 across the section
+        const float u = unit(key, i, kind);
+        const bool keepAlways = n.locked();
+        switch (kind) {
+            case KindIntro: {
+                // Sparse and lower: the strong notes and a few others, an octave down, soft,
+                // held longer; a little louder towards the end.
+                if (!keepAlways && !(strong(n) || u < 0.2f)) break;
+                if (melodic && role != RoleBass && role != RoleBed) n.degree = int8_t(std::clamp(int(n.degree) - scaleSize, -40, 40));
+                n.length = int16_t(n.length * 2);
+                add(n, 0.62f + 0.18f * t);
+                break;
+            }
+            case KindBuild: {
+                if (runOut && n.step >= length - perBar && role != RoleRhythm && melodic) break;   // the last bar is the run
+                // Thin at first, fuller as it goes; climbing a scale step every quarter of
+                // the section; louder; and in its last third the rhythm tightens: long
+                // notes repeat on eighths, then sixteenths in the last bar.
+                const float keep = 0.4f + 0.6f * t;
+                if (!keepAlways && !onBeat(n) && u > keep) break;
+                if (!keepAlways && onBeat(n) && t < 0.25f && u > 0.75f) break;
+                if (melodic && role != RoleBed) n.degree = int8_t(std::clamp(int(n.degree) + int(std::floor(t * 4.0f)), -40, 40));
+                const float velocity = 0.62f + 0.5f * t;
+                const int lastBar = length - perBar;
+                const int sub = n.step >= lastBar ? std::max(1, perBar / 16) : std::max(1, perBar / 8);
+                if (t > 0.66f && role != RoleBed && n.length >= 2 * sub) {
+                    for (int at = 0; at < n.length; at += sub) {
+                        auto r = n;
+                        r.step = int16_t(n.step + at);
+                        r.length = int16_t(sub);
+                        if (r.step >= length) break;
+                        add(r, velocity * (at == 0 ? 1.0f : 0.8f));
+                    }
+                } else {
+                    add(n, velocity);
+                }
+                break;
+            }
+            case KindPeak: {
+                // Full: every note, louder; the melody doubled an octave up on its strong notes.
+                add(n, 1.15f);
+                if (melodic && role == RoleMelody && strong(n)) {
+                    auto up = n;
+                    up.degree = int8_t(std::clamp(int(n.degree) + scaleSize, -40, 40));
+                    add(up, 0.8f);
+                }
+                break;
+            }
+            case KindCalm:
+            case KindOutro: {
+                // Thinning out: fewer notes as it goes, softer, held longer (an outro thinner
+                // and lower still).
+                const bool outro = kind == KindOutro;
+                const float keep = outro ? 0.7f - 0.5f * t : 1.0f - 0.6f * t;
+                if (!keepAlways && !(strong(n) && t < 0.5f) && u > keep) break;
+                if (outro && melodic && role == RoleMelody) n.degree = int8_t(std::clamp(int(n.degree) - scaleSize, -40, 40));
+                n.length = int16_t(std::lround(double(n.length) * (outro ? 2.0 : 1.5)));
+                add(n, (outro ? 0.8f : 1.0f) - (outro ? 0.4f : 0.35f) * t);
+                break;
+            }
+            case KindBreak: {
+                if (!keepAlways && !strong(n) && u > 0.3f) break;
+                add(n, 0.75f);
+                break;
+            }
+            default: add(n, 1.0f); break;
+        }
+    }
+    if (kind == KindBuild && runOut && melodic && role != RoleRhythm && role != RoleBed) {
+        // The run into the next section: eighths (a melody: sixteenths) climbing the scale
+        // from the section's last note, getting louder.
+        int degree = 0;
+        for (int i = c.count - 1; i >= 0; --i) {
+            degree = c.notes[std::size_t(i)].degree;
+            break;
+        }
+        const int step = std::max(1, perBar / (role == RoleMelody ? 16 : 8));
+        const int from = length - perBar;
+        int k = 0;
+        for (int at = from; at < length; at += step, ++k) {
+            pat::Note n;
+            n.step = int16_t(at);
+            n.length = int16_t(step);
+            n.degree = int8_t(std::clamp(degree + 1 + k / (role == RoleMelody ? 2 : 1), -40, 40));
+            n.velocity = uint8_t(std::clamp(70 + 50 * k * step / perBar, 1, 127));
+            c.add(n);
+        }
+    }
+    (void)bars;
+}
+
+Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& source) {
+    Arrangement a = autoArrange(in, types, seed);
+    if (!source.pattern) return a;
+    for (int i = 0; i < a.count; ++i) {
+        auto& s = a.sections[std::size_t(i)];
+        const int kind = kindOf(a, i);
+        if (kind == KindLoop || kind == KindBridge) continue;
+        const int next = a.nextOf(i);
+        const bool runOut = next >= 0 && next != i && kindOf(a, next) == KindPeak;
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            const int type = types[std::size_t(slot)];
+            if (type == NoPlace) continue;
+            for (int e = 0; e < placeElements; ++e) {
+                auto& cell = s.cells[std::size_t(slot)][std::size_t(e)];
+                if (cell.entry == EntryOff || patternInfo(type, e).kind == NoPattern) continue;
+                bool edited = false;
+                const pat::Pattern* p = source.pattern(slot, e, std::min<int>(cell.variant, VariantC), edited);
+                if (p == nullptr || p->count <= 0) continue;
+                auto clip = clipFromPattern(*p, a.startOf(i), s.bars, edited);
+                const uint64_t key = dsp::mix64((uint64_t(seed) << 24) ^ (uint64_t(i) << 12) ^ (uint64_t(slot) << 6) ^ uint64_t(e) ^ 0xC11Bull);
+                shapeClip(*clip, kind, roleOf(type, e), patternInfo(type, e).kind == Kit, source.scaleSize, key, runOut && !cell.fill);
+                if (clip->count <= 0) continue;   // nothing left: the variant plays (linked)
+                cell.clip = clip;
+            }
+        }
+    }
+    return a;
+}
+
 } // namespace wb::arr
+

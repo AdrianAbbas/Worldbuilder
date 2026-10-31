@@ -5695,6 +5695,6 @@ patterns.
 - [x] 3. Song view: one instrument's clips across the whole arrangement as one piano roll
 - [x] 4. Section tools: duplicate with clips, copy and paste clips, clear, MAKE UNIQUE and RE-LINK
   (Parts 2-4 were built together, in one push: the clip view, the song view and the tools share the editor's clip code.)
-- [ ] 5. Smarter auto-arrange: section-appropriate clips (intros sparse and low, build-ups rising, climaxes full, wind-downs thinning)
+- [x] 5. Smarter auto-arrange: section-appropriate clips (intros sparse and low, build-ups rising, climaxes full, wind-downs thinning)
 - [ ] 6. Everything follows the clips (playback, preview, renders, game audio, scene MIDI), presets; tests; docs; final push without `[skip ci]`
 

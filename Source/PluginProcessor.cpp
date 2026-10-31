@@ -811,6 +811,33 @@ arr::ClipRef WorldbuilderProcessor::sectionClip(int section, int slot, int eleme
     return ArrangementStore::fromPattern(patterns.playing(slot, type, element, variant), a.startOf(section), s.bars, el.edited(variant));
 }
 
+arr::Arrangement WorldbuilderProcessor::autoArrangeWithClips(const arr::Arrangement& a) {
+    const auto types = slotTypes();
+    patterns.syncTypes(types);
+    // Every variant as it plays now (edited, or generated: the ARRANGE view keeps them all generated).
+    using Held = std::array<std::array<std::array<pat::Pattern, arr::VariantCount>, placeElements>, placeSlots>;   // 240 kB: on the heap
+    std::array<std::array<std::array<bool, arr::VariantCount>, placeElements>, placeSlots> edited {};
+    auto heldPtr = std::make_unique<Held>();
+    for (int slot = 0; slot < placeSlots; ++slot)
+        for (int e = 0; e < placeElements; ++e) {
+            const int type = types[std::size_t(slot)];
+            if (type == NoPlace || patternInfo(type, e).kind == NoPattern) continue;
+            const auto el = patterns.element(slot, type, e);
+            for (int v = 0; v <= arr::VariantC; ++v) {
+                (*heldPtr)[std::size_t(slot)][std::size_t(e)][std::size_t(v)] = patterns.playing(slot, type, e, v);
+                edited[std::size_t(slot)][std::size_t(e)][std::size_t(v)] = el.edited(v);
+            }
+        }
+    arr::ClipSource source;
+    source.scaleSize = music::scaleFor(juce::roundToInt(raw[PMood]->load())).size;
+    source.pattern = [&](int slot, int e, int v, bool& isEdited) -> const pat::Pattern* {
+        isEdited = edited[std::size_t(slot)][std::size_t(e)][std::size_t(v)];
+        return &(*heldPtr)[std::size_t(slot)][std::size_t(e)][std::size_t(v)];
+    };
+    const auto seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
+    return arr::autoArrange(a, types, seed, source);
+}
+
 bool WorldbuilderProcessor::makeClipUnique(int section, int slot, int element) {
     auto clip = sectionClip(section, slot, element);
     if (clip == nullptr) return false;

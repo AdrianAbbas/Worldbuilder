@@ -9442,6 +9442,7 @@ int main(int argc, char** argv) {
     if (run("clips")) {
         testClips(s);
         testClipEditor(s);
+        testClipArrange(s);
     }
     if (run("arrpersist")) testArrangementPersists(s);
     if (run("transitions")) {

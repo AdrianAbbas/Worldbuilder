@@ -119,6 +119,9 @@ public:
     bool makeClipUnique(int section, int slot, int element);
     void relinkClip(int section, int slot, int element);
     void clearClip(int section, int slot, int element);
+    // Auto-arrange (and templates) with section clips made from each instrument's
+    // variants as they play now (the World Seed), Milestone 16.
+    wb::arr::Arrangement autoArrangeWithClips(const wb::arr::Arrangement& a);
 
     // KEYS (Milestone 14): the Play target and REC. Set on the message thread, read by
     // the audio thread each block; saved with the project (REC's arm is not).

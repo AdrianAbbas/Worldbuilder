@@ -163,28 +163,7 @@ ClipRef ArrangementStore::clipOf(int section, int slot, int element) const {
     return model.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)].clip;
 }
 
-ClipRef ArrangementStore::fromPattern(const pat::Pattern& p, int startBar, int bars, bool ownSwing) {
-    auto out = std::make_shared<pat::Clip>();
-    out->followChords = p.followChords;
-    out->base = p.base;
-    out->swing = p.swing;
-    out->ownSwing = ownSwing;
-    out->setLength(p.resolution, std::clamp(bars, 1, pat::maxClipBars));
-    out->clear();
-    const int64_t length = p.lengthSteps;
-    if (length <= 0 || p.count <= 0) return out;
-    const int64_t from = int64_t(std::max(startBar, 0)) * pat::stepsPerBar(p.resolution), to = from + out->lengthSteps;
-    for (int64_t pass = from / length; pass * length < to; ++pass)
-        for (int i = 0; i < p.count; ++i) {
-            auto n = p.notes[std::size_t(i)];
-            const int64_t at = pass * length + n.step;
-            if (at < from || n.inTake()) continue;
-            if (at >= to) break;
-            n.step = int16_t(at - from);
-            out->add(n);
-        }
-    return out;
-}
+ClipRef ArrangementStore::fromPattern(const pat::Pattern& p, int startBar, int bars, bool ownSwing) { return clipFromPattern(p, startBar, bars, ownSwing); }
 
 ClipRef ArrangementStore::conform(const ClipRef& clip, int bars) {
     if (clip == nullptr) return clip;

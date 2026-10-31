@@ -314,7 +314,8 @@ void ArrangeView::startPreview(int section) {
 void ArrangeView::applyTemplate(int which) {
     const auto tree = arr::makeTemplate(which);
     const auto seed = uint32_t(juce::roundToInt(processor.parameters.getRawParameterValue(specs[PSeed].id)->load()));
-    processor.arrangement.set(arr::autoArrange(tree, processor.slotTypes(), seed));
+    (void)seed;
+    processor.arrangement.set(processor.autoArrangeWithClips(tree));
     shown = processor.arrangement.get();
     shownRevision = processor.arrangement.revision();
     select(0);
@@ -324,7 +325,8 @@ void ArrangeView::applyTemplate(int which) {
 void ArrangeView::autoArrange() {
     if (shown.count <= 0) return;
     const auto seed = uint32_t(juce::roundToInt(processor.parameters.getRawParameterValue(specs[PSeed].id)->load()));
-    processor.arrangement.set(arr::autoArrange(processor.arrangement.get(), processor.slotTypes(), seed));
+    (void)seed;
+    processor.arrangement.set(processor.autoArrangeWithClips(processor.arrangement.get()));
     shown = processor.arrangement.get();
     shownRevision = processor.arrangement.revision();
     refreshInspector();

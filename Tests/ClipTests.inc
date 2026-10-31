@@ -243,3 +243,143 @@ void testClips(Suite& s) {
                 std::to_string(allocationProbe::calls) + " allocations");
     }
 }
+
+// Milestone 16 part 5: Auto-arrange writes clips shaped for each section.
+void testClipArrange(Suite& s) {
+    using namespace clipTest;
+    s.section("clips: auto-arrange shapes each section");
+    {
+        // A busy part: sixteenths over 8 bars, one scale step apart in fours.
+        pat::Clip base;
+        base.setLength(pat::Sixteenth, 8);
+        base.followChords = false;
+        for (int st = 0; st < base.lengthSteps; st += 2) base.add(makeNote(st, (st / 2) % 4, 2, 90));
+        struct Stats {
+            int count = 0, firstHalf = 0, secondHalf = 0;
+            double degreeEarly = 0, degreeLate = 0, velEarly = 0, velLate = 0;
+            int early = 0, late = 0;
+        };
+        const auto stats = [](const pat::Clip& c) {
+            Stats st;
+            st.count = c.count;
+            for (int i = 0; i < c.count; ++i) {
+                const auto& n = c.notes[std::size_t(i)];
+                const double t = double(n.step) / double(c.lengthSteps);
+                (t < 0.5 ? st.firstHalf : st.secondHalf)++;
+                if (t < 0.25) {
+                    st.degreeEarly += n.degree;
+                    st.velEarly += n.velocity;
+                    ++st.early;
+                } else if (t >= 0.625 && t < 0.875) {
+                    st.degreeLate += n.degree;
+                    st.velLate += n.velocity;
+                    ++st.late;
+                }
+            }
+            if (st.early > 0) { st.degreeEarly /= st.early; st.velEarly /= st.early; }
+            if (st.late > 0) { st.degreeLate /= st.late; st.velLate /= st.late; }
+            return st;
+        };
+        const auto shaped = [&](int kind, bool runOut = false) {
+            auto c = base;
+            arr::shapeClip(c, kind, arr::RoleMelody, false, 7, 1234, runOut);
+            return c;
+        };
+        const auto in = stats(base);
+        const auto intro = shaped(arr::KindIntro);
+        double introDegree = 0, introVel = 0;
+        for (int i = 0; i < intro.count; ++i) {
+            introDegree += intro.notes[std::size_t(i)].degree;
+            introVel += intro.notes[std::size_t(i)].velocity;
+        }
+        introDegree /= std::max<int>(intro.count, 1);
+        introVel /= std::max<int>(intro.count, 1);
+        s.check(intro.count > 0 && intro.count < in.count / 2 && introDegree < -4.0 && introVel < 80.0, "an intro is sparse, lower and soft",
+                std::to_string(intro.count) + " of " + std::to_string(in.count) + " notes, degree " + fmt(introDegree) + ", velocity " + fmt(introVel));
+        const auto build = shaped(arr::KindBuild, true);
+        const auto b = stats(build);
+        bool runs = true;
+        int run = 0, firstRun = 0, lastRun = 0;
+        for (int i = 0, last = -100; i < build.count; ++i) {
+            const auto& n = build.notes[std::size_t(i)];
+            if (n.step < build.lengthSteps - 16) continue;
+            runs &= n.degree >= last;
+            if (run == 0) firstRun = n.degree;
+            last = lastRun = n.degree;
+            ++run;
+        }
+        runs &= lastRun >= firstRun + 4;
+        s.check(b.secondHalf > b.firstHalf && b.degreeLate > b.degreeEarly + 1.5 && b.velLate > b.velEarly + 15.0,
+                "a build-up rises: more notes, climbing pitch, louder",
+                std::to_string(b.firstHalf) + " -> " + std::to_string(b.secondHalf) + " notes, degree " + fmt(b.degreeEarly) + " -> " + fmt(b.degreeLate)
+                    + ", velocity " + fmt(b.velEarly) + " -> " + fmt(b.velLate));
+        s.check(run >= 8 && runs, "and runs up into the next section in its last bar", std::to_string(run) + " notes in the last bar");
+        int tight = 0;
+        for (int i = 0; i < build.count; ++i) tight += build.notes[std::size_t(i)].step >= 40 && build.notes[std::size_t(i)].step % 2 == 1 ? 1 : 0;
+        const auto peak = stats(shaped(arr::KindPeak));
+        double peakVel = 0;
+        const auto peakClip = shaped(arr::KindPeak);
+        for (int i = 0; i < peakClip.count; ++i) peakVel += peakClip.notes[std::size_t(i)].velocity;
+        peakVel /= std::max<int>(peakClip.count, 1);
+        s.check(peak.count > in.count && peakVel > 95.0, "a climax is full (every note, louder, the melody doubled)", std::to_string(peak.count) + " notes, velocity " + fmt(peakVel));
+        const auto calm = stats(shaped(arr::KindCalm));
+        s.check(calm.secondHalf < calm.firstHalf && calm.velLate < calm.velEarly - 10.0, "a wind-down thins out and softens",
+                std::to_string(calm.firstHalf) + " -> " + std::to_string(calm.secondHalf) + " notes");
+        auto locked = base;
+        for (int i = 0; i < locked.count; ++i) locked.notes[std::size_t(i)].setLocked(true);
+        arr::shapeClip(locked, arr::KindIntro, arr::RoleMelody, false, 7, 99, false);
+        s.check(locked.count == base.count, "locked notes are always kept");
+        (void)tight;
+    }
+    {
+        auto h = clipHost();
+        h->set("p1_activity", 0.8f);
+        h->set("p1_density", 0.8f);
+        h->p->engine.arrangeVariants.store(true);
+        h->render(0.5);   // every variant generated
+        const auto a = h->p->autoArrangeWithClips(arr::makeTemplate(arr::ClassicArc));
+        const auto again = h->p->autoArrangeWithClips(arr::makeTemplate(arr::ClassicArc));
+        int clips = 0, introNotes = 0, climaxNotes = 0, introBars = 0, climaxBars = 0;
+        bool linkedOff = true;
+        for (int i = 0; i < a.count; ++i)
+            for (int e = 0; e < placeElements; ++e) {
+                const auto& cell = a.sections[std::size_t(i)].cells[0][std::size_t(e)];
+                if (cell.clip == nullptr) {
+                    continue;
+                }
+                ++clips;
+                linkedOff &= cell.entry != arr::EntryOff;
+                const int kind = arr::kindOf(a, i);
+                if (kind == arr::KindIntro) introNotes += cell.clip->count;
+                if (kind == arr::KindPeak) climaxNotes += cell.clip->count;
+            }
+        for (int i = 0; i < a.count; ++i) {
+            const int kind = arr::kindOf(a, i);
+            if (kind == arr::KindIntro) introBars += a.sections[std::size_t(i)].bars;
+            if (kind == arr::KindPeak) climaxBars += a.sections[std::size_t(i)].bars;
+        }
+        s.check(clips >= 10 && linkedOff, "Auto-arrange gives the instruments that play their own section clips", std::to_string(clips) + " clips");
+        s.check(introBars > 0 && climaxBars > 0 && double(introNotes) / introBars < 0.5 * double(climaxNotes) / climaxBars,
+                "the intro's clips are much sparser than the climax's (notes per bar)",
+                fmt(double(introNotes) / std::max(introBars, 1)) + " vs " + fmt(double(climaxNotes) / std::max(climaxBars, 1)));
+        s.check(a == again, "the same World Seed gives the same clips");
+        // Applied from the ARRANGE view (templates and AUTO-ARRANGE): editable and undoable.
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h->p->createEditor());
+        auto* world = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        world->arrangeButton().onClick();
+        world->settle(0.05f);
+        world->arrangeView().applyTemplate(arr::ClassicArc);
+        int fromView = 0;
+        const auto shownA = h->p->arrangement.get();
+        for (int i = 0; i < shownA.count; ++i)
+            for (int e = 0; e < placeElements; ++e) fromView += shownA.sections[std::size_t(i)].cells[0][std::size_t(e)].clip != nullptr ? 1 : 0;
+        h->p->arrangement.undo();
+        s.check(fromView >= 10 && h->p->arrangement.get().count == 2, "TEMPLATE writes the clips too, and one undo takes it back", std::to_string(fromView) + " clips");
+        // It plays: Arrangement mode, from the start, no allocation needed and finite.
+        h->p->arrangement.set(a);
+        play(*h);
+        const auto audio = h->render(6.0);
+        const auto st = measure(audio, 0.5);
+        s.check(st.finite && st.peak < 1.0 && st.rmsDb > -80.0, "an auto-arranged song with clips plays (finite, below the ceiling)");
+    }
+}
