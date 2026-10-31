@@ -5,6 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**Milestone 16 is in progress** (per-section clips in the Arrangement, a mini-DAW timeline):
+checklist and handoff at the end, in
+[Milestone 16](#milestone-16-section-clips-in-the-arrangement-2026-10-31).
+
 **Milestone 15b is done** (the Korg Minilogue patches: nine sci-fi instruments now play the
 developer's recordings; handoff at the end, in
 [Milestone 15b](#milestone-15b-the-korg-minilogue-patches-2026-10-31)).
@@ -5674,3 +5678,22 @@ note drawn in the Pattern Editor (short hit vs held long hit); levels in the mix
   memory once per host process.
 - Carried over: the Ruins' Violin Textures stay very quiet in Overgrown and Desolate; the
   Alien Ruins "Tone brightens it" check stays report-only.
+
+---
+
+## Milestone 16: section clips in the Arrangement (2026-10-31)
+
+The developer's request: every section gets its own editable notes for every instrument
+(a sparse 8-bar intro, a 16-bar build-up that climbs, a different climax...), like a
+DAW timeline. Until now every section reused each instrument's shared A/B/C/Fill
+patterns.
+
+### Progress checklist
+
+- [x] 1. Clips: the data model (a clip per section x instrument, linked or unique), playback from the section's first downbeat, make unique / re-link / clear, resize, state and `.world`, undo; tests (`--only clips`)
+- [ ] 2. Editing in ARRANGE: a cell opens the piano roll on its clip (the section's real bars), the editor's tools, transport, playhead and loop inside the clip, keyboard recording into the clip, the ask-once unlink
+- [ ] 3. Song view: one instrument's clips across the whole arrangement as one piano roll
+- [ ] 4. Section tools: duplicate with clips, copy and paste clips, clear, MAKE UNIQUE and RE-LINK
+- [ ] 5. Smarter auto-arrange: section-appropriate clips (intros sparse and low, build-ups rising, climaxes full, wind-downs thinning)
+- [ ] 6. Everything follows the clips (playback, preview, renders, game audio, scene MIDI), presets; tests; docs; final push without `[skip ci]`
+

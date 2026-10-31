@@ -1,5 +1,6 @@
 #include "ArrangementStore.h"
 #include "../DSP/Planet.h"
+#include "../Patterns/PatternStore.h"
 
 namespace wb {
 
@@ -129,9 +130,81 @@ void ArrangementStore::resize(int index, int bars, bool undoable) {
     const juce::ScopedLock sl(lock);
     if (index < 0 || index >= model.count) return;
     auto a = model;
-    a.sections[std::size_t(index)].bars = uint8_t(std::clamp(bars, minBars, maxBars));
+    auto& s = a.sections[std::size_t(index)];
+    s.bars = uint8_t(std::clamp(bars, minBars, maxBars));
+    // The section's own clips follow its length. During a drag (after its first, undoable
+    // step) they are fitted from the clips as the drag found them, so shrinking and
+    // growing again gives the notes back.
+    const Arrangement& from = !undoable && !undoStack.empty() && undoStack.back().count == model.count ? undoStack.back() : model;
+    for (int slot = 0; slot < placeSlots; ++slot)
+        for (int e = 0; e < placeElements; ++e) {
+            auto& cell = s.cells[std::size_t(slot)][std::size_t(e)];
+            if (cell.clip == nullptr) continue;
+            const auto& original = from.sections[std::size_t(index)].cells[std::size_t(slot)][std::size_t(e)].clip;
+            cell.clip = conform(original != nullptr ? original : cell.clip, s.bars);
+        }
     if (a == model && !undoable) return;
     apply(a, undoable);
+}
+
+void ArrangementStore::setClip(int section, int slot, int element, ClipRef clip, bool undoable) {
+    const juce::ScopedLock sl(lock);
+    if (section < 0 || section >= model.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return;
+    auto a = model;
+    auto& cell = a.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
+    if (clip != nullptr) clip = conform(clip, a.sections[std::size_t(section)].bars);
+    cell.clip = std::move(clip);
+    apply(a, undoable);
+}
+
+ClipRef ArrangementStore::clipOf(int section, int slot, int element) const {
+    const juce::ScopedLock sl(lock);
+    if (section < 0 || section >= model.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return {};
+    return model.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)].clip;
+}
+
+ClipRef ArrangementStore::fromPattern(const pat::Pattern& p, int startBar, int bars, bool ownSwing) {
+    auto out = std::make_shared<pat::Clip>();
+    out->followChords = p.followChords;
+    out->base = p.base;
+    out->swing = p.swing;
+    out->ownSwing = ownSwing;
+    out->setLength(p.resolution, std::clamp(bars, 1, pat::maxClipBars));
+    out->clear();
+    const int64_t length = p.lengthSteps;
+    if (length <= 0 || p.count <= 0) return out;
+    const int64_t from = int64_t(std::max(startBar, 0)) * pat::stepsPerBar(p.resolution), to = from + out->lengthSteps;
+    for (int64_t pass = from / length; pass * length < to; ++pass)
+        for (int i = 0; i < p.count; ++i) {
+            auto n = p.notes[std::size_t(i)];
+            const int64_t at = pass * length + n.step;
+            if (at < from || n.inTake()) continue;
+            if (at >= to) break;
+            n.step = int16_t(at - from);
+            out->add(n);
+        }
+    return out;
+}
+
+ClipRef ArrangementStore::conform(const ClipRef& clip, int bars) {
+    if (clip == nullptr) return clip;
+    bars = std::clamp(bars, 1, pat::maxClipBars);
+    const int perBar = pat::stepsPerBar(clip->resolution);
+    const int want = bars * perBar;
+    if (clip->lengthSteps == want && clip->bars == bars) return clip;
+    auto out = std::make_shared<pat::Clip>(*clip);
+    out->setLength(clip->resolution, bars);
+    out->clear();
+    const int length = std::max<int>(clip->lengthSteps, 1);
+    for (int pass = 0; pass * length < want; ++pass)
+        for (int i = 0; i < clip->count; ++i) {
+            auto n = clip->notes[std::size_t(i)];
+            const int step = pass * length + n.step;
+            if (step >= want) break;
+            n.step = int16_t(step);
+            out->add(n);
+        }
+    return out;
 }
 
 //==============================================================================
@@ -162,6 +235,19 @@ void ArrangementStore::decodeCells(const juce::String& text, Grid& cells) {
         c.variant = uint8_t(juce::jlimit(0, int(VariantC), int(t[1] - 'A')));
         c.fill = t[2] == 'f';
     }
+}
+
+void ArrangementStore::writeClip(juce::ValueTree& x, const pat::Clip& c) {
+    PatternStore::writePattern(x, c);
+    if (c.ownSwing) x.setProperty("ownSwing", true, nullptr);
+}
+
+ClipRef ArrangementStore::readClip(const juce::ValueTree& x, int bars) {
+    auto c = std::make_shared<pat::Clip>();
+    PatternStore::readPattern(x, *c);
+    c->ownSwing = bool(x.getProperty("ownSwing", false));
+    // Always a whole number of bars, its section's.
+    return conform(c, bars);
 }
 
 juce::ValueTree ArrangementStore::toValueTree() const { return toTree(get()); }
@@ -195,6 +281,16 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
             overrides |= w >= 0;
         }
         if (overrides) x.setProperty("world", world.joinIntoString(","), nullptr);
+        // Milestone 16: the section's own clips (linked cells have none).
+        for (int slot = 0; slot < placeSlots; ++slot)
+            for (int e = 0; e < placeElements; ++e)
+                if (const auto& clip = s.cells[std::size_t(slot)][std::size_t(e)].clip) {
+                    juce::ValueTree cx("Clip");
+                    cx.setProperty("slot", slot, nullptr);
+                    cx.setProperty("element", e, nullptr);
+                    writeClip(cx, *clip);
+                    x.appendChild(cx, nullptr);
+                }
         tree.appendChild(x, nullptr);
     }
     return tree;
@@ -224,6 +320,12 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.planet = int8_t(int(number(x, "planet", -1, -1, float(dsp::PlanetTypeCount - 1))));
         const auto world = juce::StringArray::fromTokens(x.getProperty("world").toString(), ",", "");
         for (int w = 0; w < world.size() && w < WorldControlCount; ++w) s.world[std::size_t(w)] = int8_t(juce::jlimit(-1, 100, world[w].getIntValue()));
+        for (const auto& cx : x) {
+            if (!cx.hasType("Clip")) continue;
+            const int slot = cx.getProperty("slot", -1), e = cx.getProperty("element", -1);
+            if (slot < 0 || slot >= placeSlots || e < 0 || e >= placeElements) continue;
+            s.cells[std::size_t(slot)][std::size_t(e)].clip = readClip(cx, s.bars);
+        }
         a.sections[std::size_t(a.count++)] = s;
     }
     a.end = uint8_t(int(number(tree, "end", 0, 0, float(EndCount - 1))));

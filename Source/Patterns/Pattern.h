@@ -20,6 +20,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 
 namespace wb::pat {
 
@@ -57,8 +58,14 @@ struct Note {
 // What randomness and Evolve may change.
 enum Vary : uint8_t { VaryTiming = 1, VaryVelocity = 2, VaryPitch = 4, VarySkip = 8, VaryExtra = 16, VaryAll = 31 };
 
-struct Pattern {
-    std::array<Note, maxNotes> notes {};
+// A pattern: notes on a step grid, at most MaxNotes of them over at most MaxBars bars.
+// Pattern is the editable pattern of an element (8 bars); Clip is an arrangement
+// section's own notes for one instrument (Milestone 16: as long as a section, 64 bars);
+// Long holds a whole song's worth for the Pattern Editor's song view.
+template <int MaxNotes, int MaxBars>
+struct BasicPattern {
+    static constexpr int capacity = MaxNotes, barLimit = MaxBars, stepLimit = MaxBars * 48;
+    std::array<Note, MaxNotes> notes {};
     int16_t count = 0;
     int16_t lengthSteps = 64;
     uint8_t resolution = Sixteenth;
@@ -70,13 +77,21 @@ struct Pattern {
     void clear() { count = 0; }
     void setGrid(int res, int barCount, int freeSteps = 16) {
         resolution = uint8_t(std::clamp(res, 0, ResolutionCount - 1));
-        bars = uint8_t(std::clamp(barCount, 0, maxBars));
-        lengthSteps = int16_t(bars > 0 ? bars * stepsPerBar(resolution) : std::clamp(freeSteps, 1, maxSteps));
+        bars = uint8_t(std::clamp(barCount, 0, std::min(MaxBars, 255)));
+        lengthSteps = int16_t(bars > 0 ? bars * stepsPerBar(resolution) : std::clamp(freeSteps, 1, stepLimit));
+    }
+    // Clips and long views: any number of bars up to the limit (bars may exceed 255 in
+    // a long view, so only the steps count there).
+    void setLength(int res, int barCount) {
+        resolution = uint8_t(std::clamp(res, 0, ResolutionCount - 1));
+        const int b = std::clamp(barCount, 1, MaxBars);
+        bars = uint8_t(std::min(b, 255));
+        lengthSteps = int16_t(std::min(b * stepsPerBar(resolution), stepLimit));
     }
     double lengthBeats() const { return double(lengthSteps) / stepsPerBeat(resolution); }
     bool add(Note n) {
-        if (count >= maxNotes || n.step < 0 || n.step >= lengthSteps) return false;
-        n.length = int16_t(std::clamp<int>(n.length, 1, maxSteps));
+        if (count >= MaxNotes || n.step < 0 || n.step >= lengthSteps) return false;
+        n.length = int16_t(std::clamp<int>(n.length, 1, stepLimit));
         n.velocity = uint8_t(std::clamp<int>(n.velocity, 1, 127));
         n.probability = uint8_t(std::min<int>(n.probability, 100));
         // Keep the notes sorted by step (insertion; patterns are small).
@@ -99,6 +114,7 @@ struct Pattern {
         for (int i = 0; i < count; ++i)
             if (notes[std::size_t(i)].step >= 0 && notes[std::size_t(i)].step < lengthSteps) notes[std::size_t(kept++)] = notes[std::size_t(i)];
         count = int16_t(kept);
+        // Insertion sort: stable, allocation-free and quick on nearly sorted notes.
         for (int i = 1; i < count; ++i) {
             const Note n = notes[std::size_t(i)];
             int j = i;
@@ -109,7 +125,8 @@ struct Pattern {
             notes[std::size_t(j)] = n;
         }
     }
-    bool sameNotes(const Pattern& o) const {
+    template <int N, int B>
+    bool sameNotes(const BasicPattern<N, B>& o) const {
         if (count != o.count || lengthSteps != o.lengthSteps || resolution != o.resolution || bars != o.bars || followChords != o.followChords
             || base != o.base || std::abs(swing - o.swing) > 1.0e-6f)
             return false;
@@ -117,7 +134,34 @@ struct Pattern {
             if (!(notes[std::size_t(i)] == o.notes[std::size_t(i)])) return false;
         return true;
     }
+    // Takes another size's notes and grid (as many notes as fit, inside the length).
+    template <int N, int B>
+    void copyFrom(const BasicPattern<N, B>& o) {
+        resolution = o.resolution;
+        bars = uint8_t(std::min<int>(o.bars, std::min(MaxBars, 255)));
+        lengthSteps = int16_t(std::clamp<int>(o.lengthSteps, 1, stepLimit));
+        followChords = o.followChords;
+        base = o.base;
+        swing = o.swing;
+        count = 0;
+        for (int i = 0; i < o.count && count < MaxNotes; ++i)
+            if (o.notes[std::size_t(i)].step < lengthSteps) notes[std::size_t(count++)] = o.notes[std::size_t(i)];
+    }
 };
+
+using Pattern = BasicPattern<maxNotes, maxBars>;
+
+// An arrangement section's own notes for one instrument (Milestone 16). As long as its
+// section (one pass), so step 0 is the section's first downbeat. `ownSwing`: the clip
+// swings by its own Swing (it came from an edited pattern, or was edited); else by
+// its Place's, as a generated pattern does.
+constexpr int maxClipNotes = 2048, maxClipBars = 64;
+struct Clip : BasicPattern<maxClipNotes, maxClipBars> {
+    bool ownSwing = false;
+};
+// The Pattern Editor's working notes: a pattern, a clip, or a whole song for one
+// instrument (the song view), up to 512 bars.
+using Long = BasicPattern<16384, 512>;
 
 // The per-element controls the composer sets in the Pattern Editor.
 struct Controls {
@@ -241,16 +285,54 @@ struct Change {
 };
 
 struct Playback {
+    // What plays: a pattern's notes, or an arrangement clip's (Milestone 16). `pattern`
+    // is set for a pattern only; `notes` for either (nullptr: nothing plays).
     const Pattern* pattern = nullptr;
+    const Note* notes = nullptr;
+    int count = 0, lengthSteps = 0;
+    uint8_t resolution = Sixteenth;
+    bool followChords = true;
+    int8_t base = 0;
+    // Where step 0 lies (song beats): 0 for a pattern (it repeats from bar 1); a
+    // section's first downbeat for a clip, which repeats with the section's passes and
+    // plays only inside the section: notes start in [windowFrom, windowTo) steps from it.
+    double origin = 0;
+    int64_t windowFrom = std::numeric_limits<int64_t>::min() / 4, windowTo = std::numeric_limits<int64_t>::max() / 4;
     Controls controls;
     float randomness = 0;   // effective (the element's Randomness scaled by the Place's Variation)
     float swing = 0;
     bool kit = false;
     uint64_t key = 0;
 
+    bool active() const { return notes != nullptr; }
+    template <int N, int B>
+    void setNotes(const BasicPattern<N, B>* p) {
+        notes = p != nullptr ? p->notes.data() : nullptr;
+        count = p != nullptr ? p->count : 0;
+        lengthSteps = p != nullptr ? p->lengthSteps : 0;
+        resolution = p != nullptr ? p->resolution : uint8_t(Sixteenth);
+        followChords = p != nullptr ? p->followChords : true;
+        base = p != nullptr ? p->base : int8_t(0);
+        origin = 0;
+        windowFrom = std::numeric_limits<int64_t>::min() / 4;
+        windowTo = std::numeric_limits<int64_t>::max() / 4;
+    }
+    void set(const Pattern* p) {
+        setNotes(p);
+        pattern = p;
+    }
+    // A clip from `originBeat`, playing for `spanBeats` (<= 0: endlessly).
+    void setClip(const Clip* c, double originBeat, double spanBeats) {
+        setNotes(c);
+        pattern = nullptr;
+        origin = originBeat;
+        windowFrom = 0;
+        if (spanBeats > 0) windowTo = int64_t(std::llround(spanBeats * stepsPerBeat(resolution)));
+    }
+
     Change changeFor(int index, int64_t pass, int64_t bar) const {
         Change c;
-        const Note& n = pattern->notes[std::size_t(index)];
+        const Note& n = notes[std::size_t(index)];
         if (n.locked()) return c;
         const uint8_t vary = controls.vary;
         const float r = randomness;
@@ -258,7 +340,7 @@ struct Playback {
             const auto u = [&](uint64_t salt) { return unitOf(key, pass, index, salt); };
             if ((vary & VarySkip) && u(1) < 0.4f * r) c.skip = true;
             if ((vary & VaryVelocity)) c.velocity *= 1.0f + 0.7f * r * (u(2) - 0.5f);
-            if ((vary & VaryPitch) && !kit && u(3) < 0.5f * r) c.pitch += (u(4) < 0.5f ? -1 : 1) * (pattern->followChords ? 2 : 1);
+            if ((vary & VaryPitch) && !kit && u(3) < 0.5f * r) c.pitch += (u(4) < 0.5f ? -1 : 1) * (followChords ? 2 : 1);
             if ((vary & VaryTiming)) c.delay += 0.4f * r * u(5);
             if ((vary & VaryExtra) && u(6) < 0.35f * r) c.extra = true;
         }
@@ -282,7 +364,7 @@ struct Playback {
                 switch (allowed[std::min(m - 1, int(u(2) * float(m)))]) {
                     case 0: c.delay += 0.25f; break;
                     case 1: c.velocity *= 0.65f + 0.7f * u(3); break;
-                    case 2: c.pitch += (u(4) < 0.5f ? -1 : 1) * (pattern->followChords ? 2 : 1); break;
+                    case 2: c.pitch += (u(4) < 0.5f ? -1 : 1) * (followChords ? 2 : 1); break;
                     case 3: c.skip = !c.skip; break;
                     default: c.extra = true; break;
                 }
@@ -296,54 +378,54 @@ struct Playback {
     // yet over), exactly as play() would have played it. Held instruments use it to pick
     // up notes they missed: a Place just added, an element switched back on, a locate.
     template <typename F>
-    void sounding(double beat, F&& f) const {
-        if (pattern == nullptr || pattern->count <= 0 || pattern->lengthSteps <= 0) return;
-        const Pattern& p = *pattern;
-        const double perBeat = stepsPerBeat(p.resolution);
-        const int64_t length = p.lengthSteps;
-        const int perBar = stepsPerBar(p.resolution);
+    void sounding(double songBeat, F&& f) const {
+        if (notes == nullptr || count <= 0 || lengthSteps <= 0) return;
+        const double beat = songBeat - origin;
+        const double perBeat = stepsPerBeat(resolution);
+        const int64_t length = lengthSteps;
+        const int perBar = stepsPerBar(resolution);
         int longest = 1;
-        for (int i = 0; i < p.count; ++i) longest = std::max<int>(longest, p.notes[std::size_t(i)].length);
+        for (int i = 0; i < count; ++i) longest = std::max<int>(longest, notes[std::size_t(i)].length);
         const auto now = int64_t(std::floor(beat * perBeat));
         const int64_t lastPass = music::floorDiv(now, length), firstPass = music::floorDiv(now - longest - 3, length);
         for (int64_t pass = firstPass; pass <= lastPass; ++pass)
-            for (int i = 0; i < p.count; ++i) {
-                const Note& n = p.notes[std::size_t(i)];
+            for (int i = 0; i < count; ++i) {
+                const Note& n = notes[std::size_t(i)];
                 const int64_t s = pass * length + n.step;
                 if (s > now) break;
-                if (n.inTake()) continue;
+                if (s < windowFrom || s >= windowTo || n.inTake()) continue;
                 if (n.probability < 100 && unitOf(key, pass, i, 9) * 100.0f >= float(n.probability)) continue;
                 const Change c = changeFor(i, pass, music::floorDiv(s, int64_t(perBar)));
                 if (c.skip) continue;
                 const double swingSteps = (s & 1) != 0 ? 0.45 * double(swing) : 0.0;
                 const double at = (double(s) + swingSteps + double(c.delay)) / perBeat, len = double(n.length) / perBeat;
                 if (at <= beat && at + len > beat)
-                    f(Event { at, len, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(float(n.velocity) / 127.0f * c.velocity), i, false });
+                    f(Event { at + origin, len, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(float(n.velocity) / 127.0f * c.velocity), i, false });
             }
     }
 
-    // Calls f(Event) for each note that starts in [beat, beat + span).
+    // Calls f(Event) for each note that starts in [beat, beat + span) (song beats).
     template <typename F>
-    void play(double beat, double span, F&& f) const {
-        if (pattern == nullptr || pattern->count <= 0 || pattern->lengthSteps <= 0) return;
-        const Pattern& p = *pattern;
-        const double perBeat = stepsPerBeat(p.resolution);
-        const int64_t length = p.lengthSteps;
-        const int perBar = stepsPerBar(p.resolution);
+    void play(double songBeat, double span, F&& f) const {
+        if (notes == nullptr || count <= 0 || lengthSteps <= 0) return;
+        const double beat = songBeat - origin;
+        const double perBeat = stepsPerBeat(resolution);
+        const int64_t length = lengthSteps;
+        const int perBar = stepsPerBar(resolution);
         // A note can be delayed by up to three steps (swing, timing, an extra note).
-        const auto first = int64_t(std::floor(beat * perBeat)) - 3, last = int64_t(std::floor((beat + span) * perBeat));
+        const auto first = std::max(int64_t(std::floor(beat * perBeat)) - 3, windowFrom), last = std::min(int64_t(std::floor((beat + span) * perBeat)), windowTo - 1);
         for (int64_t s = first; s <= last; ++s) {
             const int64_t pass = music::floorDiv(s, length), pos = s - pass * length;
             // Notes are sorted by step: find the first at pos.
-            int lo = 0, hi = p.count;
+            int lo = 0, hi = count;
             while (lo < hi) {
                 const int mid = (lo + hi) / 2;
-                if (p.notes[std::size_t(mid)].step < pos) lo = mid + 1;
+                if (notes[std::size_t(mid)].step < pos) lo = mid + 1;
                 else hi = mid;
             }
             const int64_t bar = music::floorDiv(s, int64_t(perBar));
-            for (int i = lo; i < p.count && p.notes[std::size_t(i)].step == pos; ++i) {
-                const Note& n = p.notes[std::size_t(i)];
+            for (int i = lo; i < count && notes[std::size_t(i)].step == pos; ++i) {
+                const Note& n = notes[std::size_t(i)];
                 if (n.inTake()) continue;
                 if (n.probability < 100 && unitOf(key, pass, i, 9) * 100.0f >= float(n.probability)) continue;
                 const Change c = changeFor(i, pass, bar);
@@ -351,13 +433,13 @@ struct Playback {
                 const double at = (double(s) + swingSteps + double(c.delay)) / perBeat;
                 const float v = float(n.velocity) / 127.0f;
                 if (!c.skip && at >= beat && at < beat + span)
-                    f(Event { at, double(n.length) / perBeat, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(v * c.velocity), i, false });
+                    f(Event { at + origin, double(n.length) / perBeat, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(v * c.velocity), i, false });
                 if (c.extra) {
                     // An extra note one step later: a ghost hit, or a neighbouring note.
                     const double extraAt = at + 1.0 / perBeat;
-                    const int shift = kit ? 0 : (unitOf(key, pass, i, 7) < 0.5f ? -1 : 1) * (p.followChords ? 2 : 1);
+                    const int shift = kit ? 0 : (unitOf(key, pass, i, 7) < 0.5f ? -1 : 1) * (followChords ? 2 : 1);
                     if (extraAt >= beat && extraAt < beat + span)
-                        f(Event { extraAt, 1.0 / perBeat, int(n.degree) + shift, int(n.alter), 0.55f * v, -1, true });
+                        f(Event { extraAt + origin, 1.0 / perBeat, int(n.degree) + shift, int(n.alter), 0.55f * v, -1, true });
                 }
             }
         }
@@ -371,7 +453,8 @@ inline int semitonesFor(bool followChords, int base, int mood, int chord, int de
     const int rootSemis = music::degree(mood, chord);
     return music::inRange(rootSemis, base) + (music::degree(mood, chord + degree) - rootSemis) + alter;
 }
-inline int semitonesFor(const Pattern& p, int mood, int chord, int degree, int alter) {
+template <int N, int B>
+inline int semitonesFor(const BasicPattern<N, B>& p, int mood, int chord, int degree, int alter) {
     return semitonesFor(p.followChords, p.base, mood, chord, degree, alter);
 }
 

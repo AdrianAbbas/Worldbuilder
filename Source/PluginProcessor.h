@@ -110,6 +110,16 @@ public:
     bool arrangementOn() const;
     void setArrangementOn(bool on);
 
+    // Milestone 16: section clips. What a section's instrument plays there, as a clip
+    // (its own clip, or the variant it is linked to laid over the section; nullptr: no
+    // Place or no pattern); making it unique (a copy of what it plays: nothing changes
+    // until it is edited), linking it to its variant again, and clearing it (unique and
+    // empty). Each undoable.
+    wb::arr::ClipRef sectionClip(int section, int slot, int element);
+    bool makeClipUnique(int section, int slot, int element);
+    void relinkClip(int section, int slot, int element);
+    void clearClip(int section, int slot, int element);
+
     // KEYS (Milestone 14): the Play target and REC. Set on the message thread, read by
     // the audio thread each block; saved with the project (REC's arm is not).
     struct KeysSettings {

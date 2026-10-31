@@ -779,6 +779,39 @@ void WorldbuilderProcessor::serviceArrangement() {
     arrangementSeen = count;
 }
 
+arr::ClipRef WorldbuilderProcessor::sectionClip(int section, int slot, int element) {
+    const auto a = arrangement.get();
+    if (section < 0 || section >= a.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return {};
+    const int type = slotTypes()[std::size_t(slot)];
+    if (type == NoPlace || patternInfo(type, element).kind == NoPattern) return {};
+    const auto& s = a.sections[std::size_t(section)];
+    const auto& cell = s.cells[std::size_t(slot)][std::size_t(element)];
+    if (cell.clip != nullptr) return cell.clip;
+    const int variant = std::min<int>(cell.variant, arr::VariantC);
+    const auto el = patterns.element(slot, type, element);
+    return ArrangementStore::fromPattern(patterns.playing(slot, type, element, variant), a.startOf(section), s.bars, el.edited(variant));
+}
+
+bool WorldbuilderProcessor::makeClipUnique(int section, int slot, int element) {
+    auto clip = sectionClip(section, slot, element);
+    if (clip == nullptr) return false;
+    if (arrangement.clipOf(section, slot, element) == clip) return true;   // unique already
+    arrangement.setClip(section, slot, element, clip, true);
+    return true;
+}
+
+void WorldbuilderProcessor::relinkClip(int section, int slot, int element) {
+    if (arrangement.clipOf(section, slot, element) != nullptr) arrangement.setClip(section, slot, element, nullptr, true);
+}
+
+void WorldbuilderProcessor::clearClip(int section, int slot, int element) {
+    auto clip = sectionClip(section, slot, element);
+    if (clip == nullptr) return;
+    auto empty = std::make_shared<pat::Clip>(*clip);
+    empty->clear();
+    arrangement.setClip(section, slot, element, empty, true);
+}
+
 bool WorldbuilderProcessor::arrangementOn() const {
     return arrangement.get().count > 0 && juce::roundToInt(raw[PPlayMode]->load()) == PlayArrangement;
 }

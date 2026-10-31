@@ -79,7 +79,8 @@ pat::Pattern PatternStore::playing(int slot, int type, int e, int variant) {
 // State: <Patterns><Slot index type><Element index randomness ... notes="..."/></Slot></Patterns>
 // Notes are "step:length:degree:alter:velocity:probability:flags" separated by spaces.
 
-juce::String PatternStore::encodeNotes(const pat::Pattern& p) {
+template <typename P>
+juce::String PatternStore::encodeNotes(const P& p) {
     juce::String text;
     text.preallocateBytes(size_t(p.count) * 18);
     for (int i = 0; i < p.count; ++i) {
@@ -91,14 +92,15 @@ juce::String PatternStore::encodeNotes(const pat::Pattern& p) {
     return text;
 }
 
-void PatternStore::decodeNotes(const juce::String& text, pat::Pattern& p) {
+template <typename P>
+void PatternStore::decodeNotes(const juce::String& text, P& p) {
     p.clear();
     for (const auto& token : juce::StringArray::fromTokens(text, " ", "")) {
         const auto f = juce::StringArray::fromTokens(token, ":", "");
         if (f.size() < 5) continue;
         pat::Note n;
-        n.step = int16_t(juce::jlimit(0, pat::maxSteps - 1, f[0].getIntValue()));
-        n.length = int16_t(juce::jlimit(1, pat::maxSteps, f[1].getIntValue()));
+        n.step = int16_t(juce::jlimit(0, P::stepLimit - 1, f[0].getIntValue()));
+        n.length = int16_t(juce::jlimit(1, P::stepLimit, f[1].getIntValue()));
         n.degree = int8_t(juce::jlimit(-60, 60, f[2].getIntValue()));
         n.alter = int8_t(juce::jlimit(-6, 6, f[3].getIntValue()));
         n.velocity = uint8_t(juce::jlimit(1, 127, f[4].getIntValue()));
@@ -109,7 +111,8 @@ void PatternStore::decodeNotes(const juce::String& text, pat::Pattern& p) {
     }
 }
 
-void PatternStore::writePattern(juce::ValueTree& x, const pat::Pattern& p) {
+template <typename P>
+void PatternStore::writePattern(juce::ValueTree& x, const P& p) {
     x.setProperty("resolution", int(p.resolution), nullptr);
     x.setProperty("bars", int(p.bars), nullptr);
     x.setProperty("steps", int(p.lengthSteps), nullptr);
@@ -119,14 +122,15 @@ void PatternStore::writePattern(juce::ValueTree& x, const pat::Pattern& p) {
     x.setProperty("notes", encodeNotes(p), nullptr);
 }
 
-void PatternStore::readPattern(const juce::ValueTree& x, pat::Pattern& p) {
+template <typename P>
+void PatternStore::readPattern(const juce::ValueTree& x, P& p) {
     const auto number = [&](const char* id, float fallback, float lo, float hi) {
         const float v = float(double(x.getProperty(id, fallback)));
         return std::isfinite(v) ? juce::jlimit(lo, hi, v) : fallback;
     };
-    const int bars = int(number("bars", 4.0f, 0.0f, float(pat::maxBars)));
+    const int bars = int(number("bars", 4.0f, 0.0f, float(P::barLimit)));
     p.setGrid(int(number("resolution", float(pat::Sixteenth), 0.0f, float(pat::ResolutionCount - 1))), bars,
-              int(number("steps", 16.0f, 1.0f, float(pat::maxSteps))));
+              int(number("steps", 16.0f, 1.0f, float(P::stepLimit))));
     p.followChords = bool(x.getProperty("follow", true));
     p.base = int8_t(int(number("base", 0.0f, -36.0f, 36.0f)));
     p.swing = number("swing", 0.0f, 0.0f, 1.0f);
@@ -232,5 +236,14 @@ std::array<pat::SlotPatterns, placeSlots> PatternStore::fromTree(const juce::Val
         }
     return loaded;
 }
+
+template juce::String PatternStore::encodeNotes<pat::Pattern>(const pat::Pattern&);
+template juce::String PatternStore::encodeNotes<pat::Clip>(const pat::Clip&);
+template void PatternStore::decodeNotes<pat::Pattern>(const juce::String&, pat::Pattern&);
+template void PatternStore::decodeNotes<pat::Clip>(const juce::String&, pat::Clip&);
+template void PatternStore::writePattern<pat::Pattern>(juce::ValueTree&, const pat::Pattern&);
+template void PatternStore::writePattern<pat::Clip>(juce::ValueTree&, const pat::Clip&);
+template void PatternStore::readPattern<pat::Pattern>(const juce::ValueTree&, pat::Pattern&);
+template void PatternStore::readPattern<pat::Clip>(const juce::ValueTree&, pat::Clip&);
 
 } // namespace wb

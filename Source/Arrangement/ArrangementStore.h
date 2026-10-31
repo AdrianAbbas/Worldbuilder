@@ -31,6 +31,18 @@ public:
     int duplicate(int index);
     int move(int from, int to);
     void resize(int index, int bars, bool undoable = true);
+    // Milestone 16: a section's own clip for an instrument (nullptr: linked to its
+    // variant again). Undoable unless `undoable` is false (a drag or a take after its
+    // first step).
+    void setClip(int section, int slot, int element, arr::ClipRef clip, bool undoable = true);
+    arr::ClipRef clipOf(int section, int slot, int element) const;
+    // A clip fitted to `bars` bars: shorter, the notes after the end go; longer, the
+    // clip repeats into the new bars (as its section would have repeated it).
+    static arr::ClipRef conform(const arr::ClipRef& clip, int bars);
+    // What a linked cell plays, as a clip: the pattern laid on the song from its bar 1
+    // (as a linked instrument plays it), the part under the section's first pass
+    // (`startBar`, `bars` bars). `ownSwing`: the pattern was edited (its own Swing).
+    static arr::ClipRef fromPattern(const pat::Pattern& p, int startBar, int bars, bool ownSwing);
 
     juce::ValueTree toValueTree() const;
     void fromValueTree(const juce::ValueTree& tree);
@@ -38,6 +50,8 @@ public:
     static arr::Arrangement fromTree(const juce::ValueTree& tree);
     static juce::String encodeCells(const arr::Grid& cells);
     static void decodeCells(const juce::String& text, arr::Grid& cells);
+    static void writeClip(juce::ValueTree& x, const pat::Clip& c);
+    static arr::ClipRef readClip(const juce::ValueTree& x, int bars);
 
 private:
     void publish();   // with the lock held

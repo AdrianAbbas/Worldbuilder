@@ -27,6 +27,11 @@ struct PlaceSlotControls {
     // without an arrangement) and the pattern variant it plays (A, B, C or Fill).
     std::array<float, placeElements> arrange { 1, 1, 1, 1, 1, 1 };
     std::array<uint8_t, placeElements> variant {};
+    // Milestone 16: the section's own clip for each instrument (nullptr: linked, it plays
+    // its variant), laid from `clipOrigin` (song beats: the section's first downbeat)
+    // and playing for `clipSpan` beats (<= 0: endlessly).
+    std::array<const pat::Clip*, placeElements> clip {};
+    double clipOrigin = 0, clipSpan = 0;
     // A stinger's ring-out (renders): what rings keeps ringing, no new notes start.
     bool ringOut = false;
     // KEYS (Milestone 14): the instrument the keyboard plays in this slot (-1: none) and
@@ -60,7 +65,11 @@ public:
     void setFeedback(pat::TripleBuffer<pat::Generated>* buffer) { feedback = buffer; }
     // While this flag is set (the Pattern Editor shows variants), every variant is
     // generated, not only the ones playing.
-    void setVariantFlag(const std::atomic<bool>* flag) { allVariants = flag; }
+    // `everywhere`: set while the ARRANGE view is open (its clips are made from them).
+    void setVariantFlag(const std::atomic<bool>* flag, const std::atomic<bool>* everywhere = nullptr) {
+        allVariants = flag;
+        allVariantsToo = everywhere;
+    }
     // The Place's beat at the last chunk (for the editor's playhead), and where the next
     // chunk starts.
     double beat() const { return lastBeat; }
@@ -71,7 +80,9 @@ public:
     // Silent at once (another slot while the keyboard plays alone).
     void silence() { gain.snap(0); }
     // The pattern element e is playing now (nullptr when none), for the tests.
-    const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements ? playing[std::size_t(e)] : nullptr; }
+    // (nullptr too while a clip plays it: playingClip.)
+    const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements && clipNow[std::size_t(e)] == nullptr ? playing[std::size_t(e)] : nullptr; }
+    const pat::Clip* playingClip(int e) const { return e >= 0 && e < placeElements ? clipNow[std::size_t(e)] : nullptr; }
     const pat::Pattern& generatedPattern(int e, int variant = 0) const {
         return generated[std::size_t(pat::Element::clampVariant(variant))][std::size_t(std::clamp(e, 0, placeElements - 1))];
     }
@@ -140,9 +151,11 @@ private:
     std::array<float, placeElements> arranged {};
     float arrangeUp = 0.001f, arrangeDown = 0.0001f;
     std::array<const pat::Pattern*, placeElements> playing {};
+    std::array<const pat::Clip*, placeElements> clipNow {};
     std::array<pat::Controls, placeElements> controlsNow {};
     pat::TripleBuffer<pat::Generated>* feedback = nullptr;
     const std::atomic<bool>* allVariants = nullptr;
+    const std::atomic<bool>* allVariantsToo = nullptr;
     uint32_t feedbackSerial = 0;
     double lastBeat = 0, nextBeat = 0;
     dsp::Smoother keysLevel;

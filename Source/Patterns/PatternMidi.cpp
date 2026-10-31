@@ -1,5 +1,6 @@
 #include "PatternMidi.h"
 #include <map>
+#include <memory>
 #include <vector>
 
 namespace wb::pat {
@@ -20,7 +21,8 @@ void degreeFor(int mood, int semitones, bool snap, int& degree, int& alter) {
     alter = target - music::degree(mood, d);
 }
 
-void appendNotes(juce::MidiMessageSequence& track, const Pattern& pattern, const MidiTarget& target, double beats, int channel) {
+template <typename P>
+void appendNotes(juce::MidiMessageSequence& track, const P& pattern, const MidiTarget& target, double beats, int channel, double offset) {
     const double perBeat = stepsPerBeat(pattern.resolution);
     const double passBeats = pattern.lengthBeats();
     if (pattern.count <= 0 || passBeats <= 0) return;
@@ -41,13 +43,13 @@ void appendNotes(juce::MidiMessageSequence& track, const Pattern& pattern, const
             if (target.kit) {
                 note = kitNotes[std::size_t(std::clamp(int(n.degree), 0, int(kitNotes.size()) - 1))];
             } else {
-                const int chord = pattern.followChords ? music::chordDegree(beat, target.danger) : 0;
+                const int chord = pattern.followChords ? music::chordDegree(beat + offset, target.danger) : 0;
                 note = rootNote(target.root) + semitonesFor(pattern, target.mood, chord, n.degree, n.alter);
             }
             if (note < 0 || note > 127) continue;
             // A note running past the end is cut there (once: as written).
             const double offBeat = once ? beat + double(n.length) / perBeat : std::min(end, beat + double(n.length) / perBeat);
-            notes.push_back({ beat * ticksPerBeat, offBeat * ticksPerBeat, note, int(n.velocity) });
+            notes.push_back({ (beat + offset) * ticksPerBeat, (offBeat + offset) * ticksPerBeat, note, int(n.velocity) });
         }
     std::stable_sort(notes.begin(), notes.end(), [](const Written& a, const Written& b) { return a.on < b.on; });
     // MIDI cannot hold two notes of one pitch at once: a note still sounding when the
@@ -74,11 +76,19 @@ void appendNotes(juce::MidiMessageSequence& track, const Pattern& pattern, const
     }
 }
 
-juce::MidiFile toMidi(const Pattern& pattern, const MidiTarget& target) {
+template <typename P>
+juce::MidiFile toMidi(const P& pattern, const MidiTarget& target, double chordsFrom) {
     juce::MidiMessageSequence track;
     track.addEvent(juce::MidiMessage::timeSignatureMetaEvent(4, 4), 0);
     track.addEvent(juce::MidiMessage::tempoMetaEvent(int(60000000.0 / std::clamp(double(target.bpm), 20.0, 999.0))), 0);
-    appendNotes(track, pattern, target, 0, 1);
+    if (chordsFrom != 0.0) {
+        juce::MidiMessageSequence moved;
+        appendNotes(moved, pattern, target, 0, 1, chordsFrom);
+        moved.addTimeToMessages(-chordsFrom * ticksPerBeat);
+        track.addSequence(moved, 0);
+    } else {
+        appendNotes(track, pattern, target, 0, 1);
+    }
     track.updateMatchedPairs();
     juce::MidiFile file;
     file.setTicksPerQuarterNote(ticksPerBeat);
@@ -86,7 +96,8 @@ juce::MidiFile toMidi(const Pattern& pattern, const MidiTarget& target) {
     return file;
 }
 
-int fromMidi(const juce::MidiFile& source, Pattern& out, const MidiTarget& target, bool snap, int resolution) {
+template <typename P>
+int fromMidi(const juce::MidiFile& source, P& out, const MidiTarget& target, bool snap, int resolution, int fixedBars) {
     juce::MidiFile file(source);
     const short format = file.getTimeFormat();
     // SMPTE files: convert through seconds at the target tempo.
@@ -115,14 +126,17 @@ int fromMidi(const juce::MidiFile& source, Pattern& out, const MidiTarget& targe
     if (raw.empty()) return 0;
     std::sort(raw.begin(), raw.end(), [](const Raw& a, const Raw& b) { return a.beat < b.beat; });
 
-    Pattern p;
+    // (On the heap: a long view holds 160 kB of notes.)
+    auto held = std::make_unique<P>();
+    P& p = *held;
     p.followChords = false;
     p.swing = out.swing;
     const double perBeat = stepsPerBeat(resolution);
     double end = marked;
     for (const auto& r : raw) end = std::max(end, r.beat + std::max(r.length, 1.0 / perBeat));
-    const int bars = std::clamp(int(std::ceil(end / 4.0 - 1.0e-6)), 1, maxBars);
-    p.setGrid(resolution, bars);
+    const int bars = fixedBars > 0 ? std::clamp(fixedBars, 1, P::barLimit) : std::clamp(int(std::ceil(end / 4.0 - 1.0e-6)), 1, std::min(P::barLimit, maxBars));
+    if (fixedBars > 0) p.setLength(resolution, bars);
+    else p.setGrid(resolution, bars);
 
     // Kit: GM drum notes keep their rows, other pitches take the remaining rows by order.
     std::map<int, int> rowOf;
@@ -157,8 +171,18 @@ int fromMidi(const juce::MidiFile& source, Pattern& out, const MidiTarget& targe
         p.add(n);
     }
     if (p.count == 0) return 0;
-    out = p;
+    out.copyFrom(p);
     return p.count;
 }
+
+template void appendNotes<Pattern>(juce::MidiMessageSequence&, const Pattern&, const MidiTarget&, double, int, double);
+template void appendNotes<Clip>(juce::MidiMessageSequence&, const Clip&, const MidiTarget&, double, int, double);
+template void appendNotes<Long>(juce::MidiMessageSequence&, const Long&, const MidiTarget&, double, int, double);
+template juce::MidiFile toMidi<Pattern>(const Pattern&, const MidiTarget&, double);
+template juce::MidiFile toMidi<Clip>(const Clip&, const MidiTarget&, double);
+template juce::MidiFile toMidi<Long>(const Long&, const MidiTarget&, double);
+template int fromMidi<Pattern>(const juce::MidiFile&, Pattern&, const MidiTarget&, bool, int, int);
+template int fromMidi<Clip>(const juce::MidiFile&, Clip&, const MidiTarget&, bool, int, int);
+template int fromMidi<Long>(const juce::MidiFile&, Long&, const MidiTarget&, bool, int, int);
 
 } // namespace wb::pat

@@ -451,7 +451,7 @@ protected:
         const float danger = (*c.world)[Danger];
         for (int e = 0; e < placeElements; ++e) {
             const auto& play = c.play[std::size_t(e)];
-            if (play.pattern == nullptr || !c.s.plays(e)) continue;
+            if (!play.active() || !c.s.plays(e)) continue;
             play.play(c.beat, span, [&](const pat::Event& ev) {
                 if (count >= maxScheduled) return;
                 Scheduled x;

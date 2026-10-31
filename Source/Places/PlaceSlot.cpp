@@ -214,7 +214,8 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
     in.tension = grid(target.tension);
     in.life = grid(target.life);
     in.key = seedKey;
-    const bool all = allVariants != nullptr && allVariants->load(std::memory_order_relaxed);
+    const bool all = (allVariants != nullptr && allVariants->load(std::memory_order_relaxed))
+                     || (allVariantsToo != nullptr && allVariantsToo->load(std::memory_order_relaxed));
     bool changed = false;
     for (int e = 0; e < placeElements; ++e) {
         const auto k = std::size_t(e);
@@ -267,6 +268,7 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
         fresh = true;
         for (auto& v : generatedValid) v.fill(false);
         playing.fill(nullptr);
+        clipNow.fill(nullptr);
         fx.reset();
     }
     const bool switching = wanted != currentType;
@@ -355,8 +357,12 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     for (int e = 0; e < placeElements; ++e) {
         const auto k = std::size_t(e);
         auto& play = context.play[k];
-        play.pattern = playing[k];
-        if (play.pattern == nullptr) continue;
+        // The section's own clip (Milestone 16), else the pattern (variant) it is linked to.
+        const pat::Clip* clip = playing[k] != nullptr ? c.clip[k] : nullptr;
+        clipNow[k] = clip;
+        if (clip != nullptr) play.setClip(clip, c.clipOrigin, c.clipSpan);
+        else play.set(playing[k]);
+        if (!play.active()) continue;
         play.controls = controlsNow[k];
         // Variation scales every element's Randomness; at its default it is as set.
         play.randomness = clamp01(controlsNow[k].randomness * settings.variation / 0.35f);
@@ -365,9 +371,12 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
             play.randomness = 0;
             play.controls.evolve = 0;
         }
-        play.swing = patterns.type == currentType && patterns.element[k].edited(variants[k]) ? play.pattern->swing : settings.swing;
+        if (clip != nullptr) play.swing = clip->ownSwing ? clip->swing : settings.swing;
+        else play.swing = patterns.type == currentType && patterns.element[k].edited(variants[k]) ? playing[k]->swing : settings.swing;
         play.kit = patternInfo(currentType, e).kind == Kit;
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
+        // A clip's randomness is its own section's (the same at every pass of the song).
+        if (clip != nullptr) play.key = mix64(play.key ^ (uint64_t(int64_t(std::llround(c.clipOrigin)) + 1) << 20));
     }
     lastBeat = context.beat;
     nextBeat = context.beat + context.beatsPerSample * double(n);

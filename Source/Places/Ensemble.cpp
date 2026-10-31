@@ -38,17 +38,16 @@ NoteOn EnsemblePlace::noteFor(const PlaceContext& c, const Scheduled& x) const {
     on.seconds = float(ev.length / std::max(frame.beatsPerSecond, 0.01));
     on.extra = ev.extra;
     on.tag = x.tag;
-    if (x.tag != 0 || play.pattern == nullptr) {
+    if (x.tag != 0 || !play.active()) {
         // A Place's own note: the degree field carries semitones (or the kit row).
         on.semis = float(ev.degree);
         on.row = ev.degree;
     } else if (play.kit) {
         on.row = std::clamp(ev.degree, 0, 3);
     } else {
-        const auto& p = *play.pattern;
-        on.semis = float(pat::semitonesFor(p, frame.mood, x.chord, ev.degree, ev.alter));
-        on.follow = p.followChords;
-        on.base = p.base;
+        on.semis = float(pat::semitonesFor(play.followChords, play.base, frame.mood, x.chord, ev.degree, ev.alter));
+        on.follow = play.followChords;
+        on.base = play.base;
         on.degree = ev.degree;
         on.alter = ev.alter;
     }
@@ -114,7 +113,7 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
         const auto& play = c.play[k];
         if (catchUp[k] && c.s.plays(e)) {
             catchUp[k] = false;
-            if (part->sustains() && play.pattern != nullptr)
+            if (part->sustains() && play.active())
                 play.sounding(c.beat, [&](const pat::Event& ev) {
                     Scheduled x;
                     x.element = e;

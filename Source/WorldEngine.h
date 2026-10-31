@@ -110,6 +110,9 @@ public:
     std::atomic<double> arrangeBar { 0 };
     // Set while the Pattern Editor shows variants: every variant is generated.
     std::array<std::atomic<bool>, placeSlots> showVariants {};
+    // Set while the ARRANGE view is open: every slot generates every variant (its clips
+    // are made from them).
+    std::atomic<bool> arrangeVariants { false };
     // Whether a Place's instrument is a rhythm part (a Drum fill transition plays its Fill).
     static bool isRhythm(int type, int element);
     // For the tests: the arrangement state of the last chunk.

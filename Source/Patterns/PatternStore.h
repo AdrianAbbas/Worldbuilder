@@ -34,10 +34,11 @@ public:
     static std::array<pat::SlotPatterns, placeSlots> fromTree(const juce::ValueTree& tree, const std::array<int, placeSlots>& types);
     static pat::SlotPatterns defaultsFor(int type);
 
-    static juce::String encodeNotes(const pat::Pattern& p);
-    static void writePattern(juce::ValueTree& x, const pat::Pattern& p);
-    static void readPattern(const juce::ValueTree& x, pat::Pattern& p);
-    static void decodeNotes(const juce::String& text, pat::Pattern& p);
+    // Patterns and arrangement clips (Milestone 16) save the same way.
+    template <typename P> static juce::String encodeNotes(const P& p);
+    template <typename P> static void writePattern(juce::ValueTree& x, const P& p);
+    template <typename P> static void readPattern(const juce::ValueTree& x, P& p);
+    template <typename P> static void decodeNotes(const juce::String& text, P& p);
 
 private:
     void publish(int slot);   // with the lock held

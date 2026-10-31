@@ -19,6 +19,7 @@
 #include "../Places/PlaceSlot.h"
 #include <array>
 #include <cstring>
+#include <memory>
 
 namespace wb::arr {
 
@@ -68,11 +69,25 @@ constexpr int colourCount = 10;
 inline constexpr std::array<uint32_t, colourCount> colours { 0xffc9a45c, 0xff4fc3d9, 0xffd9604f, 0xff7fb069, 0xff9a7fd1,
                                                              0xffe08a3c, 0xff3fa7a0, 0xffd1c7a8, 0xffd96fa8, 0xff6f8fd9 };
 
+// Milestone 16: a section's own notes for an instrument. Immutable once made (an edit
+// makes a new one), so sections and undo steps share them, and the audio thread reads
+// them without locks; the last reference is only ever dropped off the audio thread.
+using ClipRef = std::shared_ptr<const pat::Clip>;
+inline bool sameClip(const ClipRef& a, const ClipRef& b) {
+    if (a == b) return true;
+    if (a == nullptr || b == nullptr) return false;
+    return a->ownSwing == b->ownSwing && a->sameNotes(*b);
+}
+
 struct Cell {
     uint8_t entry = EntryOn;
     uint8_t variant = VariantA;   // A, B or C
     bool fill = false;            // plays its Fill in the last bar before a section change
-    bool operator==(const Cell& o) const { return entry == o.entry && variant == o.variant && fill == o.fill; }
+    // The section's own clip (unique), or nullptr: linked to the variant, which plays
+    // as it does everywhere it is linked (edits to the variant show up here).
+    ClipRef clip;
+    bool unique() const { return clip != nullptr; }
+    bool operator==(const Cell& o) const { return entry == o.entry && variant == o.variant && fill == o.fill && sameClip(clip, o.clip); }
 };
 
 using Grid = std::array<std::array<Cell, placeElements>, placeSlots>;
@@ -156,6 +171,12 @@ struct State {
     bool fillBar = false;      // the last bar before a section change
     std::array<std::array<float, placeElements>, placeSlots> gain {};
     std::array<std::array<uint8_t, placeElements>, placeSlots> variant {};
+    // Milestone 16: each instrument's own clip in this section (nullptr: linked, or a
+    // Fill plays instead), laid from `clipOrigin` (song beats: where this pass of the
+    // section's clip sequence starts, its first downbeat) for `clipSpan` beats (0:
+    // endlessly).
+    std::array<std::array<const pat::Clip*, placeElements>, placeSlots> clip {};
+    double clipOrigin = 0, clipSpan = 0;
     // Transitions: the one under way into the next section (transitionT 0..1 across its
     // length; -1: none) and the one that led into this section (`arrived`, with
     // `sinceStart` beats into the section; Cut when it was a repeat or the first).
@@ -361,9 +382,15 @@ struct Arrangement {
                     default: break;
                 }
                 st.gain[std::size_t(slot)][std::size_t(e)] = g;
-                st.variant[std::size_t(slot)][std::size_t(e)] =
-                    st.fillBar && cell.fill ? uint8_t(VariantFill) : uint8_t(std::min<int>(cell.variant, VariantC));
+                const bool fill = st.fillBar && cell.fill;
+                st.variant[std::size_t(slot)][std::size_t(e)] = fill ? uint8_t(VariantFill) : uint8_t(std::min<int>(cell.variant, VariantC));
+                // The Fill switch plays the instrument's Fill over a unique clip's last bar too.
+                st.clip[std::size_t(slot)][std::size_t(e)] = fill ? nullptr : cell.clip.get();
             }
+        // The clips start on the section's first downbeat (on the song timeline as it
+        // plays now: after End: loop, that of the pass under way) and repeat with its passes.
+        st.clipSpan = s.endless() ? 0.0 : double(s.span()) * beatsPerBar;
+        st.clipOrigin = std::round(beat - (double(st.at.pass) * bars + st.at.bar) * beatsPerBar);
         // The transition into the next section, over its last beats.
         if (st.at.lastPass && s.transition != TransCut && transitionAfter(st.at.section)) {
             const double length = std::min(transitionBeats(s.transition, s.transitionLength), bars * beatsPerBar);
@@ -394,7 +421,10 @@ private:
                         // How the instrument starts the next section.
                         const float there = cell.entry == EntryOn || cell.entry == EntryFadeOut ? 1.0f : 0.0f;
                         float& g = st.gain[std::size_t(slot)][std::size_t(e)];
-                        if (g <= 0.0f && there > 0.0f) st.variant[std::size_t(slot)][std::size_t(e)] = uint8_t(std::min<int>(cell.variant, VariantC));
+                        if (g <= 0.0f && there > 0.0f) {
+                            st.variant[std::size_t(slot)][std::size_t(e)] = uint8_t(std::min<int>(cell.variant, VariantC));
+                            st.clip[std::size_t(slot)][std::size_t(e)] = nullptr;
+                        }
                         g = dsp::lerp(g, there, u);
                     }
                 st.intensity = dsp::lerp(st.intensity, next.intensityStart, u);

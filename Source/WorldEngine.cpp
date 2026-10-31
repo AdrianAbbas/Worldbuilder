@@ -21,7 +21,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     for (int i = 0; i < placeSlots; ++i) {
         slots[std::size_t(i)].prepare(rate, i);
         slots[std::size_t(i)].setFeedback(&patternsOut[std::size_t(i)]);
-        slots[std::size_t(i)].setVariantFlag(&showVariants[std::size_t(i)]);
+        slots[std::size_t(i)].setVariantFlag(&showVariants[std::size_t(i)], &arrangeVariants);
     }
     space.prepare(rate);
     sharedFx.prepare(r);
@@ -467,12 +467,17 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             // The section's instrument grid: gains and pattern variants.
             PlaceSlotControls arrangedControls = pc;
             arrangedControls.ringOut = arranged.ringOut;
+            arrangedControls.clipOrigin = arranged.clipOrigin;
+            arrangedControls.clipSpan = arranged.clipSpan;
             for (int e = 0; e < placeElements; ++e) {
                 arrangedControls.arrange[std::size_t(e)] = arranged.gain[si][std::size_t(e)];
                 arrangedControls.variant[std::size_t(e)] = arranged.variant[si][std::size_t(e)];
+                arrangedControls.clip[std::size_t(e)] = arranged.clip[si][std::size_t(e)];
                 // A Drum fill transition: the rhythm instruments that play take their Fills.
-                if (arranged.drumFill && arranged.gain[si][std::size_t(e)] > 0.0f && isRhythm(pc.type, e))
+                if (arranged.drumFill && arranged.gain[si][std::size_t(e)] > 0.0f && isRhythm(pc.type, e)) {
                     arrangedControls.variant[std::size_t(e)] = uint8_t(pat::VariantFill);
+                    arrangedControls.clip[std::size_t(e)] = nullptr;
+                }
             }
             sounding = slots[si].render(world, arrangedControls, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         } else {

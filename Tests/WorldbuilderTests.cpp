@@ -4233,6 +4233,8 @@ void testArrangementPersists(Suite& s) {
     }
 }
 
+#include "ClipTests.inc"
+
 void testArrangement(Suite& s) {
     using namespace arrangeTest;
     s.section("arrangement: model");
@@ -9435,6 +9437,7 @@ int main(int argc, char** argv) {
         testTinyPlanetHeadroom(s);
     }
     if (run("arrangement")) testArrangement(s);
+    if (run("clips")) testClips(s);
     if (run("arrpersist")) testArrangementPersists(s);
     if (run("transitions")) {
         testTransitions(s);
