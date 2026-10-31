@@ -5,7 +5,7 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 16 is in progress** (per-section clips in the Arrangement, a mini-DAW timeline):
+**Milestone 16 is done** (per-section clips in the Arrangement, a mini-DAW timeline):
 checklist and handoff at the end, in
 [Milestone 16](#milestone-16-section-clips-in-the-arrangement-2026-10-31).
 
@@ -5696,7 +5696,7 @@ patterns.
 - [x] 4. Section tools: duplicate with clips, copy and paste clips, clear, MAKE UNIQUE and RE-LINK
   (Parts 2-4 were built together, in one push: the clip view, the song view and the tools share the editor's clip code.)
 - [x] 5. Smarter auto-arrange: section-appropriate clips (intros sparse and low, build-ups rising, climaxes full, wind-downs thinning)
-- [ ] 6. Everything follows the clips (playback, preview, renders, game audio, scene MIDI), presets; tests; docs; final push without `[skip ci]`
+- [x] 6. Everything follows the clips (playback, preview, renders, game audio, scene MIDI), presets; tests; docs; final push without `[skip ci]`
 
 
 ### Decisions
@@ -5772,3 +5772,80 @@ patterns.
   switching an instrument on or off moved to Cmd/Ctrl-click (and the cell menu).
 - While ARRANGE shows, every slot generates every variant (`engine.arrangeVariants`), so
   a clip made unique from B or C, or auto-arranged, has the right notes.
+
+### Tests (`--only clips`, 69 checks)
+
+- Model: a unique cell plays its clip, linked cells their variant; the origin is the
+  section's first downbeat (repeats replay it; after End: loop, where the loop brought
+  it); the Fill switch over a clip's last bar; fitting to a new length; a new clip is the
+  variant laid where the song has it.
+- Linked vs unique: a new unique clip plays note for note as the variant did; an edited
+  unique clip changes its own section only; variant edits reach linked sections, not
+  unique ones; re-link, clear, undo and redo.
+- From any start bar (2, 3, 4, 6): the notes are what the whole song plays there; a
+  repeating section replays its clip.
+- Duplicate copies clips (editing the copy leaves the original); copy and paste between
+  sections and instruments; resizing fits clips, and a drag gives notes back.
+- State round trip (project and `.world`) of an arrangement with unique clips (own and
+  Place swing, Follow Chords, a Fill switch, linked cells staying linked).
+- No heap allocation on the audio thread with four Places of clips edited while playing.
+- The piano roll: a cell opens its clip at the section's bars; the ask-once question
+  (MAKE UNIQUE, CANCEL, EDIT VARIANT); undo and redo; MIDI export from the downbeat and
+  import at the section's length; PLAY, LOOP and the playhead inside the clip; the song
+  view (both sections, edits landing in their section, linked sections marked and asked
+  about); BACK to ARRANGE; the ARRANGE tools (copy/paste a clip and a section's clips,
+  duplicate, click opens, Cmd/Ctrl-click toggles).
+- Keyboard recording: arming on a linked clip makes it unique; a take lands in the clip
+  on the right bar and step (1/32 steps 8 and 40), the pattern and other sections
+  untouched; one undo takes it back.
+- Auto-arrange: intros sparse, lower and soft; build-ups rising (density, pitch,
+  velocity) with a run in the last bar; climaxes full; wind-downs thinning; locked notes
+  kept; a Classic Arc on the Castle gives clips, the intro far sparser than the climax,
+  the same seed the same clips; TEMPLATE writes them and undoes in one step; it plays.
+- Capture: renders of the arrangement match Arrangement playback **sample for sample**
+  from bars 1, 4 and 6 (two Places, clips in four cells, Randomness on); every game file
+  and the stems play the clips (they differ from the same scene re-linked); scene MIDI
+  writes exactly the clip's notes where its section plays them (both passes).
+
+Full suite (the CI's six shards, Linux, GCC, **without the recordings**: this container
+did not fetch the private samples): **4113 passed, 3 failed**. The three are "the sample
+bank loads", the Scoop / Glide default table (Forest Strings, Biodome Water Plucks,
+Desert Oud, Tavern Fiddle: their synthesised fallbacks) and "reverb Room: audible" (the
+Tavern's recorded lute and fiddle play their fallbacks). **All three fail identically on
+the commit before this milestone** built the same way (checked), so they come from the
+missing samples, not from this work; CI has the samples. After the last change (the
+editor caching the arrangement) `clips`, `editor`, `arrpersist` and `transport` were run
+again: 152 passed. The AU harness runs on the macOS CI only.
+
+### Milestone 16 handoff
+
+**Done**: section clips (linked or unique) for every section x instrument; the clip
+piano roll with the section's real bars, every tool, its transport and REC; the song
+view; the clip and section tools; Auto-arrange and templates writing section-shaped
+clips; playback, PREVIEW, renders, game files, stems and scene MIDI following the clips;
+saved in the project and `.world` files, with undo. Parts 1 and 5 were pushed on their
+own, parts 2-4 together (they share the editor's clip code), part 6 with `[skip ci]`;
+this last push is without it, so CI builds and tests once.
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Milestone 16 check").
+
+**Known issues / limits**:
+- Nothing here has been heard; the shaping of auto-arranged clips (how sparse, how much
+  climb) is set by rule and measured, not by ear. Tell me where an intro is too thin or
+  a build-up climbs too far: the amounts are all in `arr::shapeClip` (Templates.cpp).
+- With an instrument's Randomness above 0, a freshly made unique clip plays the same
+  written notes as its variant but makes its own random choices (keyed per section).
+- EDIT VARIANT takes the edit that asked back (it cannot be mapped onto the shorter
+  pattern); redo it in the variant.
+- A Crossfade's incoming instruments play their next variant in the crossfade bars, not
+  the next section's clip.
+- The song view shows one pass per section (repeats are not drawn twice), up to 512
+  bars, to the first endless section; a song mixing 1/32 and triplet clips is shown on
+  1/32T or 1/32 and rounds the other. Clips that differ in CHORDS show in the first
+  clip's mode.
+- Factory scenes and Inspire still build linked arrangements (AUTO-ARRANGE gives a
+  loaded scene clips).
+- MIDI export writes the written notes (no swing, no randomness), as before.
+- A unique clip that is long and busy (2048 notes at most per clip) is about 20 kB in
+  memory; a whole arrangement of unique clips is a few MB at most and saves as text.
+
