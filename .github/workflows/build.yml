@@ -9,7 +9,7 @@ env:
   JUCE_COMMIT: ea77444750de45e036e0279bb0291144bf8e3688 # JUCE 8.0.16, as in CMakeLists.txt
 jobs:
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       # The optional Developer ID path runs only when these secrets exist.
