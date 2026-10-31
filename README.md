@@ -309,13 +309,29 @@ and KEYS as every other instrument):
 | Forest | Strings | violin, bowed open strings (looped while held, its own release) | a soft pad on the chords an octave above the old section, two players a note (another take, a few cents apart); darker and trembling in the Dark Woods |
 | Biodome | Water Plucks | kalimba | softened and short (with SCOOP/GLIDE on, each tine slides quickly up into its note like a drop) |
 | Ruins | Violin Textures (new, in place of the Ghost Pad) | violin: bowed, pizzicato, col legno | slow swells and bowed tremolo; short notes are plucked, the shortest struck with the bow's wood |
+| Cyberpunk Megacity | Grit Bass | Korg Minilogue, static-y bassy synth | eighths and sixteenths as short hits, the Night Market's held roots as long hits; the Place's drive on top |
+| Cyberpunk Megacity | Glitch Stabs | Minilogue, cyberpunk synth | short hits ringing out; a held stab (a beat) closes the Night Market's phrase and opens the Corporate Tower's |
+| Space Station | Reactor Pulse | Minilogue, static-y bassy synth | short hits, darker and longer than in the Megacity, cut shorter in an emergency |
+| Spaceport | Pulses | Minilogue, pulsating synth | short hits an octave down; the launch opens the filter through the build; a detuned second player on the dock |
+| Starship Bridge | Warp Core | Minilogue, pulsating synth (held, its own pulse looping) | a slow swell, a second player 9 cents up; the warp build opens it and spins a tremolo up over the pulse |
+| Biodome | Pads | Minilogue, soft pad (held) | a swell, a detuned second player (wider as the dome fails), the filter and level sagging with the power |
+| Nebula | Nebula Pads | Minilogue, soft pad (held) | a slow swell, a detuned, late second player (widest in the Void), the filter drifting open and shut |
+| Spaceport | Data Blips | Minilogue, harsh square (two oscillators) | three octaves down, so the high oscillator sounds the written note and the low one an octave and a fourth under it; shortened to blips |
+| Asteroid Mining Colony | Drill | Minilogue, harsh square | two octaves down: the high oscillator whines an octave over the root; short bites with a fast wobble |
 
 In the Ruins' Violin Textures a note's length in the Pattern Editor chooses how it is
 played: longer than an eighth is bowed, an eighth is pizzicato, a sixteenth is col legno.
 
-The recordings are inside the plugin bundle (`Contents/Resources/Samples`, about 11 MB),
+The Minilogue instruments have two articulations, also chosen by a note's length: up to
+an eighth note plays the patch's **short hit** (it rings out as recorded, release and
+all), longer plays its **long hit**, held for as long as the note lasts (it loops) and
+let go with its recorded release. Every key was recorded, so every note plays its own
+recording at its own pitch; only below the lowest and above the highest recorded key are
+notes stretched (up to a fifth), and further out they fold by octaves.
+
+The recordings are inside the plugin bundle (`Contents/Resources/Samples`, about 32 MB),
 where GarageBand's sandbox lets the plugin read them, and load once in the background when
-the first WORLDBUILDER opens (about 40 MB of memory, shared by every instance). The
+the first WORLDBUILDER opens (about 83 MB of memory, shared by every instance). The
 installer reports how many recorded notes each bundle holds. A build without them (see
 [Build](#build)) plays the synthesised models these instruments had before.
 

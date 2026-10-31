@@ -138,12 +138,32 @@ def pitch_near(seg, label, partials=8):
         return None, None
     f0 = float(np.median(good))
     wander = float(np.std([1200 * math.log2(f / f0) for f in good]))
-    # The harmonics' peaks refine it, unless a pulsing patch's sidebands split them (then
-    # YIN's own estimate stands).
-    fine = P.refine(seg[:int(1.0 * RATE)], f0, partials)
-    if abs(1200 * math.log2(fine / f0)) <= 10:
-        f0 = fine
-    return 69 + 12 * math.log2(f0 / 440.0), wander
+    return 69 + 12 * math.log2(weighted_pitch(seg[:int(1.0 * RATE)], f0) / 440.0), wander
+
+
+def weighted_pitch(seg, f0, harmonics=6):
+    """The pitch a patch's harmonics agree on: each of the first six at its power-weighted
+    centroid within 50 cents of f0's multiple, the six weighted by their power. A synth's
+    oscillators are not one harmonic series (the static-y bass's fundamental sits 37 cents
+    under its in-tune third harmonic; detuned oscillators beat; a pulsing patch splits each
+    harmonic into sidebands), so no single peak is the pitch. Centred twice."""
+    n = 1 << 18
+    power = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), n)) ** 2
+    freqs = np.fft.rfftfreq(n, 1.0 / RATE)
+    for _ in range(2):
+        total, weight = 0.0, 0.0
+        for k in range(1, harmonics + 1):
+            lo, hi = np.searchsorted(freqs, [k * f0 * 2 ** (-50 / 1200), k * f0 * 2 ** (50 / 1200)])
+            if hi >= len(freqs) or hi <= lo:
+                continue
+            p = power[lo:hi]
+            cents = 1200 * np.log2(freqs[lo:hi] / (k * f0))
+            total += float(np.sum(p * cents))
+            weight += float(np.sum(p))
+        if weight <= 0:
+            break
+        f0 *= 2 ** (total / weight / 1200)
+    return f0
 
 
 def analysis(y, long_note):
@@ -254,6 +274,11 @@ def process(spec, source, report):
         stop = found[k + 1]["start"] - 2 if k + 1 < len(found) else len(env)
         end = note_end(env, c["start"], stop, floor)
         start = max(0, c["start"] * HOP - int(0.005 * RATE))
+        # The attack: 5 ms before the level first comes within 30 dB of the note's peak
+        # (a patch's noise or the last note's echo can creep up for 100 ms before it).
+        head = P.envelope(x[start:min(end * HOP, start + int(1.5 * RATE))])
+        if len(head):
+            start += max(0, int(np.argmax(head >= head.max() - 30.0)) * HOP - int(0.005 * RATE))
         y = x[start:end * HOP].copy()
         notes.append({"y": y, "at": start / RATE, "raw": raw_pitch(analysis(y, long_note))})
     offsets = [n["raw"] - k for k, n in enumerate(notes) if n["raw"] is not None]

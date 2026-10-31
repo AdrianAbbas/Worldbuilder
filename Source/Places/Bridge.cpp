@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-BridgePlace::BridgePlace() : EnsemblePlace(2900) { setParts({ &consoles, &core, &tactical, &brass, &chatter, &pings }); }
+BridgePlace::BridgePlace() : EnsemblePlace(2900) { setParts({ &consoles, &coreRec, &tactical, &brass, &chatter, &pings }); }
 
 void BridgePlace::prepareFx() {
     hall.prepare(rate);
@@ -199,6 +199,35 @@ void BridgePlace::configure(const PlaceContext& c) {
         p.spread = 0.2f;
         p.voices = 2;
         p.gain = 1.0f;
+    }
+    // The recorded warp core: the Minilogue's pulsating patch held (Milestone 15b), its own
+    // pulse looping; a second player 9 cents up for width. The build opens its filter and
+    // spins a tremolo up over the pulse; battle stations throb at half beats.
+    {
+        auto& p = coreRec.patch;
+        p.instrument = "mlg-pulse-long";
+        p.shortInstrument = "mlg-pulse-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.recordedTail = false;
+        p.attack = 1.5f;
+        p.release = 2.5f;
+        p.legatoSeconds = 0.25f;
+        p.glide = 1.0f;
+        p.toneHz = lerpExp(400.0f, 2400.0f, tone) * (1.0f + 2.5f * build) * (0.8f + 0.4f * s.machinery);
+        p.liveTone = true;
+        p.velocityTone = 0.3f;
+        p.courseLoops = true;
+        p.courseCents = 9.0f;
+        p.courseLevel = 0.6f;
+        p.courseMs = 20.0f;
+        p.tremoloPerBeat = warp ? 1.0f + 7.0f * build * build : (battle ? 2.0f : 1.0f);
+        p.tremoloDepth = warp ? 0.35f * build : (battle ? 0.2f : 0.0f) + 0.1f * tension;
+        p.spread = 0.2f;
+        p.voices = 3;
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = battle ? 2.98f : 2.67f;
     }
     // Tactical: a tuned electronic pulse, a tick and a sub hit.
     {

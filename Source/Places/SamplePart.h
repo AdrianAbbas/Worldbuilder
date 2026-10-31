@@ -56,6 +56,12 @@ struct SamplePatch {
     // (a bow's slow onset skipped, a quick fade in): fast bowing.
     float quickBelow = 0, quickSeconds = 0.12f;
     int lowestKey = 0, highestKey = 127;   // notes outside fold in by octaves
+    // Recorded short hits (a synth's, with their own release) ring out as recorded even in a
+    // held part: a short written note is a short hit, not a long one cut off.
+    bool shortRings = false;
+    // The voices' low-pass follows toneHz (and the mod wheel) while they sound, not only at
+    // the note's start: a filter opening through a build.
+    bool liveTone = false;
 };
 
 class SamplePart final : public Part {
@@ -125,9 +131,10 @@ public:
 
         const int limit = std::clamp(patch.voices, 1, maxVoices);
         // A held note whose predecessor ends here is played legato: the old note lets go
-        // quickly and the new one comes in without its full attack.
+        // quickly and the new one comes in without its full attack. (Not a short hit: it is
+        // all attack.)
         bool legato = false;
-        if (patch.held && n.live == 0)
+        if (patch.held && n.live == 0 && inst != shortOne)
             for (int i = 0; i < limit; ++i) {
                 const auto& h = held[std::size_t(i)];
                 auto& old = voice[std::size_t(i)];
@@ -190,8 +197,9 @@ public:
         v.coursePos = v.pos - double(patch.courseMs * 0.001f * inst->rate);
         v.courseRatio = std::exp2(patch.courseCents / 1200.0f + (zone->root - v.courseZone->root) / 12.0f);
         v.vibratoAge = 0;
+        v.velocity = velocity;
         held[std::size_t(k)].set(n);
-        if (!patch.held && n.live == 0) held[std::size_t(k)].on = false;   // it rings
+        if ((!patch.held || (patch.shortRings && inst == shortOne && !zone->loops())) && n.live == 0) held[std::size_t(k)].on = false;   // it rings
         held[std::size_t(k)].semis = n.semis;
         pitch(v, 0);
     }
@@ -230,6 +238,10 @@ public:
                 v.target = 69.0f + 12.0f * std::log2(hz / 440.0f);
             }
             v.midi = v.target + (v.midi - v.target) * glide;
+            if (patch.liveTone) {
+                const float cutoff = patch.toneHz * std::exp2(-patch.velocityTone * (1.0f - dsp::clamp01(v.velocity))) * std::exp2(2.0f * mod);
+                v.filter.set(std::min(cutoff, 0.45f * rate), 0.6f, rate);
+            }
             v.scoop *= v.scoopMul;
             v.vibratoAge += float(dsp::chunk) / rate;
             pitch(v, float(dsp::chunk) / rate);
@@ -307,7 +319,7 @@ private:
         float midi = 60, target = 60, scoop = 0, scoopMul = 0;
         float amp = 1, attackStep = 1, fade = 1, fadeMul = 1, releaseMul = 1;
         float tailMix = 0, tailStep = 0;
-        float gain = 1, vibratoAge = 0, vibratoPhase = 0;
+        float gain = 1, vibratoAge = 0, vibratoPhase = 0, velocity = 1;
         int wait = 0;
         dsp::PanGains pan { 0.7071f, 0.7071f };
         dsp::Svf filter;

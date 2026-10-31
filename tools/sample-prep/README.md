@@ -51,8 +51,9 @@ time, once with short hits and once with long (held) hits. Per recording:
    next note); with too many, the smallest rises (a pulse inside a note) go first.
 3. **Pitch**: a first pass (YIN down to 14 Hz) for every note; the sweep's order then
    gives each note its key (the median offset, so the octave switch and the patch's own
-   octaves do not matter), and each note is measured within 3 semitones of its key,
-   refined on its harmonics (unless a pulsing patch's sidebands split them). Every note
+   octaves do not matter), and each note is measured within 3 semitones of its key: the
+   pitch its first six harmonics agree on (each at its power-weighted centroid, weighted
+   by power), since a patch's oscillators are not one harmonic series. Every note
    is mapped at its own pitch; the sampler tunes it by the cents it is out. Notes the
    first pass heard elsewhere, more than 25 cents out or wandering are reported.
 4. **Long hits**: the release point (the knee of the final fall), a loop early in the

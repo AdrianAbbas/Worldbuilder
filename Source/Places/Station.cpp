@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-StationPlace::StationPlace() : EnsemblePlace(2700) { setParts({ &hull, &clamps, &comms, &air, &reactor, &lead }); }
+StationPlace::StationPlace() : EnsemblePlace(2700) { setParts({ &hull, &clamps, &comms, &air, &reactorRec, &lead }); }
 
 void StationPlace::prepareFx() {
     room.prepare(rate);
@@ -274,6 +274,24 @@ void StationPlace::configure(const PlaceContext& c) {
         p.spread = 0.1f;
         p.voices = 3;
         p.gain = 1.0f;
+    }
+    // The recorded reactor: the Minilogue's static-y bass (Milestone 15b), its short hits
+    // pulsing (an emergency cuts them shorter); a note of a beat or more holds its long hit.
+    {
+        auto& p = reactorRec.patch;
+        p.instrument = "mlg-staticbass-long";
+        p.shortInstrument = "mlg-staticbass-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.decay = emergency ? 0.35f : 0.7f;
+        p.release = 0.12f;
+        p.toneHz = lerpExp(700.0f, 4000.0f, tone) * (0.8f + 0.5f * s.machinery) * (1.0f + 0.6f * tension);
+        p.velocityTone = 0.8f;
+        p.spread = 0.1f;
+        p.voices = 3;
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = emergency ? 5.2f : (abandoned ? 4.5f : 4.2f);
     }
     // The zero-g lead: a soft FM tone that glides between notes, slowly wavering.
     {

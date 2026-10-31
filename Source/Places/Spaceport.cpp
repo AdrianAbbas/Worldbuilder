@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-SpaceportPlace::SpaceportPlace() : EnsemblePlace(1300) { setParts({ &pulses, &pads, &risers, &pa, &engine, &blips }); }
+SpaceportPlace::SpaceportPlace() : EnsemblePlace(1300) { setParts({ &pulsesRec, &pads, &risers, &pa, &engine, &blipsRec }); }
 
 void SpaceportPlace::prepareFx() {
     hangar.prepare(rate);
@@ -209,6 +209,33 @@ void SpaceportPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 3, 4, 6);
         p.gain = 1.0f;
     }
+    // The recorded pulses: the Minilogue's pulsating patch (Milestone 15b), its short hits
+    // for the arpeggio (a note of a beat or more holds and loops its long hit), an octave
+    // down: the patch's weight is in its upper harmonics. The filter closes with Tension
+    // and darkens the dock; the launch opens it through the build; the dock's second,
+    // detuned player is the old patch's detune.
+    {
+        auto& p = pulsesRec.patch;
+        p.instrument = "mlg-pulse-long";
+        p.shortInstrument = "mlg-pulse-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.transpose = -12.0f;
+        p.decay = (dock ? 1.4f : 0.6f) * lerp(1.2f, 0.7f, tension);
+        p.release = 0.12f;
+        p.toneHz = lerpExp(1500.0f, 9000.0f, tone) * (dock ? 0.6f : 1.0f) * lerp(1.2f, 0.7f, tension) * (launch ? 0.35f + 0.9f * build : 1.0f);
+        p.liveTone = launch;
+        p.velocityTone = 0.8f;
+        p.velocityGain = 0.6f;
+        p.courseCents = dock ? 14.0f : 0.0f;
+        p.courseLevel = dock ? 0.5f : 0.0f;
+        p.courseMs = 6.0f;
+        p.spread = 0.25f;
+        p.voices = byQuality(q, 4, 6, 8);
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = dock ? 4.5f : (launch ? 3.4f : 3.3f);
+    }
     // Pads: wide, slowly breathing, gliding with the chords.
     {
         auto& p = pads.patch;
@@ -290,6 +317,26 @@ void SpaceportPlace::configure(const PlaceContext& c) {
         p.spread = 0.7f;
         p.voices = byQuality(q, 2, 3, 4);
         p.gain = 1.0f;
+    }
+    // The recorded blips: the Minilogue's harsh square (Milestone 15b), its high
+    // oscillator (three octaves over the key's pitch) on the written note, the low one an
+    // octave and a fourth under it; shortened to a blip, flat on the dock.
+    {
+        auto& p = blipsRec.patch;
+        p.instrument = "mlg-square-long";
+        p.shortInstrument = "mlg-square-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.transpose = dock ? -36.3f : -36.0f;
+        p.decay = dock ? 0.4f : 0.22f;
+        p.release = 0.06f;
+        p.toneHz = lerpExp(3000.0f, 14000.0f, tone) * (dock ? 0.5f : 1.0f);
+        p.velocityTone = 0.6f;
+        p.spread = 0.7f;
+        p.voices = byQuality(q, 3, 4, 5);
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = dock ? 1.8f : (launch ? 2.3f : 2.4f);
     }
     // The abandoned dock is a vast empty hangar; the hub is full of people and soft
     // surfaces; the launch is everything at once.

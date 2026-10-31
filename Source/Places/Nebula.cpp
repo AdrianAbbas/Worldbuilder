@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-NebulaPlace::NebulaPlace() : EnsemblePlace(3200) { setParts({ &pads, &wind, &bells, &drone, &dust, &flares }); }
+NebulaPlace::NebulaPlace() : EnsemblePlace(3200) { setParts({ &padsRec, &wind, &bells, &drone, &dust, &flares }); }
 
 void NebulaPlace::prepareFx() {
     infinite.prepare(rate);
@@ -145,6 +145,37 @@ void NebulaPlace::configure(const PlaceContext& c) {
         p.spread = 0.9f;
         p.voices = byQuality(q, 3, 4, 5);
         p.gain = 1.0f;
+    }
+    // The recorded pads: the Minilogue's soft pad held (Milestone 15b), a slow swell, a
+    // second player detuned and late (wider in the void), the filter drifting open and
+    // shut as the synthesised pads' did; notes above the recordings fold down an octave.
+    {
+        auto& p = padsRec.patch;
+        p.instrument = "mlg-softpad-long";
+        p.shortInstrument = "mlg-softpad-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.recordedTail = false;
+        p.attack = 3.5f;
+        p.release = 4.0f;
+        p.legatoSeconds = 0.4f;
+        p.glide = 2.0f;
+        const float sweep = 0.5f + 0.5f * drift.smooth(t, 0.05);
+        p.toneHz = lerpExp(800.0f, 6000.0f, tone) * lerp(0.6f, 1.5f, sweep) * (nursery ? 1.3f : (empty ? 0.6f : 1.0f));
+        p.liveTone = true;
+        p.velocityTone = 0.3f;
+        p.courseLoops = true;
+        p.courseCents = empty ? 30.0f : 16.0f;
+        p.courseLevel = 0.8f;
+        p.courseMs = 40.0f;
+        p.vibratoHz = 0.15f;
+        p.vibratoDepth = 0.06f;
+        p.vibratoDelay = 0.0f;
+        p.spread = 0.9f;
+        p.voices = byQuality(q, 3, 4, 5);
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = drift_ ? 1.4f : (nursery ? 1.29f : 0.92f);
     }
     // The cosmic wind: breath alone, very wide.
     {

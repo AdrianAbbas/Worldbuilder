@@ -119,6 +119,10 @@ private:
     NoisePart risers;
     ModalPart pa;
     FmPart blips;
+    // The developer's Korg Minilogue (Milestone 15b): the pulsating patch plays the
+    // pulses, the harsh square the data blips; the synthesised parts behind them play
+    // only without samples.
+    SamplePart pulsesRec { pulses }, blipsRec { blips };
     // Abstract PA murmur: a voiced buzz through two moving formants, never speech.
     dsp::Saw murmurOsc;
     std::array<dsp::Svf, 2> formant;
@@ -424,6 +428,8 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     SynthPart pads;
+    // The pads are the developer's Minilogue soft pad (Milestone 15b).
+    SamplePart padsRec { pads };
     ModalPart mallets;
     WindPart birds, vents;
     DripPart water;
@@ -730,6 +736,8 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     SynthPart hull, reactor;
+    // The reactor pulse is the developer's Minilogue static-y bass (Milestone 15b).
+    SamplePart reactorRec { reactor };
     DrumPart clamps;
     ModalPart comms;
     WindPart air;
@@ -765,6 +773,9 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     SynthPart bass, pad, stabs;
+    // The developer's Minilogue (Milestone 15b): the static-y bass is the grit bass, the
+    // cyberpunk patch the glitch stabs.
+    SamplePart bassRec { bass }, stabsRec { stabs };
     FmPart arp;
     DrumPart drums;
     BowedPart hum;
@@ -801,6 +812,8 @@ private:
 
     FmPart consoles;
     SynthPart core, brass;
+    // The warp core is the developer's Minilogue pulsating patch, held (Milestone 15b).
+    SamplePart coreRec { core };
     DrumPart tactical;
     ChoirPart chatter;
     ModalPart pings;
@@ -836,6 +849,8 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     FmPart drill;
+    // The drill is the developer's Minilogue harsh square (Milestone 15b).
+    SamplePart drillRec { drill };
     SynthPart bass;
     ModalPart clanks;
     WindPart dust, beacon;
@@ -905,6 +920,8 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     SynthPart pads;
+    // The pads are the developer's Minilogue soft pad (Milestone 15b).
+    SamplePart padsRec { pads };
     WindPart wind;
     ModalPart bells;
     BowedPart drone;

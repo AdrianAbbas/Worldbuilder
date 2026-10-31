@@ -5491,10 +5491,134 @@ The developer's synth recordings: five Minilogue patches, each swept across all 
 with short and long hits (ten 24-bit WAVs in the root of `AdrianAbbas/Samples`; the brief
 pointed at `07-synth/minilogue/`, but the repository has no folders: the files and
 `notes.txt` are at its root). Each note at its own detected pitch; short and long hits as
-two articulations; the patches replace synthesised instruments in the sci-fi Places.
+two articulations; the patches replace synthesised instruments in the sci-fi Places. The
+recordings stay in the private repository, prepared on CI as in 15a.
 
 ### Progress checklist
 
 - [x] 1. Preparation (`tools/sample-prep/sweeps.py`): slicing by key, pitch and octave from the audio, loops for long hits, trim, levels per patch, mapping files, report
-- [ ] 2. Sampler additions (short hits ring out in held parts, a live filter) and the Places' instruments
-- [ ] 3. Tests, size and memory, docs, this handoff; final push without `[skip ci]`
+- [x] 2. Sampler additions (short hits ring out in held parts, a live filter, no legato on short hits) and nine instruments in seven Places, levels set by measurement
+- [x] 3. Tests (`--only samples`, 138 checks), size and memory, README, MANUAL_TEST, this handoff; final push without `[skip ci]`
+
+### What is in the recordings (checked against the audio)
+
+- **Ten WAVs**, 44.1 kHz, 24-bit, stereo but dual mono (left and right identical: stored as
+  mono). The harsh square's short sweep ends in 90 s of digital silence (dropped).
+- **Every file holds exactly 37 notes**, one key at a time, lowest to highest. A note
+  starts where the level rises 22 dB out of the quiet before it; the soft pad's long
+  sweep needed 18 dB (three notes start before the previous release has died away).
+  Nothing else had to be thrown out (the pulsating patch's pulses inside a note never
+  rise that far).
+- **The octaves come from the audio, not the file names.** Detected ranges (the pitch of
+  the waveform's period): static-y bassy C1-C4, cyberpunk C2-C5 (both marked "-1 octave"),
+  pulsating C1-C4, soft pad C2-C5, harsh square **C0-C3**. The "-1 octave" marks do not line
+  up with the others because each patch has its own oscillator octaves (the soft pad, at
+  the middle LED, sits where the cyberpunk patch does, one LED lower). Each file's notes
+  are offset from their keys by one constant (the median of all 37 first estimates), and
+  every note then measured at its key; the detector's octave slips (the pulsating patch's
+  fundamental is 20 dB under its second harmonic at the bottom; 2 short and 3 long notes)
+  and two fifths (a strong third harmonic: static-y F#1, pulsating F1) are put right by the
+  sweep's order and reported.
+- **The static-y bass's two files are named the wrong way round**: the one called "long
+  hit" has decaying hits about 1 s apart (sounding 0.3 s), the one called "short hit" holds
+  each note 2.5 s at a steady level and then releases. Used as they sound (the manifest
+  says so; the preparation checks that a patch's short hits are the shorter and fails
+  otherwise).
+- `notes.txt` lists the cyberpunk patch as "short, -1 octave" only; its long sweep is there
+  too and is used.
+- **Pitch.** The patches' oscillators are not one harmonic series, so a note's pitch is the
+  one its first six harmonics agree on (each at its power-weighted centroid within 50
+  cents, weighted by power); the sampler tunes each note by it. Per patch (cents from the
+  key, median and range): soft pad 0 (-2..+2), cyberpunk +1 (-5..+11), pulsating short -2
+  (-16..+26, the pulse's sidebands), pulsating long +1 (-1..+9), harsh square -9 (-11..+10),
+  **static-y bass -12 short / -23 long (-37..0)**: its fundamental sits about 37 cents under
+  its third harmonic, which is in tune (two oscillators, one detuned); tuned to the
+  weighted pitch, its fundamental is still about 15 cents flat and the twelfth above about
+  20 sharp (that detune is the patch's character).
+- **The harsh square is two oscillators**: almost nothing at the key's pitch or its octave
+  (50-75 dB down), a square at three times it (a twelfth up) and another at eight times
+  (three octaves up). Played at its key it sounds like a fifth plus a high note. Placed
+  36 semitones down, its high oscillator sounds the written note exactly (with the low one
+  an octave and a fourth under it), so it can play in a high register without leaving the
+  recorded range.
+
+### Decisions
+
+- **Which instrument each patch went to, and why:**
+
+  | Patch | Instrument | Why |
+  |---|---|---|
+  | static-y bassy | **Cyberpunk Megacity: Grit Bass** (both articulations) | the "gritty synth bass": a strong fundamental with fizz on top; drive stays on it in the mix |
+  | static-y bassy | **Space Station: Reactor Pulse** (short hits) | a reactor's pulse with static in it; darker and rounder than the Megacity's, so the two read differently |
+  | cyberpunk | **Cyberpunk Megacity: Glitch Stabs** (both) | the patch is named for the place; bright, buzzy and short, its own delay tail; a held stab per phrase uses the long hits |
+  | pulsating | **Spaceport: Pulses** (short hits, an octave down) | the arpeggiated pulses; its weight is in harmonics 2-4, so an octave down sits where the old pulses did |
+  | pulsating | **Starship Bridge: Warp Core** (long hits, looped) | a throbbing core: the patch pulses by itself; the Warp Jump opens it and spins a tremolo up over it |
+  | soft pad | **Biodome: Pads** and **Nebula: Nebula Pads** (long hits) | almost a pure tone (two harmonics), warm and steady: a bed under the birds and mallets, and into the Nebula's endless shimmer; a detuned second player makes it wide in both |
+  | harsh square | **Spaceport: Data Blips** (short hits, 36 semitones down) | the blips' register via its high oscillator, shortened; harsh is right for telemetry |
+  | harsh square | **Asteroid Mining Colony: Drill** (short hits, 24 semitones down) | the "lead where it fits": a whining, buzzing bite, with the old drill's fast wobble |
+
+  Not used: Starship Bridge "tactical pulse" (a drum kit: no pitched notes to give it);
+  the Spaceport pads (the soft pad already plays in two Places; the Spaceport's synth pads
+  stay distinct); the Spaceship's alarm (soft and pure in two of its three Characters, the
+  harsh square is neither). Each patch plays in one or two Places with different
+  articulations, registers and processing, as the kalimba does (Forest, Biodome).
+- **Articulations by written length** (as the Ruins' violin in 15a): up to an eighth note
+  plays the short hit, longer the long hit. New `SamplePatch::shortRings`: a short hit
+  rings out as recorded (its own release and echo) even in a held part, instead of being
+  cut at the written end. A live keyboard note always plays the long hit (its length is
+  not known when it starts).
+- **No legato on short hits.** A held part played a note whose predecessor ended on its
+  start legato: the new note started 80 ms in. Fine for a bowed note; a short hit is all
+  attack, and back-to-back sixteenths lost it (the Riot's bass was 25 dB down).
+- **`SamplePatch::liveTone`**: the voices' filter follows the patch while they sound (the
+  warp core opening through the build, the Spaceport launch, the pads' slow filter drift
+  and the Biodome's power sags), not only at the note's start.
+- **Loops** (long hits): from the release point (the knee of the final fall), a loop early
+  in the hold, 0.4-1.2 s (median 0.6-0.9 s per patch), matched on the waveform (23 ms) and
+  on the level's shape around both ends (150 ms, so a pulsing patch's pulse carries across
+  the jump), crossfaded (up to 150 ms, levelled), then the rest of the hold cut out: a
+  note is its attack, its loop and its recorded release. 83 of the 185 loops match the
+  waveform loosely (the cyberpunk and pulsating patches' detuned oscillators never repeat
+  exactly); all of them pass the seam test (below). Held, the warp core and the pads fade
+  over their own release instead of the recorded one (`recordedTail = false`, as the
+  Forest pad); the bass, stabs and the rest end in the recorded release.
+- **Start of each note**: 5 ms before it first comes within 30 dB of its peak. The first
+  slices included up to 250 ms of the previous note's echo or noise creeping up before the
+  attack: notes played late, and with a Place's shortened decay most of a blip was gone
+  before it spoke (the Spaceport's blips were 25 dB down).
+- **Levels**: one gain per patch for both articulations (they were recorded at the same
+  gain), loudest peak at -1 dBFS; in the Places each recorded part's gain is set per
+  Character by measurement to sit where the model it replaced sat (within 4 dB, the 15a
+  rule).
+- **Ends of the range**: only the lowest and highest recorded notes stretch, a fifth each
+  way; further out the bank folds by octaves (15a's rule). The Nebula's pads reach above
+  the soft pad's C5: their top notes fold down an octave.
+- **Preparation speed**: `note_loudness` (15a) ran a 17,640-tap convolution, which crawled
+  on denormals in faded tails (minutes per note on these files); it is a running mean by
+  cumulative sums now, with identical results. The whole preparation takes 2.6 min here.
+
+### Size and memory
+
+- **Minilogue**: 370 notes, 507 s of audio, **20.2 MB** as FLAC (mono, 16-bit). Long hits
+  are attack + loop + release (1.4-2.2 s each), short hits ring out to 50 dB under their
+  peak.
+- **All recordings**: 530 notes, **32.2 MB** per plugin bundle (was 12.1). Each bundle (AU,
+  VST3) carries its own copy, so the download grows by about 40 MB (from about 41 MB to
+  about 81 MB).
+- **Memory**: **82.7 MB** for the bank (was 40.0; the Minilogue adds 42.7), once per
+  process, shared by every instance; loaded on the background thread in 0.58 s here
+  (Linux, 4 cores). Nothing new on the audio thread: the parts are fixed voice arrays.
+
+### Tests (`--only samples`, 138 checks)
+
+The 15a checks plus, for each Minilogue patch: both articulations in the bank, 37 notes
+each on its own key (consecutive keys, nothing stretched inside, the ends a fifth at
+most); every note at its pitch as played (the harmonics' weighted pitch within 12 cents;
+a long hit measured in its loop); every loop turns smoothly over 6 s (at each turn, the
+level 20 ms either side within the patch's own movement + 1.5 dB, and no edge sharper
+than the waveform's own + 6 dB: a square wave's edges are sharp by nature); held notes
+sustain; a released note dies away; a short written note plays the short hit and a long
+one the held long hit; a short hit rings past its written end; no click at the start of
+either. And the nine new elements join the Places' recorded-instrument checks: audible and
+finite in every Character, different from their fallback, within 4 dB of it.
+

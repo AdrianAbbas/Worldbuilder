@@ -882,3 +882,33 @@ Nothing in the sound changed; this is about the look and that every control stil
   Spaceport, Megacity) and watch the planet turn: at the top of the turn the castle's flag
   and every tower top are whole, with their idle animations (the flag waving). Drag a Place
   to Near (full size) and check again.
+
+
+## Milestone 15b check: the Korg Minilogue patches
+
+- [ ] **Install**: the installer says "530 recorded notes inside" for the AU and the VST3
+  (about 32 MB each).
+- [ ] **Cyberpunk Megacity**, each Character: the **Grit Bass** is the static-y bass (a
+  noisy, fizzy low synth), tight eighths in the Corporate Tower and sixteenths in the Riot,
+  the Night Market's long roots held without a gap or a click; the **Glitch Stabs** are the
+  cyberpunk patch, short chords ringing out with their own tails, and a held stab chord
+  (a beat long) at the end of the Night Market's two bars and the start of the Corporate
+  Tower's.
+- [ ] **Space Station**: the **Reactor Pulse** is the static-y bass again, darker and
+  rounder, eighths (sixteenths in an Emergency).
+- [ ] **Spaceport**: the **Pulses** are the pulsating patch, an arpeggio; in Launch the
+  filter opens through the eight-bar build. The **Data Blips** are the harsh square: short,
+  bright blips on the written notes with a lower tone under each.
+- [ ] **Starship Bridge**: the **Warp Core** is the pulsating patch held: a slow throbbing
+  drone that keeps its pulse while held (listen for a hiccup every second or so: there
+  should be none). In Warp Jump it opens up and throbs faster through the build.
+- [ ] **Biodome** and **Nebula**: the **Pads** are the soft pad, swelling in and out on the
+  chords, wide (two players a note). Biodome Failing: the pads waver and sag.
+- [ ] **Asteroid Mining Colony**: the **Drill** is the harsh square, short whining bites.
+- [ ] **Articulations**: open the Pattern Editor on one of these instruments, draw a
+  sixteenth and a note two beats long: the short one is a short hit, the long one holds
+  (and loops) until its end, then releases.
+- [ ] **From the keyboard** (KEYS on one of these tabs): short taps play the long hit cut
+  short (a live note's length is not known when it starts), held keys sustain.
+- [ ] **Levels**: each of these sits in its Place where the old synth was (set by
+  measurement); tell me which stick out or disappear.

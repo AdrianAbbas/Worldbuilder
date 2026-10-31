@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-BiodomePlace::BiodomePlace() : EnsemblePlace(2200) { setParts({ &pads, &mallets, &birds, &waterRec, &vents, &shaker }); }
+BiodomePlace::BiodomePlace() : EnsemblePlace(2200) { setParts({ &padsRec, &mallets, &birds, &waterRec, &vents, &shaker }); }
 
 void BiodomePlace::prepareFx() {
     dome.prepare(rate);
@@ -174,6 +174,36 @@ void BiodomePlace::configure(const PlaceContext& c) {
         p.spread = 0.7f;
         p.voices = byQuality(q, 4, 5, 6);
         p.gain = 0.6f + 0.4f * sag;
+    }
+    // The recorded pads: the Minilogue's soft pad held (Milestone 15b), swelling in over
+    // its attack, a second player detuned for width (wider as the dome fails), the filter
+    // and level sagging with the power, a slow fade when a chord ends.
+    {
+        auto& p = padsRec.patch;
+        p.instrument = "mlg-softpad-long";
+        p.shortInstrument = "mlg-softpad-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.recordedTail = false;
+        p.attack = 1.5f;
+        p.release = 2.5f;
+        p.legatoSeconds = 0.25f;
+        p.glide = 1.0f;
+        p.toneHz = lerpExp(1500.0f, 9000.0f, tone) * (night ? 0.55f : 1.0f) * (0.6f + 0.4f * sag) * std::exp2(0.3f * drift.smooth(t + 9.0, 0.07));
+        p.liveTone = true;
+        p.velocityTone = 0.4f;
+        p.courseLoops = true;
+        p.courseCents = failing ? 20.0f : 12.0f;
+        p.courseLevel = 0.7f;
+        p.courseMs = 25.0f;
+        p.vibratoHz = failing ? 0.6f : 4.5f;
+        p.vibratoDepth = failing ? 0.15f + 0.2f * tension : 0.05f;
+        p.vibratoDelay = 0.5f;
+        p.spread = 0.7f;
+        p.voices = byQuality(q, 4, 5, 6);
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = (thriving ? 1.75f : (night ? 1.2f : 1.2f)) * (0.6f + 0.4f * sag);
     }
     // Mallets: a bright marimba-like bar, its third partial a quarter-tone off any note.
     {

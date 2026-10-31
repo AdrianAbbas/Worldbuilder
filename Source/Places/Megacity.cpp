@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-MegacityPlace::MegacityPlace() : EnsemblePlace(2800) { setParts({ &bass, &arp, &pad, &drums, &stabs, &hum }); }
+MegacityPlace::MegacityPlace() : EnsemblePlace(2800) { setParts({ &bassRec, &arp, &pad, &drums, &stabsRec, &hum }); }
 
 void MegacityPlace::prepareFx() {
     neon.prepare(rate);
@@ -129,7 +129,9 @@ void MegacityPlace::generate(int element, const GenInputs& in, pat::Pattern& out
     }
 
     if (element == Stabs) {
-        // Glitch stabs: short chords on syncopated sixteenths. Two bars.
+        // Glitch stabs: short chords on syncopated sixteenths. Two bars. A held stab (a
+        // beat: the recorded patch's long hit) closes the Night Market's phrase and opens
+        // the Corporate Tower's.
         out.setGrid(pat::Sixteenth, 2);
         out.followChords = true;
         out.base = 0;
@@ -139,9 +141,10 @@ void MegacityPlace::generate(int element, const GenInputs& in, pat::Pattern& out
             const int at = spots[k];
             if (k > 0 && ch(50, at) >= chanceOf) continue;
             const float v = (k == 0 ? 0.75f : 0.6f) * human(51, at);
-            w.note(at, 0, 1, v);
-            w.note(at, 2, 1, v * 0.8f);
-            w.note(at, ch(52, at) < tension ? 3 : 4, 1, v * 0.8f);
+            const int len = (in.character == NightMarket && k == 5) || (in.character == CorporateTower && k == 0) ? 4 : 1;
+            w.note(at, 0, len, v);
+            w.note(at, 2, len, v * 0.8f);
+            w.note(at, ch(52, at) < tension ? 3 : 4, len, v * 0.8f);
             // Glitch: a stuttered repeat.
             if (ch(53, at) < act * density) w.note(at + 1, 0, 1, v * 0.6f);
         }
@@ -187,6 +190,28 @@ void MegacityPlace::configure(const PlaceContext& c) {
         p.spread = 0.05f;
         p.voices = 2;
         p.gain = 1.0f;
+    }
+    // The recorded grit bass: the Minilogue's static-y bass (Milestone 15b). Short notes
+    // (eighths and sixteenths) are its short hits, longer ones (the Night Market's held
+    // roots) its long hits, looping; the drive in the mix stays on top.
+    {
+        auto& p = bassRec.patch;
+        p.instrument = "mlg-staticbass-long";
+        p.shortInstrument = "mlg-staticbass-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.release = 0.08f;
+        p.legatoSeconds = 0.03f;
+        p.decay = riot ? 0.5f : 0.0f;
+        p.toneHz = lerpExp(1500.0f, 9000.0f, tone) * (riot ? 1.4f : 1.0f) * (1.0f + 0.5f * tension);
+        p.velocityTone = 0.6f;
+        p.velocityGain = 0.4f;
+        p.even = 0.6f;
+        p.glide = 0.05f;
+        p.spread = 0.05f;
+        p.voices = 3;
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = market ? 2.0f : (tower ? 1.95f : 3.2f);
     }
     // The neon arp: a bright FM pluck, its index snapping shut.
     {
@@ -299,6 +324,24 @@ void MegacityPlace::configure(const PlaceContext& c) {
         p.spread = 0.6f;
         p.voices = byQuality(q, 4, 6, 8);
         p.gain = 1.0f;
+    }
+    // The recorded stabs: the Minilogue's cyberpunk patch (Milestone 15b), short hits
+    // ringing out (their own tails); a held stab (a beat or more) is its long hit.
+    {
+        auto& p = stabsRec.patch;
+        p.instrument = "mlg-cyberpunk-long";
+        p.shortInstrument = "mlg-cyberpunk-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.decay = riot ? 0.35f : 0.0f;
+        p.release = 0.15f;
+        p.toneHz = lerpExp(2500.0f, 12000.0f, tone);
+        p.velocityTone = 0.7f;
+        p.spread = 0.6f;
+        p.voices = byQuality(q, 6, 8, 8);
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = market ? 0.58f : (tower ? 0.59f : 1.5f);
     }
     // The megastructure: a huge bowed girder, far off, its overtones a little out.
     {

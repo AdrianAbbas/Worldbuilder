@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-MiningPlace::MiningPlace() : EnsemblePlace(3000) { setParts({ &drill, &bass, &clanks, &dust, &hymn, &beacon }); }
+MiningPlace::MiningPlace() : EnsemblePlace(3000) { setParts({ &drillRec, &bass, &clanks, &dust, &hymn, &beacon }); }
 
 void MiningPlace::prepareFx() {
     room.prepare(rate);
@@ -173,6 +173,30 @@ void MiningPlace::configure(const PlaceContext& c) {
         p.spread = 0.2f;
         p.voices = byQuality(q, 2, 3, 4);
         p.gain = 1.0f;
+    }
+    // The recorded drill: the Minilogue's harsh square (Milestone 15b), two octaves down:
+    // its high oscillator whines an octave over the written note, the low one a fourth
+    // under it; short bites (a cave-in's shorter), the whine's fast wobble on top.
+    {
+        auto& p = drillRec.patch;
+        p.instrument = "mlg-square-long";
+        p.shortInstrument = "mlg-square-short";
+        p.shortBeats = 0.5f;
+        p.held = true;
+        p.shortRings = true;
+        p.transpose = -24.0f;
+        p.decay = cavein ? 0.25f : 0.4f;
+        p.release = 0.06f;
+        p.toneHz = lerpExp(2500.0f, 12000.0f, tone) * (1.0f + 0.4f * tension);
+        p.velocityTone = 0.6f;
+        p.vibratoHz = 22.0f;
+        p.vibratoDepth = 0.15f;
+        p.vibratoDelay = 0.0f;
+        p.pan = -0.3f;
+        p.spread = 0.2f;
+        p.voices = byQuality(q, 2, 3, 4);
+        // Set by measurement (each Character) to sit where the model it replaced sat.
+        p.gain = cavein ? 2.54f : 1.95f;
     }
     // The rock-grind bass: a buzzing reed, heavy and low, driven in the mix.
     {

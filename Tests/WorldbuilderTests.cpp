@@ -8384,11 +8384,74 @@ namespace sampleTest {
 using namespace models;
 // The elements that play recordings, and the bank instrument each plays first.
 struct Sampled { int type, element; const char* name; };
-const std::array<Sampled, 7> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
-                                         { Desert, DesertPlace::Oud, "Desert Oud" }, { Forest, ForestPlace::Kalimba, "Forest Kalimba" },
-                                         { Forest, ForestPlace::Strings, "Forest Strings" },
-                                         { Biodome, BiodomePlace::WaterPlucks, "Biodome Water Plucks" },
-                                         { Ruins, RuinsPlace::ViolinTextures, "Ruins Violin Textures" } } };
+const std::array<Sampled, 16> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
+                                          { Desert, DesertPlace::Oud, "Desert Oud" }, { Forest, ForestPlace::Kalimba, "Forest Kalimba" },
+                                          { Forest, ForestPlace::Strings, "Forest Strings" },
+                                          { Biodome, BiodomePlace::WaterPlucks, "Biodome Water Plucks" },
+                                          { Ruins, RuinsPlace::ViolinTextures, "Ruins Violin Textures" },
+                                          // Milestone 15b: the Minilogue patches.
+                                          { Megacity, MegacityPlace::GritBass, "Megacity Grit Bass (static-y bass)" },
+                                          { Megacity, MegacityPlace::Stabs, "Megacity Glitch Stabs (cyberpunk synth)" },
+                                          { SpaceStation, StationPlace::Reactor, "Station Reactor Pulse (static-y bass)" },
+                                          { Spaceport, SpaceportPlace::Pulses, "Spaceport Pulses (pulsating synth)" },
+                                          { Bridge, BridgePlace::WarpCore, "Bridge Warp Core (pulsating synth)" },
+                                          { Biodome, BiodomePlace::Pads, "Biodome Pads (soft pad)" },
+                                          { Nebula, NebulaPlace::Pads, "Nebula Pads (soft pad)" },
+                                          { Spaceport, SpaceportPlace::Blips, "Spaceport Data Blips (harsh square)" },
+                                          { Mining, MiningPlace::Drill, "Mining Drill (harsh square)" } } };
+// The Minilogue patches (Milestone 15b), each a short and a long articulation.
+constexpr std::array<const char*, 5> minilogue { "mlg-staticbass", "mlg-cyberpunk", "mlg-pulse", "mlg-softpad", "mlg-square" };
+
+// A pattern note (not live) of `beats` at 2 beats per second on a sampled part with both
+// articulations, rendered for `seconds` (mono).
+std::vector<float> playWritten(const char* longId, const char* shortId, int key, double beats, double seconds, bool shortRings) {
+    PluckPart unused;
+    SamplePart part(unused);
+    part.patch.instrument = longId;
+    part.patch.shortInstrument = shortId;
+    part.patch.shortBeats = 0.5f;
+    part.patch.held = true;
+    part.patch.shortRings = shortRings;
+    part.patch.voices = 2;
+    part.patch.even = 0;
+    part.patch.spread = 0;
+    part.patch.toneHz = 20000;
+    part.patch.velocityTone = 0;
+    part.patch.release = 0.1f;
+    const float rate = 48000;
+    part.prepare(rate);
+    PartFrame f;
+    f.rate = rate;
+    f.root = 0;
+    f.beatsPerSecond = 2;
+    NoteOn n;
+    n.semis = float(key - 48);
+    n.velocity = 0.8f;
+    n.random2 = 0.5f;
+    n.length = beats;
+    n.seconds = beats / 2.0;
+    part.update(f);
+    part.start(f, n);
+    std::vector<float> l(std::size_t(seconds * rate), 0.0f), r(l.size(), 0.0f);
+    for (std::size_t at = 0; at < l.size(); at += std::size_t(dsp::chunk)) {
+        f.beat = double(at) / rate * f.beatsPerSecond;
+        part.update(f);
+        part.render(l.data() + at, r.data() + at, int(std::min<std::size_t>(std::size_t(dsp::chunk), l.size() - at)));
+    }
+    for (std::size_t i = 0; i < l.size(); ++i) l[i] += r[i];
+    return l;
+}
+
+// The energy (dB) of a windowed DFT at exactly `hz`.
+double energyAt(const std::vector<float>& y, std::size_t from, std::size_t length, double rate, double hz) {
+    std::complex<double> sum = 0, w = 1;
+    const std::complex<double> step = std::polar(1.0, -2.0 * M_PI * hz / rate);
+    for (std::size_t i = 0; i < length && from + i < y.size(); ++i) {
+        sum += double(y[from + i]) * (0.5 - 0.5 * std::cos(2.0 * M_PI * double(i) / double(length))) * w;
+        w *= step;
+    }
+    return toDb(std::abs(sum) / double(length) + 1.0e-12);
+}
 
 // A sampled part alone, at 48 kHz, playing one note (MIDI `key`), its key held `hold`
 // seconds (a live note: released then), rendered for `seconds`.
@@ -8911,6 +8974,13 @@ void testSamples(Suite& s) {
     s.metric("samples: load time", bank.loadSeconds(), " s");
     for (const char* id : { "guitar", "kalimba", "violin-sustain", "violin-pizz", "violin-collegno" })
         s.check(bank.instrument(id) != nullptr, std::string("the bank has ") + id);
+    s.metric("samples: Minilogue notes", [&] {
+        int n = 0;
+        for (const char* patch : minilogue)
+            for (const char* art : { "-short", "-long" })
+                if (const auto* i = bank.instrument((std::string(patch) + art).c_str())) n += int(i->zones.size());
+        return n;
+    }());
 
     s.section("samples: every mapped note plays at its pitch");
     for (const char* id : { "guitar", "kalimba", "violin-sustain", "violin-pizz", "violin-collegno" }) {
@@ -9104,6 +9174,133 @@ void testSamples(Suite& s) {
         s.check(clean, "every instrument starts without a click");
     }
 
+    s.section("samples: the Minilogue sweeps (Milestone 15b)");
+    for (const char* patch : minilogue) {
+        const std::string longId = std::string(patch) + "-long", shortId = std::string(patch) + "-short";
+        for (const auto& id : { shortId, longId }) {
+            const auto* inst = bank.instrument(id.c_str());
+            s.check(inst != nullptr, "the bank has " + id);
+            if (inst == nullptr) continue;
+            // 37 notes, each on its own key (the sweep's keys, consecutive), only the ends
+            // stretched (a fifth at most).
+            std::vector<int> keys;
+            for (const auto& z : inst->zones) keys.push_back(z.loKey == inst->lowKey ? z.hiKey : z.loKey);
+            std::sort(keys.begin(), keys.end());
+            bool own = keys.size() == 37, ends = true;
+            for (std::size_t i = 1; i < keys.size(); ++i) own = own && keys[i] == keys[i - 1] + 1;
+            for (const auto& z : inst->zones) {
+                const bool lowest = z.loKey == inst->lowKey, highest = z.hiKey == inst->highKey;
+                if (!lowest && !highest) own = own && z.loKey == z.hiKey && std::abs(z.root - float(z.loKey)) < 0.5f;
+                ends = ends && z.hiKey - z.loKey <= 7;
+            }
+            s.check(own && ends, id + ": 37 notes, each on its own key, only the ends stretched (at most a fifth)",
+                    std::to_string(keys.size()) + " notes, keys " + std::to_string(inst->lowKey) + "-" + std::to_string(inst->highKey));
+            // Every note at its pitch, measured as played (a long hit in its loop): the
+            // energy-weighted pitch of its first six harmonics, each at its centroid within
+            // 50 cents. A patch's oscillators are not one harmonic series (the static-y
+            // bass's fundamental is 37 cents under its in-tune third harmonic, the cyberpunk
+            // patch's two oscillators beat, a pulsing patch splits its harmonics into
+            // sidebands), so no single peak is the pitch; the preparation's pitch (the
+            // waveform's period) is this kind of average. Within 12 cents.
+            const bool loops = id == longId;
+            int checked = 0, inTune = 0;
+            std::string off;
+            for (const auto& z : inst->zones) {
+                const int key = int(std::lround(z.root));
+                if (inst->find(key, 0.6f, 0.5f) != &z) continue;
+                const double at = loops && z.loops() ? double(z.loopStart) / double(inst->rate) + 0.05 : 0.05;
+                const auto y = play(id.c_str(), key, 0.6f, 0.5f, 9.0, at + 0.4, loops);
+                const double hz = 440.0 * std::exp2((key - 69) / 12.0);
+                const std::size_t from = std::size_t(at * 48000), length = 16384;
+                double sum = 0, weight = 0;
+                for (int k = 1; k <= 6; ++k) {
+                    double e = 0, c = 0;
+                    for (double cents = -50.0; cents <= 50.0; cents += 2.0) {
+                        const double p = std::pow(10.0, energyAt(y, from, length, 48000, k * hz * std::exp2(cents / 1200.0)) / 10.0);
+                        e += p;
+                        c += p * cents;
+                    }
+                    sum += c;
+                    weight += e;
+                }
+                const double cents = weight > 0.0 ? sum / weight : 999.0;
+                const bool ok = std::abs(cents) <= 12.0;
+                ++checked;
+                inTune += ok ? 1 : 0;
+                if (!ok) off += " " + std::to_string(key) + " (" + fmt(cents) + " cents)";
+            }
+            s.check(checked == 37 && inTune == checked, id + ": every note plays at its pitch (its harmonics' weighted pitch within 12 cents)",
+                    std::to_string(inTune) + " of " + std::to_string(checked) + off);
+        }
+        // Loops: every long hit held 6 s keeps going, without a click or a level jump beyond
+        // the patch's own movement (a pulsing patch pulses), and dies away when released.
+        const auto* inst = bank.instrument(longId.c_str());
+        if (inst == nullptr) continue;
+        int smooth = 0, sustained = 0, released = 0, loops = 0;
+        std::string detail;
+        for (const auto& z : inst->zones) {
+            if (!z.loops()) continue;
+            ++loops;
+            const int key = int(std::lround(z.root));
+            const auto y = play(longId.c_str(), key, 0.6f, 0.5f, 6.0, 7.5, true, [](SamplePatch& p) { p.release = 0.2f; });
+            // Where the loop turns in the output (the note plays at the key, a little off
+            // the recorded pitch): its first end, then every loop's length.
+            const double inc = double(inst->rate) / 48000.0 * std::exp2((double(key) - double(z.root)) / 12.0);
+            const double first = double(z.loopEnd) / inc, every = double(z.loopEnd - z.loopStart) / inc, body = double(z.loopStart) / inc;
+            // The patch's own movement over the loop's first pass (played straight through):
+            // how much its level moves in 20 ms (90th percentile) and its sharpest edge (a
+            // square or a pulse wave has sharp edges of its own).
+            std::vector<double> moves;
+            for (double t = body; t + 1920 < first - 960; t += 960)
+                moves.push_back(std::abs(rmsDb(y, std::size_t(t + 960), 960) - rmsDb(y, std::size_t(t), 960)));
+            std::sort(moves.begin(), moves.end());
+            const double natural = moves.empty() ? 0.0 : moves[moves.size() * 9 / 10];
+            const double edge = worstStep(y, std::size_t(body), std::size_t(first - 480));
+            // Each turn of the loop within 6 s: the 20 ms before against the 20 ms after,
+            // and the sharpest step around it.
+            double jump = 0, step = -200;
+            for (double t = first; t + 1920 < 5.9 * 48000; t += every) {
+                jump = std::max(jump, std::abs(rmsDb(y, std::size_t(t), 960) - rmsDb(y, std::size_t(t - 960), 960)));
+                step = std::max(step, worstStep(y, std::size_t(t - 1440), std::size_t(t + 1440)));
+            }
+            const double loopStart = body / 48000.0;
+            const double early = rmsDb(y, std::size_t(loopStart * 48000), 9600), late = rmsDb(y, std::size_t(5.5 * 48000), 24000);
+            const bool ok = jump < std::max(3.0, natural + 1.5) && step < std::max(30.0, edge + 6.0);
+            smooth += ok ? 1 : 0;
+            sustained += late > early - 9.0 ? 1 : 0;
+            released += rmsDb(y, std::size_t(7.3 * 48000), 9600) < late - 40.0 ? 1 : 0;
+            if (!ok || late <= early - 9.0)
+                detail += " " + std::to_string(key) + " (seam " + fmt(jump) + " vs " + fmt(natural) + " dB, step " + fmt(step) + " vs " + fmt(edge) + " dB, " + fmt(late - early) + " dB)";
+        }
+        s.check(loops == 37 && smooth == loops, longId + ": every loop turns smoothly over 6 s (no level jump or edge at the seam beyond the patch's own)",
+                std::to_string(smooth) + " of " + std::to_string(loops) + detail);
+        s.check(sustained == loops, longId + ": held notes sustain (within 9 dB of the loop's start after 5.5 s)", std::to_string(sustained) + " of " + std::to_string(loops));
+        s.check(released == loops, longId + ": a released note dies away (40 dB down 1.3 s later)", std::to_string(released) + " of " + std::to_string(loops));
+        // The two articulations: a short written note plays the short hit and rings out as
+        // recorded (shortRings), a long one holds its long hit; the short hits are shorter.
+        const int key = int(std::lround(0.5f * (inst->lowRoot + inst->highRoot)));
+        const auto shortNote = playWritten(longId.c_str(), shortId.c_str(), key, 0.25, 3.0, true);
+        const auto cut = playWritten(longId.c_str(), shortId.c_str(), key, 0.25, 3.0, false);
+        const auto longNote = playWritten(longId.c_str(), shortId.c_str(), key, 4.0, 3.0, true);
+        const auto sounding = [](const std::vector<float>& y) {
+            const auto lv = frames(y, 48000, 10.0);
+            const double top = *std::max_element(lv.begin(), lv.end());
+            int n = 0;
+            for (double v : lv) n += v > top - 20.0 ? 1 : 0;
+            return double(n) * 0.01;
+        };
+        double diff = 0;
+        for (std::size_t i = 0; i < shortNote.size(); ++i) diff += std::abs(double(shortNote[i]) - double(longNote[i]));
+        s.check(diff > 1.0 && sounding(shortNote) < sounding(longNote) && sounding(longNote) > 1.5,
+                std::string(patch) + ": a short written note plays the short hit, a long one the long hit (held)",
+                "sounding " + fmt(sounding(shortNote)) + " s / " + fmt(sounding(longNote)) + " s");
+        s.check(sounding(shortNote) >= sounding(cut) && rmsDb(shortNote, std::size_t(0.2 * 48000), 4800) > rmsDb(cut, std::size_t(0.2 * 48000), 4800) + 3.0,
+                std::string(patch) + ": a short hit rings out past its written end (not cut off)",
+                fmt(rmsDb(shortNote, std::size_t(0.2 * 48000), 4800)) + " dB vs cut " + fmt(rmsDb(cut, std::size_t(0.2 * 48000), 4800)) + " dB");
+        s.check(clickFree(play(shortId.c_str(), key, 0.7f, 0.5f, 1.0, 0.3, false), 48000) && clickFree(play(longId.c_str(), key, 0.7f, 0.5f, 1.0, 0.3, true), 48000),
+                std::string(patch) + ": both articulations start without a click");
+    }
+
     s.section("samples: no allocation while playing");
     {
         PluckPart unused;
@@ -9161,6 +9358,7 @@ void testSamples(Suite& s) {
                 s.check(near, std::string(x.name) + ": sits at the level the Place was mixed for (within 4 dB of the model it replaced)", levels);
     }
 }
+
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
