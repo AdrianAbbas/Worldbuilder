@@ -149,12 +149,17 @@ std::vector<Track> sceneTracks(const Scene& scene) {
                 if (controls.mute || (elementSolo && !controls.solo)) continue;
             }
             const auto* pattern = engine->placeSlot(slot).playingPattern(e);
-            if (pattern == nullptr || pattern->count <= 0) continue;
+            // Milestone 16: an instrument whose notes are only in the arrangement's clips.
+            bool clips = false;
+            for (int i = 0; i < scene.arrangement.count; ++i)
+                if (const auto& clip = scene.arrangement.sections[std::size_t(i)].cells[std::size_t(slot)][std::size_t(e)].clip) clips |= clip->count > 0;
+            if ((pattern == nullptr || pattern->count <= 0) && !clips) continue;
             Track t;
             t.name = trackName(pc.type, e);
             t.slot = slot;
             t.element = e;
-            t.pattern = *pattern;
+            if (pattern != nullptr) t.pattern = *pattern;
+            else t.pattern.clear();
             t.target.root = c.root;
             t.target.mood = c.mood;
             t.target.kit = info.kind == Kit;
@@ -470,12 +475,44 @@ juce::MidiFile arrangementMidi(const Scene& scene, const std::vector<Track>& tra
                 if (st.at.ended) continue;
                 const float g = st.gain[std::size_t(t.slot)][std::size_t(t.element)];
                 int variant = st.variant[std::size_t(t.slot)][std::size_t(t.element)];
-                if (st.drumFill && g > 0.0f && WorldEngine::isRhythm(type, t.element)) variant = pat::VariantFill;
+                const bool fill = st.drumFill && g > 0.0f && WorldEngine::isRhythm(type, t.element);
+                if (fill) variant = pat::VariantFill;
+                // Where the section plays its own clip, the clip's notes are written instead (below).
+                if (!fill && st.clip[std::size_t(t.slot)][std::size_t(t.element)] != nullptr) continue;
                 if (g < 0.05f || variant != v) continue;
                 auto on = ev->message;
                 on.setVelocity(juce::jlimit(1.0f / 127.0f, 1.0f, on.getFloatVelocity() * g));
                 track.addEvent(on);
                 if (ev->noteOffObject != nullptr) track.addEvent(ev->noteOffObject->message);
+            }
+        }
+        // Milestone 16: each section's own clip, every pass, where the section plays it
+        // (entries and fades as velocity; a Fill or a Drum fill transition plays instead).
+        for (int i = 0; i < a.count; ++i) {
+            const auto& sec = a.sections[std::size_t(i)];
+            const auto& clip = sec.cells[std::size_t(t.slot)][std::size_t(t.element)].clip;
+            if (clip == nullptr || clip->count <= 0) continue;
+            const double passBeats = double(sec.bars) * beatsPerBar;
+            const int passes = sec.endless() ? 1 : std::max<int>(sec.repeats, 1);
+            for (int pass = 0; pass < passes; ++pass) {
+                const double from = double(a.startOf(i)) * beatsPerBar + double(pass) * passBeats;
+                if (from >= beats - 1.0e-9) break;
+                juce::MidiMessageSequence all;
+                pat::appendNotes(all, *clip, t.target, std::min(passBeats, beats - from), channel, from);
+                all.updateMatchedPairs();
+                for (int k = 0; k < all.getNumEvents(); ++k) {
+                    const auto* ev = all.getEventPointer(k);
+                    if (!ev->message.isNoteOn()) continue;
+                    const auto st = a.evaluate(ev->message.getTimeStamp() / double(pat::ticksPerBeat) + 1.0e-6);
+                    if (st.at.ended || st.clip[std::size_t(t.slot)][std::size_t(t.element)] != clip.get()) continue;
+                    if (st.drumFill && WorldEngine::isRhythm(type, t.element)) continue;
+                    const float g = st.gain[std::size_t(t.slot)][std::size_t(t.element)];
+                    if (g < 0.05f) continue;
+                    auto on = ev->message;
+                    on.setVelocity(juce::jlimit(1.0f / 127.0f, 1.0f, on.getFloatVelocity() * g));
+                    track.addEvent(on);
+                    if (ev->noteOffObject != nullptr) track.addEvent(ev->noteOffObject->message);
+                }
             }
         }
         track.sort();

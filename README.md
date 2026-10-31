@@ -244,10 +244,39 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
   Intensity** at its start and end with a curve (linear, ease in, ease out, swell).
   Drag a section to reorder it; right-click it for more. Every edit undoes (Cmd-Z).
 - **The instrument grid** under the timeline has a row for every instrument of every
-  active Place and a cell under each section. Click a cell to switch the instrument on
-  or off there; Shift-click to step its pattern (A, B, C); right-click for **enter
-  halfway**, **fade in**, **fade out** and **Fill** (the instrument plays its Fill
-  pattern in the last bar before the section changes).
+  active Place and a cell under each section. **Click a cell to open its clip** in the
+  piano roll (below); **Cmd/Ctrl-click** switches the instrument on or off there;
+  Shift-click steps its pattern (A, B, C); right-click for **enter halfway**, **fade
+  in**, **fade out**, **Fill** (the instrument plays its Fill pattern in the last bar
+  before the section changes) and the clip tools.
+- **Section clips** (a mini DAW timeline): every section has its own notes for every
+  instrument, as long as the section. A clip starts **linked** to the instrument's
+  pattern variant (A, B or C): it plays that pattern repeated over the section, and
+  edits to the variant show up in every section linked to it. Edit a linked clip and the
+  piano roll asks once: **MAKE UNIQUE** (the edit changes this section only) or **EDIT
+  VARIANT** (the variant opens, and edits there change every linked section). A unique
+  clip shows its notes in miniature in its cell, with a bright corner.
+- **The clip piano roll** is the Pattern Editor with the section's real bar numbers (a
+  16-bar Build at bars 9-24 is numbered 9-24) and every tool: draw, select, velocity,
+  chance, quantise (KEYS), Randomness and Evolve (shared with the instrument's
+  patterns), MIDI import (fills the clip, keeping the section's length) and export
+  (SAVE MIDI / DRAG MIDI: the clip from its first downbeat). Its PLAY, STOP, LOOP and
+  playhead work inside the clip and play the arrangement there; **REC** records the
+  keyboard into the clip at the playhead (a linked clip becomes unique first). The
+  instrument tabs switch to the same section's other instruments. **UNIQUE** and
+  **RE-LINK** in the toolbar, **BACK** returns to ARRANGE.
+- **SONG** (in the clip piano roll, or right-click a cell > Song view) shows one
+  instrument's clips across the whole arrangement as one piano roll: one pass of every
+  section, end to end, numbered as in the song, the section boundaries marked and the
+  linked sections dimmed. Draw across sections like a DAW track; an edit lands in the
+  section it is drawn in (a linked one asks to become unique first). SAVE MIDI writes the
+  instrument's whole part at its places in the song.
+- **Clip tools:** right-click a cell for Open, Song view, Make unique, Re-link, Clear the
+  clip (unique and empty: silent there), Copy and Paste the clip (into any section and
+  instrument). Right-click a section for Copy its clips, Paste clips here (fitted to its
+  length), Make every clip unique and Re-link every clip. **DUPLICATE** copies a
+  section with its clips. Resizing a section fits its clips (longer: they repeat into
+  the new bars). Every clip edit undoes.
 - **Pattern variants:** in the Pattern Editor every instrument has tabs **A, B, C** and
   **FILL**. Until you edit them, B is a busier take on A, C a sparser one and the Fill
   the busiest, building over its bar.
@@ -290,9 +319,17 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
   everything at a climax, thinning out in a wind-down. It reads what each section is
   from its name (Intro, Build, Climax, Break, Outro, Loop, Bridge, and words like
   Tension, Combat, Phase, Reveal, Victory). It uses the World Seed and undoes in one step.
+  **AUTO-ARRANGE and TEMPLATE also write section clips** from each instrument's variant:
+  intros sparse and an octave lower, build-ups rising (thin at first, then more notes,
+  long notes tightening into eighths and sixteenths, climbing a scale step every quarter
+  of the section, and a run up into a climax in their last bar), climaxes full and louder
+  (the melody doubled an octave up), wind-downs and outros thinning out and softening,
+  breaks sparse. Loops and bridges stay linked. Everything stays editable.
 - Automating Score Intensity still works: it adds on top of the sections' ramps (50 %
   adds nothing).
-- Bars are 4/4. The arrangement is saved with the project and in `.world` files.
+- Bars are 4/4. The arrangement, with its clips, is saved with the project and in
+  `.world` files. Arrangement playback, PREVIEW, renders, game files (loops and stems)
+  and the scene MIDI export all play the clips.
 
 ## Recorded instruments
 

@@ -912,3 +912,34 @@ Nothing in the sound changed; this is about the look and that every control stil
   short (a live note's length is not known when it starts), held keys sustain.
 - [ ] **Levels**: each of these sits in its Place where the old synth was (set by
   measurement); tell me which stick out or disappear.
+
+## Milestone 16 check: section clips in the Arrangement
+
+- [ ] **Open a clip**: TEMPLATE > Classic Arc with two Places. Click a cell under the
+  Build: the piano roll opens, titled "CLIP - BUILD BARS 9-24", the ruler numbered 9-24,
+  showing the notes the section plays.
+- [ ] **Linked**: draw a note: the KEYS row asks MAKE UNIQUE / EDIT VARIANT / CANCEL.
+  MAKE UNIQUE: the note stays, BACK shows the cell with its notes in miniature and a
+  bright corner; other sections are unchanged. Try EDIT VARIANT on another cell: the
+  Pattern Editor opens on the variant.
+- [ ] **Transport inside the clip**: PLAY plays the arrangement from the clip's first bar,
+  the playhead moves through the clip, LOOP goes round inside it. With the host playing,
+  the playhead follows the host when it is in that section.
+- [ ] **REC into the clip**: KEYS target on that instrument, REC, PLAY, play a few notes:
+  they land in the clip at the bars you played them; one UNDO (KEYS) takes the take back.
+- [ ] **MIDI**: DRAG MIDI a clip into a GarageBand track (it starts at the clip's first
+  downbeat); drop a MIDI file on the clip (it fills the clip, same length).
+- [ ] **SONG view**: SONG in the toolbar: the instrument across every section, the
+  boundaries marked, linked sections dimmed; draw across a boundary: each note lands in
+  its section.
+- [ ] **Tools**: right-click a cell: Make unique, Re-link (back to the variant), Clear (the
+  instrument goes silent there), Copy / Paste into another section or instrument;
+  right-click a section: Copy its clips / Paste clips here; DUPLICATE copies the clips.
+  Cmd/Ctrl-click a cell switches it on or off. Cmd-Z undoes each.
+- [ ] **AUTO-ARRANGE** (or a TEMPLATE): listen through: the intro sparse and low, the
+  build-up thickening, climbing and running into the climax, the climax full, the
+  wind-down thinning. Open a few cells: the clips are there to edit.
+- [ ] **Everything follows**: host playback from different bars, PREVIEW, RENDER
+  (arrangement, sections, loops, stems) and the scene MIDI export all play the clips.
+  Save, close and reopen the project, and export/import a `.world`: the clips are kept.
+

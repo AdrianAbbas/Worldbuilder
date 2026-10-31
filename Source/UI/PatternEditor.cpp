@@ -889,7 +889,7 @@ void PatternEditor::setupClipControls() {
                        "sections are still linked to their variant). CLIP: back to the section's own clip.", [this] {
         if (viewMode == View::Song) {
             // Back to the clip of the section under the playhead (or the first).
-            const auto a = processor.arrangement.get();
+            const auto& a = arrangementNow();
             const auto at = a.locate(processor.transport.playhead.load());
             openClip(slotIndex, elementIndex, at.section >= 0 ? at.section : 0);
         } else {
@@ -966,9 +966,19 @@ void PatternEditor::syncTransport() {
     loopButton.setToggleState(t.loop.load(), juce::dontSendNotification);
 }
 
+const arr::Arrangement& PatternEditor::arrangementNow() const {
+    const auto revision = processor.arrangement.revision();
+    if (!cachedValid || revision != cachedRevision) {
+        cachedArrangement = processor.arrangement.get();
+        cachedRevision = revision;
+        cachedValid = true;
+    }
+    return cachedArrangement;
+}
+
 double PatternEditor::viewOrigin() const {
     if (viewMode != View::Clip) return 0.0;
-    const auto a = processor.arrangement.get();
+    const auto& a = arrangementNow();
     return double(a.startOf(clipSection)) * arr::beatsPerBar;
 }
 
@@ -1003,14 +1013,14 @@ double PatternEditor::toView(double songBeat) const {
     switch (viewMode) {
         case View::Clip: {
             // The section's passes repeat its clip; elsewhere the clip is not playing.
-            const auto a = processor.arrangement.get();
+            const auto& a = arrangementNow();
             if (clipSection < 0 || clipSection >= a.count) return -1;
             const auto at = a.locate(songBeat);
             if (at.section != clipSection || at.ended) return -1;
             return at.bar * arr::beatsPerBar;
         }
         case View::Song: {
-            const auto a = processor.arrangement.get();
+            const auto& a = arrangementNow();
             const auto at = a.locate(songBeat);
             if (at.ended) return -1;
             for (const auto& seg : segments)
@@ -1209,7 +1219,7 @@ void PatternEditor::refreshFromStore() {
     const int t = type();
     pendingLinked = false;
     if (viewMode != View::Pattern) {
-        const auto a = processor.arrangement.get();
+        const auto& a = arrangementNow();
         if (a.count <= 0) {
             viewMode = View::Pattern;
         } else {
@@ -1307,7 +1317,7 @@ bool PatternEditor::clipIsLinked() const {
 }
 
 void PatternEditor::loadClip() {
-    const auto a = processor.arrangement.get();
+    const auto& a = arrangementNow();
     const int bars = a.sections[std::size_t(clipSection)].bars;
     clipShown = processor.sectionClip(clipSection, slotIndex, elementIndex);
     if (clipShown == nullptr) {
@@ -1323,7 +1333,7 @@ void PatternEditor::loadClip() {
 }
 
 void PatternEditor::loadSong() {
-    const auto a = processor.arrangement.get();
+    const auto& a = arrangementNow();
     segments.clear();
     songBase.clear();
     songShown.clear();
@@ -1481,7 +1491,7 @@ void PatternEditor::updateModeControls() {
     generateButton.setVisible(pattern);
     for (auto* c : std::initializer_list<juce::Component*> { &length, &steps, &twice, &half }) c->setVisible(pattern);
     grid.setEnabled(viewMode != View::Song);
-    songButton.setVisible(!pattern || processor.arrangement.get().count > 0);
+    songButton.setVisible(!pattern || arrangementNow().count > 0);
     songButton.setButtonText(viewMode == View::Song ? "CLIP" : pattern ? "SONG" : "SONG");
     clipUnique.setVisible(clip);
     clipRelink.setVisible(clip);
@@ -1866,7 +1876,7 @@ void PatternEditor::timerCallback() {
     // REC records into the clip shown (the song view: the section under the playhead).
     int recordInto = -1;
     if (viewMode == View::Clip) recordInto = clipSection;
-    else if (viewMode == View::Song) recordInto = processor.arrangement.get().locate(processor.transport.playhead.load()).section;
+    else if (viewMode == View::Song) recordInto = arrangementNow().locate(processor.transport.playhead.load()).section;
     if (!processor.recorder.taking()) processor.keys.clipSection.store(recordInto);
     // The transport's buttons: lit while it plays; the host playing leads instead.
     const bool host = processor.hostRolling();
@@ -2075,7 +2085,7 @@ void PatternEditor::paint(juce::Graphics& g) {
     pixel::drawText(g, juce::String(placeNames[std::size_t(std::clamp(t, 0, PlaceTypeCount - 1))]).toUpperCase(), title.removeFromTop(24), pal.ink,
                     juce::Justification::centredLeft, pixel::Font::Large);
     juce::String heading = "PATTERNS - PLACE " + juce::String(slotIndex + 1);
-    const auto a = processor.arrangement.get();
+    const auto& a = arrangementNow();
     if (viewMode == View::Clip && clipSection >= 0 && clipSection < a.count) {
         const auto& sec = a.sections[std::size_t(clipSection)];
         const int first = a.startOf(clipSection) + 1;

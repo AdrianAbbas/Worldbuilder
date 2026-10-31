@@ -189,6 +189,11 @@ private:
     void updateModeControls();
     juce::String barLabel(int viewBar) const;
     double viewOrigin() const;
+    // The arrangement as the store has it (copied again only when it changes).
+    const arr::Arrangement& arrangementNow() const;
+    mutable arr::Arrangement cachedArrangement;
+    mutable uint32_t cachedRevision = 0;
+    mutable bool cachedValid = false;
     float placeSwing() const;
     std::vector<Snapshot> undoStack, redoStack;
     std::vector<pat::Note> clipboard;

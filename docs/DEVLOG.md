@@ -5698,3 +5698,77 @@ patterns.
 - [x] 5. Smarter auto-arrange: section-appropriate clips (intros sparse and low, build-ups rising, climaxes full, wind-downs thinning)
 - [ ] 6. Everything follows the clips (playback, preview, renders, game audio, scene MIDI), presets; tests; docs; final push without `[skip ci]`
 
+
+### Decisions
+
+- **A clip is immutable shared data on the cell.** `arr::Cell::clip` is a
+  `std::shared_ptr<const pat::Clip>` (nullptr: linked). An edit makes a new clip, so
+  duplicating a section, copy and paste and the undo stacks share clips for free, and the
+  audio thread reads them through the arrangement's lock-free triple buffer with no
+  reference counting: it only takes `.get()`. The last reference is only ever dropped on
+  the message thread (the writer side of the buffer, the store, the editor).
+  `Cell::operator==` compares clip contents, so a state round trip compares equal.
+- **`pat::Pattern` became a template** (`BasicPattern<MaxNotes, MaxBars>`): `Pattern` is
+  the old 256-note, 8-bar pattern (unchanged in memory and in every existing use),
+  `Clip` holds 2048 notes over 64 bars (a section's longest; 20 kB) plus `ownSwing`,
+  and `Long` (16384 notes, 512 bars, 160 kB on the heap) is the Pattern Editor's working
+  copy, so one editor serves patterns, clips and the song view. Saving (PatternStore's
+  encoders) and MIDI in/out are templates over them.
+- **Playback**: `pat::Playback` reads a note view (pattern or clip) with an **origin** (a
+  clip's step 0 is its section's first downbeat on the song timeline as it plays now,
+  also after End: loop) and a **window** (notes start only inside the section's span, so
+  a section's lookback never picks up the section before). Passes repeat the clip.
+  `Arrangement::evaluate()` reports each cell's clip, the origin and span; the engine
+  hands them to the slots like the variants. A clip's randomness key includes its origin.
+- **Linked plays exactly as before.** A new unique clip is the variant laid over the
+  section where the song has it (a 4-bar pattern in a section starting at bar 7 starts
+  from its bar 3), so making a clip unique changes nothing until it is edited (tested
+  note for note). With the instrument's Randomness above 0 the random choices differ
+  (they are keyed per section); the written notes are the same.
+- **Fills**: the Fill switch and a Drum fill transition still play the instrument's Fill
+  variant over a unique clip's last bar (last pass). A Crossfade's incoming instruments
+  play their next-section variant, not its clip (their clip starts on the downbeat).
+- **Resizing** fits a section's clips (longer: the clip repeats into the new bars;
+  shorter: cut). During a drag the clips are fitted from the clips as the drag found
+  them, so shrinking and growing back gives the notes back.
+- **The ask-once question** is non-blocking (no modal window in a plugin): the edit
+  shows at once, unpublished, and the KEYS row asks MAKE UNIQUE / EDIT VARIANT / CANCEL.
+  EDIT VARIANT takes the edit back and opens the variant in the Pattern Editor (mapping
+  an edit made at bar 13 of a section back onto a 4-bar pattern would be guesswork). In
+  the song view the question is make unique or cancel; once answered it is not asked
+  again while the view is open.
+- **The clip's transport** shares the Pattern Editor's transport (its positions were
+  already song beats); `transport.arranged` makes it play the arrangement while the
+  editor shows a clip or the song view, so PLAY, LOOP and the playhead work inside the
+  clip with the music around it.
+- **REC into a clip**: `keys.clipSection` (the clip shown; in the song view the section
+  under the playhead) routes a take into that section's clip: at song beat minus the
+  section's start, a repeat folded onto the clip, notes outside the section dropped.
+  Arming REC on a linked clip makes it unique first. Replace makes a new clip on the
+  finest grid (as for patterns), Overdub and punch keep the clip. One undo (KEYS, and
+  ARRANGE's) takes the whole take back.
+- **The song view** shows one pass of every section end to end (to the first endless
+  section, at most 512 bars), numbered as in the song, on one grid (the finest that
+  holds every clip; mixing straight 1/32 and triplets rounds the triplets). Only the
+  sections an edit changed are written back. If clips differ in CHORDS (follow the
+  chords or not), the view shows them all in the first clip's mode.
+- **Auto-arrange and templates** (the ARRANGE buttons) now write clips (`arr::shapeClip`)
+  from each instrument's variant as it plays: intros sparse (strong notes and a few
+  others) and an octave lower (not beds and basses), softer, held longer; build-ups thin
+  at first and fuller as they go, a scale step higher every quarter of the section,
+  louder, long notes repeating on eighths in the last third and sixteenths in the last
+  bar, and a run up the scale in the last bar before a climax (melodic parts; rhythm
+  parts keep their Fill switch); climaxes every note, louder, the melody doubled an
+  octave up on its strong notes; wind-downs and outros thinning out and softening;
+  breaks sparse. Loops and bridges stay linked. Locked notes are always kept. The World
+  Seed makes it repeatable. **Factory scenes and Inspire still build linked
+  arrangements** (their sound was tuned and tested that way); AUTO-ARRANGE on a loaded
+  scene gives it clips.
+- **Scene MIDI** writes a section's clip where the section plays it (every pass; entries
+  and fades as velocity) and the variants elsewhere; an instrument whose notes are only
+  in clips gets its track. Renders, game files, stems and PREVIEW needed nothing new:
+  they run the same engine on the scene's copy of the arrangement.
+- **ARRANGE mouse**: a click on a cell now opens its clip (the developer asked for it);
+  switching an instrument on or off moved to Cmd/Ctrl-click (and the cell menu).
+- While ARRANGE shows, every slot generates every variant (`engine.arrangeVariants`), so
+  a clip made unique from B or C, or auto-arranged, has the right notes.

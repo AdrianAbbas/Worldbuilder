@@ -383,3 +383,119 @@ void testClipArrange(Suite& s) {
         s.check(st.finite && st.peak < 1.0 && st.rmsDb > -80.0, "an auto-arranged song with clips plays (finite, below the ceiling)");
     }
 }
+
+// Milestone 16 part 6: renders, game files, stems and scene MIDI follow the clips.
+void testClipCapture(Suite& s) {
+    using namespace clipTest;
+    s.section("clips: renders, game audio and scene MIDI follow the clips");
+    // Castle and Tavern at 120 bpm; three sections (2 bars, 2 bars x 2, 2 bars); clips in
+    // several cells (with the instruments' own Randomness: playback stays deterministic).
+    const auto makeHost = [](int block) {
+        auto h = std::make_unique<Host>(48000, block);
+        h->playHead.bpm = 120;
+        h->set("p1_type", float(Castle));
+        h->set("p2_type", float(Tavern));
+        h->p->patterns.syncTypes(h->p->slotTypes());
+        arr::Arrangement a;
+        a.sections[0] = arr::makeSection("Intro", 2, 0, 0.3f);
+        a.sections[1] = arr::makeSection("Build", 2, 1, 0.6f);
+        a.sections[1].repeats = 2;
+        a.sections[2] = arr::makeSection("Climax", 2, 2, 0.9f);
+        a.count = 3;
+        a.sections[0].cells[0][element].clip = clipOf(2, 6, 1);
+        a.sections[1].cells[0][element].clip = clipOf(2, 10, 4);
+        a.sections[1].cells[1][2].clip = clipOf(2, 12, 2);
+        a.sections[2].cells[0][2].clip = clipOf(2, 16, 0);
+        a.sections[2].cells[0][element].fill = false;
+        h->p->arrangement.set(a);
+        h->set("playmode", float(PlayArrangement));
+        h->playHead.playing = true;
+        h->render(0.1);
+        h->playHead.playing = false;
+        h->render(0.3);
+        return h;
+    };
+    auto host = makeHost(512);
+    const auto scene = host->p->captureScene();
+    s.check(scene.arrangement == host->p->arrangement.get() && scene.arrangement.sections[1].cells[1][2].clip != nullptr, "the scene carries the arrangement's clips");
+    const auto mixPass = capture::passes(scene, false).front();
+    bool all = true;
+    std::string detail;
+    for (int startBar : { 0, 3, 5 }) {
+        const double seconds = 12.0 - 2.0 * startBar;
+        Audio offline;
+        capture::renderArranged(scene, scene.arrangement, mixPass, startBar * 4.0, capture::samplesFor(scene, seconds / 2.0), [&](const float* l, const float* r, int n) {
+            offline.l.insert(offline.l.end(), l, l + n);
+            offline.r.insert(offline.r.end(), r, r + n);
+            return true;
+        });
+        auto live = makeHost(333);
+        live->playHead.playing = true;
+        live->playHead.position = int64_t(startBar) * 2 * 48000;
+        const auto played = live->render(seconds);
+        double worst = 0, energy = 0;
+        for (std::size_t i = 0; i < played.l.size() && i < offline.l.size(); ++i) {
+            worst = std::max(worst, double(std::abs(played.l[i] - offline.l[i])) + std::abs(played.r[i] - offline.r[i]));
+            energy += double(played.l[i]) * played.l[i];
+        }
+        const bool ok = played.l.size() == offline.l.size() && worst < 1.0e-5 && energy > 1.0e-3;
+        all &= ok;
+        detail += "bar " + std::to_string(startBar + 1) + ": " + (ok ? "same" : "max difference " + std::to_string(worst)) + "; ";
+    }
+    s.check(all, "renders of the arrangement match Arrangement playback from any start bar, sample for sample", detail);
+    // The clips are what is heard: the same scene with every clip re-linked renders differently.
+    auto linkedScene = scene;
+    for (int i = 0; i < linkedScene.arrangement.count; ++i)
+        for (auto& row : linkedScene.arrangement.sections[std::size_t(i)].cells)
+            for (auto& c : row) c.clip = nullptr;
+    const auto renderSection = [&](const capture::Scene& sc, const capture::GameFile& file, const capture::Pass& pass) {
+        Audio a;
+        capture::renderGameFile(sc, file, pass, [&](const float* l, const float* r, int n) {
+            a.l.insert(a.l.end(), l, l + n);
+            a.r.insert(a.r.end(), r, r + n);
+            return true;
+        });
+        return a;
+    };
+    const auto files = capture::gameFiles(scene, false);
+    bool differ = true, audible = true;
+    for (const auto& f : files) {
+        const auto withClips = renderSection(scene, f, mixPass), linked = renderSection(linkedScene, f, mixPass);
+        audible &= measure(withClips, 0.0).finite && measure(withClips, 0.0).rmsDb > -70.0;
+        differ &= withClips.l != linked.l;
+    }
+    s.check(files.size() == 3 && audible && differ, "each section's game file (and the seamless loop) plays its clips", std::to_string(files.size()) + " files");
+    // Stems: the Tavern's stem carries its clip.
+    const auto stems = capture::passes(scene, true);
+    const auto stemOf = [&](const capture::Scene& sc, const capture::Pass& pass) {
+        capture::GameFile whole;
+        whole.kind = capture::GameFile::Whole;
+        return renderSection(sc, whole, pass);
+    };
+    bool stemDiffers = false;
+    for (const auto& pass : stems)
+        if (pass.name.containsIgnoreCase("Tavern")) stemDiffers = stemOf(scene, pass).l != stemOf(linkedScene, pass).l;
+    s.check(stems.size() >= 2 && stemDiffers, "the stems follow the clips too");
+    // Scene MIDI: inside a section with a clip, the instrument's track holds exactly the clip.
+    const auto tracks = capture::sceneTracks(scene);
+    const auto midi = capture::arrangementMidi(scene, tracks);
+    int trackIndex = -1;
+    for (std::size_t k = 0; k < tracks.size(); ++k)
+        if (tracks[k].slot == 1 && tracks[k].element == 2) trackIndex = int(k) + 1;
+    s.check(trackIndex > 0, "an instrument with clips has its track");
+    if (trackIndex > 0) {
+        std::vector<double> got;
+        for (const auto* ev : *midi.getTrack(trackIndex))
+            if (ev->message.isNoteOn()) {
+                const double beat = ev->message.getTimeStamp() / double(pat::ticksPerBeat);
+                if (beat >= 8.0 - 1.0e-6 && beat < 24.0 - 1.0e-6) got.push_back(beat);
+            }
+        std::vector<double> want;
+        for (int pass = 0; pass < 2; ++pass)
+            for (int i = 0; i < 12; ++i) want.push_back(8.0 + 8.0 * pass + double(i * 32 / 12) / 4.0);
+        bool same = got.size() == want.size();
+        for (std::size_t i = 0; same && i < got.size(); ++i) same = std::abs(got[i] - want[i]) < 1.0e-6;
+        s.check(same, "scene MIDI writes the clip's notes where its section plays them (both passes), and nothing else there",
+                std::to_string(got.size()) + " notes, " + std::to_string(want.size()) + " wanted");
+    }
+}
