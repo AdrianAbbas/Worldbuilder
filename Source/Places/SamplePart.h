@@ -68,6 +68,22 @@ class SamplePart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     SamplePatch patch;
+    void unshapeForInstrument() override {
+        fallback.unshapeForInstrument();
+        if (shaped) patch = designedPatch;
+        shaped = false;
+    }
+    void shapeForInstrument(float a, float r) override {
+        designedPatch = patch;
+        shaped = true;
+        fallback.shapeForInstrument(a, r);
+        // Held recordings: the fade in and the release; ringing ones: how fast they die
+        // away below the middle (as recorded above it), and their damping when released.
+        patch.attack = patch.attack * timeScale(a) + swell(a);
+        patch.release *= timeScale(r);
+        if (!patch.held && r < 0.0f) patch.decay = (patch.decay > 0.0f ? patch.decay : 6.0f) * timeScale(r);
+        patch.voices = maxVoices;
+    }
     explicit SamplePart(Part& synthFallback) : fallback(synthFallback) {}
 
     // True when the recordings play (false: the fallback does).
@@ -110,7 +126,15 @@ public:
         }
         for (std::size_t k = 0; k < voice.size(); ++k)
             if (voice[k].on && held[k].live == id) {
+                // A short hit played live (released before it became a long one) rings as
+                // recorded where the patch lets short hits ring.
+                if (voice[k].upgrade && patch.shortRings && !voice[k].zone->loops()) {
+                    held[k].on = false;
+                    voice[k].upgrade = false;
+                    continue;
+                }
                 held[k].until = -1.0e18;
+                voice[k].upgrade = false;
                 if (!patch.held) release(voice[k]);
             }
     }
@@ -122,6 +146,13 @@ public:
             return;
         }
         const auto* inst = articulation(n);
+        startWith(f, n, inst, -1.0f, -1.0f);
+    }
+
+private:
+    // Starts a note on one articulation; skip >= 0 starts that far into the recording,
+    // attack >= 0 fades it in over that long (a short hit handing over to its long one).
+    void startWith(const PartFrame& f, const NoteOn& n, const samples::Instrument* inst, float skipOver, float attackOver) {
         const float hz = music::noteHz(f.root, n.semis + patch.transpose);
         float midi = 69.0f + 12.0f * std::log2(std::max(hz, 1.0f) / 440.0f);
         while (midi < float(patch.lowestKey) - 0.5f) midi += 12.0f;
@@ -169,14 +200,14 @@ public:
         v.midi = v.target = midi;
         v.rateRatio = inst->rate / rate;
         const bool quick = patch.held && n.live == 0 && n.seconds < patch.quickBelow;
-        const float skip = quick ? patch.quickSeconds : (legato ? 0.08f : patch.startSeconds);
+        const float skip = skipOver >= 0.0f ? skipOver : (quick ? patch.quickSeconds : (legato ? 0.08f : patch.startSeconds));
         v.pos = double(std::min(skip * inst->rate, float(zone->length) * 0.25f));
         if (zone->loops() && v.pos >= double(zone->loopStart)) v.pos = double(zone->loopStart);
         // Level: velocity (the layers already differ), evened toward the median loudness
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
         v.gain = (1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(velocity), 1.3f)) * dsp::dbToGain(even);
-        const float attack = quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack);
+        const float attack = attackOver >= 0.0f ? attackOver : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack));
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
         v.fadeMul = patch.decay > 0.0f ? std::exp(-6.9078f / (patch.decay * weight::ring * n.decay * rate)) : 1.0f;
@@ -201,8 +232,15 @@ public:
         held[std::size_t(k)].set(n);
         if ((!patch.held || (patch.shortRings && inst == shortOne && !zone->loops())) && n.live == 0) held[std::size_t(k)].on = false;   // it rings
         held[std::size_t(k)].semis = n.semis;
+        // Live (KEYS, Instrument mode): a short hit first; held past the short notes'
+        // length it hands over to the long hit (see update()).
+        v.upgrade = n.live != 0 && inst != main && main != nullptr;
+        v.age = 0;
+        v.note = n;
         pitch(v, 0);
     }
+
+public:
 
     void update(const PartFrame& f) override {
         if (main == nullptr && samples::Bank::get().ready()) resolve();
@@ -225,6 +263,23 @@ public:
         }
         trem = 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::cos(float(f.beat * double(patch.tremoloPerBeat)) * dsp::twoPi));
         const float glide = glideFor(slide.glide(patch.glide), rate);
+        // A live short hit whose key is still down after the short notes' length becomes
+        // the long hit: the long recording comes in where the note has got to (its attack
+        // already heard) over 30 ms while the short one lets go.
+        const float shortSeconds = float(double(std::max(patch.shortBeats, patch.tinyBeats)) / std::max(f.beatsPerSecond, 0.01));
+        for (std::size_t k = 0; k < voice.size(); ++k) {
+            auto& v = voice[k];
+            if (!v.on || !v.upgrade) continue;
+            v.age += float(dsp::chunk) / rate;
+            if (v.age < shortSeconds || !held[k].on || held[k].live == 0) continue;
+            v.upgrade = false;
+            NoteOn n = v.note;
+            const float at = v.age;
+            held[k].on = false;
+            held[k].live = 0;
+            release(v, 0.05f);
+            startWith(f, n, main, at, 0.03f);
+        }
         for (std::size_t k = 0; k < voice.size(); ++k) {
             auto& v = voice[k];
             auto& h = held[k];
@@ -323,6 +378,10 @@ private:
         int wait = 0;
         dsp::PanGains pan { 0.7071f, 0.7071f };
         dsp::Svf filter;
+        // A live short hit that may still become its long one, its age and its note.
+        bool upgrade = false;
+        float age = 0;
+        NoteOn note {};
     };
 
     static float read(const int16_t* d, double pos) {
@@ -398,7 +457,9 @@ private:
     }
 
     const samples::Instrument* articulation(const NoteOn& n) const {
-        if (tiny != nullptr && n.live == 0 && n.length <= double(patch.tinyBeats) + 1.0e-6) return tiny;
+        // Live: its length is not known yet, so the short hit (see update()).
+        if (n.live != 0) return shortOne != nullptr ? shortOne : (tiny != nullptr ? tiny : main);
+        if (tiny != nullptr && n.length <= double(patch.tinyBeats) + 1.0e-6) return tiny;
         if (shortOne != nullptr && n.live == 0 && n.length <= double(patch.shortBeats) + 1.0e-6) return shortOne;
         return main;
     }
@@ -413,6 +474,8 @@ private:
     }
 
     Part& fallback;
+    SamplePatch designedPatch {};
+    bool shaped = false;
     const samples::Instrument *main = nullptr, *shortOne = nullptr, *tiny = nullptr;
     std::array<Voice, maxVoices> voice {};
     std::array<HeldNote, maxVoices> held {};

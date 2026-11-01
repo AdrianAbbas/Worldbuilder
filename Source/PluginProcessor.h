@@ -2,6 +2,7 @@
 #include "Parameters.h"
 #include "Arrangement/ArrangementStore.h"
 #include "Capture/Capture.h"
+#include "Instruments/Presets.h"
 #include "Keys/Recorder.h"
 #include "Locations/LocationBank.h"
 #include "Patterns/PatternStore.h"
@@ -157,6 +158,37 @@ public:
     juce::String singleName() const;
     wb::keys::RecordSettings recordSettings() const;
 
+    // Instrument mode: any one WORLDBUILDER instrument played from the host's MIDI like a
+    // normal software instrument (Mode parameter INSTRUMENT). The world, its patterns,
+    // the arrangement and the transport do not apply; the instrument's sound is the
+    // inst_* parameters. The instrument itself is saved in the state.
+    bool instrumentMode() const { return juce::roundToInt(raw[wb::PMode]->load()) == wb::ModeInstrument; }
+    void setInstrumentMode(bool on);
+    wb::inst::Id instrument() const { return { instrumentType.load(), instrumentElement.load() }; }
+    // Chooses the instrument; `withDefaults` sets its effects and macros to the
+    // instrument's own defaults (the browser; a preset sets its own).
+    void setInstrument(wb::inst::Id id, bool withDefaults = true);
+    // The instrument's name, "Tavern - Lute Strum".
+    juce::String instrumentName() const;
+    // Instrument presets (Instrument mode): the instrument, its Character, effects and
+    // controls, as text (an XML element), and loading one. Separate from world presets.
+    juce::String exportInstrumentPreset(const juce::String& name) const;
+    bool importInstrumentPreset(const juce::String& text);
+    // Loads a preset (a factory one, or one read from a file).
+    void applyInstrumentPreset(const wb::inst::Preset& preset);
+    // The name of the instrument preset loaded last (empty after an edit of the instrument).
+    juce::String instrumentPresetName() const { return parameters.state.getProperty("instpreset").toString(); }
+    void setInstrumentPresetName(const juce::String& name) { parameters.state.setProperty("instpreset", name, nullptr); }
+    // The on-screen keyboard (message thread): a note on (velocity 1..127) or off (0),
+    // played at the start of the next block as if it came from the host.
+    void playKey(int note, int velocity) {
+        wb::keys::Event e;
+        e.kind = velocity > 0 ? wb::keys::Event::NoteOn : wb::keys::Event::NoteOff;
+        e.note = uint8_t(juce::jlimit(0, 127, note));
+        e.value = float(juce::jlimit(0, 127, velocity)) / 127.0f;
+        uiKeys.push(e);
+    }
+
     // The Pattern Editor's own transport (the hotfix after Milestone 14), so recording
     // works like a small DAW without touching the host: Play and Stop from a playhead,
     // a loop region, count-in and punch. It runs while the host is stopped, at the host
@@ -199,6 +231,10 @@ public:
     bool hostRolling() const { return hostRollingOut.load(std::memory_order_relaxed); }
 
 private:
+    std::atomic<int> instrumentType { wb::inst::defaultInstrument.type }, instrumentElement { wb::inst::defaultInstrument.element };
+    // Instrument mode's controls: slot 0 plays the instrument (the world's other settings
+    // stay as they are for the ambience).
+    void applyInstrument(wb::EngineControls& c, const wb::WorldValues& values) const noexcept;
     wb::EngineControls readControls() const noexcept;
     wb::EngineControls controlsFor(const wb::WorldValues& values) const noexcept;
 public:
@@ -225,6 +261,7 @@ private:
     int64_t expectedHostPosition = -1;
     bool hostWasPlaying = false, hostPlayingNow = false;
     std::array<wb::keys::Event, 512> keyEvents {};
+    wb::keys::Fifo<wb::keys::Event, 256> uiKeys;
     std::atomic<float> hostBpm { 0 };
     bool gateOpen = true;
     std::atomic<int> previewBar { 0 };

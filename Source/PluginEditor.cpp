@@ -341,6 +341,25 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     inspireToggle.onClick = [this] { inspire(); };
     sceneUndo.onClick = [this] { undoScene(); };
     for (auto* b : { &scenePrev, &sceneNext, &sceneMenu, &inspireToggle, &sceneUndo }) addAndMakeVisible(*b);
+    // Instrument mode: WORLD (everything) or INSTRUMENT (one instrument played from the
+    // host's MIDI like any software instrument). The Mode parameter, so it is saved with
+    // the project and can be automated.
+    modeWorld.setTooltip("WORLD: the whole world - Places, patterns, arrangement, environment.");
+    modeInstrument.setTooltip("INSTRUMENT: one WORLDBUILDER instrument played from the host's MIDI (Logic's or GarageBand's piano roll and "
+                              "keyboards) like a normal software instrument - no world, no patterns, no arrangement.");
+    for (auto* b : { &modeWorld, &modeInstrument }) {
+        b->setClickingTogglesState(false);
+        b->setColour(juce::TextButton::buttonOnColourId, ui::colours::brass);
+        addAndMakeVisible(*b);
+    }
+    modeWorld.onClick = [this] {
+        processor.setInstrumentMode(false);
+        refreshMode();
+    };
+    modeInstrument.onClick = [this] {
+        processor.setInstrumentMode(true);
+        refreshMode();
+    };
     sceneUndo.setEnabled(processor.canUndoScene());
     sceneMenu.setButtonText(processor.sceneName().isEmpty() ? juce::String("Scenes...") : processor.sceneName());
 
@@ -380,6 +399,7 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     updateTheme(0.0f, true);
     enableFineDrag(*this);
     if (uiSizeIndex() > 0) setUiSize(uiSizeIndex());
+    refreshMode();
     startTimerHz(30);
 }
 
@@ -503,6 +523,15 @@ void WorldbuilderEditor::setOverlayMode(int mode) {
     overlays->setMode(mode);
     overlayChoice.setSelectedId(mode + 1, juce::dontSendNotification);
     processor.parameters.state.setProperty("overlays", mode, nullptr);
+}
+
+void WorldbuilderEditor::refreshMode() {
+    const bool on = processor.instrumentMode();
+    modeWorld.setToggleState(!on, juce::dontSendNotification);
+    modeInstrument.setToggleState(on, juce::dontSendNotification);
+    if (on == shownInstrument) return;
+    shownInstrument = on;
+    repaint();
 }
 
 bool WorldbuilderEditor::covered() const { return patterns->isVisible() || arrange->isVisible(); }
@@ -631,16 +660,20 @@ void WorldbuilderEditor::resized() {
         // The pixel title: Large letters at twice the art grid.
         headerTitle = header.withTrimmedLeft(4).withWidth((pixel::Canvas::textWidth("WORLDBUILDER") + 2) * pixel::unit * 2 + 4);
         // Score Intensity: its label and a large knob, clear of POWER.
-        const auto block = header.withRight(power.getX() - 48).withLeft(power.getX() - 48 - 170);
+        const auto block = header.withRight(power.getX() - 18).withLeft(power.getX() - 18 - 166);
         knobFor[std::size_t(PIntensity)]->setBounds(block.withLeft(block.getRight() - 46).withSizeKeepingCentre(46, 46));
-        intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(124, 30);
-        arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 16 - 100, header.getCentreY() - 13, 100, 26));
-        arrangementState.setBounds(juce::Rectangle<int>(arrangeToggle.getX() - 4 - 132, header.getCentreY() - 13, 132, 26));
-        // The scene browser, INSPIRE and UNDO, right of the title.
-        auto row = juce::Rectangle<int>(headerTitle.getRight() + 14, header.getCentreY() - 13, arrangementState.getX() - 6 - headerTitle.getRight() - 14, 26);
-        sceneUndo.setBounds(row.removeFromRight(62));
+        intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(116, 30);
+        arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 10 - 92, header.getCentreY() - 13, 92, 26));
+        arrangementState.setBounds(juce::Rectangle<int>(arrangeToggle.getX() - 4 - 122, header.getCentreY() - 13, 122, 26));
+        // WORLD / INSTRUMENT, stacked, right of the title.
+        modeArea = juce::Rectangle<int>(headerTitle.getRight() + 10, header.getCentreY() - 21, 88, 42);
+        modeWorld.setBounds(modeArea.withHeight(20));
+        modeInstrument.setBounds(modeArea.withTrimmedTop(22));
+        // The scene browser, INSPIRE and UNDO, right of the switch.
+        auto row = juce::Rectangle<int>(modeArea.getRight() + 10, header.getCentreY() - 13, arrangementState.getX() - 6 - modeArea.getRight() - 10, 26);
+        sceneUndo.setBounds(row.removeFromRight(54));
         row.removeFromRight(4);
-        inspireToggle.setBounds(row.removeFromRight(84));
+        inspireToggle.setBounds(row.removeFromRight(74));
         row.removeFromRight(10);
         scenePrev.setBounds(row.removeFromLeft(24));
         sceneNext.setBounds(row.removeFromRight(24));
@@ -1610,6 +1643,7 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         if (sceneUndo.isEnabled() != processor.canUndoScene()) sceneUndo.setEnabled(processor.canUndoScene());
     }
     refreshArrangementState();
+    refreshMode();
     updateTheme(seconds);
     // The whole interface repaints while the Places' colours are moving.
     if (themeMoving) repaint();

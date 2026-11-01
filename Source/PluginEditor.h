@@ -90,6 +90,12 @@ public:
     juce::Button& sceneNameButton() { return sceneMenu; }
     juce::Button& scenePrevButton() { return scenePrev; }
     juce::Button& sceneNextButton() { return sceneNext; }
+    // Instrument mode: the top bar's WORLD / INSTRUMENT switch.
+    juce::TextButton& worldModeButton() { return modeWorld; }
+    juce::TextButton& instrumentModeButton() { return modeInstrument; }
+    // Follows the Mode parameter (a click, host automation, a project loading).
+    void refreshMode();
+    bool showingInstrument() const { return shownInstrument; }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -197,6 +203,10 @@ private:
         void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
     };
     TwoLineButton arrangementState { "ARRANGEMENT: OFF" };
+    // WORLD over INSTRUMENT, stacked in the top bar.
+    juce::TextButton modeWorld { "WORLD" }, modeInstrument { "INSTRUMENT" };
+    juce::Rectangle<int> modeArea;
+    bool shownInstrument = false;
     void refreshArrangementState();
     juce::TextButton scenePrev { "<" }, sceneNext { ">" }, sceneMenu, inspireToggle { "INSPIRE" }, sceneUndo { "UNDO" };
     // After a scene loads: the strips, the panels and the ARRANGE view show it.

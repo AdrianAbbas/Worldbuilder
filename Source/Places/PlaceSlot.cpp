@@ -61,6 +61,26 @@ void PlaceSlot::wake() {
         for (auto& f : bus) f.reset();
 }
 
+void PlaceSlot::cutTo(int type) {
+    const int wanted = type > NoPlace && type < PlaceTypeCount && placeImplemented[std::size_t(type)] ? type : NoPlace;
+    currentType = wanted;
+    current = engineFor(wanted);
+    if (current != nullptr) current->reset();
+    fade = 1;
+    seeded = false;
+    fresh = true;
+    snapGain = true;
+    for (auto& v : generatedValid) v.fill(false);
+    playing.fill(nullptr);
+    clipNow.fill(nullptr);
+    fx.reset();
+    for (auto& s : elementSmooth) s.snap(0);
+    arranged.fill(0.0f);
+    for (auto& bus : sendTilt)
+        for (auto& f : bus) f.reset();
+    keysLevel.snap(0);
+}
+
 std::unique_ptr<Place> makePlace(int type) {
     switch (type) {
         case Castle: return std::make_unique<CastlePlace>();
@@ -255,8 +275,21 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
     }
 }
 
-bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, const pat::SlotPatterns& patterns, bool audible, uint64_t clock,
+namespace {
+// Instrument mode: the world as the defaults set it (the World Controls and Score
+// Intensity at their defaults), so one instrument sounds the same in every project.
+WorldFrame neutralWorld(const WorldFrame& world) {
+    WorldFrame w = world;
+    for (int i = 0; i < WorldControlCount; ++i) w.c[std::size_t(i)] = specs[std::size_t(PTemperature + i)].def;
+    w.intensity = 0.5f;
+    return w;
+}
+} // namespace
+
+bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, const pat::SlotPatterns& patterns, bool audible, uint64_t clock,
                        double hostBeat, float hostBpm, float* left, float* right, int n) {
+    const WorldFrame neutral = c.instrument ? neutralWorld(worldIn) : WorldFrame {};
+    const WorldFrame& world = c.instrument ? neutral : worldIn;
     const int wanted = placeImplemented[std::size_t(std::clamp(c.type, 0, PlaceTypeCount - 1))] ? c.type : NoPlace;
     if (wanted != currentType && fade <= 0.0f) {
         // The old Place has faded out (or nothing played): switch engines.
@@ -298,6 +331,13 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     }
     // The keyboard alone (the host stopped): no patterns, only its live notes.
     if (c.keysOnly) target.element.fill(0.0f);
+    // Instrument mode without Place Ambience: just the instrument, in the Place's
+    // smallest space with its effect character at its least (the instrument's own
+    // reverb and delay sends are the space).
+    if (c.instrument && !c.ambience) {
+        target.size = 0.0f;
+        target.fxDepth = 0.15f;
+    }
     const int keysElement = c.keys != nullptr && c.keysElement >= 0 && c.keysElement < placeElements ? c.keysElement : -1;
     auto variants = c.variant;
     if (c.keysArmed && keysElement >= 0) variants[std::size_t(keysElement)] = uint8_t(pat::Element::clampVariant(c.keysVariant));
@@ -382,7 +422,11 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     nextBeat = context.beat + context.beatsPerSample * double(n);
     context.liveElement = keysElement;
     context.live = keysElement >= 0 ? c.keys : nullptr;
+    if (c.instrument && keysElement >= 0) keysLevel.snap(clamp01(c.element[std::size_t(keysElement)]));
     context.liveLevel = keysLevel.next(keysElement >= 0 ? clamp01(c.element[std::size_t(keysElement)]) : 0.0f);
+    context.instrument = c.instrument;
+    context.attack = c.attack;
+    context.release = c.release;
     fx.begin(c.fx, n);
     context.fx = &fx;
     current->render(context, left, right, n);
@@ -390,19 +434,26 @@ bool PlaceSlot::render(const WorldFrame& world, const PlaceSlotControls& c, cons
     tiltSends(settings.tone, distance.value, n);
 
     // Distance and pan.
-    const float d = distance.next(travelDistance(effectiveDistance(world, c.distance), c.travelFar));
+    // (Instrument mode: close, whatever the world.)
+    if (c.instrument) distance.snap(0.0f);
+    const float d = c.instrument ? distance.value : distance.next(travelDistance(effectiveDistance(world, c.distance), c.travelFar));
     const float p = pan.next(std::clamp(c.pan, -1.0f, 1.0f));
     for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 1100.0f, std::pow(d, 1.6f)), rate);
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
-    send = current->spaceSend() * lerp(0.4f, 1.6f, d);
+    send = c.instrument && !c.ambience ? 0.0f : current->spaceSend() * lerp(0.4f, 1.6f, d);
     const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
+    if (snapGain) {
+        gain.snap(target_);
+        snapGain = false;
+    }
+    const bool ducking = c.duckFrom < 1.0f || c.duckTo < 1.0f;
     // The sends follow the slot's gain and pan; far away, more of each instrument
     // reaches its reverb and delay.
     const float sendDistance = 1.0f + 0.5f * d;
     for (int i = 0; i < n; ++i) {
         fade = switching ? std::max(0.0f, fade - fadeStep) : std::min(1.0f, fade + fadeStep);
-        const float g = gain.next(target_) * fade * fade;
+        const float g = gain.next(target_) * fade * fade * (ducking ? lerp(c.duckFrom, c.duckTo, float(i + 1) / float(n)) : 1.0f);
         sendGain[0][std::size_t(i)] = g * sendDistance * (1.0f - 0.6f * right_);
         sendGain[1][std::size_t(i)] = g * sendDistance * (1.0f - 0.6f * left_);
         float l = finiteOr(left[i]), r = finiteOr(right[i]);

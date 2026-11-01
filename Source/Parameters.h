@@ -55,6 +55,11 @@ inline constexpr const char* pathEndChoices = "One-way|Loop";
 // Separate outputs (Milestone 12): Copy keeps every Place in the main mix as well;
 // Split takes a Place with its own output out of the main mix.
 inline constexpr const char* placeOutChoices = "Copy|Split";
+// The instrument a new instance plays in Instrument mode: the Tavern's Lute Strum
+// (PlaceType Tavern, which Parameters.h cannot name; Catalog.h checks it).
+inline constexpr int defaultInstrumentType = 20;
+inline constexpr const char* modeChoices = "World|Instrument";
+enum Mode { ModeWorld, ModeInstrument };
 inline constexpr const char* planetChoices = "Rocky|Ocean|Ice Giant|Gas Giant|Desert World|Lava World|Forest World";
 enum PlayMode { PlayFree, PlayTransport, PlayArrangement };
 
@@ -87,6 +92,12 @@ enum P {
     PPlaceOuts,
     // The environment layers' master level (the GarageBand fix round).
     PEnvironment,
+    // Instrument mode: one instrument played from host MIDI like a normal software
+    // instrument (the world, its patterns and the arrangement silent). The instrument
+    // itself (Place and element) is saved in the state; these are its sound.
+    PMode, PInstCharacter, PInstLevel, PInstTone, PInstAttack, PInstRelease, PInstDrive,
+    PInstReverb, PInstReverbType, PInstDelay, PInstDelayType, PInstFx, PInstFxAmount, PInstWidth,
+    PInstAmbience, PInstOctave,
     PCount
 };
 
@@ -199,8 +210,32 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     // Environment: one level for all six environment layers (Air, Water, Fire & Heat,
     // Ice & Earth, Thunder, Tonal Bed), on top of each layer's own.
     { "environment", "Environment Level", Kind::Decibels, -60, 6, 0 },
+    // Instrument mode. Mode: WORLD (everything) or INSTRUMENT (one instrument from the
+    // host's MIDI). Attack and Release scale the instrument's own times (the middle is as
+    // designed); Drive saturates it; Place Ambience brings the world's environment and
+    // space back under it (off: just the instrument).
+    { "mode", "Mode", Kind::Choice, 0, 1, ModeWorld, modeChoices },
+    { "inst_character", "Instrument Character", Kind::Choice, 0, 2, 0, characterChoices },
+    { "inst_level", "Instrument Level", Kind::Decibels, -60, 6, 0 },
+    { "inst_tone", "Instrument Tone", Kind::Float, 0, 1, 0.5f },
+    { "inst_attack", "Instrument Attack", Kind::Float, 0, 1, 0.5f },
+    { "inst_release", "Instrument Release", Kind::Float, 0, 1, 0.5f },
+    { "inst_drive", "Instrument Drive", Kind::Float, 0, 1, 0 },
+    { "inst_rev", "Instrument Reverb", Kind::Float, 0, 1, instrumentFxDefault(defaultInstrumentType, 0, FxReverb) },
+    { "inst_revtype", "Instrument Reverb Type", Kind::Choice, 0, ReverbTypeCount - 1, instrumentFxDefault(defaultInstrumentType, 0, FxReverbType), reverbChoices },
+    { "inst_dly", "Instrument Delay", Kind::Float, 0, 1, instrumentFxDefault(defaultInstrumentType, 0, FxDelay) },
+    { "inst_dlytype", "Instrument Delay Type", Kind::Choice, 0, DelayTypeCount - 1, instrumentFxDefault(defaultInstrumentType, 0, FxDelayType), delayChoices },
+    { "inst_char", "Instrument Character Effect", Kind::Choice, 0, CharacterTypeCount - 1, instrumentFxDefault(defaultInstrumentType, 0, FxCharacter), characterFxChoices },
+    { "inst_charamt", "Instrument Character Amount", Kind::Float, 0, 1, instrumentFxDefault(defaultInstrumentType, 0, FxAmount) },
+    { "inst_width", "Instrument Width", Kind::Float, 0, 2, instrumentFxDefault(defaultInstrumentType, 0, FxWidth) },
+    { "inst_ambience", "Place Ambience", Kind::Bool, 0, 1, 0 },
+    { "inst_octave", "Instrument Octave", Kind::Int, -2, 2, 0 },
 } };
 // clang-format on
+
+// Instrument mode's parameters: the session's, never part of a world, a Location or a
+// scene (loading a world or a scene keeps them; journeys leave them alone).
+inline constexpr bool isInstrumentParam(int p) { return p >= PMode && p <= PInstOctave; }
 
 static_assert(specs.back().id != nullptr, "the table fills every parameter slot");
 static_assert(int(PTemperature) == int(Temperature) && int(PActivity) == int(Activity), "World Controls come first, in enum order");

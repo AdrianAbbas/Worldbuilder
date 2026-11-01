@@ -126,6 +126,9 @@ public:
         modValue = 0;
         for (auto& w : downBits) w.store(0, std::memory_order_relaxed);
         for (auto& w : soundBits) w.store(0, std::memory_order_relaxed);
+        bendOut.store(0, std::memory_order_relaxed);
+        modOut.store(0, std::memory_order_relaxed);
+        pedalOut.store(false, std::memory_order_relaxed);
     }
     // Audio thread: queues one host event at stream position `at`.
     void push(const Event& e, uint64_t at) {
@@ -191,6 +194,7 @@ public:
     float mod() const { return modValue; }
     bool sustain() const { return pedal; }
     bool held(int note) const { return down[std::size_t(note & 127)]; }
+    float velocityOf(int note) const { return velocity[std::size_t(note & 127)]; }
     bool sounding(int note) const { return down[std::size_t(note & 127)] || pedalled[std::size_t(note & 127)]; }
     bool anySounding() const {
         for (std::size_t i = 0; i < 128; ++i)
@@ -199,8 +203,10 @@ public:
     }
 
     // For the editor's keyboard: the keys held (down) and those still sounding (down or
-    // held by the pedal), as bits.
+    // held by the pedal), as bits; the wheels and the pedal.
     std::array<std::atomic<uint32_t>, 4> downBits {}, soundBits {};
+    std::atomic<float> bendOut { 0 }, modOut { 0 };
+    std::atomic<bool> pedalOut { false };
 
 private:
     template <typename Off>
@@ -211,6 +217,9 @@ private:
         else off(int(k));
     }
     void publish() {
+        bendOut.store(bendValue, std::memory_order_relaxed);
+        modOut.store(modValue, std::memory_order_relaxed);
+        pedalOut.store(pedal, std::memory_order_relaxed);
         for (std::size_t w = 0; w < 4; ++w) {
             uint32_t d = 0, s = 0;
             for (std::size_t b = 0; b < 32; ++b) {

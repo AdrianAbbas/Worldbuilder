@@ -473,6 +473,7 @@ private:
 struct ElementFxControls {
     float reverb = 0.15f, delay = 0, amount = 0.35f, tone = 0.5f, width = 1;
     int reverbType = RevRoom, delayType = DlyTape, character = ChOff;
+    float drive = 0;   // Instrument mode's Drive: a warm saturation before the character effect
 };
 
 // Sends of every instrument of one slot: each a smoothed level per shared bus.
@@ -514,6 +515,8 @@ public:
         for (auto& e : dlyLevel) e.fill(0);
         for (auto& e : revFrom) e.fill(0);
         for (auto& e : dlyFrom) e.fill(0);
+        driveNow.fill(0);
+        driveFrom.fill(0);
         lastScale.fill(1);
         sends.revFed.fill(true);
         sends.dlyFed.fill(true);
@@ -533,6 +536,14 @@ public:
                 ch.reset();
             }
             ch.set(c.character, c.amount, c.tone, c.width);
+            {
+                auto& d = driveNow[std::size_t(e)];
+                driveFrom[std::size_t(e)] = d;
+                const float target = clamp01(c.drive);
+                d = fresh ? target : d + coef * (target - d);
+                if (d < 1.0e-4f && target == 0.0f) d = 0;
+                if (fresh) driveFrom[std::size_t(e)] = d;
+            }
             for (int b = 0; b < ReverbTypeCount; ++b) {
                 const float target = b == c.reverbType ? clamp01(c.reverb) : 0.0f;
                 auto& v = revLevel[std::size_t(e)][std::size_t(b)];
@@ -560,8 +571,9 @@ public:
     void process(int e, float* l, float* r, int n, float sendScale = 1.0f) {
         if (e < 0 || e >= elements) return;
         auto& ch = character[std::size_t(e)];
-        if (!ch.idle()) ch.process(l, r, n);
         const float invN = 1.0f / float(n);
+        drive(e, l, r, n, invN);
+        if (!ch.idle()) ch.process(l, r, n);
         if (std::abs(sendScale - lastScale[std::size_t(e)]) > 1.0e-6f) {
             // Glide to a new scale over this chunk.
             const float from = lastScale[std::size_t(e)];
@@ -585,6 +597,20 @@ public:
     SendBuses sends;
 
 private:
+    // Drive: up to +30 dB into a soft clipper, the level made up so that turning it
+    // changes the colour more than the loudness.
+    void drive(int e, float* l, float* r, int n, float invN) {
+        const float from = driveFrom[std::size_t(e)], to = driveNow[std::size_t(e)];
+        if (from <= 0.0f && to <= 0.0f) return;
+        for (int i = 0; i < n; ++i) {
+            const float d = from + (to - from) * float(i + 1) * invN;
+            // Small signals come out at most 4 dB louder; loud ones flatten into the clipper.
+            const float pre = dbToGain(30.0f * d), post = dbToGain(-26.0f * d);
+            l[i] = std::tanh(l[i] * pre) * post;
+            r[i] = std::tanh(r[i] * pre) * post;
+        }
+    }
+    std::array<float, 6> driveNow {}, driveFrom {};
     static void add(float* outL, float* outR, bool& fed, const float* l, const float* r, int n, float from, float to, float invN) {
         if (!fed) {
             std::fill_n(outL, n, 0.0f);

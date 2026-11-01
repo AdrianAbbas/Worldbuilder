@@ -133,6 +133,140 @@ EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) con
     return c;
 }
 
+void WorldbuilderProcessor::applyInstrument(EngineControls& c, const WorldValues& values) const noexcept {
+    const auto value = [&values](int p) { return values[std::size_t(p)]; };
+    const inst::Id id = instrument();
+    auto& in = c.instrument;
+    in.on = true;
+    in.type = id.valid() ? id.type : NoPlace;
+    in.element = id.valid() ? id.element : 0;
+    in.ambience = value(PInstAmbience) > 0.5f;
+    in.attack = value(PInstAttack);
+    in.release = value(PInstRelease);
+    // Nothing soloed away, nothing sent off on a journey: the instrument is what plays.
+    c.solo.fill(false);
+    c.slotOut.fill(false);
+    c.arrangement = nullptr;
+    for (auto& pc : c.places) {
+        pc.solo = false;
+        pc.travelFar = 0;
+    }
+    c.patterns.fill(nullptr);
+    auto& pc = c.places[0];
+    const auto& defaults = specs;
+    pc = PlaceSlotControls {};
+    pc.type = in.type;
+    pc.character = juce::roundToInt(value(PInstCharacter));
+    pc.levelDb = value(PInstLevel);
+    pc.distance = 0;
+    pc.pan = 0;
+    pc.seed = uint32_t(juce::roundToInt(defaults[std::size_t(placeParam(0, PlSeed))].def));
+    const int e = in.element;
+    auto& fx = pc.fx[std::size_t(e)];
+    fx.reverb = value(PInstReverb);
+    fx.reverbType = juce::roundToInt(value(PInstReverbType));
+    fx.delay = value(PInstDelay);
+    fx.delayType = juce::roundToInt(value(PInstDelayType));
+    fx.character = juce::roundToInt(value(PInstFx));
+    fx.amount = value(PInstFxAmount);
+    fx.tone = value(PInstTone);
+    fx.width = value(PInstWidth);
+    fx.drive = value(PInstDrive);
+    // Scoop / Glide as the instrument was designed.
+    const auto& own = instrumentFx(in.type, e);
+    auto& slide = pc.slide[std::size_t(e)];
+    slide.on = own.slide != 0;
+    slide.semis = slide.refSemis = own.slideSemis;
+    slide.seconds = slide.refSeconds = own.slideSeconds;
+    // The keys play it: every note from the host, heard, chromatic, never recorded.
+    auto& k = c.keys;
+    k.slot = 0;
+    k.element = e;
+    k.single = true;
+    k.monitor = true;
+    k.armed = false;
+    k.countIn = false;
+    k.punch = false;
+    k.scale = keys::Chromatic;
+    k.octave = juce::jlimit(keys::octaveMin, keys::octaveMax, juce::roundToInt(value(PInstOctave)));
+    c.gate = true;
+}
+
+void WorldbuilderProcessor::setInstrumentMode(bool on) { setValue(PMode, on ? float(ModeInstrument) : float(ModeWorld)); }
+
+void WorldbuilderProcessor::setInstrument(inst::Id id, bool withDefaults) {
+    if (!id.valid()) return;
+    instrumentType.store(id.type);
+    instrumentElement.store(id.element);
+    if (!withDefaults) return;
+    const auto& d = instrumentFx(id.type, id.element);
+    setValue(PInstReverb, d.reverb);
+    setValue(PInstReverbType, float(d.reverbType));
+    setValue(PInstDelay, d.delay);
+    setValue(PInstDelayType, float(d.delayType));
+    setValue(PInstFx, float(d.character));
+    setValue(PInstFxAmount, d.amount);
+    setValue(PInstTone, d.tone);
+    setValue(PInstWidth, d.width);
+    for (int p : { int(PInstAttack), int(PInstRelease), int(PInstDrive) }) setValue(p, specs[std::size_t(p)].def);
+    setInstrumentPresetName({});
+}
+
+juce::String WorldbuilderProcessor::exportInstrumentPreset(const juce::String& name) const {
+    juce::XmlElement xml("WorldbuilderInstrument");
+    xml.setAttribute("version", 1);
+    xml.setAttribute("name", name);
+    const auto id = instrument();
+    xml.setAttribute("place", placeKeys[std::size_t(juce::jlimit(0, PlaceTypeCount - 1, id.type))]);
+    xml.setAttribute("type", id.type);
+    xml.setAttribute("element", id.element);
+    xml.setAttribute("instrument", instrumentName());
+    for (int p = 0; p < PCount; ++p) {
+        if (!isInstrumentParam(p) || p == PMode) continue;
+        auto* child = xml.createNewChildElement("Param");
+        child->setAttribute("id", specs[std::size_t(p)].id);
+        child->setAttribute("value", double(raw[std::size_t(p)]->load()));
+    }
+    return xml.toString();
+}
+
+bool WorldbuilderProcessor::importInstrumentPreset(const juce::String& text) {
+    const auto xml = juce::parseXML(text);
+    if (xml == nullptr || !xml->hasTagName("WorldbuilderInstrument")) return false;
+    // The Place by its key (stable), else its number.
+    int type = xml->getIntAttribute("type", NoPlace);
+    const auto key = xml->getStringAttribute("place");
+    for (int t = 0; t < PlaceTypeCount; ++t)
+        if (key == placeKeys[std::size_t(t)]) type = t;
+    const inst::Id id { type, xml->getIntAttribute("element", 0) };
+    if (!id.valid()) return false;
+    setInstrument(id, true);
+    for (auto* child : xml->getChildWithTagNameIterator("Param")) {
+        const auto pid = child->getStringAttribute("id");
+        for (int p = 0; p < PCount; ++p)
+            if (isInstrumentParam(p) && p != PMode && pid == specs[std::size_t(p)].id) {
+                const float v = float(child->getDoubleAttribute("value", specs[std::size_t(p)].def));
+                if (std::isfinite(v)) setValue(p, juce::jlimit(specs[std::size_t(p)].min, specs[std::size_t(p)].max, v));
+            }
+    }
+    setInstrumentPresetName(xml->getStringAttribute("name"));
+    return true;
+}
+
+void WorldbuilderProcessor::applyInstrumentPreset(const inst::Preset& preset) {
+    if (!preset.id.valid()) return;
+    setInstrument(preset.id, true);
+    setValue(PInstCharacter, float(juce::jlimit(0, 2, preset.character)));
+    for (const auto& [p, v] : preset.values)
+        if (isInstrumentParam(p) && p != PMode) setValue(p, juce::jlimit(specs[std::size_t(p)].min, specs[std::size_t(p)].max, v));
+    setInstrumentPresetName(preset.name);
+}
+
+juce::String WorldbuilderProcessor::instrumentName() const {
+    const auto id = instrument();
+    return id.valid() ? capture::trackName(id.type, id.element) : juce::String();
+}
+
 EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& values) noexcept {
     const auto value = [&values](int p) { return values[std::size_t(p)]; };
     EngineControls c;
@@ -275,7 +409,10 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     // A host with no transport at all (no tempo, no song position: a test host, the
     // standalone app) cannot start or stop the world, so there it plays freely.
     const int mode = juce::roundToInt(raw[PPlayMode]->load(std::memory_order_relaxed));
-    bool transportMode = mode == PlayTransport || mode == PlayArrangement;
+    // Instrument mode: a normal instrument, the transport does not matter (no restarts
+    // from silence, no gate, no arrangement).
+    const bool instrumentOn = instrumentMode();
+    bool transportMode = (mode == PlayTransport || mode == PlayArrangement) && !instrumentOn;
     bool hostHasTransport = false;
     bool playing = false;
     bool restart = false;
@@ -369,7 +506,12 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
         const bool armed = keys.armed.load(std::memory_order_relaxed);
         const bool regions = keys.hostRegions.load(std::memory_order_relaxed);
         // Single-instrument mode: the track's regions are the part, so they always play.
-        const bool notes = keys.single.load(std::memory_order_relaxed) || !(playing && !armed && !regions);
+        const bool notes = instrumentOn || keys.single.load(std::memory_order_relaxed) || !(playing && !armed && !regions);
+        // The on-screen keyboard's notes first, at the block's start (events stay in time order).
+        for (keys::Event e; keyCount < 64 && uiKeys.pop(e);) {
+            e.offset = 0;
+            keyEvents[std::size_t(keyCount++)] = e;
+        }
         for (const auto meta : midi) {
             if (keyCount >= int(keyEvents.size())) break;
             const auto m = meta.getMessage();
@@ -404,7 +546,7 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     // Play Mode Arrangement (with the host playing) and the preview follow the arrangement.
     engine.arrangementIn.update();
     // (A single-instrument instance plays its instrument whatever the arrangement says.)
-    const bool soloInstrument = keys.single.load(std::memory_order_relaxed);
+    const bool soloInstrument = keys.single.load(std::memory_order_relaxed) || instrumentOn;
     // (Milestone 16: and the Pattern Editor's transport while it shows a clip or the song.)
     const bool editorArranges = !playing && txState != TransportStopped && transport.arranged.load(std::memory_order_relaxed);
     const arr::Arrangement* arranged = !soloInstrument && ((transportMode && mode == PlayArrangement && playing) || previewing || editorArranges)
@@ -494,6 +636,7 @@ void WorldbuilderProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
             controls.patterns[std::size_t(slot)] = world.patterns[std::size_t(slot)];
         }
         controls.slotOut = hasOut;
+        if (instrumentOn) applyInstrument(controls, world.v);
         if (restartHere) {
             if (restartResync) engine.resync(restartAt, restartBeat);
             else engine.restart(restartAt, restartBeat, controls);
@@ -657,9 +800,14 @@ bool WorldbuilderProcessor::importWorld(const juce::String& text) {
     const auto xml = juce::parseXML(text);
     if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return false;
     // The session's own settings stay as they are.
-    std::array<float, 5> kept {};
-    const std::array<int, 5> session { PPower, PMaster, PQuality, PPlayMode, PPlaceOuts };
-    for (std::size_t i = 0; i < session.size(); ++i) kept[i] = raw[std::size_t(session[i])]->load();
+    // (Instrument mode's settings and instrument are the session's too.)
+    std::vector<int> session { PPower, PMaster, PQuality, PPlayMode, PPlaceOuts };
+    for (int p = 0; p < PCount; ++p)
+        if (isInstrumentParam(p)) session.push_back(p);
+    std::vector<float> kept;
+    for (int p : session) kept.push_back(raw[std::size_t(p)]->load());
+    const auto keptInstrument = instrument();
+    const auto keptPreset = instrumentPresetName();
     juce::MemoryBlock block;
     copyXmlToBinary(*xml, block);
     setStateInformation(block.getData(), int(block.getSize()));
@@ -667,6 +815,8 @@ bool WorldbuilderProcessor::importWorld(const juce::String& text) {
         auto* parameter = parameters.getParameter(specs[std::size_t(session[i])].id);
         parameter->setValueNotifyingHost(parameter->convertTo0to1(kept[i]));
     }
+    setInstrument(keptInstrument, false);
+    setInstrumentPresetName(keptPreset);
     return true;
 }
 
@@ -943,6 +1093,15 @@ void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
         k.setProperty("playhead", transport.playhead.load(), nullptr);
         state.appendChild(k, nullptr);
     }
+    // Instrument mode: the instrument (its sound is in the parameters).
+    state.removeChild(state.getChildWithName("Instrument"), nullptr);
+    {
+        juce::ValueTree i("Instrument");
+        i.setProperty("place", placeKeys[std::size_t(juce::jlimit(0, PlaceTypeCount - 1, instrumentType.load()))], nullptr);
+        i.setProperty("type", instrumentType.load(), nullptr);
+        i.setProperty("element", instrumentElement.load(), nullptr);
+        state.appendChild(i, nullptr);
+    }
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
 }
 
@@ -1033,6 +1192,14 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         transport.punchIn.store(beats("punchin", 0.0));
         transport.punchOut.store(std::max(transport.punchIn.load() + 0.25, beats("punchout", 16.0)));
         transport.playhead.store(beats("playhead", 0.0));
+    }
+    // Instrument mode's instrument; older projects play the default one.
+    {
+        const auto i = state.getChildWithName("Instrument");
+        inst::Id id { int(i.getProperty("type", inst::defaultInstrument.type)), int(i.getProperty("element", inst::defaultInstrument.element)) };
+        if (!id.valid()) id = inst::defaultInstrument;
+        setInstrument(id, false);
+        parameters.state.setProperty("instpreset", state.getProperty("instpreset").toString(), nullptr);
     }
     // Interface settings (the Place overlays: Full, Subtle, Off). Before version 3 every
     // project stored Full, the old default, so those open with the new default (Off).

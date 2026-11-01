@@ -47,6 +47,7 @@ inline Move moveOf(int p) {
     // the layers' levels, mutes and solos and the Environment master always apply as set,
     // in every journey, arrangement and render.
     if (isEnvironmentMix(p)) return Move::Live;
+    if (isInstrumentParam(p)) return Move::Live;
     if (p >= PPlaceFirst && p < PPlayMode) {
         const int field = (p - PPlaceFirst) % PlaceParamCount;
         if (field == PlSolo) return Move::Live;

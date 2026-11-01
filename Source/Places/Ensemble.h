@@ -107,6 +107,17 @@ public:
     // brightness), which act on the whole instrument as on a synth.
     virtual float transposeSemis() const { return 0.0f; }
     virtual void stopLive(int) {}
+    // Instrument mode, once per chunk after the Place set the patch: the Attack and
+    // Release macros (-1..1, 0 as designed: each part scales its own envelope times, or
+    // for a struck or plucked part its strike and ring) and every voice it has.
+    virtual void shapeForInstrument(float attack, float release) { (void) attack, (void) release; }
+    // After the chunk: the patch as the Place designed it again (a field the Place does
+    // not set every chunk must not be scaled twice).
+    virtual void unshapeForInstrument() {}
+    // The macro's factor on a time: x 1/4 .. x 4.
+    static float timeScale(float x) { return std::exp2(2.0f * std::clamp(x, -1.0f, 1.0f)); }
+    // A swell added to an attack as the macro rises above the middle (seconds).
+    static float swell(float x) { return x > 0.0f ? 0.8f * x * x : 0.0f; }
     float bend = 0, mod = 0;
     // Scoop / Glide: set by the Place each chunk (before its patches), used as notes start.
     Slide slide;
@@ -124,6 +135,19 @@ protected:
     uint64_t noiseAt = 0;
     float spreadPan(float pan, float spread, float random) const { return std::clamp(pan + spread * (2.0f * random - 1.0f), -1.0f, 1.0f); }
 };
+
+// A part's copy of its patch as designed, kept while Instrument mode reshapes it.
+#define WB_INSTRUMENT_SHAPED(PatchType) \
+    PatchType designedPatch {}; \
+    bool shaped = false; \
+    void keepDesigned() { \
+        designedPatch = patch; \
+        shaped = true; \
+    } \
+    void unshapeForInstrument() override { \
+        if (shaped) patch = designedPatch; \
+        shaped = false; \
+    }
 
 // Scoop / Glide on an instrument without a slide of its own: each voice starts a plain
 // scoop below its note (semitones), shrinking every chunk.
@@ -162,6 +186,14 @@ class SynthPart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     SynthPatch patch;
+    WB_INSTRUMENT_SHAPED(SynthPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        patch.attack = patch.attack * timeScale(a) + swell(a);
+        patch.release *= timeScale(r);
+        if (!patch.held) patch.decay *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -323,6 +355,14 @@ class PluckPart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     PluckPatch patch;
+    WB_INSTRUMENT_SHAPED(PluckPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        // Attack: a softer or harder pluck; Release: how long the strings ring.
+        patch.brightness = dsp::clamp01(patch.brightness + 0.3f * a);
+        patch.decay *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         for (auto& p : voice) p.prepare(rate, 40.0f);
@@ -487,6 +527,14 @@ class ModalPart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     ModalPatch patch;
+    WB_INSTRUMENT_SHAPED(ModalPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        // Attack: a softer or harder mallet; Release: how long the bar or bell rings.
+        patch.hardness = dsp::clamp01(patch.hardness + 0.35f * a);
+        patch.decay *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -567,6 +615,17 @@ class DrumPart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     DrumPatch patch;
+    WB_INSTRUMENT_SHAPED(DrumPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        // Attack: a softer or harder stick; Release: how long the skins ring.
+        for (auto& row : patch.rows) {
+            row.hardness = dsp::clamp01(row.hardness + 0.35f * a);
+            row.decay *= timeScale(r);
+            row.noiseDecay *= timeScale(0.5f * r);
+        }
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -650,6 +709,14 @@ class FmPart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     FmPatch patch;
+    WB_INSTRUMENT_SHAPED(FmPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        patch.attack = patch.attack * timeScale(a) + swell(a);
+        patch.release *= timeScale(r);
+        patch.decay *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -775,6 +842,13 @@ class ChoirPart final : public Part {
 public:
     static constexpr int maxVoices = 6;
     ChoirPatch patch;
+    WB_INSTRUMENT_SHAPED(ChoirPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        patch.attack *= timeScale(a);
+        patch.release *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -887,6 +961,13 @@ class WindPart final : public Part {
 public:
     static constexpr int maxVoices = 4;
     WindPatch patch;
+    WB_INSTRUMENT_SHAPED(WindPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        patch.attack = patch.attack * timeScale(a) + swell(a);
+        patch.release *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -1004,6 +1085,13 @@ class BowedPart final : public Part {
 public:
     static constexpr int maxVoices = 6;
     BowedPatch patch;
+    WB_INSTRUMENT_SHAPED(BowedPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        patch.attack *= timeScale(a);
+        patch.release *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         for (auto& v : strings) v.prepare(rate, 30.0f);
@@ -1188,6 +1276,13 @@ class DripPart final : public Part {
 public:
     static constexpr int maxVoices = 8;
     DripPatch patch;
+    WB_INSTRUMENT_SHAPED(DripPatch)
+    void shapeForInstrument(float a, float r) override {
+        keepDesigned();
+        (void) a;
+        patch.decay *= timeScale(r);
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         reset();
@@ -1261,6 +1356,11 @@ class NoisePart final : public Part {
 public:
     static constexpr int maxVoices = 2;
     SweepPatch patch;
+    WB_INSTRUMENT_SHAPED(SweepPatch)
+    void shapeForInstrument(float, float) override {
+        keepDesigned();
+        patch.voices = maxVoices;
+    }
     void prepare(float r) override {
         rate = r;
         for (auto& v : voice) v.gain.setTime(0.02f, rate);

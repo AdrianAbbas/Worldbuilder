@@ -8527,6 +8527,8 @@ double worstStep(const std::vector<float>& y, std::size_t from, std::size_t to) 
 }
 } // namespace sampleTest
 
+#include "InstrumentTests.inc"
+
 // Loudness as ITU-R BS.1770 measures it (LUFS): K-weighted (a high shelf and a
 // high-pass), 400 ms blocks overlapping by 75%, gated at -70 LUFS and 10 LU under the
 // ungated mean, from `from` seconds. The gate leaves out the silences between a sparse
@@ -9461,6 +9463,7 @@ int main(int argc, char** argv) {
     if (run("overlap")) testOverlap(s);
     if (run("transport")) testTransport(s);
     if (run("single")) testSingle(s);
+    if (run("instrument")) testInstrumentMode(s);
     if (run("samples")) testSamples(s);
     if (run("balance")) testBalance(s);
     if (only.contains("slidetable")) printSlideTable();

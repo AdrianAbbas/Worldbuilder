@@ -48,6 +48,14 @@ struct EngineControls {
     bool splitOuts = false;
     // KEYS (Milestone 14): the Play target and its settings.
     keys::Controls keys;
+    // Instrument mode: slot 0 plays this instrument from the keys (which then target it,
+    // single), like a normal software instrument: no world shaping it, no patterns, no
+    // arrangement; the environment and the World Space only with `ambience`.
+    struct Instrument {
+        bool on = false, ambience = false;
+        int type = 0, element = 0;   // type 0: none
+        float attack = 0.5f, release = 0.5f;
+    } instrument;
 };
 
 // Each environment layer's balance trim (dB): at equal settings the layers sit about
@@ -129,6 +137,10 @@ public:
     // An instrument's pitch-bend range (semitones): a tone, an octave for sirens, risers
     // and gliding leads, none for a kit.
     static float bendRange(int type, int element);
+    // Instrument mode: the instrument playing now (after a change's fade), for the tests
+    // and the editor.
+    int instrumentType() const { return instType; }
+    int instrumentElement() const { return instElement; }
 
 private:
     // Fills the FIFO with one chunk; with an arrangement the chunk is split at beat
@@ -185,6 +197,12 @@ private:
     keys::Live live;
     keys::Click click;
     bool keysOnly = false, gateNow = true;
+    // Instrument mode: the instrument slot 0 plays now (type 0: none yet), the fade while
+    // it changes (out over 12 ms, the new one in at once with the keys still held), and
+    // whether the held keys start again on the new one.
+    int instType = 0, instElement = -1;
+    float instDuck = 1, instDown = 0.002f;
+    bool instRetrigger = false, instWas = false;
     int keysSlot = -1, keysElementNow = 0;
     double clickBeat = 0;
     int keysAwake = 0;    // samples the keyboard keeps a stopped world awake for

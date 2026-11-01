@@ -45,6 +45,7 @@ void WorldEngine::prepare(double sampleRate, const EngineControls& initial) {
     keysInput.reset();
     capture.reset();
     keysAwake = 0;
+    instDown = 1.0f / (0.012f * r);
     reset(initial);
 }
 
@@ -95,6 +96,11 @@ void WorldEngine::reset(const EngineControls& initial) {
     live.clear();
     click.reset();
     keysOnly = false;
+    // Instrument mode starts its instrument afresh (the slots were reset).
+    instType = 0;
+    instElement = -1;
+    instDuck = 1;
+    instRetrigger = false;
 }
 
 void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& controls) {
@@ -230,6 +236,16 @@ void WorldEngine::process(float* left, float* right, int n, const EngineControls
         keysOnly = alone;
         gateNow = controls.gate || keysOnly;
         keysAwake = std::max(0, keysAwake - n);
+        // An instrument plays from its first note: no slow fade in (a new instance, a
+        // project opening), Power still switches it.
+        if (controls.instrument.on && controls.power) powerRamp = 1.0f;
+        if (!controls.instrument.on && instWas) {
+            // Back to the world: the next Instrument mode starts its instrument afresh.
+            instType = 0;
+            instElement = -1;
+            instDuck = 1;
+        }
+        instWas = controls.instrument.on;
     }
     // The world is rendered in whole chunks into a small FIFO: control updates then
     // happen at the same positions whatever block size the host uses. An instrument
@@ -287,7 +303,13 @@ float WorldEngine::bendRange(int type, int element) {
 void WorldEngine::keysPiece(int n, uint64_t at, const EngineControls& controls) {
     live.clear();
     auto k = controls.keys;
-    const int type = k.valid() ? controls.places[std::size_t(k.slot)].type : NoPlace;
+    // Instrument mode: the instrument slot 0 plays now (it changes after its fade).
+    const bool instrument = controls.instrument.on;
+    if (instrument) {
+        k.slot = instType > NoPlace ? 0 : -1;
+        k.element = std::max(instElement, 0);
+    }
+    const int type = !k.valid() ? NoPlace : (instrument ? instType : controls.places[std::size_t(k.slot)].type);
     const auto info = patternInfo(type, k.element);
     // A target only where the slot holds a Place and the element has a pattern.
     if (info.kind == NoPattern) k.slot = -1;
@@ -306,6 +328,22 @@ void WorldEngine::keysPiece(int n, uint64_t at, const EngineControls& controls) 
     clickBeat = capture.free() ? capture.freeClock() : beatNow;
     const Place* place = target ? slots[std::size_t(k.slot)].place() : nullptr;
     const float transpose = place != nullptr && slots[std::size_t(k.slot)].playingType() == type ? place->partTranspose(k.element) : 0.0f;
+    // A new instrument: the keys still held (or pedalled) start again on it.
+    if (instRetrigger) {
+        instRetrigger = false;
+        if (target && k.monitor)
+            for (int note = 0; note < 128; ++note) {
+                if (!keysInput.sounding(note)) continue;
+                const int played = note + 12 * std::clamp(k.octave, keys::octaveMin, keys::octaveMax);
+                keys::LiveNote x;
+                x.offset = 0;
+                x.id = note + 1;
+                x.semis = float(played - keys::rootNote(controls.root));
+                x.row = kit ? (((played % 12) + 12) % 12) % std::max(1, info.rows) : 0;
+                x.velocity = std::max(0.05f, keysInput.velocityOf(note));
+                live.add(x);
+            }
+    }
     keys::Event e;
     uint64_t when = 0;
     while (keysInput.next(at + uint64_t(n), e, when)) {
@@ -354,6 +392,28 @@ void WorldEngine::keysPiece(int n, uint64_t at, const EngineControls& controls) 
 }
 
 void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, const EngineControls& controls, uint64_t at) {
+    // Instrument mode: a new instrument (or the first) fades the old one out over 12 ms,
+    // then slot 0 cuts to it and the keys still held start again on it. Nothing hangs:
+    // the old instrument is reset at silence.
+    float instFrom = 1, instTo = 1;
+    if (controls.instrument.on) {
+        const auto& want = controls.instrument;
+        const bool valid = patternInfo(want.type, want.element).kind != NoPattern;
+        const int wantType = valid ? want.type : NoPlace, wantElement = valid ? want.element : -1;
+        if (wantType != instType || wantElement != instElement) {
+            const bool sounding = instType > NoPlace && slots[0].playingType() == instType;
+            instFrom = instDuck;
+            instDuck = sounding ? std::max(0.0f, instDuck - instDown * float(n)) : 0.0f;
+            if (instDuck <= 0.0f) {
+                slots[0].cutTo(wantType);
+                instType = wantType;
+                instElement = wantElement;
+                instRetrigger = true;
+                instFrom = instDuck = 1.0f;
+            }
+            instTo = instDuck;
+        }
+    }
     keysPiece(n, at, controls);
     // Fully powered down: silence, and no work.
     // After the arrangement's end has faded out: silence too.
@@ -411,7 +471,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     for (std::size_t li = 0; li < layers.size(); ++li) {
         Generator* layer = layers[li];
         if (layer == nullptr) continue;
-        const bool audible = !controls.mute[li] && (!anySolo || controls.solo[li]) && !keysOnly;
+        // (Instrument mode: only with Place Ambience.)
+        const bool ambient = controls.instrument.on ? controls.instrument.ambience : !keysOnly;
+        const bool audible = !controls.mute[li] && (!anySolo || controls.solo[li]) && ambient;
         // The layer's own level, its balance trim (background under the Places) and the
         // Environment master; either level at its minimum silences it.
         const bool silent = controls.layerDb[li] <= -59.95f || controls.environmentDb <= -59.95f;
@@ -460,6 +522,15 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             pc.keysVariant = controls.keys.variant;
         }
         pc.keysOnly = keysOnly;
+        if (controls.instrument.on && si == 0) {
+            pc.type = instType;
+            pc.instrument = true;
+            pc.ambience = controls.instrument.ambience;
+            pc.attack = controls.instrument.attack;
+            pc.release = controls.instrument.release;
+            pc.duckFrom = instFrom;
+            pc.duckTo = instTo;
+        }
         patternsIn[si].update();
         const auto& slotPatterns = controls.patterns[si] != nullptr ? *controls.patterns[si] : patternsIn[si].read();
         bool sounding = false;
@@ -527,6 +598,11 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     }
     beat += double(bpm) / 60.0 * double(n) / rate;
 
+    // Instrument mode: a plain instrument's output stage. No World Space, Planet colour,
+    // distance filter or glue unless Place Ambience brings the world in (the safety
+    // limiter always).
+    const bool plain = controls.instrument.on && !controls.instrument.ambience;
+    const bool bare = controls.instrument.on;
     space.update(world);
     std::array<float, chunk> wetL {}, wetR {};
     space.process(sendL.data(), sendR.data(), wetL.data(), wetR.data(), n);
@@ -539,7 +615,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
 
     const float masterTarget = dbToGain(std::clamp(controls.masterDb, -60.0f, 6.0f));
     const float widthTarget = std::clamp(controls.width, 0.0f, 2.0f);
-    const float mixTarget = clamp01(controls.spaceMix);
+    const float mixTarget = plain ? 0.0f : clamp01(controls.spaceMix);
     const float powerTarget = controls.power ? 1.0f : 0.0f;
     const bool gateOpen = gateNow;
     // After the arrangement's end (End: stop) the world fades out.
@@ -562,8 +638,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);
-        float l = distance[0].lp(dryL[k]) * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f * planetSpace + fxL[k];
-        float r = distance[1].lp(dryR[k]) * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f * planetSpace + fxR[k];
+        const float dl = bare ? dryL[k] : distance[0].lp(dryL[k]), dr = bare ? dryR[k] : distance[1].lp(dryR[k]);
+        float l = dl * (1.0f - 0.4f * mix) + wetL[k] * mix * 1.6f * planetSpace + fxL[k];
+        float r = dr * (1.0f - 0.4f * mix) + wetR[k] * mix * 1.6f * planetSpace + fxR[k];
         if (sweeping) {
             l = sweep[0].tick(l).lp;
             r = sweep[1].tick(r).lp;
@@ -573,16 +650,16 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             l *= d;
             r *= d;
         }
-        planet.process(l, r, clock + uint64_t(i));
+        if (!plain) planet.process(l, r, clock + uint64_t(i));
 
-        const float w = width.next(widthTarget) * planetWidth;
+        const float w = width.next(widthTarget) * (plain ? 1.0f : planetWidth);
         const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * w;
         l = mid + side;
         r = mid - side;
 
         l = finiteOr(l);
         r = finiteOr(r);
-        glue.process(l, r);
+        if (!bare) glue.process(l, r);
 
         powerRamp = powerRamp < powerTarget ? std::min(powerTarget, powerRamp + powerStep) : std::max(powerTarget, powerRamp - powerStep);
         gateRamp = gateOpen ? std::min(1.0f, gateRamp + gateUp) : std::max(0.0f, gateRamp - gateDown);

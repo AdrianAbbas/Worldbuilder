@@ -78,6 +78,8 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             p->bend = keys ? c.live->bend : 0.0f;
             p->mod = keys ? c.live->mod : 0.0f;
         }
+    if (c.instrument && c.liveElement >= 0)
+        if (auto* p = parts[std::size_t(c.liveElement)]) p->shapeForInstrument(2.0f * (c.attack - 0.5f), 2.0f * (c.release - 0.5f));
     for (auto* p : parts)
         if (p != nullptr) p->update(frame);
 
@@ -180,9 +182,12 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             r[i] *= levelNow[k];
         }
         // Population (the effect depth) deepens the sends, as it does the Place's own effects.
-        if (c.fx != nullptr) c.fx->process(e, l, r, n, sendScale[k] * dsp::lerp(0.5f, 1.5f, c.s.fxDepth));
+        // (Instrument mode: the instrument's sends as set, whatever the Place's depth.)
+        if (c.fx != nullptr) c.fx->process(e, l, r, n, sendScale[k] * (c.instrument ? 1.0f : dsp::lerp(0.5f, 1.5f, c.s.fxDepth)));
     }
     mix(c, left, right, n);
+    if (c.instrument && c.liveElement >= 0)
+        if (auto* p = parts[std::size_t(c.liveElement)]) p->unshapeForInstrument();
 }
 
 } // namespace wb

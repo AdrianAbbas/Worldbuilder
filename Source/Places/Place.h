@@ -333,6 +333,10 @@ struct PlaceContext {
     int liveElement = -1;
     const keys::Live* live = nullptr;
     float liveLevel = 0;
+    // Instrument mode: the live instrument's Attack and Release macros (0..1, 0.5 as
+    // designed); it may use all of its voices.
+    bool instrument = false;
+    float attack = 0.5f, release = 0.5f;
 };
 
 // A deterministic random value per (salt, position), for the pattern generators.

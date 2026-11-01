@@ -5,6 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**Instrument mode is in progress** (any one WORLDBUILDER instrument as a normal software
+instrument, played from the host's MIDI): checklist and handoff at the end, in
+[Instrument mode](#instrument-mode-2026-11-01). A resumed session continues from the first
+unticked item.
+
 **Milestone 16 is done** (per-section clips in the Arrangement, a mini-DAW timeline):
 checklist and handoff at the end, in
 [Milestone 16](#milestone-16-section-clips-in-the-arrangement-2026-10-31).
@@ -5848,4 +5853,22 @@ this last push is without it, so CI builds and tests once.
 - MIDI export writes the written notes (no swing, no randomness), as before.
 - A unique clip that is long and busy (2048 notes at most per clip) is about 20 kB in
   memory; a whole arrangement of unique clips is a few MB at most and saves as text.
+
+---
+
+## Instrument mode (2026-11-01)
+
+The developer's request: use any single WORLDBUILDER instrument as a normal software
+instrument, played from Logic's or GarageBand's piano roll and MIDI keyboards, without
+the world, the patterns or muting everything else. Built on the single-instrument mode
+(Hotfix 4, d0f4327), which played one instrument *of the scene* from host MIDI.
+
+### Progress checklist
+
+- [x] 1. Mode switch WORLD / INSTRUMENT (a host parameter, saved, safe to automate); the engine and processor play the chosen instrument from host MIDI (the core of part 3 went in with it); tests (`--only instrument`)
+- [ ] 2. Instrument browser: by Place and by type, search, previous / next
+- [ ] 3. Playing from the host: polyphony, velocity, length, pedal, bend, mod wheel, Characters, per-instrument effects, Place Ambience, recorded articulations; switching without clicks or hung notes
+- [ ] 4. The instrument view: name and Place icon, Character, macros, effects, an on-screen keyboard lit by incoming notes
+- [ ] 5. Instrument presets (separate from world presets) and a factory set
+- [ ] 6. README (both workflows), tests (every instrument, CPU of several instances), DEVLOG handoff, final push without `[skip ci]`
 

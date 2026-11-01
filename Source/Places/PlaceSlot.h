@@ -42,6 +42,14 @@ struct PlaceSlotControls {
     const keys::Live* keys = nullptr;
     bool keysArmed = false, keysOnly = false;
     int keysVariant = 0;
+    // Instrument mode: the slot plays one instrument like a normal software instrument.
+    // The World Controls do not shape it (a neutral world), it sits close (no distance),
+    // sends nothing to the World Space unless `ambience`, and its output is multiplied
+    // by `duck` (from duckFrom to duckTo across the chunk: the engine's fade when the
+    // instrument changes). attack and release (0..1, 0.5 as designed) scale its times.
+    bool instrument = false, ambience = false;
+    float duckFrom = 1, duckTo = 1;
+    float attack = 0.5f, release = 0.5f;
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -79,6 +87,10 @@ public:
     void wake();
     // Silent at once (another slot while the keyboard plays alone).
     void silence() { gain.snap(0); }
+    // Instrument mode: plays `type` from the next chunk on, at once (no crossfade: the
+    // engine has faded the slot out), from a fresh start (whatever rang is gone), at its
+    // level from the first sample.
+    void cutTo(int type);
     // The pattern element e is playing now (nullptr when none), for the tests.
     // (nullptr too while a clip plays it: playingClip.)
     const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements && clipNow[std::size_t(e)] == nullptr ? playing[std::size_t(e)] : nullptr; }
@@ -159,6 +171,7 @@ private:
     uint32_t feedbackSerial = 0;
     double lastBeat = 0, nextBeat = 0;
     dsp::Smoother keysLevel;
+    bool snapGain = false;
 };
 
 } // namespace wb
