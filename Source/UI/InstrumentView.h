@@ -60,6 +60,7 @@ public:
     juce::TextButton& byTypeButton() { return byType; }
     juce::TextButton& ambienceButton() { return ambience; }
     juce::TextButton& characterButton(int c) { return character[std::size_t(std::clamp(c, 0, 2))]; }
+    juce::ComboBox& droneBox() { return droneChoice; }
     juce::Slider& macro(int which) { return macros[std::size_t(std::clamp(which, 0, macroCount - 1))]; }
     juce::Component& keyboardComponent();
     juce::Component& listComponent();
@@ -103,7 +104,8 @@ private:
     // Sound and effects.
     std::array<juce::Slider, macroCount> macros;
     juce::Slider reverb { "REVERB" }, delay { "DELAY" }, amount { "AMOUNT" }, width { "WIDTH" };
-    juce::ComboBox reverbType, delayType, characterFx;
+    juce::ComboBox reverbType, delayType, characterFx, droneChoice;
+    juce::Rectangle<int> droneLabel;
     std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
     std::vector<std::unique_ptr<ComboAttachment>> comboAttachments;
     std::unique_ptr<Keyboard> keyboard;

@@ -5,6 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**The hotfixes after Instrument mode** (only what is played sounds; the Village lute recorded;
+smoother drawing): checklist and handoff at the end, in
+[Hotfixes after Instrument mode](#hotfixes-after-instrument-mode-2026-11-01).
+
 **Instrument mode is done** (any one WORLDBUILDER instrument as a normal software
 instrument, played from the host's MIDI): checklist and handoff at the end, in
 [Instrument mode](#instrument-mode-2026-11-01).
@@ -6025,4 +6029,58 @@ push is without it, so CI builds and tests once.
   to the scene's Place over 0.3 s, as any Place change does.
 - CPU: four instances measured about 6.4 % of one core here (a cloud container); check on
   the MacBook Air.
+
+---
+
+## Hotfixes after Instrument mode (2026-11-01)
+
+The developer confirmed Instrument mode in GarageBand and sent three fixes.
+
+### Progress checklist
+
+- [x] 1. Only what is played sounds in Instrument mode: the hurdy-gurdy's drones follow the note (a Drone control: Off / Root / Root + Fifth), and every instrument checked
+- [ ] 2. The Village lute plays the guitar recordings, voiced apart from the Tavern's; recorded twins listed
+- [ ] 3. Smoother drawing in Instrument mode (and World mode): what repaints too often, caching, frame pacing, calmer decoration when slow; editor CPU before and after
+
+### 1. Only what is played sounds
+
+**The hurdy-gurdy** (Village): its drone strings were tuned to the key (the bourdon on the
+root, the mouche a fifth under it, the trompette on the root), its wrist strokes buzzed in
+time on their own, and after a key let go the crank turned on for a beat on the open
+melody string (the fifth): the constant low drone and the notes nobody played. In
+Instrument mode now: the bourdon sounds the held note's root an octave down, the mouche
+its fifth, the trompette the note; **Drone** (a new parameter `inst_drone`, Off / Root /
+Root + Fifth, Root by default; DRONE beside CHARACTER, enabled on the instruments that
+have one) chooses which drones sound; no strokes in time (velocity drives the buzz);
+the crank stops with the key. World mode is unchanged (the flag is per part, per chunk:
+`Part::instrumentMode`, false in World mode and on the parts not played).
+
+**Every instrument checked**, by code and by measurement (`WorldbuilderTests --only
+instaudit` lists each instrument: sound with no note, level five seconds after a release,
+the share of a pitch the key has and the note does not):
+- **A tonic pedal on the key** under held notes: the Castle's Brass Drone and the Tavern's
+  Squeezebox (SynthPart `pedal`). Now the lowest held note an octave down (and its fifth
+  with Root + Fifth), only while a key holds it, none with Drone Off.
+- **Sympathetic open strings on the key's root and fifth** (PluckPart and SamplePart
+  `sympathetic`: the lutes, the oud, the harp and the other plucked strings that have them):
+  now in sympathy with the note played last.
+- **Tremolo in time** (SynthPart, BowedPart, SamplePart `tremoloPerBeat`: throbs, bowed
+  tremolo): off in Instrument mode.
+- **Releases made for the world's beds**: drones, pads, choirs, bows and winds faded
+  about 2 dB a second after their key (the Cavern's sub drone was still at -50 dB ten
+  seconds on): it sounded like a note left on. The designed release is now capped at 0.3 s
+  (before the parts' weight) at the middle of Release; RELEASE still lengthens it four
+  times. Now -55 to -60 dB a second after the key.
+- Not found: strums, arpeggios and Place-added notes apply to patterns only (live notes
+  skip them; the Castle's and Village's added notes need Machinery, which the neutral
+  world leaves at 0), and the noise textures (winds, waves, fountain, dust) carry no pitch
+  tied to the key (their strongest pitch class does not move when the key does).
+- Struck bells, gongs and drums ring on after the key, as they should.
+
+**Tests** (`--only instrument`, 15 new checks, 93 in all): no instrument sounds without
+a note; none plays a pitch tied to the key (Root F# against Root C with an A held, Drone
+Off); every held instrument is below -60 dB six seconds after its release; the
+hurdy-gurdy's Drone: Root adds A2 under A3 (+12 dB or more), Root + Fifth adds E3, every
+setting silent a second after the key. The `hurdy` group (World mode) and the Village,
+Castle, Tavern, Forest, Desert and Palace instrument groups pass unchanged.
 

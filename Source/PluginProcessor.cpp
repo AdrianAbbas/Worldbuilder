@@ -144,6 +144,7 @@ void WorldbuilderProcessor::applyInstrument(EngineControls& c, const WorldValues
     in.ambience = value(PInstAmbience) > 0.5f;
     in.attack = value(PInstAttack);
     in.release = value(PInstRelease);
+    in.drone = juce::jlimit(0, 2, juce::roundToInt(value(PInstDrone)));
     // Nothing soloed away, nothing sent off on a journey: the instrument is what plays.
     c.solo.fill(false);
     c.slotOut.fill(false);

@@ -56,6 +56,35 @@ double heldLevel(inst::Id id, bool trims) {
 }
 } // namespace instTest
 
+// --only instaudit: every instrument in Instrument mode, for sounds nobody played: with no
+// note; after a release; a pitch class the key has but the note does not (Root F#, A played).
+void auditInstruments() {
+    using namespace instTest;
+    const auto& catalog = inst::Catalog::get();
+    for (int i = 0; i < catalog.count; ++i) {
+        const auto id = catalog.entry[std::size_t(i)];
+        const bool kit = patternInfo(id.type, id.element).kind == Kit;
+        auto quiet = ihost(id, false, false);
+        const double none = measure(quiet.render(2.0), 0.5).rmsDb;
+        auto h = ihost(id, false, false);
+        h.set("root", 6.0f);
+        h.set("inst_drone", 0.0f);
+        h.render(0.1);
+        note(h, 57, 100);
+        const auto held = h.render(1.5);
+        off(h, 57);
+        h.render(4.0);
+        const double after = measure(h.render(1.0), 0.0).rmsDb;
+        const auto pc = chroma(held, 0.05, 40.0, 5000.0, 32768);
+        double best = 0;
+        for (double e : pc) best = std::max(best, e);
+        const double fs = 10.0 * std::log10(pc[6] / std::max(best, 1.0e-30) + 1.0e-30);
+        const bool flag = none > -90.0 || after > -60.0 || (!kit && fs > -10.0);
+        std::cout << (flag ? "  [audit] FLAG " : "  [audit] ok   ") << capture::trackName(id.type, id.element) << ": silent " << fmt(none) << ", after " << fmt(after)
+                  << ", F# " << fmt(fs) << " dB" << (kit ? " (kit)" : "") << "\n";
+    }
+}
+
 // --only insttrims: measures every instrument and prints Instruments/Trims.h's table.
 void printInstrumentTrims() {
     using namespace instTest;
@@ -366,7 +395,7 @@ void testInstrumentMode(Suite& s) {
         mode.render(3.0);
         same.render(3.0);
         const auto modeAfter = measure(mode.render(1.0), 0.0), sameAfter = measure(same.render(1.0), 0.0);
-        s.check(measure(toWorld, 0.0).finite && measure(back, 0.0).finite && modeAfter.rmsDb < sameAfter.rmsDb + 3.0,
+        s.check(measure(toWorld, 0.0).finite && measure(back, 0.0).finite && modeAfter.rmsDb < std::max(sameAfter.rmsDb + 3.0, -80.0),
                 "switching the Mode (automation) with a note held: finite, and nothing hangs (its tail as an unswitched note's)",
                 fmt(modeAfter.rmsDb) + " vs " + fmt(sameAfter.rmsDb) + " dB, 3 s after the release");
     }
@@ -671,6 +700,80 @@ void testInstrumentMode(Suite& s) {
         folder.deleteRecursively();
         s.check(!juce::String(h.p->exportInstrumentPreset("x")).contains("p1_type"), "an instrument preset holds no world");
         juce::ignoreUnused(any);
+    }
+
+    s.section("instrument mode: only what is played sounds (drones, pedals, strokes, open strings, tails)");
+    {
+        // Every instrument: nothing without a note; nothing tied to the key (Root F# against
+        // Root C, an A played: the share of F# must not grow, Drone Off); a held note let go
+        // is gone within six seconds (struck bells, gongs and drums may ring on).
+        std::string sounding, keyed, tails;
+        int checked = 0;
+        const auto shareOf = [](const std::array<double, 12>& pc, int c) {
+            double total = 0;
+            for (double e : pc) total += e;
+            return total > 0.0 ? pc[std::size_t(c)] / total : 0.0;
+        };
+        for (int i = 0; i < catalog.count; ++i) {
+            const auto id = catalog.entry[std::size_t(i)];
+            const auto name = capture::trackName(id.type, id.element).toStdString();
+            const bool kit = patternInfo(id.type, id.element).kind == Kit;
+            const int group = inst::groupOf(id.type, id.element);
+            auto quiet = ihost(id, false, false);
+            if (measure(quiet.render(2.0), 0.0).rmsDb > -100.0) sounding += " " + name;
+            std::array<double, 2> share {};
+            double after = -240;
+            for (int k = 0; k < 2; ++k) {
+                auto h = ihost(id, false, false);
+                h.set("root", k == 0 ? 6.0f : 0.0f);
+                h.set("inst_drone", float(DroneOff));
+                h.render(0.1);
+                note(h, 57, 100);
+                share[std::size_t(k)] = shareOf(chroma(h.render(1.5), 0.05, 40.0, 5000.0, 32768), 6);
+                off(h, 57);
+                h.render(5.0);
+                after = std::max(after, measure(h.render(1.0), 0.0).rmsDb);
+            }
+            if (!kit && share[0] > 2.0 * share[1] + 0.03) keyed += " " + name + " (" + fmt(share[1]) + " -> " + fmt(share[0]) + ")";
+            const bool rings = kit || group == inst::BellsMallets || group == inst::Percussion;
+            if (!rings && after > -60.0) tails += " " + name + " (" + fmt(after) + " dB)";
+            ++checked;
+        }
+        s.check(checked == catalog.count && sounding.empty(), "no instrument sounds without a note", sounding);
+        s.check(keyed.empty(), "no instrument plays a pitch tied to the key instead of the note (drones, pedals, open strings)", keyed);
+        s.check(tails.empty(), "every held instrument has let go within six seconds of the release (below -60 dB)", tails);
+    }
+    {
+        // The hurdy-gurdy: its drone strings follow the note held, as Drone says.
+        const inst::Id hurdy { Village, VillagePlace::HurdyGurdy };
+        const auto play = [&](int drone, double& root, double& fifth, double& tail) {
+            auto h = ihost(hurdy);
+            h.set("root", 0.0f);
+            h.set("inst_drone", float(drone));
+            h.render(0.1);
+            note(h, 57, 100);
+            const auto y = mono(h.render(1.5), 0.6, 0.8);
+            root = sampleTest::energyAt(y, 0, y.size(), 48000, hzOf(45)) - sampleTest::energyAt(y, 0, y.size(), 48000, hzOf(57));
+            fifth = sampleTest::energyAt(y, 0, y.size(), 48000, hzOf(52)) - sampleTest::energyAt(y, 0, y.size(), 48000, hzOf(57));
+            off(h, 57);
+            h.render(1.0);
+            tail = measure(h.render(0.5), 0.0).rmsDb;
+        };
+        double offRoot = 0, offFifth = 0, offTail = 0, rootRoot = 0, rootFifth = 0, rootTail = 0, bothRoot = 0, bothFifth = 0, bothTail = 0;
+        play(DroneOff, offRoot, offFifth, offTail);
+        play(DroneRoot, rootRoot, rootFifth, rootTail);
+        play(DroneRootFifth, bothRoot, bothFifth, bothTail);
+        s.check(specs[PInstDrone].def == float(DroneRoot) && juce::String(specs[PInstDrone].choices) == "Off|Root|Root + Fifth", "a Drone control: Off, Root, Root + Fifth (Root by default)");
+        s.check(rootRoot > offRoot + 12.0, "Drone Root: the hurdy-gurdy's drone sounds the played note's root (A2 under A3)", fmt(offRoot) + " -> " + fmt(rootRoot) + " dB");
+        s.check(bothFifth > rootFifth + 12.0, "Drone Root + Fifth: and its fifth (E3)", fmt(rootFifth) + " -> " + fmt(bothFifth) + " dB");
+        s.check(std::max({ offTail, rootTail, bothTail }) < -70.0, "the drone stops with the key (one second after: silence)",
+                fmt(offTail) + " / " + fmt(rootTail) + " / " + fmt(bothTail) + " dB");
+        // In World mode the drones stay on the key, as before.
+        Host world;
+        world.set("p1_type", float(Village));
+        world.set("p1_solo", 1.0f);
+        world.render(0.2);
+        s.check(!world.p->instrumentMode(), "(World mode keeps its drones: the hurdy group tests them)");
     }
 }
 

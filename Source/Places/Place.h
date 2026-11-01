@@ -337,6 +337,7 @@ struct PlaceContext {
     // designed); it may use all of its voices.
     bool instrument = false;
     float attack = 0.5f, release = 0.5f;
+    int drone = 1;   // Off, Root, Root + Fifth
 };
 
 // A deterministic random value per (salt, position), for the pattern generators.

@@ -51,6 +51,7 @@ struct PlaceSlotControls {
     float trimDb = 0;   // the instrument's level trim (Instruments/Trims.h)
     float duckFrom = 1, duckTo = 1;
     float attack = 0.5f, release = 0.5f;
+    int drone = 1;   // Instrument mode's Drone (Off, Root, Root + Fifth)
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the

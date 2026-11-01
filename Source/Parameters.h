@@ -58,6 +58,8 @@ inline constexpr const char* placeOutChoices = "Copy|Split";
 // The instrument a new instance plays in Instrument mode: the Tavern's Lute Strum
 // (PlaceType Tavern, which Parameters.h cannot name; Catalog.h checks it).
 inline constexpr int defaultInstrumentType = 20;
+inline constexpr const char* droneChoices = "Off|Root|Root + Fifth";
+enum Drone { DroneOff, DroneRoot, DroneRootFifth };
 inline constexpr const char* modeChoices = "World|Instrument";
 enum Mode { ModeWorld, ModeInstrument };
 inline constexpr const char* planetChoices = "Rocky|Ocean|Ice Giant|Gas Giant|Desert World|Lava World|Forest World";
@@ -97,7 +99,7 @@ enum P {
     // itself (Place and element) is saved in the state; these are its sound.
     PMode, PInstCharacter, PInstLevel, PInstTone, PInstAttack, PInstRelease, PInstDrive,
     PInstReverb, PInstReverbType, PInstDelay, PInstDelayType, PInstFx, PInstFxAmount, PInstWidth,
-    PInstAmbience, PInstOctave,
+    PInstAmbience, PInstOctave, PInstDrone,
     PCount
 };
 
@@ -230,12 +232,17 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     { "inst_width", "Instrument Width", Kind::Float, 0, 2, instrumentFxDefault(defaultInstrumentType, 0, FxWidth) },
     { "inst_ambience", "Place Ambience", Kind::Bool, 0, 1, 0 },
     { "inst_octave", "Instrument Octave", Kind::Int, -2, 2, 0 },
+    // Drone (the hotfix after Instrument mode): an instrument's built-in drone (the
+    // hurdy-gurdy's drone strings, a brass or reed pedal) under the notes played: none,
+    // the played note's root an octave down, or the root and its fifth. It follows the
+    // note held and stops with it.
+    { "inst_drone", "Instrument Drone", Kind::Choice, 0, 2, 1, droneChoices },
 } };
 // clang-format on
 
 // Instrument mode's parameters: the session's, never part of a world, a Location or a
 // scene (loading a world or a scene keeps them; journeys leave them alone).
-inline constexpr bool isInstrumentParam(int p) { return p >= PMode && p <= PInstOctave; }
+inline constexpr bool isInstrumentParam(int p) { return p >= PMode && p <= PInstDrone; }
 
 static_assert(specs.back().id != nullptr, "the table fills every parameter slot");
 static_assert(int(PTemperature) == int(Temperature) && int(PActivity) == int(Activity), "World Controls come first, in enum order");

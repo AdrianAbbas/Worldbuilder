@@ -388,6 +388,10 @@ InstrumentView::InstrumentView(WorldbuilderProcessor& p) : processor(p) {
     combo(reverbType, PInstReverbType, reverbChoices, "The reverb: Room, Hall, Cathedral, Plate or Cave");
     combo(delayType, PInstDelayType, delayChoices, "The delay (in time with the host): Tape, Ping-Pong, Dotted or Reverse");
     combo(characterFx, PInstFx, characterFxChoices, "The character effect: Saturation, Chorus, Phaser, Filter or Lo-Fi");
+    combo(droneChoice, PInstDrone, droneChoices,
+          "Drone: the instrument's built-in drone under the notes you play (the hurdy-gurdy's drone strings, the brass drone's and the "
+          "squeezebox's pedal): Off, the played note's root an octave down, or the root and its fifth. It follows the note held and stops "
+          "with it. Other instruments have none.");
 
     rescanPresets();
     rebuildList();
@@ -612,6 +616,7 @@ void InstrumentView::refresh() {
         b.setToggleState(c == ch, juce::dontSendNotification);
     }
     nameMenu.setButtonText(fullName(id));
+    droneChoice.setEnabled(inst::hasDrone(id.type, id.element));
     presetMenu.setButtonText(preset.isNotEmpty() ? preset.toUpperCase() : juce::String("PRESETS..."));
     for (int i = 0; i < int(presetTiles.size()); ++i)
         presetTiles[std::size_t(i)]->setToggleState(preset.isNotEmpty() && presets[std::size_t(i)].name == preset, juce::dontSendNotification);
@@ -683,6 +688,9 @@ void InstrumentView::resized() {
         for (auto& c : character) {
             c.setBounds(chars.removeFromLeft(122).reduced(2, 0));
         }
+        chars.removeFromLeft(14);
+        droneLabel = chars.removeFromLeft(54);
+        droneChoice.setBounds(chars.removeFromLeft(130));
         r.removeFromTop(4);
         descriptionArea = r.removeFromTop(28);
         r.removeFromTop(6);
@@ -779,6 +787,7 @@ void InstrumentView::paint(juce::Graphics& g) {
     pixel::drawText(g, placeName(id.type) + " - " + upper(inst::groupNames[std::size_t(inst::groupOf(id.type, id.element))]) + kind, subArea, pal.heading,
                     juce::Justification::centredLeft, pixel::Font::Small);
     pixel::drawText(g, "CHARACTER", characterLabel, pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+    pixel::drawText(g, "DRONE", droneLabel, inst::hasDrone(id.type, id.element) ? pal.heading : pal.inkDim, juce::Justification::centredLeft, pixel::Font::Small);
     {
         // The Place's description, as its card says it (two lines at most).
         const auto text = juce::String(placeInfo(id.type).description).toUpperCase();

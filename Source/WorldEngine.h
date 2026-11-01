@@ -55,6 +55,7 @@ struct EngineControls {
         bool on = false, ambience = false;
         int type = 0, element = 0;   // type 0: none
         float attack = 0.5f, release = 0.5f;
+        int drone = DroneRoot;   // the instrument's built-in drone under the played notes
     } instrument;
 };
 

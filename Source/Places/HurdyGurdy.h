@@ -162,6 +162,11 @@ public:
         if (held.on && held.live == id) {
             held.until = -1.0e18;
             until = beat;   // the crank slows after the key
+            // Instrument mode: the crank stops with the key (no open string after it).
+            if (instrumentMode) {
+                held.on = false;
+                playing = false;
+            }
         }
     }
     void start(const PartFrame& f, const NoteOn& n) override {
@@ -184,21 +189,28 @@ public:
         beatsPerSecond = float(f.beatsPerSecond);
         if (held.on && f.beat >= held.until) {
             held.on = false;
-            melodySemis = openSemis;   // the key released: the open string
+            if (!instrumentMode) melodySemis = openSemis;   // the key released: the open string
         }
-        // The crank keeps turning a little after the last note, then stops.
-        if (playing && f.beat >= until + 1.0) playing = false;
+        // The crank keeps turning a little after the last note, then stops. (Instrument
+        // mode: only while a key is held.)
+        if (playing && (instrumentMode ? !held.on : f.beat >= until + 1.0)) playing = false;
+        // The drone strings: the key's root (bourdon) and the fifth below it (mouche), the
+        // trompette on the root. Instrument mode: the note held instead, the drones as the
+        // Drone setting says (Off, Root, Root + Fifth).
+        const float droneRoot = instrumentMode ? melodySemis - 12.0f : -12.0f;
+        bourdonOn = !instrumentMode || drone != DroneOff ? 1.0f : 0.0f;
+        moucheOn = !instrumentMode || drone == DroneRootFifth ? 1.0f : 0.0f;
         const float position = 0.09f;   // the wheel touches the strings near the bridge
         scoop *= scoopMul;
         strings[Chanter].tune(music::noteHz(root, melodySemis + bend - scoop), rate, position);
-        strings[Bourdon].tune(music::noteHz(root, -12.0f), rate, position);
-        strings[Mouche].tune(music::noteHz(root, -5.0f), rate, position);
-        strings[Trompette].tune(music::noteHz(root, 0.0f), rate, position);
+        strings[Bourdon].tune(music::noteHz(root, droneRoot), rate, position);
+        strings[Mouche].tune(music::noteHz(root, droneRoot + 7.0f), rate, position);
+        strings[Trompette].tune(music::noteHz(root, droneRoot + 12.0f), rate, position);
         for (auto& s : strings) {
             s.pressure = patch.pressure;
             s.lossGain = 0.93f + 0.05f * dsp::clamp01(patch.brightness + 0.5f * mod);
         }
-        trompettePeriod = rate / music::noteHz(root, 0.0f);
+        trompettePeriod = rate / music::noteHz(root, droneRoot + 12.0f);
         if (!bodyTuned) {
             for (auto& side : body)
                 for (std::size_t m = 0; m < side.size(); ++m) side[m].set(hurdy::bodyModes[m].hz, hurdy::bodyModes[m].q, rate);
@@ -213,7 +225,8 @@ public:
     void render(float* left, float* right, int n) override {
         const float target = playing ? dsp::clamp01(patch.wheel) * (0.8f + 0.2f * velocity) : 0.0f;
         const float smooth = 1.0f - std::exp(-1.0f / (0.12f * rate));   // the wheel speeds up and slows down
-        const float strokes = std::max(0.0f, patch.strokesPerBeat);
+        // (Instrument mode: no strokes in time on their own; velocity drives the buzz.)
+        const float strokes = instrumentMode ? 0.0f : std::max(0.0f, patch.strokesPerBeat);
         const auto pan = dsp::panGains(patch.pan);
         const float spread = patch.width;
         for (int i = 0; i < n; ++i) {
@@ -238,8 +251,8 @@ public:
             const float bow = 0.03f + 0.22f * wheel;
             const float on = wheelLevel > 0.002f ? 1.0f : 0.0f;
             const float chanter = strings[Chanter].tick(bow * on) * patch.chanter;
-            const float bourdon = strings[Bourdon].tick(bow * on) * patch.bourdon;
-            const float mouche = strings[Mouche].tick(bow * on) * patch.mouche;
+            const float bourdon = strings[Bourdon].tick(bow * on * bourdonOn) * patch.bourdon * bourdonOn;
+            const float mouche = strings[Mouche].tick(bow * on * moucheOn) * patch.mouche * moucheOn;
             const float trompetteForce = strings[Trompette].tick(bow * on);
             // The chien: lifted when the stroke pushes the string's force past its weight;
             // once up it raps the soundboard once per string period.
@@ -302,6 +315,7 @@ private:
     float melodySemis = openSemis;
     float scoop = 0, scoopMul = 0;
     float wheelLevel = 0, chien = 0, tick = 0, raspEnv = 0, periodPhase = 0, trompettePeriod = 100;
+    float bourdonOn = 1, moucheOn = 1;
 };
 
 } // namespace wb

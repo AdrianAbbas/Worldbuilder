@@ -427,6 +427,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     context.instrument = c.instrument;
     context.attack = c.attack;
     context.release = c.release;
+    context.drone = c.drone;
     fx.begin(c.fx, n);
     context.fx = &fx;
     current->render(context, left, right, n);

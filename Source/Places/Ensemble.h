@@ -118,7 +118,17 @@ public:
     static float timeScale(float x) { return std::exp2(2.0f * std::clamp(x, -1.0f, 1.0f)); }
     // A swell added to an attack as the macro rises above the middle (seconds).
     static float swell(float x) { return x > 0.0f ? 0.8f * x * x : 0.0f; }
+    // The longest designed release Instrument mode keeps at the middle of Release
+    // (seconds, before the parts' weight): the world's beds fade over many seconds, an
+    // instrument lets go when its key does.
+    static constexpr float instrumentRelease = 0.3f;
     float bend = 0, mod = 0;
+    // Instrument mode (set every chunk; false in World mode and on the parts not played):
+    // only what is played sounds. Built-in drones and pedals follow the note held, as
+    // `drone` says (Off, Root, Root + Fifth); open strings ring in sympathy with the note
+    // played, not the key; nothing plays in time on its own (strokes, auto-repeats).
+    bool instrumentMode = false;
+    int drone = 1;
     // Scoop / Glide: set by the Place each chunk (before its patches), used as notes start.
     Slide slide;
     virtual SlideDesign designed() const { return {}; }
@@ -189,8 +199,9 @@ public:
     WB_INSTRUMENT_SHAPED(SynthPatch)
     void shapeForInstrument(float a, float r) override {
         keepDesigned();
+        patch.tremoloDepth = 0;   // nothing pulses in time on its own
         patch.attack = patch.attack * timeScale(a) + swell(a);
-        patch.release *= timeScale(r);
+        patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         if (!patch.held) patch.decay *= timeScale(r);
         patch.voices = maxVoices;
     }
@@ -201,6 +212,7 @@ public:
     void reset() override {
         for (auto& v : voice) v.reset();
         pedalVoice.reset();
+        fifthVoice.reset();
         for (auto& h : held) h = {};
         claimed.fill(-1.0e9);
         noiseAt = 0;
@@ -260,23 +272,38 @@ public:
             apply(v);
             v.update(rate);
         }
-        if (patch.pedal > 0.0f && any) {
-            const float hz = music::noteHz(f.root, patch.pedalSemis + patch.transpose);
-            if (!pedalVoice.active() || pedalVoice.env.stage == dsp::Env::Release) {
-                scoop(pedalVoice);
-                pedalVoice.start(hz, std::max(patch.attack, 0.5f), 1.0f, 1.0f, rate);
+        // The pedal: the key's tonic under the held notes. Instrument mode: the lowest note
+        // held, an octave down (and its fifth with Root + Fifth), only while a key holds it,
+        // or none with Drone Off.
+        float pedalSemis = patch.pedalSemis, lowest = 1.0e9f;
+        if (instrumentMode) {
+            for (int i = 0; i < maxVoices; ++i)
+                if (held[std::size_t(i)].on && voice[std::size_t(i)].active()) lowest = std::min(lowest, held[std::size_t(i)].semis);
+            pedalSemis = lowest - 12.0f;
+        }
+        const bool pedalOn = patch.pedal > 0.0f && any && (!instrumentMode || (drone != DroneOff && lowest < 1.0e8f));
+        const bool fifthOn = pedalOn && instrumentMode && drone == DroneRootFifth;
+        const auto pedalFor = [&](dsp::SynthVoice& pv, bool on, float semis, float level) {
+            if (on) {
+                const float hz = music::noteHz(f.root, semis + patch.transpose);
+                if (!pv.active() || pv.env.stage == dsp::Env::Release) {
+                    scoop(pv);
+                    pv.start(hz, std::max(patch.attack, instrumentMode ? 0.05f : 0.5f), 1.0f, 1.0f, rate);
+                }
+                pv.targetHz = hz;
+            } else if (pv.active() && pv.env.stage != dsp::Env::Release) {
+                pv.release(instrumentMode ? patch.release * weight::release : std::max(patch.release * weight::release, 0.5f), rate);
             }
-            pedalVoice.targetHz = hz;
-        } else if (pedalVoice.active() && pedalVoice.env.stage != dsp::Env::Release) {
-            pedalVoice.release(std::max(patch.release * weight::release, 0.5f), rate);
-        }
-        if (pedalVoice.active()) {
-            apply(pedalVoice);
-            pedalVoice.subLevel = 0.6f;
-            pedalVoice.gain = patch.pedal;
-            pedalVoice.pan = dsp::panGains(patch.pan);
-            pedalVoice.update(rate);
-        }
+            if (pv.active()) {
+                apply(pv);
+                pv.subLevel = 0.6f;
+                pv.gain = level;
+                pv.pan = dsp::panGains(patch.pan);
+                pv.update(rate);
+            }
+        };
+        pedalFor(pedalVoice, pedalOn, pedalSemis, patch.pedal);
+        pedalFor(fifthVoice, fifthOn, pedalSemis + 7.0f, 0.7f * patch.pedal);
         trem = 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::cos(float(f.beat * double(patch.tremoloPerBeat)) * dsp::twoPi));
     }
     void render(float* left, float* right, int n) override {
@@ -286,6 +313,7 @@ public:
             for (auto& v : voice)
                 if (v.active()) v.tick(l, r);
             if (pedalVoice.active()) pedalVoice.tick(l, r);
+            if (fifthVoice.active()) fifthVoice.tick(l, r);
             left[i] += l * g;
             right[i] += r * g;
         }
@@ -328,7 +356,7 @@ private:
     std::array<dsp::SynthVoice, maxVoices> voice;
     std::array<HeldNote, maxVoices> held {};
     std::array<double, maxVoices> claimed {};
-    dsp::SynthVoice pedalVoice;
+    dsp::SynthVoice pedalVoice, fifthVoice;
     float trem = 1;
 };
 
@@ -393,6 +421,7 @@ public:
             }
     }
     void start(const PartFrame& f, const NoteOn& n) override {
+        lastPlayed = n.semis + patch.transpose;
         const auto k = dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const dsp::Pluck& p) { return p.level(); });
         auto& v = voice[k];
         liveId[k] = n.live;
@@ -434,8 +463,10 @@ public:
                 for (std::size_t k = 0; k < side.size(); ++k) side[k].set(b.mode[k].hz, b.mode[k].q, rate);
         }
         // The open strings: the key's root and fifth, low.
+        // (Instrument mode: in sympathy with the note played last, not the key.)
         if (patch.sympathetic > 0.0f) {
-            const float root = music::noteHz(f.root, -12.0f), fifth = music::noteHz(f.root, -12.0f + float(music::degree(f.mood, 4)));
+            const float base = instrumentMode ? lastPlayed - 12.0f : -12.0f;
+            const float root = music::noteHz(f.root, base), fifth = music::noteHz(f.root, base + (instrumentMode ? 7.0f : float(music::degree(f.mood, 4))));
             openPeriod[0] = rate / root;
             openPeriod[1] = rate / fifth;
         }
@@ -498,6 +529,7 @@ private:
     std::array<dsp::DelayLine, 2> open;
     std::array<dsp::OnePole, 2> openDamp;
     std::array<float, 2> openPeriod { 400, 300 };
+    float lastPlayed = 0;
     double strumBeat = -1.0e9;
     Scoops<maxVoices> scoops;
     float strumFirst = 0;
@@ -713,7 +745,7 @@ public:
     void shapeForInstrument(float a, float r) override {
         keepDesigned();
         patch.attack = patch.attack * timeScale(a) + swell(a);
-        patch.release *= timeScale(r);
+        patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         patch.decay *= timeScale(r);
         patch.voices = maxVoices;
     }
@@ -846,7 +878,7 @@ public:
     void shapeForInstrument(float a, float r) override {
         keepDesigned();
         patch.attack *= timeScale(a);
-        patch.release *= timeScale(r);
+        patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         patch.voices = maxVoices;
     }
     void prepare(float r) override {
@@ -965,7 +997,7 @@ public:
     void shapeForInstrument(float a, float r) override {
         keepDesigned();
         patch.attack = patch.attack * timeScale(a) + swell(a);
-        patch.release *= timeScale(r);
+        patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         patch.voices = maxVoices;
     }
     void prepare(float r) override {
@@ -1088,8 +1120,9 @@ public:
     WB_INSTRUMENT_SHAPED(BowedPatch)
     void shapeForInstrument(float a, float r) override {
         keepDesigned();
+        patch.tremoloDepth = 0;   // nothing pulses in time on its own
         patch.attack *= timeScale(a);
-        patch.release *= timeScale(r);
+        patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         patch.voices = maxVoices;
     }
     void prepare(float r) override {

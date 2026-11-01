@@ -528,6 +528,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             pc.ambience = controls.instrument.ambience;
             pc.attack = controls.instrument.attack;
             pc.release = controls.instrument.release;
+            pc.drone = controls.instrument.drone;
             pc.duckFrom = instFrom;
             pc.duckTo = instTo;
         }

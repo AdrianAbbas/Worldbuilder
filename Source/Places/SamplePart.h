@@ -77,10 +77,11 @@ public:
         designedPatch = patch;
         shaped = true;
         fallback.shapeForInstrument(a, r);
+        patch.tremoloDepth = 0;   // nothing pulses in time on its own
         // Held recordings: the fade in and the release; ringing ones: how fast they die
         // away below the middle (as recorded above it), and their damping when released.
         patch.attack = patch.attack * timeScale(a) + swell(a);
-        patch.release *= timeScale(r);
+        patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         if (!patch.held && r < 0.0f) patch.decay = (patch.decay > 0.0f ? patch.decay : 6.0f) * timeScale(r);
         patch.voices = maxVoices;
     }
@@ -145,6 +146,7 @@ public:
             fallback.start(f, n);
             return;
         }
+        lastPlayed = n.semis + patch.transpose;
         const auto* inst = articulation(n);
         startWith(f, n, inst, -1.0f, -1.0f);
     }
@@ -247,6 +249,8 @@ public:
         if (!sampled()) {
             fallback.bend = bend;
             fallback.mod = mod;
+            fallback.instrumentMode = instrumentMode;
+            fallback.drone = drone;
             fallback.slide = slide;
             fallback.update(f);
             return;
@@ -258,8 +262,10 @@ public:
                 for (std::size_t k = 0; k < side.size(); ++k) side[k].set(b.mode[k].hz, b.mode[k].q, rate);
         }
         if (patch.sympathetic > 0.0f) {
-            openPeriod[0] = rate / music::noteHz(f.root, -12.0f);
-            openPeriod[1] = rate / music::noteHz(f.root, -12.0f + float(music::degree(f.mood, 4)));
+            // (Instrument mode: in sympathy with the note played last, not the key.)
+            const float base = instrumentMode ? lastPlayed - 12.0f : -12.0f;
+            openPeriod[0] = rate / music::noteHz(f.root, base);
+            openPeriod[1] = rate / music::noteHz(f.root, base + (instrumentMode ? 7.0f : float(music::degree(f.mood, 4))));
         }
         trem = 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::cos(float(f.beat * double(patch.tremoloPerBeat)) * dsp::twoPi));
         const float glide = glideFor(slide.glide(patch.glide), rate);
@@ -485,6 +491,7 @@ private:
     std::array<dsp::DelayLine, 2> open;
     std::array<dsp::OnePole, 2> openDamp;
     std::array<float, 2> openPeriod { 400, 300 };
+    float lastPlayed = 0;
     double strumBeat = -1.0e9;
     float strumFirst = 0, trem = 1, gainNow = -1;
     int strumCount = 0;

@@ -78,6 +78,11 @@ void EnsemblePlace::render(const PlaceContext& c, float* left, float* right, int
             p->bend = keys ? c.live->bend : 0.0f;
             p->mod = keys ? c.live->mod : 0.0f;
         }
+    for (int e = 0; e < placeElements; ++e)
+        if (auto* p = parts[std::size_t(e)]) {
+            p->instrumentMode = c.instrument && c.liveElement == e;
+            p->drone = c.drone;
+        }
     if (c.instrument && c.liveElement >= 0)
         if (auto* p = parts[std::size_t(c.liveElement)]) p->shapeForInstrument(2.0f * (c.attack - 0.5f), 2.0f * (c.release - 0.5f));
     for (auto* p : parts)

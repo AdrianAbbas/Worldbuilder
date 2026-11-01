@@ -61,6 +61,12 @@ inline int groupOf(int type, int element) {
     }
 }
 
+// Whether an instrument has a built-in drone (the Drone control acts on it): the
+// hurdy-gurdy's drone strings, the brass drone's and the squeezebox's pedal.
+inline bool hasDrone(int type, int element) {
+    return (type == Village && element == 1) || (type == Castle && element == 0) || (type == Tavern && element == 4);
+}
+
 // Every instrument, in Place order (each Place's six), built once.
 struct Catalog {
     static constexpr int maxEntries = PlaceTypeCount * placeElements;
