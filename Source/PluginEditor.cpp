@@ -352,6 +352,9 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         b->setColour(juce::TextButton::buttonOnColourId, ui::colours::brass);
         addAndMakeVisible(*b);
     }
+    // Instrument mode's own screen, below the top bar.
+    instrumentScreen = std::make_unique<ui::InstrumentView>(processor);
+    addChildComponent(*instrumentScreen);
     modeWorld.onClick = [this] {
         processor.setInstrumentMode(false);
         refreshMode();
@@ -529,12 +532,35 @@ void WorldbuilderEditor::refreshMode() {
     const bool on = processor.instrumentMode();
     modeWorld.setToggleState(!on, juce::dontSendNotification);
     modeInstrument.setToggleState(on, juce::dontSendNotification);
-    if (on == shownInstrument) return;
+    if (on == shownInstrument || instrumentScreen == nullptr) return;
     shownInstrument = on;
+    if (on) {
+        // The world's panels make way: the instrument's screen below the top bar, which
+        // keeps the title, WORLD / INSTRUMENT and POWER.
+        closeDetail();
+        if (patterns->isVisible()) patterns->setVisible(false);
+        closeArrange();
+        hiddenForInstrument.clear();
+        for (auto* child : getChildren()) {
+            if (child == instrumentScreen.get() || child == &modeWorld || child == &modeInstrument || child == &power || !child->isVisible()) continue;
+            hiddenForInstrument.emplace_back(child);
+            child->setVisible(false);
+        }
+        instrumentScreen->refresh();
+        instrumentScreen->setVisible(true);
+        instrumentScreen->toFront(false);
+    } else {
+        instrumentScreen->setVisible(false);
+        for (auto& c : hiddenForInstrument)
+            if (c != nullptr) c->setVisible(true);
+        hiddenForInstrument.clear();
+        refreshPlaceStrips();
+    }
+    updateOverlayFrames();
     repaint();
 }
 
-bool WorldbuilderEditor::covered() const { return patterns->isVisible() || arrange->isVisible(); }
+bool WorldbuilderEditor::covered() const { return patterns->isVisible() || arrange->isVisible() || shownInstrument; }
 
 void WorldbuilderEditor::openArrange() {
     enableFineDrag(*arrange);
@@ -820,6 +846,7 @@ void WorldbuilderEditor::resized() {
     f.removeFromLeft(14);
     capture->setBounds(f.withTrimmedRight(8).withWidth(std::min(f.getWidth() - 8, 214)));
     overlays->setBounds(getLocalBounds());
+    if (instrumentScreen != nullptr) instrumentScreen->setBounds(getLocalBounds().reduced(12, 10).withTrimmedTop(header.getHeight() + 8));
     pixel::snapChildren(*this);   // every control on whole art pixels
     frameOutlines.clear();
     overlayKeepClear.clear();
@@ -899,6 +926,21 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
 
     // Text only where the clip reaches: frames often repaint small areas.
     if (g.clipRegionIntersects(headerTitle)) pixel::drawTitle(g, "WORLDBUILDER", headerTitle, p.heading, p.heading.brighter(0.4f), p.outline);
+    if (shownInstrument) {
+        // Instrument mode: the top bar names the instrument; its screen draws the rest.
+        const auto name = processor.instrumentName().toUpperCase().replace(" - ", " > ");
+        const auto preset = processor.instrumentPresetName().toUpperCase();
+        const auto area = header.withLeft(modeArea.getRight() + 16).withRight(power.getX() - 16);
+        pixel::drawText(g, "INSTRUMENT MODE", area.withHeight(header.getHeight() / 2).translated(0, 3), p.heading, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, name + (preset.isNotEmpty() ? "  -  " + preset : juce::String()), area.withTrimmedTop(header.getHeight() / 2 - 2), p.accent,
+                        juce::Justification::centredLeft, pixel::Font::Large);
+        pixel::drawCached(g, "rule/" + juce::String(header.getWidth()), { header.getX(), header.getBottom() + 2 }, [&] {
+            pixel::Canvas k(header.getWidth() / pixel::unit, 1);
+            for (int x = 0; x < k.width(); x += 3) k.set(x, 0, p.rim.withAlpha(0.6f));
+            return k;
+        });
+        return;
+    }
     if (g.clipRegionIntersects(intensityLabel)) {
         pixel::drawText(g, "SCORE INTENSITY", intensityLabel.withHeight(15), p.heading, juce::Justification::centredRight, pixel::Font::Small);
         pixel::drawText(g, juce::String(juce::roundToInt(param(PIntensity) * 100.0f)) + "%", intensityLabel.withTrimmedTop(15), p.accent,
@@ -1351,7 +1393,12 @@ void WorldbuilderEditor::updateTheme(float seconds, bool snap) {
     // muted or removed) and moves there linearly in about 1.2 s, so Places fade in and
     // out of the look, the globe and the overlays together.
     std::array<float, PlaceTypeCount> target {};
-    for (int slot = 0; slot < placeSlotCount; ++slot) {
+    // Instrument mode: the look of the instrument's Place.
+    if (shownInstrument) {
+        const auto id = processor.instrument();
+        if (id.valid()) target[std::size_t(id.type)] = 1.0f;
+    }
+    for (int slot = 0; slot < placeSlotCount && !shownInstrument; ++slot) {
         const int type = placeType(slot);
         if (type <= NoPlace || type >= PlaceTypeCount || param(placeParam(slot, PlMute)) > 0.5f) continue;
         const float level = juce::jlimit(0.0f, 1.0f, (param(placeParam(slot, PlLevel)) + 36.0f) / 36.0f);

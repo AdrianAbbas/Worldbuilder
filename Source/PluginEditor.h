@@ -7,6 +7,7 @@
 #include "UI/ArrangeView.h"
 #include "UI/CapturePanel.h"
 #include "UI/FrameGovernor.h"
+#include "UI/InstrumentView.h"
 #include "UI/TinyPlanet.h"
 #include "UI/LocationBar.h"
 #include "UI/PatternEditor.h"
@@ -96,6 +97,9 @@ public:
     // Follows the Mode parameter (a click, host automation, a project loading).
     void refreshMode();
     bool showingInstrument() const { return shownInstrument; }
+    wb::ui::InstrumentView& instrumentView() { return *instrumentScreen; }
+    // A host parameter's knob (nullptr: none), for the tests.
+    juce::Slider* knob(int param) const { return param >= 0 && param < wb::PCount ? knobFor[std::size_t(param)] : nullptr; }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -207,6 +211,9 @@ private:
     juce::TextButton modeWorld { "WORLD" }, modeInstrument { "INSTRUMENT" };
     juce::Rectangle<int> modeArea;
     bool shownInstrument = false;
+    std::unique_ptr<wb::ui::InstrumentView> instrumentScreen;
+    // The world's controls that Instrument mode hid (shown again on the way back).
+    std::vector<juce::Component::SafePointer<juce::Component>> hiddenForInstrument;
     void refreshArrangementState();
     juce::TextButton scenePrev { "<" }, sceneNext { ">" }, sceneMenu, inspireToggle { "INSPIRE" }, sceneUndo { "UNDO" };
     // After a scene loads: the strips, the panels and the ARRANGE view show it.

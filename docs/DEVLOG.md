@@ -5866,9 +5866,10 @@ the world, the patterns or muting everything else. Built on the single-instrumen
 ### Progress checklist
 
 - [x] 1. Mode switch WORLD / INSTRUMENT (a host parameter, saved, safe to automate); the engine and processor play the chosen instrument from host MIDI (the core of part 3 went in with it); tests (`--only instrument`)
-- [ ] 2. Instrument browser: by Place and by type, search, previous / next
-- [ ] 3. Playing from the host: polyphony, velocity, length, pedal, bend, mod wheel, Characters, per-instrument effects, Place Ambience, recorded articulations; switching without clicks or hung notes
-- [ ] 4. The instrument view: name and Place icon, Character, macros, effects, an on-screen keyboard lit by incoming notes
-- [ ] 5. Instrument presets (separate from world presets) and a factory set
+- [x] 2. Instrument browser: by Place and by type, search, previous / next
+- [x] 3. Playing from the host: polyphony, velocity, length, pedal, bend, mod wheel, Characters, per-instrument effects, Place Ambience, recorded articulations; switching without clicks or hung notes
+- [x] 4. The instrument view: name and Place icon, Character, macros, effects, an on-screen keyboard lit by incoming notes
+- [x] 5. Instrument presets (separate from world presets) and a factory set
+  (Parts 2, 4 and 5 were built together, in one push: they share the instrument screen. Part 3's last piece, the per-instrument level trims, went up on its own just before.)
 - [ ] 6. README (both workflows), tests (every instrument, CPU of several instances), DEVLOG handoff, final push without `[skip ci]`
 

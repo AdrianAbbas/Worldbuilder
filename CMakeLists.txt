@@ -55,7 +55,7 @@ target_sources(WORLDBUILDER PRIVATE
     Source/Places/Station.cpp Source/Places/Megacity.cpp Source/Places/Bridge.cpp Source/Places/Mining.cpp Source/Places/AlienRuins.cpp Source/Places/Nebula.cpp
     Source/Patterns/PatternStore.cpp Source/Patterns/PatternMidi.cpp Source/Capture/Capture.cpp Source/Keys/Recorder.cpp Source/Samples/SampleBank.cpp
     Source/Locations/Travel.cpp Source/Locations/LocationBank.cpp Source/Arrangement/ArrangementStore.cpp Source/Arrangement/Templates.cpp Source/Scenes/Scenes.cpp
-    Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/OverlayArt.cpp Source/UI/PatternEditor.cpp Source/UI/KeysPanel.cpp Source/UI/CapturePanel.cpp Source/UI/LocationBar.cpp Source/UI/ArrangeView.cpp
+    Source/UI/WorldLookAndFeel.cpp Source/UI/PlaceArt.cpp Source/UI/PlaceOverlays.cpp Source/UI/OverlayArt.cpp Source/UI/PatternEditor.cpp Source/UI/KeysPanel.cpp Source/UI/CapturePanel.cpp Source/UI/LocationBar.cpp Source/UI/ArrangeView.cpp Source/UI/InstrumentView.cpp
     Source/UI/TinyPlanet.cpp Source/UI/Style.cpp Source/UI/Pixel.cpp Source/UI/PixelControls.cpp Source/UI/PixelIcons.cpp Source/UI/PixelArt.cpp Source/UI/PixelLookAndFeel.cpp)
 target_include_directories(WORLDBUILDER PUBLIC Source)
 # Hand-made Place artwork (optional): assets/places/<place>/{back,mid,front,lights}.png
