@@ -277,8 +277,8 @@ void VillagePlace::configure(const PlaceContext& c) {
     {
         auto& p = luteRec.patch;
         p.instrument = "guitar";
-        p.decay = (dawn ? 3.4f : 2.0f) * lerp(1.0f, 0.5f, tension);
-        p.toneHz = lerpExp(8000.0f, 19000.0f, tone);
+        p.decay = (dawn ? 3.4f : 2.0f) * lerp(1.0f, 0.35f, tension);
+        p.toneHz = lerpExp(5000.0f, 19000.0f, tone);
         p.velocityTone = 0.45f;
         p.velocityGain = 0.5f;
         p.courseLevel = 0.0f;
@@ -292,6 +292,9 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 4, 6, 8);
         // As loud as the Village's other instruments (measured, Tests "balance").
         p.gain = dawn ? 1.68f : (night ? 1.5f : 1.98f);
+        // Tension (and Danger) pluck harder: louder, with the strings' attack forward.
+        p.gain *= lerp(0.9f, 1.25f, tension) / lerp(0.9f, 1.25f, 0.3f);
+        p.velocityGain = lerp(0.4f, 0.75f, tension);
     }
     // Hurdy-gurdy: the wheel turns steadily; the trompette buzzes on the wrist strokes.
     // Market Day: a stroke on every beat; Harvest Night: the coup de quatre (four to a
