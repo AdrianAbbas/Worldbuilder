@@ -176,6 +176,9 @@ public:
     bool importInstrumentPreset(const juce::String& text);
     // Loads a preset (a factory one, or one read from a file).
     void applyInstrumentPreset(const wb::inst::Preset& preset);
+    // Whether Instrument mode applies the instruments' level trims (Instruments/Trims.h;
+    // off only to measure them).
+    bool levelTrims = true;
     // The name of the instrument preset loaded last (empty after an edit of the instrument).
     juce::String instrumentPresetName() const { return parameters.state.getProperty("instpreset").toString(); }
     void setInstrumentPresetName(const juce::String& name) { parameters.state.setProperty("instpreset", name, nullptr); }

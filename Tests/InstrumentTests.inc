@@ -39,6 +39,40 @@ double largestStep(const Audio& a, double from, double to) {
 }
 } // namespace instTest
 
+namespace instTest {
+// The loudest 300 ms (dB RMS) of a held note: plucks peak at once, pads swell.
+double loudest(const Audio& a) {
+    double best = -240;
+    for (double t = 0; t + 0.3 <= double(a.l.size()) / a.rate; t += 0.1) best = std::max(best, measure(a, t, t + 0.3).rmsDb);
+    return best;
+}
+// One held note on `id` (dry, with or without the level trims): its loudest 300 ms.
+double heldLevel(inst::Id id, bool trims) {
+    auto h = ihost(id, false, false);
+    h.p->levelTrims = trims;
+    const bool kit = patternInfo(id.type, id.element).kind == Kit;
+    note(h, kit ? 48 : noteFor(id), 100);
+    return loudest(h.render(3.0));
+}
+} // namespace instTest
+
+// --only insttrims: measures every instrument and prints Instruments/Trims.h's table.
+void printInstrumentTrims() {
+    using namespace instTest;
+    std::cout << "inline constexpr std::array<std::array<float, 6>, 27> levelTrimDb { {\n    { 0, 0, 0, 0, 0, 0 },\n";
+    for (int t = NoPlace + 1; t < PlaceTypeCount; ++t) {
+        std::cout << "    { ";
+        for (int e = 0; e < placeElements; ++e) {
+            const inst::Id id { t, e };
+            float trim = 0;
+            if (id.valid()) trim = float(std::clamp(std::round((-28.0 - heldLevel(id, false)) * 2.0) / 2.0, -12.0, 12.0));
+            std::cout << juce::String(trim, 1) << (e < placeElements - 1 ? "f, " : "f");
+        }
+        std::cout << " },   // " << placeNames[std::size_t(t)] << "\n";
+    }
+    std::cout << "} };\n";
+}
+
 void testInstrumentMode(Suite& s) {
     using namespace instTest;
     const auto& catalog = inst::Catalog::get();
@@ -162,6 +196,33 @@ void testInstrumentMode(Suite& s) {
         if (!offList.empty()) std::cout << "  [info] off the pressed pitch class:" << offList << "\n";
         s.metric("instrument levels, loudest - softest (report only)", loudest - softest, " dB");
         std::cout << "  [info] levels (dB RMS, one note):" << levels << "\n";
+    }
+
+    s.section("instrument mode: stepping through the instruments keeps a similar loudness");
+    {
+        std::vector<double> raw, trimmed;
+        for (int i = 0; i < catalog.count; ++i) {
+            const auto id = catalog.entry[std::size_t(i)];
+            raw.push_back(heldLevel(id, false));
+            trimmed.push_back(heldLevel(id, true));
+        }
+        const auto spread = [](std::vector<double> v) {
+            std::sort(v.begin(), v.end());
+            // The middle 90 %: a few textures need more than the 12 dB a trim may give.
+            return v[v.size() * 95 / 100] - v[v.size() * 5 / 100];
+        };
+        s.metric("loudness spread of the instruments, middle 90 %, without the trims (report only)", spread(raw), " dB");
+        s.metric("loudness spread of the instruments, middle 90 %, with the trims (report only)", spread(trimmed), " dB");
+        s.check(spread(trimmed) < 8.0 && spread(trimmed) < spread(raw) - 6.0, "the level trims keep 90 % of the instruments within 8 dB of each other",
+                fmt(spread(raw)) + " -> " + fmt(spread(trimmed)) + " dB");
+        double peak = -240;
+        std::string loud;
+        for (std::size_t i = 0; i < trimmed.size(); ++i) {
+            peak = std::max(peak, trimmed[i]);
+            if (trimmed[i] > -16.0) loud += " " + capture::trackName(catalog.entry[i].type, catalog.entry[i].element).toStdString() + " " + fmt(raw[i]) + "->" + fmt(trimmed[i]);
+        }
+        if (!loud.empty()) std::cout << "  [info] loudest:" << loud << "\n";
+        s.check(peak < -12.0, "and no instrument's single note comes near full scale", fmt(peak) + " dB RMS at its loudest");
     }
 
     s.section("instrument mode: velocity, note length, sustain, pitch bend, mod wheel, octave");
@@ -496,4 +557,120 @@ void testInstrumentMode(Suite& s) {
         s.metric("CPU, four instances in Instrument mode, four-note chords (report only; the gate is generous)", used, " %");
         s.check(fin && used < 60.0, "four instances in Instrument mode stay within the CPU budget (15 % of a core each)", fmt(used) + " % of one core in all");
     }
+
+    s.section("instrument mode: the interface (switch, browser, keyboard, presets)");
+    {
+        Host h;
+        h.set("p1_type", float(Castle));
+        h.render(0.3);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+        auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+        view->settle(0.2f);
+        s.check(!view->showingInstrument() && view->worldModeButton().getToggleState() && view->knob(PTemperature) != nullptr && view->knob(PTemperature)->isVisible(),
+                "WORLD: the world's interface, WORLD lit in the top bar");
+        view->instrumentModeButton().onClick();
+        view->settle(0.2f);
+        auto& iv = view->instrumentView();
+        s.check(h.p->instrumentMode() && view->showingInstrument() && iv.isVisible() && !view->knob(PTemperature)->isVisible() && view->instrumentModeButton().getToggleState(),
+                "INSTRUMENT in the top bar: the Mode parameter, and the instrument's screen in place of the world's panels");
+        // Host automation of Mode: the editor follows.
+        h.set("mode", float(ModeWorld));
+        view->settle(0.2f);
+        s.check(!view->showingInstrument() && !iv.isVisible() && view->knob(PTemperature)->isVisible(), "automating Mode back to World: the world's interface returns");
+        h.set("mode", float(ModeInstrument));
+        view->settle(0.2f);
+        s.check(view->showingInstrument() && iv.isVisible(), "and to Instrument again");
+
+        // The browser.
+        iv.setSearch({});
+        iv.setOrder(ui::InstrumentView::ByPlace);
+        s.check(iv.listedCount() == catalog.count && iv.listedAt(0) == inst::Id { Castle, 0 }, "BY PLACE lists every instrument, the Castle's first",
+                std::to_string(iv.listedCount()));
+        iv.setOrder(ui::InstrumentView::ByType);
+        bool grouped = true;
+        for (int i = 1; i < iv.listedCount(); ++i) grouped &= inst::groupOf(iv.listedAt(i - 1).type, iv.listedAt(i - 1).element) <= inst::groupOf(iv.listedAt(i).type, iv.listedAt(i).element);
+        s.check(iv.listedCount() == catalog.count && grouped && inst::groupOf(iv.listedAt(0).type, iv.listedAt(0).element) == inst::Plucks,
+                "BY TYPE lists every instrument grouped by type (Plucks first)");
+        iv.setSearch("bells");
+        bool bells = iv.listedCount() > 2;
+        for (int i = 0; i < iv.listedCount(); ++i) {
+            const auto id = iv.listedAt(i);
+            bells &= juce::String(placeInfo(id.type).element[std::size_t(id.element)].name).containsIgnoreCase("bell")
+                     || juce::String(inst::groupNames[std::size_t(inst::groupOf(id.type, id.element))]).containsIgnoreCase("bell");
+        }
+        s.check(bells, "search: \"bells\" finds the bells (by name or type)", std::to_string(iv.listedCount()) + " found");
+        iv.setSearch("tavern lute");
+        s.check(iv.listedCount() == 1 && iv.listedAt(0) == inst::Id { Tavern, TavernPlace::LuteStrum }, "search words narrow together: \"tavern lute\"");
+        iv.setSearch("pad");
+        const int pads = iv.listedCount();
+        iv.choose(iv.listedAt(0));
+        const auto first = h.p->instrument();
+        iv.nextButton().onClick();
+        const auto second = h.p->instrument();
+        iv.previousButton().onClick();
+        s.check(pads > 3 && second == iv.listedAt(1) && h.p->instrument() == first, "NEXT and PREVIOUS step through the list as shown (here: the pads)");
+        iv.previousButton().onClick();
+        s.check(h.p->instrument() == iv.listedAt(pads - 1), "and wrap around");
+        iv.setSearch({});
+        // Choosing sets the instrument's own effects; the macros read ATTACK or STRIKE.
+        iv.choose({ Temple, TemplePlace::Choir });
+        s.check(h.p->instrument() == inst::Id { Temple, TemplePlace::Choir } && juce::roundToInt(h.get("inst_revtype")) == RevCathedral && iv.macroLabel(1) == "ATTACK",
+                "a click in the browser plays that instrument, with its own effects");
+        iv.choose({ Castle, CastlePlace::Bells });
+        s.check(iv.macroLabel(1) == "STRIKE" && iv.macroLabel(2) == "RING", "a struck instrument's macros say STRIKE and RING");
+        // Character buttons show the Place's Characters and set the parameter.
+        iv.characterButton(2).onClick();
+        s.check(juce::roundToInt(h.get("inst_character")) == 2 && iv.characterButton(2).getButtonText() == "BESIEGED", "the Character buttons (the Castle's: BESIEGED...)");
+        iv.ambienceButton().setToggleState(true, juce::dontSendNotification);
+        iv.ambienceButton().onClick();
+        s.check(h.get("inst_ambience") > 0.5f, "PLACE AMBIENCE sets its parameter");
+        iv.ambienceButton().setToggleState(false, juce::dontSendNotification);
+        iv.ambienceButton().onClick();
+
+        // The keyboard lights up with incoming notes; a click plays.
+        h.midi.addEvent(juce::MidiMessage::noteOn(1, 64, uint8_t(100)), 0);
+        h.render(0.1);
+        s.check(iv.keyLit(64) && !iv.keyLit(65), "the on-screen keyboard lights up the notes arriving from the host");
+        h.midi.addEvent(juce::MidiMessage::noteOff(1, 64), 0);
+        h.render(0.1);
+        s.check(!iv.keyLit(64), "and goes dark when they end");
+        auto& kb = iv.keyboardComponent();
+        const juce::MouseEvent press(juce::Desktop::getInstance().getMainMouseSource(), juce::Point<float>(float(kb.getWidth()) * 0.5f, float(kb.getHeight()) * 0.8f),
+                                     juce::ModifierKeys(), 1.0f, 0, 0, 0, 0, &kb, &kb, juce::Time(), {}, juce::Time(), 1, false);
+        kb.mouseDown(press);
+        const auto clicked = measure(h.render(0.4), 0.05);
+        kb.mouseUp(press);
+        h.render(0.1);
+        bool any = false;
+        for (int n = 24; n <= 108; ++n) any |= iv.keyLit(n);
+        s.check(clicked.rmsDb > -60.0, "a click on the on-screen keyboard plays the instrument", fmt(clicked.rmsDb) + " dB");
+
+        // Presets: the factory set, previous / next, a tile, a file round trip.
+        s.check(iv.presetTileCount() == int(inst::factoryPresets().size()) && iv.presetTileCount() >= 20, "a factory set of instrument presets, each a tile",
+                std::to_string(iv.presetTileCount()));
+        iv.presetTile(0).onClick();
+        const auto& p0 = inst::factoryPresets()[0];
+        bool applied = h.p->instrument() == p0.id && h.p->instrumentPresetName() == p0.name;
+        for (const auto& [param, value] : p0.values) applied &= std::abs(h.get(specs[std::size_t(param)].id) - value) < 1.0e-3f;
+        s.check(applied, "a factory preset sets its instrument, Character, effects and controls", h.p->instrumentPresetName().toStdString());
+        iv.stepPreset(1);
+        s.check(h.p->instrumentPresetName() == inst::factoryPresets()[1].name && iv.presetTile(1).getToggleState(), "the next preset, its tile lit");
+        h.set("inst_tone", 0.83f);
+        h.set("inst_drive", 0.41f);
+        const auto folder = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wb-inst-presets");
+        folder.deleteRecursively();
+        const auto file = folder.getChildFile("My Fiddle.wbinst");
+        s.check(iv.savePresetTo(file, "My Fiddle") && file.existsAsFile(), "SAVE writes a preset file");
+        const auto savedId = h.p->instrument();
+        iv.choose({ Nebula, NebulaPlace::Pads });
+        s.check(iv.loadPresetFrom(file) && h.p->instrument() == savedId && std::abs(h.get("inst_tone") - 0.83f) < 1.0e-3f && std::abs(h.get("inst_drive") - 0.41f) < 1.0e-3f
+                    && h.p->instrumentPresetName() == "My Fiddle",
+                "LOAD brings back the instrument and every control");
+        // A preset leaves the world alone, and a world leaves the instrument alone.
+        s.check(placeType(h, 0) == Castle, "loading an instrument preset leaves the world as it was");
+        folder.deleteRecursively();
+        s.check(!juce::String(h.p->exportInstrumentPreset("x")).contains("p1_type"), "an instrument preset holds no world");
+        juce::ignoreUnused(any);
+    }
 }
+

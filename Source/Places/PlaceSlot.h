@@ -48,6 +48,7 @@ struct PlaceSlotControls {
     // by `duck` (from duckFrom to duckTo across the chunk: the engine's fade when the
     // instrument changes). attack and release (0..1, 0.5 as designed) scale its times.
     bool instrument = false, ambience = false;
+    float trimDb = 0;   // the instrument's level trim (Instruments/Trims.h)
     float duckFrom = 1, duckTo = 1;
     float attack = 0.5f, release = 0.5f;
 };

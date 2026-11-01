@@ -442,7 +442,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = c.instrument && !c.ambience ? 0.0f : current->spaceSend() * lerp(0.4f, 1.6f, d);
-    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
+    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + c.trimDb + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
     if (snapGain) {
         gain.snap(target_);
         snapGain = false;

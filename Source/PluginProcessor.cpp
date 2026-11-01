@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Samples/SampleBank.h"
+#include "Instruments/Trims.h"
 
 using namespace wb;
 
@@ -158,6 +159,7 @@ void WorldbuilderProcessor::applyInstrument(EngineControls& c, const WorldValues
     pc.type = in.type;
     pc.character = juce::roundToInt(value(PInstCharacter));
     pc.levelDb = value(PInstLevel);
+    pc.trimDb = levelTrims ? inst::levelTrimDb[std::size_t(juce::jlimit(0, PlaceTypeCount - 1, in.type))][std::size_t(juce::jlimit(0, placeElements - 1, in.element))] : 0.0f;
     pc.distance = 0;
     pc.pan = 0;
     pc.seed = uint32_t(juce::roundToInt(defaults[std::size_t(placeParam(0, PlSeed))].def));

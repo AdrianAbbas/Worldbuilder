@@ -6598,6 +6598,21 @@ int writeSnapshots(const juce::String& dir, const juce::String& prefix) {
         juce::Image image() { return editor->createComponentSnapshot(editor->getLocalBounds()); }
     };
     {
+        // Instrument mode (the Tavern's recorded lute, by Place; the Spaceport's pads by type).
+        View v({ Castle }, {});
+        v.h.p->setInstrument({ Tavern, TavernPlace::LuteStrum });
+        v.h.p->setInstrumentMode(true);
+        v.h.midi.addEvent(juce::MidiMessage::noteOn(1, 57, uint8_t(100)), 0);
+        v.h.midi.addEvent(juce::MidiMessage::noteOn(1, 64, uint8_t(100)), 0);
+        v.h.render(0.2);
+        v.view->settle(1.5f);
+        save(v.image(), "instrument");
+        v.view->instrumentView().setOrder(ui::InstrumentView::ByType);
+        v.view->instrumentView().choose({ Spaceport, SpaceportPlace::Pads });
+        v.view->settle(1.5f);
+        save(v.image(), "instrument-bytype");
+    }
+    {
         View v({ Castle }, {});
         const auto image = v.image();
         save(image, "full-default");
@@ -9467,6 +9482,7 @@ int main(int argc, char** argv) {
     if (run("samples")) testSamples(s);
     if (run("balance")) testBalance(s);
     if (only.contains("slidetable")) printSlideTable();
+    if (only.contains("insttrims")) printInstrumentTrims();
     if (run("slide")) testSlide(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
