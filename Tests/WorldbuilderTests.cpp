@@ -27,6 +27,7 @@
 #include <iostream>
 #include <new>
 #include <set>
+#include "UI/RepaintLog.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -9481,6 +9482,8 @@ int main(int argc, char** argv) {
     if (run("transport")) testTransport(s);
     if (run("single")) testSingle(s);
     if (run("instrument")) testInstrumentMode(s);
+    if (only.contains("frames")) testFrameCost(s);
+    if (run("frameregions")) testFrameRegions(s);
     if (run("samples")) testSamples(s);
     if (run("balance")) testBalance(s);
     if (only.contains("slidetable")) printSlideTable();

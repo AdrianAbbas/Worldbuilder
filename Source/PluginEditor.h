@@ -61,6 +61,9 @@ public:
     const wb::ui::FrameGovernor& frameGovernor() const { return governor; }
     // True after slow frames dropped the overlays from Full to Subtle.
     bool overlaysDroppedToSubtle() const { return autoSubtle; }
+    bool decorationCalmed() const { return calm; }
+    juce::Rectangle<int> globeBounds() const { return globePanel; }
+    juce::Rectangle<int> cardsBounds() const { return cardsPanel; }
     // For the tests: report a frame's paint cost as if it had taken `ms`.
     void reportFrameCost(double ms, double nowMs) { governor.painted(ms, nowMs); }
     wb::ui::PlaceOverlays& placeOverlays() { return *overlays; }
@@ -212,6 +215,14 @@ private:
     juce::Rectangle<int> modeArea;
     bool shownInstrument = false;
     std::unique_ptr<wb::ui::InstrumentView> instrumentScreen;
+    // The meters' lit LEDs last drawn (a meter repaints only when they change).
+    std::array<int, wb::LayerCount> shownLayerLeds {};
+    std::array<int, wb::placeSlotCount> shownPlaceLeds {};
+    int shownMasterLeds = -1;
+    juce::String shownInstrumentTitle;
+    uint64_t themeDrawn = 0;
+    juce::Image backdrop;   // the background's gradients, cached
+    juce::String backdropKey;   // the colours last drawn over the whole interface
     // The world's controls that Instrument mode hid (shown again on the way back).
     std::vector<juce::Component::SafePointer<juce::Component>> hiddenForInstrument;
     void refreshArrangementState();
@@ -251,6 +262,7 @@ private:
     wb::ui::FrameGovernor governor;
     double paintStarted = -1, owedSeconds = 0;
     bool autoSubtle = false;
+    bool calm = false;   // frames stayed slow: the decoration stands still (this session)
     std::vector<juce::Rectangle<int>> overlayKeepClear;
 
     juce::Rectangle<int> header, controlsPanel, globePanel, cardsPanel, layersPanel, placesPanel, locationsPanel, footer;

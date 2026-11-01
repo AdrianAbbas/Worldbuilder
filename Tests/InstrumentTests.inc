@@ -795,3 +795,200 @@ void testInstrumentMode(Suite& s) {
     }
 }
 
+
+// The hotfix after Instrument mode: what the editor's frames cost. The editor's own
+// repaint requests are recorded for 3 s of frames at 30 fps (notes, a chord, the mod
+// wheel and the meters moving), then exactly those regions are painted, clipped, as a
+// host would. Report only: the developer's Mac differs from a cloud container.
+namespace frameTest {
+struct Cost {
+    double cpu = 0, paintMs = 0, worstMs = 0, area = 0;
+    int frames = 0;
+};
+Cost measureFrames(bool instrument, bool overlaysFull = false, bool browse = false) {
+    Host h(48000, 512);
+    h.set("p1_type", float(Castle));
+    h.set("p2_type", float(Spaceport));
+    h.set("p3_type", float(Forest));
+    if (overlaysFull) h.p->parameters.state.setProperty("overlays", int(ui::OverlaysFull), nullptr);
+    h.p->setInstrument({ Tavern, TavernPlace::LuteStrum });
+    h.p->setInstrumentMode(instrument);
+    h.render(0.5);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    view->settle(0.5f);
+    juce::Image target(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+    {
+        juce::Graphics g(target);
+        editor->paintEntireComponent(g, true);   // warm the sprite cache, as a shown editor has
+    }
+    auto& log = ui::RepaintLog::get();
+    Cost c;
+    double t = 10000, busy = 0;
+    const int frames = 90;
+    for (int i = 0; i < frames; ++i) {
+        // The music: a new chord every half second, the mod wheel moving.
+        if (i % 15 == 0) {
+            for (int k = 0; k < 3; ++k) h.midi.addEvent(juce::MidiMessage::noteOff(1, 48 + 7 * k + (i / 15 + 1) % 2 * 2), 0);
+            for (int k = 0; k < 3; ++k) h.midi.addEvent(juce::MidiMessage::noteOn(1, 48 + 7 * k + (i / 15) % 2 * 2, uint8_t(100)), 0);
+        }
+        h.midi.addEvent(juce::MidiMessage::controllerEvent(1, 1, (i * 4) % 128), 0);
+        // Browsing: the next instrument every half second (across Places and moods).
+        if (browse && i % 15 == 7) view->instrumentView().choose(inst::Catalog::get().step(h.p->instrument(), 11));
+        h.render(1.0 / 30.0);
+        log.areas.clear();
+        log.enabled = true;
+        const double a = juce::Time::getMillisecondCounterHiRes();
+        view->frameTick(t);
+        log.enabled = false;
+        double paint = 0;
+        if (!log.areas.isEmpty()) {
+            const double p0 = juce::Time::getMillisecondCounterHiRes();
+            juce::Graphics g(target);
+            g.reduceClipRegion(log.areas);
+            editor->paintEntireComponent(g, true);
+            paint = juce::Time::getMillisecondCounterHiRes() - p0;
+            c.paintMs += paint;
+            c.worstMs = std::max(c.worstMs, paint);
+            c.area += double(log.areas.getBounds().getWidth()) * log.areas.getBounds().getHeight() / double(editor->getWidth() * editor->getHeight());
+            ++c.frames;
+        }
+        busy += juce::Time::getMillisecondCounterHiRes() - a;
+        t += 1000.0 / 30.0;
+    }
+    c.cpu = 100.0 * busy / (double(frames) * 1000.0 / 30.0);
+    c.paintMs /= std::max(1, c.frames);
+    c.area /= std::max(1, c.frames);
+    return c;
+}
+} // namespace frameTest
+
+void testFrameCost(Suite& s) {
+    s.section("frames: what the editor's animation costs (report only)");
+    for (int k = 0; k < 4; ++k) {
+        const bool instrument = k == 0 || k == 3, full = k == 2, browse = k == 3;
+        const auto c = frameTest::measureFrames(instrument, full, browse);
+        const std::string name = browse ? "Instrument mode, a new instrument every 0.5 s" : instrument ? "Instrument mode" : (full ? "World mode, overlays Full" : "World mode");
+        s.metric("editor CPU, " + name + " (% of one core at 30 fps, report only)", c.cpu, " %");
+        s.metric("  mean frame paint, " + name, c.paintMs, " ms");
+        s.metric("  worst frame paint, " + name, c.worstMs, " ms");
+        s.metric("  share of the window repainted per frame, " + name, 100.0 * c.area, " %");
+    }
+}
+
+// The hotfix after Instrument mode: what the frames repaint (deterministic checks).
+void testFrameRegions(Suite& s) {
+    s.section("frames: only what changes is repainted; slow frames calm the decoration");
+    Host h(48000, 512);
+    h.set("p1_type", float(Castle));
+    h.set("p2_type", float(Spaceport));
+    h.p->setInstrument({ Tavern, TavernPlace::LuteStrum });
+    h.p->setInstrumentMode(true);
+    h.render(0.5);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(h.p->createEditor());
+    auto* view = dynamic_cast<WorldbuilderEditor*>(editor.get());
+    view->settle(2.0f);
+    auto& log = ui::RepaintLog::get();
+    auto& iv = view->instrumentView();
+    const auto keyboard = editor->getLocalArea(&iv.keyboardComponent(), iv.keyboardComponent().getLocalBounds());
+    double t = 50000;
+    juce::Image target(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+    const auto frame = [&] {
+        log.areas.clear();
+        log.enabled = true;
+        view->frameTick(t);
+        log.enabled = false;
+        t += 1000.0 / 30.0;
+        // The host paints what was asked (the governor waits for it).
+        juce::Graphics g(target);
+        if (!log.areas.isEmpty()) g.reduceClipRegion(log.areas);
+        else g.reduceClipRegion(juce::Rectangle<int>(0, 0, 1, 1));
+        editor->paintEntireComponent(g, true);
+        return log.areas;
+    };
+    for (int i = 0; i < 4; ++i) frame();
+    // Quiet: nothing changes, (almost) nothing repaints.
+    juce::RectangleList<int> quiet;
+    for (int i = 0; i < 10; ++i) quiet.add(frame());
+    const auto quietArea = quiet.getBounds();
+    s.check(double(quietArea.getWidth()) * quietArea.getHeight() < 0.02 * editor->getWidth() * editor->getHeight(),
+            "Instrument mode at rest: the frames repaint at most the Place icon's idle animation", quietArea.toString().toStdString());
+    // A note: only its key on the keyboard.
+    h.midi.addEvent(juce::MidiMessage::noteOn(1, 60, uint8_t(100)), 0);
+    h.render(0.05);
+    const auto key = frame();
+    s.check(!key.isEmpty() && keyboard.contains(key.getBounds()) && key.getBounds().getWidth() < 40, "a note arriving repaints its key alone",
+            key.getBounds().toString().toStdString());
+    // The mod wheel: only the wheels.
+    h.midi.addEvent(juce::MidiMessage::controllerEvent(1, 1, 90), 0);
+    h.render(0.05);
+    const auto wheel = frame();
+    s.check(!wheel.isEmpty() && wheel.getBounds().getWidth() < 100 && wheel.getBounds().getRight() <= keyboard.getX(), "the mod wheel repaints its indicator alone",
+            wheel.getBounds().toString().toStdString());
+    // The world's panels under the instrument screen never repaint it.
+    bool world = false;
+    for (int i = 0; i < 30; ++i) {
+        h.render(1.0 / 30.0);
+        const auto a = frame();
+        world |= a.intersectsRectangle(juce::Rectangle<int>(850, 60, 300, 560)) && a.getBounds().getWidth() > 400;
+    }
+    s.check(!world, "the world's meters and panels do not repaint over the instrument screen");
+    h.midi.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
+    h.render(0.1);
+    {
+        // Browsing with only the asked-for regions painted: the picture is the same as a
+        // full repaint (nothing left stale: the title, the screen, the theme).
+        for (const auto id : { inst::Id { Spaceport, SpaceportPlace::Pads }, inst::Id { Castle, CastlePlace::Choir }, inst::Id { Mall, MallPlace::Vibraphone } }) {
+            iv.choose(id);
+            for (int i = 0; i < 6; ++i) frame();
+        }
+        juce::Image full(juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+        {
+            juce::Graphics g(full);
+            editor->paintEntireComponent(g, true);
+        }
+        int differ = 0;
+        for (int y = 0; y < full.getHeight(); ++y)
+            for (int x = 0; x < full.getWidth(); ++x) {
+                const auto a = full.getPixelAt(x, y), b = target.getPixelAt(x, y);
+                differ += std::abs(int(a.getRed()) - int(b.getRed())) + std::abs(int(a.getGreen()) - int(b.getGreen())) + std::abs(int(a.getBlue()) - int(b.getBlue())) > 24 ? 1 : 0;
+            }
+        s.check(differ < full.getWidth() * full.getHeight() / 200, "after browsing, the partly repainted window matches a full repaint (nothing stale)",
+                std::to_string(differ) + " pixels differ");
+    }
+    // World mode: the meters repaint their own strips only.
+    h.p->setInstrumentMode(false);
+    view->settle(2.0f);
+    for (int i = 0; i < 4; ++i) frame();
+    h.render(0.2);
+    juce::RectangleList<int> meters;
+    for (int i = 0; i < 10; ++i) {
+        h.render(1.0 / 30.0);
+        meters.add(frame());
+    }
+    meters.subtract(view->globeBounds());
+    meters.subtract(view->cardsBounds());
+    bool small = true;
+    for (const auto& r : meters) small &= r.getHeight() <= 40 || r.getWidth() <= 40;
+    s.check(small, "World mode: besides the planet and the cards, only meter strips repaint (not whole panels)");
+    // Slow frames: Full overlays drop to Subtle, then every decoration stands still.
+    view->setOverlayMode(ui::OverlaysFull);
+    for (int i = 0; i < 300 && !view->decorationCalmed(); ++i) {
+        view->frameTick(t);
+        view->reportFrameCost(45, t);
+        t += 1000.0 / 30.0;
+    }
+    s.check(view->overlaysDroppedToSubtle() && view->decorationCalmed() && ui::pixel::theme().delights == 0,
+            "slow frames calm the decoration: Full to Subtle, then still (this session; the setting is kept)");
+    s.check(int(h.p->parameters.state.getProperty("overlays")) == ui::OverlaysSubtle, "(the stored Overlays setting is not switched off)");
+    // The sprite cache drops its oldest half when full, not everything.
+    ui::pixel::SpriteCache cache(8);
+    for (int i = 0; i < 8; ++i) cache.get("s" + juce::String(i), [] { return juce::Image(juce::Image::ARGB, 2, 2, true); });
+    cache.get("s7", [] { return juce::Image(juce::Image::ARGB, 2, 2, true); });
+    cache.get("new", [] { return juce::Image(juce::Image::ARGB, 2, 2, true); });
+    const int made = cache.made;
+    cache.get("s7", [] { return juce::Image(juce::Image::ARGB, 2, 2, true); });
+    s.check(cache.size() >= 4 && cache.size() < 9 && cache.made == made, "the sprite cache, full, drops its least used half (the sprite just used stays)",
+            std::to_string(cache.size()) + " kept");
+}
+

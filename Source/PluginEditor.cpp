@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "UI/RepaintLog.h"
 #include "UI/PlaceArt.h"
 #include "UI/Style.h"
 #include "UI/Pixel.h"
@@ -910,18 +911,32 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     // world (pixel::theme(): fantasy, blend, sci-fi, neutral).
     pixel::setTheme(pixelMood, int(animTime * 8.0f) % 600, pixelDelights);   // this editor's look (another may share the theme)
     const auto& p = pixel::theme().colours;
-    const float height = float(getHeight());
-    g.setGradientFill(juce::ColourGradient(themeSky.brighter(0.25f), 0, 0, themeSky.darker(0.7f), 0, height, false));
-    g.fillAll();
     {
-        // The Places' light: a wide glow behind the globe and along the horizon.
-        const auto c = globePanel.toFloat().getCentre();
-        const auto glow = themeGlow.withAlpha(0.06f + 0.16f * themeStrength);
-        g.setGradientFill(juce::ColourGradient(glow, c.x, c.y, glow.withAlpha(0.0f), c.x + float(getWidth()) * 0.55f, c.y, true));
-        g.fillAll();
-        const auto horizon = themeGlow.withAlpha(0.14f * themeStrength);
-        g.setGradientFill(juce::ColourGradient(horizon.withAlpha(0.0f), 0, height * 0.55f, horizon, 0, height, false));
-        g.fillAll();
+        // The background (the sky's gradient and the Places' glow), cached: three
+        // window-sized gradients per repaint made every small repaint costly (the hotfix
+        // after Instrument mode). Remade when its colours or the size change.
+        const float scale = std::max(1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        const auto key = themeSky.toString() + themeGlow.toString() + juce::String(themeStrength, 3) + juce::String(getWidth()) + "x" + juce::String(getHeight())
+                         + "@" + juce::String(scale, 2);
+        if (key != backdropKey || !backdrop.isValid()) {
+            backdropKey = key;
+            const int w = juce::roundToInt(float(getWidth()) * scale), hgt = juce::roundToInt(float(getHeight()) * scale);
+            backdrop = juce::Image(juce::Image::RGB, std::max(1, w), std::max(1, hgt), false);
+            juce::Graphics b(backdrop);
+            b.addTransform(juce::AffineTransform::scale(scale));
+            const float height = float(getHeight());
+            b.setGradientFill(juce::ColourGradient(themeSky.brighter(0.25f), 0, 0, themeSky.darker(0.7f), 0, height, false));
+            b.fillAll();
+            // The Places' light: a wide glow behind the globe and along the horizon.
+            const auto c = globePanel.toFloat().getCentre();
+            const auto glow = themeGlow.withAlpha(0.06f + 0.16f * themeStrength);
+            b.setGradientFill(juce::ColourGradient(glow, c.x, c.y, glow.withAlpha(0.0f), c.x + float(getWidth()) * 0.55f, c.y, true));
+            b.fillAll();
+            const auto horizon = themeGlow.withAlpha(0.14f * themeStrength);
+            b.setGradientFill(juce::ColourGradient(horizon.withAlpha(0.0f), 0, height * 0.55f, horizon, 0, height, false));
+            b.fillAll();
+        }
+        g.drawImageTransformed(backdrop, juce::AffineTransform::scale(1.0f / scale));
     }
 
     // Text only where the clip reaches: frames often repaint small areas.
@@ -1446,9 +1461,12 @@ void WorldbuilderEditor::updateTheme(float seconds, bool snap) {
     // decoration animates at 8 frames a second; the Overlays setting sets the delights.
     std::array<float, PlaceTypeCount> eased {};
     for (int type = NoPlace + 1; type < PlaceTypeCount; ++type) eased[std::size_t(type)] = weights[std::size_t(type)];
-    const int delights = overlays == nullptr ? 0 : overlays->mode() == ui::OverlaysFull ? 2 : overlays->mode() == ui::OverlaysSubtle ? 1 : 0;
+    const int delights = overlays == nullptr || calm ? 0 : overlays->mode() == ui::OverlaysFull ? 2 : overlays->mode() == ui::OverlaysSubtle ? 1 : 0;
     const int before = pixel::theme().version;
-    pixelMood = pixel::moodOf(eased.data(), PlaceTypeCount);
+    // The pixel look (the controls' materials) changes once the colours have settled: each
+    // change redraws every sprite, so it does not step along with the fade (the hotfix
+    // after Instrument mode). A new editor takes it at once.
+    if (!themeMoving || snap || pixel::theme().mood.sciFi < 0.0f) pixelMood = pixel::moodOf(eased.data(), PlaceTypeCount);
     pixelDelights = delights;
     pixel::setTheme(pixelMood, int(animTime * 8.0f) % 600, delights);
     if (pixel::theme().version != before) themeMoving = true;
@@ -1620,6 +1638,13 @@ void WorldbuilderEditor::frameTick(double nowMs) {
         setOverlayMode(ui::OverlaysSubtle);
         governor.resetSlow();
         autoSubtle = true;
+    } else if (!calm && overlays->mode() != ui::OverlaysFull && governor.slowFor(nowMs)) {
+        // Still slow (or slow without Full overlays): every decoration stands still for this
+        // session (sparkles, flicker, the icons' idle animations); the setting is kept.
+        calm = true;
+        governor.resetSlow();
+        updateTheme(0.0f, true);
+        ui::repaintAll(*this);
     }
     // Skipped ticks still move the animation on: the next drawn frame catches up.
     double elapsed = 0;
@@ -1691,9 +1716,19 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     }
     refreshArrangementState();
     refreshMode();
-    updateTheme(seconds);
+    updateTheme(seconds, shownInstrument);   // (Instrument mode: the look changes in one step: stepping through sounds never fades)
     // The whole interface repaints while the Places' colours are moving.
-    if (themeMoving) repaint();
+    // The whole interface repaints only when the colours it draws change: the panels'
+    // tint (as paint() quantizes it), the glow and sky, the pixel look.
+    if (themeMoving || themeDrawn == 0) {
+        const auto q = [](juce::Colour c) { return uint64_t(c.getARGB() & 0xf8f8f8f8u); };
+        const uint64_t key = (q(themeTint) * 1000003ull) ^ (q(themeGlow) * 7919ull) ^ (q(themeSky) << 7) ^ (uint64_t(std::lround(themeStrength * 8.0f)) << 40)
+                             ^ (uint64_t(pixel::theme().version) << 48);
+        if (key != themeDrawn) {
+            themeDrawn = key;
+            ui::repaintAll(*this);
+        }
+    }
     if (const int stored = int(processor.parameters.state.getProperty("overlays", ui::defaultOverlayMode)); stored != overlays->mode()) setOverlayMode(stored);
     updateOverlayFrames();
     overlays->advance(seconds);
@@ -1711,10 +1746,10 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         // The decoration moved on: animated icons and hovered sprites (Full only, or the
         // hovered card when Subtle).
         pixelFrame = pixel::theme().frame;
-        if (pixel::theme().delights > 0 && detail.slot < 0 && !covered()) repaint(cardsPanel);
+        if (pixel::theme().delights > 0 && detail.slot < 0 && !covered()) ui::repaintArea(*this, cardsPanel);
     }
-    if (animating && detail.slot < 0 && !covered()) repaint(cardsPanel);
-    if (detail.slot >= 0) repaint(detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 8));
+    if (animating && detail.slot < 0 && !covered()) ui::repaintArea(*this, cardsPanel);
+    if (detail.slot >= 0) ui::repaintArea(*this, detail.area.withHeight(detail.titleArea.getBottom() - detail.area.getY() + 8));
     {
         // A new Planet crossfades on the globe over about a second, as it does in the sound.
         const int planet = juce::jlimit(0, int(dsp::PlanetTypeCount) - 1, juce::roundToInt(param(PPlanet)));
@@ -1753,9 +1788,47 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
     for (std::size_t i = 0; i < placeMeters.size(); ++i) placeMeters[i] = processor.engine.placeMeter[i].load(std::memory_order_relaxed);
     masterMeter = processor.engine.masterMeter.load(std::memory_order_relaxed);
 
+    // Instrument mode: its own screen animates (the keys and wheels that changed); the
+    // world's panels are hidden under it and must not repaint it.
+    if (shownInstrument) {
+        instrumentScreen->animate(pixel::theme().delights > 0);
+        const auto title = processor.instrumentName() + "/" + processor.instrumentPresetName();
+        if (title != shownInstrumentTitle) {
+            shownInstrumentTitle = title;
+            ui::repaintArea(*this, header);
+        }
+        return;
+    }
     if (detail.slot >= 0) updateDetailLabels();
-    else if (!covered()) repaint(globePanel);
-    repaint(layersPanel);
-    repaint(placesPanel);
-    repaint(footer.withTrimmedLeft(footer.getWidth() - 50));
+    else if (!covered()) ui::repaintArea(*this, globePanel);
+    // The meters: only those whose lit LEDs changed, only their own strip (the hotfix
+    // after Instrument mode: the whole Environment and Places panels repainted every frame).
+    const auto ledsOf = [](float gain, int length) {
+        const float level = juce::jlimit(0.0f, 1.0f, (juce::Decibels::gainToDecibels(gain, -60.0f) + 60.0f) / 60.0f);
+        return juce::roundToInt(level * float(length));
+    };
+    for (int l = 0; l < LayerCount; ++l) {
+        const auto& st = strips[std::size_t(l)];
+        const int length = st.level.getWidth() / pixel::unit - 2;
+        const int lit = ledsOf(meters[std::size_t(l)], length);
+        if (lit == shownLayerLeds[std::size_t(l)]) continue;
+        shownLayerLeds[std::size_t(l)] = lit;
+        ui::repaintArea(*this, juce::Rectangle<int>(st.level.getX(), st.level.getBottom() - 4, (length + 4) * pixel::unit, 6 * pixel::unit + 4));
+    }
+    for (int slot = 0; slot < placeSlotCount; ++slot) {
+        const auto& st = placeStrips[std::size_t(slot)];
+        const int length = st.level.getWidth() / pixel::unit - 2;
+        const int lit = ledsOf(placeMeters[std::size_t(slot)], length);
+        if (lit == shownPlaceLeds[std::size_t(slot)]) continue;
+        shownPlaceLeds[std::size_t(slot)] = lit;
+        ui::repaintArea(*this, juce::Rectangle<int>(st.level.getX(), st.level.getBottom() - 4, (length + 4) * pixel::unit, 6 * pixel::unit + 4));
+    }
+    {
+        const auto meter = juce::Rectangle<int>(footer.getRight() - 36, footer.getY() + 12, 12, footer.getHeight() - 24);
+        const int lit = ledsOf(masterMeter, meter.getHeight() / pixel::unit);
+        if (lit != shownMasterLeds) {
+            shownMasterLeds = lit;
+            ui::repaintArea(*this, meter.expanded(8, 8));
+        }
+    }
 }

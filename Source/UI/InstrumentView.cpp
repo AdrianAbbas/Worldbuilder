@@ -1,4 +1,5 @@
 #include "InstrumentView.h"
+#include "RepaintLog.h"
 #include "Pixel.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
@@ -212,6 +213,23 @@ public:
             g.fillRect(r);
         }
     }
+    // Repaints the keys whose light changed since the last call (only those keys).
+    void update() {
+        const auto& in = processor.engine.keysInput;
+        for (std::size_t w = 0; w < 4; ++w) {
+            const uint32_t d = in.downBits[w].load(std::memory_order_relaxed), so = in.soundBits[w].load(std::memory_order_relaxed);
+            const uint32_t changed = (d ^ shownDown[w]) | (so ^ shownSound[w]);
+            shownDown[w] = d;
+            shownSound[w] = so;
+            if (changed == 0) continue;
+            for (int b = 0; b < 32; ++b)
+                if ((changed >> b) & 1u) {
+                    const int note = int(w) * 32 + b;
+                    if (note >= first && note <= last) repaintArea(*this, keyArea(note).expanded(2, 0).getIntersection(getLocalBounds()));
+                }
+        }
+    }
+    std::array<uint32_t, 4> shownDown {}, shownSound {};
     void mouseDown(const juce::MouseEvent& e) override { press(e.getPosition()); }
     void mouseDrag(const juce::MouseEvent& e) override {
         if (const int n = noteAt(e.getPosition()); n != playing) press(e.getPosition());
@@ -396,7 +414,7 @@ InstrumentView::InstrumentView(WorldbuilderProcessor& p) : processor(p) {
     rescanPresets();
     rebuildList();
     refresh();
-    startTimerHz(20);
+    // (No timer of its own: the editor's frame, paced and skipped when late, animates it.)
 }
 
 InstrumentView::~InstrumentView() { stopTimer(); }
@@ -628,17 +646,33 @@ void InstrumentView::refresh() {
         shownOctave = oct;
         shownAmbience = amb;
         shownPreset = preset;
-        list->repaint();
-        for (auto& m : macros) m.repaint();
-        repaint();
+        repaintAll(*list);
+        for (auto& m : macros) repaintAll(m);
+        repaintAll(*this);
     }
 }
 
 void InstrumentView::timerCallback() {
     if (!isShowing()) return;
+    animate();
+}
+
+void InstrumentView::animate(bool decorate) {
     refresh();
-    keyboard->repaint();
-    repaint(wheelArea);
+    // The Place icon's idle animation (a delight: off with calm decoration).
+    if (const int frame = decorate ? pixel::iconFrame(shownId.type, true) : 0; frame != shownIconFrame) {
+        shownIconFrame = frame;
+        repaintArea(*this, iconArea);
+    }
+    keyboard->update();
+    // The wheels and the pedal: only when what they show moves (a pixel of a bar).
+    const auto& in = processor.engine.keysInput;
+    const int bend = juce::roundToInt(in.bendOut.load(std::memory_order_relaxed) * 64.0f), mod = juce::roundToInt(in.modOut.load(std::memory_order_relaxed) * 64.0f);
+    const int wheels = (bend + 64) | (mod << 8) | (in.pedalOut.load(std::memory_order_relaxed) ? 1 << 16 : 0);
+    if (wheels != shownWheels) {
+        shownWheels = wheels;
+        repaintArea(*this, wheelArea);
+    }
 }
 
 void InstrumentView::resized() {
@@ -780,7 +814,7 @@ void InstrumentView::paint(juce::Graphics& g) {
         g.fillRect(iconArea);
         pixel::drawPlaceIcon(g, id.type, { iconArea.getX() + (iconArea.getWidth() - pixel::iconSize * pixel::unit) / 2,
                                            iconArea.getY() + (iconArea.getHeight() - pixel::iconSize * pixel::unit) / 2 },
-                             false, pixel::iconFrame(id.type, true));
+                             false, shownIconFrame < 0 ? 0 : shownIconFrame);
     }
     pixel::drawText(g, elementName(id), nameArea, pal.ink, juce::Justification::centredLeft, pixel::Font::Large);
     const auto kind = patternInfo(id.type, id.element).kind == Kit ? juce::String(" - A KIT: EACH KEY ITS OWN DRUM") : juce::String();

@@ -70,6 +70,9 @@ public:
     // The keys lit now on the on-screen keyboard (for the tests: reads the processor).
     bool keyLit(int note) const;
 
+    // One animation step (the keyboard, the wheels, what changed): the editor's frame
+    // calls it (tests too).
+    void animate(bool decorate = true);
     static constexpr int macroCount = 5;   // Tone, Attack, Release, Drive, Level
 
 private:
@@ -116,6 +119,7 @@ private:
     int shownCharacter = -1, shownOctave = 99;
     bool shownAmbience = false;
     juce::String shownPreset;
+    int shownWheels = -1, shownIconFrame = -1;
 };
 
 } // namespace wb::ui

@@ -6040,7 +6040,7 @@ The developer confirmed Instrument mode in GarageBand and sent three fixes.
 
 - [x] 1. Only what is played sounds in Instrument mode: the hurdy-gurdy's drones follow the note (a Drone control: Off / Root / Root + Fifth), and every instrument checked
 - [x] 2. The Village lute plays the guitar recordings, voiced apart from the Tavern's; recorded twins listed
-- [ ] 3. Smoother drawing in Instrument mode (and World mode): what repaints too often, caching, frame pacing, calmer decoration when slow; editor CPU before and after
+- [x] 3. Smoother drawing in Instrument mode (and World mode): what repaints too often, caching, frame pacing, calmer decoration when slow; editor CPU before and after
 
 ### 1. Only what is played sounds
 
@@ -6123,4 +6123,61 @@ Close kin (a Minilogue patch of the same kind exists, the instrument is synthesi
   (the harsh square plays the Spaceport Data Blips and the Mining Drill).
 No other kalimba-like instrument (the kalimba plays the Forest Kalimba and the Biodome
 Water Plucks).
+
+### 3. Smoother drawing
+
+**What repainted too often** (found by recording the editor's own repaint requests per
+frame, `ui::RepaintLog`, and painting exactly those regions, clipped, as a host does):
+- **The world's meters repainted whole panels every frame**: the Environment and Places
+  panels (for their LED meters) and the footer's corner, 30 times a second, **even in
+  Instrument mode**, where they lie under the right side of the instrument screen: the
+  effects, presets and keyboard panels, every knob and tile on them, repainted at 30 fps.
+  That was the stutter on the right.
+- **The instrument screen's own 20 Hz timer** repainted the whole keyboard and the wheels
+  every tick, changed or not, outside the frame governor.
+- **The background**: three window-sized gradients drawn on every repaint, however small.
+- **The theme's fade** (1.2 s after an instrument from another Place, or Places changing):
+  the whole window at every step, and every step a new pixel look, so every sprite
+  (knobs, panels, text) redrawn: 25-35 ms frames, every few frames.
+- **The sprite cache** held 768 sprites and emptied completely when full: the 156 instrument
+  names, knobs, tiles and panels overflow it, and then everything was redrawn at once.
+- The knob glows and sparkles are drawn only on hover and cached per decoration frame:
+  not a cause.
+
+**Fixes**:
+- Instrument mode: the world's panels are not repainted at all; the editor's frame (paced
+  by the frame governor: at most 30 fps, late ticks skipped, costly frames spaced out)
+  drives the instrument screen, which has no timer of its own and repaints only the keys
+  whose light changed, the wheels when they move a pixel, the Place icon when its idle
+  frame changes (only with decoration on) and the top bar's name when it changes.
+- World mode: each meter repaints only its own strip, only when its lit LEDs change.
+- The background's gradients are cached in an image (remade when its colours or the size
+  change).
+- The whole window repaints only when the colours it draws change (quantized as they are
+  drawn), and the pixel look changes once the fade has settled, not at each step. In
+  Instrument mode the look changes in one step (stepping through sounds never fades).
+- The sprite cache holds 2048 and, when full, drops its least recently used half.
+- Slow frames: after Full overlays drop to Subtle (as before), frames still slow for two
+  seconds stop every decoration for the session (sparkles, flicker, idle animations);
+  the stored Overlays setting is left as it was.
+
+**Editor CPU, before and after** (this Linux container, Release, `WorldbuilderTests --only
+frames`: 3 s of frames at 30 fps with a chord changing every half second, the mod wheel
+moving, the meters live; the requested regions painted with the software renderer; report
+only: the Mac will differ):
+
+| | before | after |
+|---|---|---|
+| Instrument mode | 17 % of a core; 6.0 ms per frame (worst 34-36 ms); 51 % of the window per frame | **0.5-0.6 %**; 0.2 ms (worst 0.6 ms); 1.3 % |
+| Instrument mode, a new instrument every 0.5 s | (not measured) | 3.6 %; 1.2 ms (worst 20 ms, the frame after a change to another Place) |
+| World mode, three Places | 20-22 %; 8.2 ms (worst 17-23 ms); 65 % | **7.7-8.6 %**; 2.8-3.2 ms (worst 5-7 ms); 52 % (the planet and the cards animate) |
+| World mode, Overlays Full | 15-17 %; 11.9 ms (worst 18-29 ms) | **8.7-10.4 %**; 3.9-4.5 ms (worst 6.5-10.5 ms) |
+
+**Tests** (`--only frameregions`, 9 checks): Instrument mode at rest repaints at most the
+icon's idle animation; a note repaints its key alone; the mod wheel its indicator alone;
+the world's panels never repaint over the instrument screen; after browsing three
+instruments the partly repainted window matches a full repaint (nothing stale); World
+mode repaints only meter strips besides the planet and the cards; slow frames drop Full to
+Subtle and then calm the decoration without changing the stored setting; the sprite cache
+keeps its recently used half. `--only frames` reports the CPU table above.
 

@@ -545,12 +545,39 @@ void drawTinyText(juce::Graphics& g, const juce::String& text, juce::Rectangle<i
 }
 
 const juce::Image& SpriteCache::get(const juce::String& key, const std::function<juce::Image()>& make) {
-    if (auto it = sprites.find(key); it != sprites.end()) return it->second;
-    if (int(sprites.size()) >= limit || bytes > budget) clear();   // bounded: sprites are cheap to remake
+    ++clock;
+    if (auto it = sprites.find(key); it != sprites.end()) {
+        it->second.used = clock;
+        return it->second.image;
+    }
+    // Bounded: when full, the half used longest ago goes (it used to empty completely, so
+    // a busy screen remade every sprite at once: a stutter; the hotfix after Instrument mode).
+    if (int(sprites.size()) >= limit || bytes > budget) evictOldest();
     ++made;
     auto image = make();
     bytes += int64_t(image.getWidth()) * image.getHeight() * 4;
-    return sprites[key] = std::move(image);
+    auto& entry = sprites[key];
+    entry.image = std::move(image);
+    entry.used = clock;
+    return entry.image;
+}
+
+void SpriteCache::evictOldest() {
+    std::vector<uint64_t> uses;
+    uses.reserve(sprites.size());
+    for (const auto& [k, e] : sprites) uses.push_back(e.used);
+    if (uses.empty()) return;
+    std::nth_element(uses.begin(), uses.begin() + std::ptrdiff_t(uses.size() / 2), uses.end());
+    const uint64_t median = uses[uses.size() / 2];
+    ++evictions;
+    for (auto it = sprites.begin(); it != sprites.end();) {
+        if (it->second.used <= median) {
+            bytes -= int64_t(it->second.image.getWidth()) * it->second.image.getHeight() * 4;
+            it = sprites.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 SpriteCache& sharedCache() {

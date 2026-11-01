@@ -980,3 +980,23 @@ Nothing in the sound changed; this is about the look and that every control stil
   Instrument mode with its instrument, preset name and controls.
 - [ ] **Logic**: the same on a Logic software-instrument track; automate "Mode" or
   "Instrument Tone" and watch the screen follow.
+
+## Hotfix check after Instrument mode
+
+- [ ] **Hurdy-gurdy** (Instrument mode, Village > Hurdy-Gurdy): nothing sounds until a key
+  is held; the drone follows the note you play and stops when you let go. DRONE: Off (the
+  melody string alone), Root (an octave under the note), Root + Fifth. No buzzing strokes
+  in time on their own; velocity drives the buzz.
+- [ ] **Nothing extra anywhere**: Castle > Brass Drone and Tavern > Squeezebox: their low
+  pedal follows your lowest held note (DRONE sets it). Step through pads, drones, choirs
+  and strings: each lets go when its key does (RELEASE lengthens it), no note left on.
+  The lutes and oud: the open strings ring in sympathy with what you play, not the key.
+  In WORLD mode everything sounds exactly as before.
+- [ ] **Village lute**: the guitar recordings, brighter and plainer than the Tavern's (an
+  outdoor market against the Tavern's warm room). Play both in Instrument mode back to
+  back, and listen to the Village in WORLD mode (its level among the others).
+- [ ] **Smoothness**: in Instrument mode, play chords and move the wheels for a minute while
+  watching the right side (effects, presets, keyboard): no stutter. Step through
+  instruments quickly. In WORLD mode with three or four Places: the meters, the planet and
+  the cards move smoothly. Activity Monitor: GarageBand's CPU with the WORLDBUILDER window
+  open should be clearly lower than before.

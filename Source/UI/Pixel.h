@@ -199,7 +199,7 @@ int textWidthLogical(const juce::String& text, Font font = Font::Small);
 // A small cache of sprites by key. Pixel sprites are cheap to make but cheaper to reuse.
 class SpriteCache {
 public:
-    explicit SpriteCache(int capacity = 768, int64_t byteBudget = 48 << 20) : limit(capacity), budget(byteBudget) {}
+    explicit SpriteCache(int capacity = 2048, int64_t byteBudget = 48 << 20) : limit(capacity), budget(byteBudget) {}
     const juce::Image& get(const juce::String& key, const std::function<juce::Image()>& make);
     void clear() {
         sprites.clear();
@@ -207,10 +207,17 @@ public:
     }
     int size() const { return int(sprites.size()); }
     int64_t memory() const { return bytes; }
-    int made = 0;   // how many sprites were drawn (not reused)
+    int made = 0;        // how many sprites were drawn (not reused)
+    int evictions = 0;   // how often the cache was full
 
 private:
-    std::unordered_map<juce::String, juce::Image> sprites;
+    struct Entry {
+        juce::Image image;
+        uint64_t used = 0;
+    };
+    void evictOldest();
+    uint64_t clock = 0;
+    std::unordered_map<juce::String, Entry> sprites;
     int limit;
     int64_t budget, bytes = 0;
 };
