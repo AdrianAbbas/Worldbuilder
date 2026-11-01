@@ -943,3 +943,40 @@ Nothing in the sound changed; this is about the look and that every control stil
   (arrangement, sections, loops, stems) and the scene MIDI export all play the clips.
   Save, close and reopen the project, and export/import a `.world`: the clips are kept.
 
+
+## Instrument mode check: one instrument as a normal software instrument
+
+- [ ] **The switch**: click **INSTRUMENT** in the top bar (under WORLD). The world's
+  panels give way to the instrument screen; the top bar names the instrument. Nothing
+  plays until a note arrives. Click **WORLD**: the world is back exactly as it was.
+- [ ] **Play it from the host**: on a GarageBand software-instrument track, play the
+  keyboard: polyphonic chords, soft and hard (level and brightness), short and long
+  notes, the sustain pedal, the pitch-bend wheel (a tone), the mod wheel (vibrato or
+  brightness). The on-screen keyboard lights up the notes; the BEND, MOD and PEDAL
+  indicators move.
+- [ ] **The transport doesn't matter**: hold a chord and press Play, Stop and jump around
+  in GarageBand: the chord rings on, never cut. Play Mode makes no difference.
+- [ ] **A region in the piano roll**: record or draw notes, play the song: it plays them
+  like any instrument (bounce/export includes it).
+- [ ] **The browser**: BY PLACE and BY TYPE; type "pad" in SEARCH and step with **<** /
+  **>** while holding a chord: every pad in turn, the chord carrying on, no click, no
+  stuck note when you let go. Try the name menu (every instrument by Place and by type).
+- [ ] **Recorded instruments**: Megacity > Glitch Stabs or Spaceport > Pulses: short
+  notes are the short hits, held notes turn into the long hits (listen for a smooth
+  hand-over). Tavern > Lute Strum, Desert > Oud: the guitar recordings.
+- [ ] **Character, Sound, Effects**: the three Characters change the instrument; TONE,
+  ATTACK/STRIKE, RELEASE/RING, DRIVE, LEVEL; the reverb and delay types and sends, the
+  character effect and width. **PLACE AMBIENCE** brings the world's environment and space
+  in under it (off: just the instrument). OCTAVE +/-.
+- [ ] **Levels**: step through twenty instruments or so: the loudness stays similar
+  (tell me which ones jump out or disappear; the trims are in Source/Instruments/Trims.h).
+- [ ] **Presets**: click a few FACTORY PRESETS tiles; **SAVE** one of your own, change
+  things, pick it from the PRESET menu (YOURS): it comes back. Load a world (.world or a
+  scene) in WORLD mode, go back to INSTRUMENT: the instrument is unchanged.
+- [ ] **Several tracks**: three or four tracks, each a WORLDBUILDER in Instrument mode on a
+  different instrument, all playing: CPU stays comfortable on the MacBook Air. Save each
+  as a GarageBand patch (Library > Save...) and reload one on a new track.
+- [ ] **Saved with the project**: close and reopen the project: every track comes back in
+  Instrument mode with its instrument, preset name and controls.
+- [ ] **Logic**: the same on a Logic software-instrument track; automate "Mode" or
+  "Instrument Tone" and watch the screen follow.

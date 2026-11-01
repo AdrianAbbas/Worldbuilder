@@ -9,6 +9,27 @@ Milestone 15 a few instruments play the developer's own recordings (see
 [Recorded instruments](#recorded-instruments)). Nothing comes from sample libraries or
 other people's recordings.
 
+## Two ways to use WORLDBUILDER
+
+**1. Use WORLDBUILDER as a world** (the top bar's **WORLD**, the default). One
+WORLDBUILDER on one software-instrument track plays a whole place: up to four Places of
+six instruments each, their patterns, the environment, Locations and the Arrangement,
+following the host's tempo and transport. You shape it with the World Controls, Score
+Intensity, the Pattern Editor and ARRANGE, and get it into the song by playing it,
+rendering it or exporting its MIDI. Everything below the next heading describes this
+workflow.
+
+**2. Use one instrument per track** (the top bar's **INSTRUMENT**). Put WORLDBUILDER on
+several software-instrument tracks, switch each to **Instrument mode**, choose an
+instrument on each (e.g. "Tavern > Lute Strum" on one, "Spaceport > Pads" on another,
+"Castle > Timpani" on a third) and play each from Logic's or GarageBand's piano roll or
+your MIDI keyboard, like any software instrument: polyphonic, with velocity, note
+length, the sustain pedal, pitch bend and the mod wheel. No world, no patterns, no
+arrangement; the transport doesn't matter. See [Instrument mode](#instrument-mode).
+
+You can mix both: one WORLDBUILDER as the world under the cue, and a few more in
+Instrument mode playing your own parts on top, each on its own track.
+
 **Status: Milestone 12, feature-complete for release (26 Places of six instruments,
 each with its own instrument effects; Score Intensity; render to WAV and scene MIDI
 export; Locations and Journeys; seven planet types; the Arrangement with transitions,
@@ -512,7 +533,110 @@ show automation (A) and choose WORLDBUILDER's parameters on the track; in Logic,
 same in the track's automation lane. Draw Score Intensity rising into a climax, bring a
 Place in by its level, or switch Characters at a scene change.
 
+## Instrument mode
+
+Any one of WORLDBUILDER's 156 instruments, played like a normal software instrument from
+the host's MIDI: Logic's or GarageBand's piano roll, a recorded region, or a MIDI keyboard.
+
+**Switch it on:** the top bar's **INSTRUMENT** (under **WORLD**). It is the **Mode**
+host parameter (World / Instrument), so it is saved with the project and a GarageBand
+patch, and it can be automated (switching while notes are held fades the old sound out
+over a few milliseconds and nothing hangs). The world you built stays as it was: back in
+WORLD mode it is all there.
+
+**What plays:** only the chosen instrument, from the notes the host sends. No generated
+patterns, no other instruments, no environment, no arrangement, and the transport does
+not matter: it plays with the song stopped or playing, in any Play Mode, and a host
+starting, stopping or jumping never cuts a note. It is polyphonic where the instrument
+can be (up to six or eight voices; a wind or a hurdy-gurdy fewer), and responds to:
+
+- **velocity**: level and brightness (and a harder strike on mallets, drums and strings);
+- **note length**: held instruments (pads, brass, bows, voices, winds) last as long as the
+  key, plucked and struck ones ring and are damped when the key is released (bells, drums
+  and gongs ring on);
+- **the sustain pedal** (CC64);
+- **pitch bend**: a whole tone either way (an octave on sirens, risers and gliding leads;
+  kits don't bend);
+- **the mod wheel** (CC1): vibrato on instruments that have it, otherwise brightness;
+- **recorded instruments** (the developer's recordings) play their articulations as in the
+  patterns: a short note is the short hit; a note held past the short notes' length
+  becomes the long hit (the long recording takes over where the note has got to).
+- **kits** (drums, risers, clanks...): each key plays one of the kit's sounds.
+
+**The instrument screen** (it replaces the world's panels):
+
+- **INSTRUMENTS** (left): every instrument **BY PLACE** ("Tavern" > Lute Strum, Frame
+  Drum...) or **BY TYPE** (Plucks, Pads, Bass, Leads, Keys, Percussion, Bells & Mallets,
+  Strings, Choirs & Voices, Textures, FX; listed as "SPACEPORT > DATA BLIPS"). Type in
+  **SEARCH** to narrow it (all the words must match a Place, a name or a type: "pad",
+  "tavern lute", "bells"). Click to play it.
+- The instrument (top): **<** and **>** step through the list as it is shown (so with
+  "pad" in the search box they step through the pads while you play), and the name opens
+  every instrument as a menu. Its Place's icon and description, **CHARACTER** (the Place's
+  three Characters: they change the instrument's sound and playing), **PLACE AMBIENCE**
+  and **OCTAVE** (-2 to +2).
+- **PLACE AMBIENCE** (off by default, so it is just the instrument): brings the world in
+  under it: the environment layers as the World Controls set them, the World Space reverb,
+  the Planet's colour and the Place's own room.
+- **SOUND**: **TONE** (dark to bright), **ATTACK** (the middle is as the instrument was
+  designed; up: a slower swell, down: quicker; on plucked and struck instruments it is
+  **STRIKE**: softer or harder), **RELEASE** (how notes end; **RING** on plucked and struck
+  instruments: how long they ring), **DRIVE** (a warm saturation) and **LEVEL**.
+- **EFFECTS**: the instrument's own reverb send (Room, Hall, Cathedral, Plate, Cave),
+  delay send (Tape, Ping-Pong, Dotted, Reverse, in time with the host), character effect
+  (Saturation, Chorus, Phaser, Filter, Lo-Fi) with its amount, and width. Choosing an
+  instrument sets its own defaults (the Temple choir in the Cathedral, the Tavern lute in
+  a Room...).
+- **FACTORY PRESETS** and **PRESET**: instrument presets save the instrument with its
+  Character, effects and controls, **separately from world presets** (a preset never
+  changes the world; loading a world, a .world file or a scene never changes the
+  instrument). 28 factory presets of the best-sounding instruments (the recorded lute,
+  fiddle, oud, kalimba and violin, the Minilogue pads, basses and leads, choirs, bells,
+  bowls, harpsichord, strings, keys, mallets and drums) are one click each. **SAVE**
+  writes your own as a .wbinst file (in Documents/WORLDBUILDER/Instrument Presets, where
+  the PRESET menu lists them); **LOAD** opens one from anywhere.
+- **KEYBOARD**: lights up the notes arriving (bright while held, dimmer while the pedal
+  holds them), with the pitch bend, mod wheel and pedal beside it. Click a key to hear the
+  instrument (lower on the key: louder).
+
+The instruments are levelled for this mode (each has a measured trim), so stepping
+through the browser keeps a similar loudness. Every parameter of the screen is a host
+parameter ("Instrument Tone", "Instrument Reverb"...), so it can be automated.
+
+### One instrument per track in Logic Pro
+
+1. Create a software-instrument track (Track > New Software Instrument Track) and choose
+   **AU Instruments > Veil Audio > WORLDBUILDER** in its Instrument slot.
+2. Click **INSTRUMENT** in WORLDBUILDER's top bar and choose an instrument (or a factory
+   preset).
+3. Play it from your keyboard, record a region, or draw notes in the piano roll (select
+   the region, press P). Pitch bend, mod wheel and sustain can be drawn in the region's
+   MIDI Draw lanes.
+4. For more parts, add more tracks the same way, each with its own WORLDBUILDER in
+   Instrument mode and its own instrument. Each track has its own mixer channel, plug-ins
+   and automation. Save a setup in Logic's Library ("Save Channel Strip...") to call up
+   an instrument in one click.
+
+### One instrument per track in GarageBand
+
+1. Create a Software Instrument track and choose **Plug-ins > Instrument slot > AU
+   Instruments > Veil Audio > WORLDBUILDER** in Smart Controls (B).
+2. Click **INSTRUMENT** in WORLDBUILDER's top bar and choose an instrument.
+3. Play it, record a region, or edit the notes in the Piano Roll editor (E).
+4. Repeat on more tracks. **Save each as a patch** (Library (Y) > **Save...**): the patch
+   keeps WORLDBUILDER in Instrument mode with its instrument, effects and controls.
+
+Several instances in Instrument mode are light: four, each holding a four-note chord with
+their effects, measured about 6 % of one core on the Linux test machine (the CI and the
+Mac will differ; see the DEVLOG).
+
 ## Exporting parts to separate GarageBand tracks
+
+(With Instrument mode, the quickest way is: drag the scene MIDI's tracks into GarageBand,
+put a WORLDBUILDER in **Instrument mode** on each track and choose the instrument the
+track is named after: "Spaceport - Pads" is **Spaceport > Pads** in the browser. The
+single-instrument mode below is still there: it plays one instrument *of your scene*,
+with the scene's Root, Characters and effects.)
 
 A scene's **MIDI** (footer, CAPTURE) has one track per instrument, named
 "Place - Instrument" (e.g. "Spaceport - Pads"). Dragged into GarageBand it becomes one
@@ -656,6 +780,12 @@ On Windows and Linux (the standalone app), Cmd is Ctrl.
   quarantine flag, re-signs, refreshes the Audio Unit list and runs `auval`), then quit
   and reopen GarageBand. `bash scripts/diagnose-mac.sh` (in this repository) prints
   what macOS reports about the installed plug-in.
+- **Instrument mode is silent.** It plays only the notes the host sends: select the
+  track (record-enable it in Logic) so the keyboard reaches it, or click the on-screen
+  keyboard. A level of -inf or Power off silences it too. Nothing else plays in this
+  mode: for the world, click **WORLD**.
+- **Instrument mode sounds too dry or too wet.** Each instrument's reverb and delay are in
+  EFFECTS; **PLACE AMBIENCE** adds the world's environment and space under it.
 - **Silent until I press play.** Play Mode Transport (the default) and Arrangement play
   only while the host plays. Choose **Free** in the footer to hear it with the song
   stopped, or use **PREVIEW** in ARRANGE.

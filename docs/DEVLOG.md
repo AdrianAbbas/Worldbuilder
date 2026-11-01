@@ -5,10 +5,9 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Instrument mode is in progress** (any one WORLDBUILDER instrument as a normal software
+**Instrument mode is done** (any one WORLDBUILDER instrument as a normal software
 instrument, played from the host's MIDI): checklist and handoff at the end, in
-[Instrument mode](#instrument-mode-2026-11-01). A resumed session continues from the first
-unticked item.
+[Instrument mode](#instrument-mode-2026-11-01).
 
 **Milestone 16 is done** (per-section clips in the Arrangement, a mini-DAW timeline):
 checklist and handoff at the end, in
@@ -5872,4 +5871,120 @@ the world, the patterns or muting everything else. Built on the single-instrumen
 - [x] 5. Instrument presets (separate from world presets) and a factory set
   (Parts 2, 4 and 5 were built together, in one push: they share the instrument screen. Part 3's last piece, the per-instrument level trims, went up on its own just before.)
 - [ ] 6. README (both workflows), tests (every instrument, CPU of several instances), DEVLOG handoff, final push without `[skip ci]`
+
+### Decisions
+
+- **One slot, the world untouched.** Instrument mode does not change the project's Places.
+  The processor builds the engine's controls for slot 0 from the instrument (its Place,
+  the inst_* parameters) and the engine plays it through the existing keyboard path
+  (`keysOnly`, Milestone 14 and Hotfix 4): slots 1-3 and the environment silent, the gate
+  open in any Play Mode. Back in WORLD mode slot 0 crossfades to the scene's Place as on
+  any Place change. Every slot already holds an engine of every Place, so no memory is
+  added.
+- **The Mode parameter** (`mode`, World | Instrument) is a host parameter: saved with the
+  project, automatable. The instrument itself (Place and element) is state
+  (`<Instrument place= type= element=>`), not a parameter: 156 choices are not something
+  to automate, and a preset or the browser sets it. The instrument's sound is 15 host
+  parameters (`inst_character`, `inst_level`, `inst_tone`, `inst_attack`, `inst_release`,
+  `inst_drive`, `inst_rev`/`revtype`, `inst_dly`/`dlytype`, `inst_char`/`charamt`,
+  `inst_width`, `inst_ambience`, `inst_octave`). They are the session's
+  (`isInstrumentParam`): no journey moves them, scenes, Inspire and `.world` files keep
+  them.
+- **A normal instrument's behaviour**: a neutral world (the World Controls and Score
+  Intensity at their defaults) shapes the instrument, so it sounds the same in every
+  project; no distance, no World Space send, no Planet colour, no distance filter and no
+  glue compressor on the master (the safety limiter stays); no transport restarts (a
+  host start, stop or locate never cuts a note), no arrangement, no slow Power fade in.
+  HOST MIDI's safeguard does not apply: every note from the host plays.
+- **Place Ambience** (off by default) brings back what "the world" adds: the environment
+  layers as the World Controls set them, the World Space, the Planet's colour and the
+  Place's own room (without it the Place's space is at its smallest and its effect
+  character at its least; the instrument's own reverb and delay sends are the space).
+  The instrument's sends ignore the Place's effect depth in this mode (they are exactly
+  as set).
+- **Switching instruments** (browser, preset, automation of Mode): slot 0 fades out over
+  12 ms (`PlaceSlotControls::duckFrom/To`), is cut to the new instrument at silence
+  (`PlaceSlot::cutTo`: a fresh engine, its gain snapped to its level, no 0.3 s slot fade)
+  and the keys still held (or pedalled) start again on the new instrument at their
+  velocities. Nothing rings on from the old instrument (the reverb and delay tails do).
+- **Attack and Release macros** (`Part::shapeForInstrument`): each part kind scales its
+  own patch after the Place has set it (synth, FM, wind, choir, bowed, sampled: attack and
+  release times, x1/4 to x4, with a swell added above the middle; plucked, modal, drums:
+  the strike's hardness and the ring), and plays with all its voices. The part restores
+  its designed patch after the chunk (`unshapeForInstrument`), so a field a Place sets
+  only now and then is never scaled twice. The view calls them STRIKE and RING on
+  plucked and struck instruments.
+- **Drive** is a new stage in each instrument's effects (`ElementFxControls::drive`,
+  zero in WORLD mode): up to +30 dB into tanh, -26 dB after (small signals at most 4 dB
+  louder).
+- **Recorded articulations live**: a live note's length is not known at note-on, so it
+  starts as the short hit; if the key is still down after the patch's short-note length
+  (in beats at the host tempo), the long recording comes in where the note has got to
+  (its attack skipped) over 30 ms while the short hit lets go over 50 ms. Released
+  earlier, the short hit rings as recorded (where the patch lets short hits ring). No
+  latency.
+- **Level trims** (`Instruments/Trims.h`): the instruments were balanced inside their
+  Places (a shaker far under a bowed bass: 18.5 dB between the 5th and 95th percentile).
+  Each now has a measured trim (the loudest 300 ms of a held note brought toward -28 dB,
+  +-12 dB at most): 2.9 dB. `WorldbuilderTests --only insttrims` regenerates the table.
+- **Groups**: the brief's ten type groups plus **Keys** (pianos, e-pianos, harpsichord,
+  squeezeboxes, concertina), which fit none of them. Each instrument's group comes from
+  its name (Bass, Lead, Choir, Pad...), then its kind and icon (`inst::groupOf`).
+- **The browser** lists "SPACEPORT > DATA BLIPS": the pixel font has no arrow glyph.
+  Previous / next step through the list as shown (a search narrows them).
+- **Presets** are `.wbinst` XML files (the instrument by its Place key, every inst_*
+  parameter but Mode) in Documents/WORLDBUILDER/Instrument Presets; LOAD opens one from
+  anywhere. The 28 factory presets are in `Instruments/Presets.h`: the recorded
+  instruments first (lute, fiddle, oud, kalimba, violin, the Minilogue patches), then
+  the strongest models (choirs, bells, bowls, harpsichord, strings, keys, mallets, steel
+  drum, timpani, drum machine). Chosen from what the tests and the developer's earlier
+  reports say, not by ear in this session.
+- **The screen** replaces the world's panels below the top bar (they are hidden, then
+  shown again as they were); the top bar keeps the title, WORLD / INSTRUMENT and POWER and
+  names the instrument. The look follows the instrument's Place (fantasy, sci-fi or
+  modern). The header's other controls were tightened by a few pixels each so the scene
+  browser keeps its 150 px.
+- **The on-screen keyboard** plays too (a lock-free queue into the next block), for a
+  quick try without a MIDI keyboard.
+- The single-instrument mode (Hotfix 4) stays as it was: it plays one instrument *of the
+  scene* (the scene's Root, Characters and effects); README says which to use when.
+
+### Tests (`--only instrument`, 77 checks)
+
+- The switch: World by default; Mode a host parameter; the catalog has all 156
+  instruments, every type group used; previous / next wrap; the instrument parameters are
+  the session's.
+- A busy world (-26 dB) then INSTRUMENT with no notes: below -100 dB; Place Ambience on:
+  the environment (+40 dB), off again: silent; an arrangement with the host playing: still
+  silent; WORLD again: the world.
+- **Every instrument** (156) from a host note: audible (all), finite and below full scale
+  (all), in tune: the pressed pitch class strongest (or within 3 dB) for every pitched
+  one (Textures and FX reported, not judged: the waves and the drill are noise or glides).
+- Levels: the trims bring the middle 90 % within 2.9 dB (18.5 without); no note near
+  full scale.
+- Velocity (horns, lute, harpsichord: louder), release ends a note, the pedal holds and
+  lets go, pitch bend (a tone up on the horns, within 15 cents), concert pitch, mod wheel,
+  Octave +1, a four-note chord all sounding.
+- The transport: a held note survives the host starting (and stopping) in Transport mode.
+- Switching with notes held: no step larger than 0.2 (12 ms fade), the held keys play on
+  the new instrument, the tail after the release falls every second and ends below
+  -70 dB; 24 instruments in a row with a chord held (finite, no larger step than a
+  note's own, silence after); Mode switched with a note held: the tail no longer than an
+  unswitched note's.
+- Recorded articulations (Megacity Glitch Stabs): a live note starts exactly as the short
+  hit; a quick note stays short, a held one becomes the long hit (+12 dB at 1.5 s); the
+  hand-over does not click.
+- The controls: Attack (slower at the top), Release (longer tail), Tone, Drive (more third
+  harmonic on a flute, about the same loudness), the reverb (Cathedral) and delay sends
+  ring on, the Characters differ, choosing an instrument sets its own effects.
+- State round trip (Mode, instrument, every control; it plays the same); a `.world` loaded
+  keeps Instrument mode and its instrument.
+- No heap allocation in processBlock with notes, bend, pedal and instruments changing.
+- **CPU**: four instances in Instrument mode, four-note chords held, effects on: about
+  6.4 % of one core on this container (the gate: 60 %, the brief's 15 % per instance).
+- The interface: the switch (and Mode automation) swaps the screens; BY PLACE / BY TYPE,
+  search ("bells", "tavern lute", "pad"), previous / next through the list shown, choosing
+  sets the instrument and its effects, STRIKE / RING labels, Character and Ambience
+  buttons, the keyboard lit by host notes and playable, the factory tiles, a preset file
+  saved and loaded, a preset leaving the world alone.
 
