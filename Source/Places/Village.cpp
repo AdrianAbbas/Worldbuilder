@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-VillagePlace::VillagePlace() : EnsemblePlace(1200) { setParts({ &lute, &hurdy, &drums, &marimba, &recorder, &jingles }); }
+VillagePlace::VillagePlace() : EnsemblePlace(1200) { setParts({ &luteRec, &hurdy, &drums, &marimba, &recorder, &jingles }); }
 
 void VillagePlace::prepareFx() {
     room.prepare(rate);
@@ -269,6 +269,29 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.shape = { 0.16f, 0.55f, 0.05f, 0.8f, 2.5f, 0.25f, 0.0f };
         p.sympathetic = 0.08f;
         p.gain = 1.0f;
+    }
+    // The recorded lute: the same classical guitar recordings as the Tavern's lute, voiced
+    // apart from it for the market square: one plain string per note (no paired course, a
+    // little sympathy), brighter and more open (less of a body, more top), drier and a bit
+    // shorter. The Tavern's is the warm room: paired courses, darker, a lute's body.
+    {
+        auto& p = luteRec.patch;
+        p.instrument = "guitar";
+        p.decay = (dawn ? 3.4f : 2.0f) * lerp(1.0f, 0.5f, tension);
+        p.toneHz = lerpExp(8000.0f, 19000.0f, tone);
+        p.velocityTone = 0.45f;
+        p.velocityGain = 0.5f;
+        p.courseLevel = 0.0f;
+        p.body = dsp::BodyGuitar;
+        p.bodyAmount = 0.06f;
+        p.sympathetic = 0.015f;
+        p.release = 0.18f;
+        p.even = 0.8f;
+        p.spread = 0.5f;
+        p.pan = 0.0f;
+        p.voices = byQuality(q, 4, 6, 8);
+        // As loud as the Village's other instruments (measured, Tests "balance").
+        p.gain = dawn ? 1.68f : (night ? 1.5f : 1.98f);
     }
     // Hurdy-gurdy: the wheel turns steadily; the trompette buzzes on the wrist strokes.
     // Market Day: a stroke on every beat; Harvest Night: the coup de quatre (four to a

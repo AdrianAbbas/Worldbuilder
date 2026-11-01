@@ -177,7 +177,9 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
              hall(0.3f).echo(DlyTape, 0.12f).with(ChSaturation, 0.15f), hall(0.25f), hall(0.25f).echo(DlyDotted, 0.12f).wide(1.3f),
              cathedral(0.4f).wide(1.4f) };
     // Village: Lute, Hurdy-Gurdy, Hand Drums, Marimba, Recorder, Bells.
-    t[2] = { room(0.2f), room(0.15f).with(ChSaturation, 0.2f).toned(0.45f), room(0.2f), room(0.2f).echo(DlyDotted, 0.1f),
+    // (The lute plays the guitar recordings since the hotfix after Instrument mode: in the
+    // open market, little room, a short slap off the walls, brighter than the Tavern's.)
+    t[2] = { room(0.1f).echo(DlyTape, 0.07f).toned(0.62f).wide(1.2f), room(0.15f).with(ChSaturation, 0.2f).toned(0.45f), room(0.2f), room(0.2f).echo(DlyDotted, 0.1f),
              hall(0.2f).echo(DlyTape, 0.1f), room(0.25f).wide(1.3f) };
     // Spaceport: Pulses, Pads, Risers, PA Tones, Engine, Data Blips.
     t[3] = { plate(0.2f).echo(DlyPingPong, 0.3f).with(ChFilter, 0.3f), hall(0.35f).with(ChChorus, 0.4f).wide(1.6f), hall(0.3f).echo(DlyPingPong, 0.15f),

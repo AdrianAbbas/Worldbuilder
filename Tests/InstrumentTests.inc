@@ -775,5 +775,23 @@ void testInstrumentMode(Suite& s) {
         world.render(0.2);
         s.check(!world.p->instrumentMode(), "(World mode keeps its drones: the hurdy group tests them)");
     }
+
+    s.section("instrument mode: the Village lute plays the guitar recordings, apart from the Tavern's");
+    if (samples::Bank::get().zoneCount() == 0) {
+        std::cout << "  [info] no recordings in this build: skipped\n";
+    } else {
+        // Both from the same recording; the Village's brighter and plainer (no second course).
+        const auto play = [&](inst::Id id) {
+            auto h = ihost(id);
+            for (int k : { 57, 64 }) note(h, k, 100);
+            return h.render(1.2);
+        };
+        const auto village = play({ Village, VillagePlace::Lute }), tavern = play({ Tavern, TavernPlace::LuteStrum });
+        const auto vs = measure(village, 0.05, 1.0), ts = measure(tavern, 0.05, 1.0);
+        s.check(vs.rmsDb > -50.0 && vs.finite, "the Village lute sounds", fmt(vs.rmsDb) + " dB");
+        s.check((vs.highDb - vs.midDb) > (ts.highDb - ts.midDb) + 3.0, "brighter than the Tavern's (more above 3 kHz against the mids)",
+                fmt(vs.highDb - vs.midDb) + " vs " + fmt(ts.highDb - ts.midDb) + " dB");
+        s.check(difference(vs, ts) > 1.0, "and clearly another sound", fmt(difference(vs, ts)) + " dB");
+    }
 }
 

@@ -8403,7 +8403,8 @@ namespace sampleTest {
 using namespace models;
 // The elements that play recordings, and the bank instrument each plays first.
 struct Sampled { int type, element; const char* name; };
-const std::array<Sampled, 16> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
+const std::array<Sampled, 17> sampled { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute" }, { Tavern, TavernPlace::Fiddle, "Tavern Fiddle" },
+                                          { Village, VillagePlace::Lute, "Village Lute" },
                                           { Desert, DesertPlace::Oud, "Desert Oud" }, { Forest, ForestPlace::Kalimba, "Forest Kalimba" },
                                           { Forest, ForestPlace::Strings, "Forest Strings" },
                                           { Biodome, BiodomePlace::WaterPlucks, "Biodome Water Plucks" },
@@ -8891,10 +8892,11 @@ void testBalance(Suite& s) {
     // Each is held near a target against the median of its Place's others: the guitars
     // level with them, the pad (sustained, so it masks more) about 2 LU under.
     struct Guitar { int type, element; const char* name; std::initializer_list<int> background; double target, mean, each; };
-    const std::array<Guitar, 3> guitars { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute", {}, 0.0, 2.5, 4.5 },
+    const std::array<Guitar, 4> guitars { { { Tavern, TavernPlace::LuteStrum, "Tavern Lute", {}, 0.0, 2.5, 4.5 },
+                                            { Village, VillagePlace::Lute, "Village Lute", {}, 0.0, 2.5, 4.5 },
                                             { Desert, DesertPlace::Oud, "Desert Oud", { DesertPlace::Wind }, 0.0, 2.5, 4.5 },
                                             { Forest, ForestPlace::Strings, "Forest Strings", { ForestPlace::Rustle }, -2.0, 1.0, 2.0 } } };
-    for (int type : { Tavern, Desert, Forest, Biodome, Ruins }) {
+    for (int type : { Tavern, Village, Desert, Forest, Biodome, Ruins }) {
         if (!placeFilter.empty() && std::find(placeFilter.begin(), placeFilter.end(), type) == placeFilter.end()) continue;
         const std::string place = placeNames[std::size_t(type)];
         s.section(("balance: " + place + ", every instrument alone (LUFS, gated)").c_str());
@@ -9374,8 +9376,8 @@ void testSamples(Suite& s) {
         s.check(differs, std::string(x.name) + ": plays the recordings (differs from the synthesised fallback)");
         // The guitars were raised to the level of their Places' other instruments (the
         // "balance" group checks them); the others sit where the models they replaced sat.
-        if (x.element != TavernPlace::LuteStrum || x.type != Tavern)
-            if (x.type != Desert)
+        const bool guitar = (x.type == Tavern && x.element == TavernPlace::LuteStrum) || x.type == Desert || (x.type == Village && x.element == VillagePlace::Lute);
+        if (!guitar)
                 s.check(near, std::string(x.name) + ": sits at the level the Place was mixed for (within 4 dB of the model it replaced)", levels);
     }
 }

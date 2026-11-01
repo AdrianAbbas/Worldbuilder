@@ -82,6 +82,9 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     PluckPart lute;
+    // The recorded lute (the hotfix after Instrument mode): the developer's classical guitar
+    // recordings, voiced as a plain, bright outdoor lute; the model plays without them.
+    SamplePart luteRec { lute };
     HurdyGurdyPart hurdy;
     DrumPart drums;
     ModalPart marimba, jingles;

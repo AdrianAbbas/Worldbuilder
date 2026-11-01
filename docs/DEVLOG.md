@@ -6039,7 +6039,7 @@ The developer confirmed Instrument mode in GarageBand and sent three fixes.
 ### Progress checklist
 
 - [x] 1. Only what is played sounds in Instrument mode: the hurdy-gurdy's drones follow the note (a Drone control: Off / Root / Root + Fifth), and every instrument checked
-- [ ] 2. The Village lute plays the guitar recordings, voiced apart from the Tavern's; recorded twins listed
+- [x] 2. The Village lute plays the guitar recordings, voiced apart from the Tavern's; recorded twins listed
 - [ ] 3. Smoother drawing in Instrument mode (and World mode): what repaints too often, caching, frame pacing, calmer decoration when slow; editor CPU before and after
 
 ### 1. Only what is played sounds
@@ -6083,4 +6083,44 @@ Off); every held instrument is below -60 dB six seconds after its release; the
 hurdy-gurdy's Drone: Root adds A2 under A3 (+12 dB or more), Root + Fifth adds E3, every
 setting silent a second after the key. The `hurdy` group (World mode) and the Village,
 Castle, Tavern, Forest, Desert and Palace instrument groups pass unchanged.
+
+### 2. The Village lute plays the guitar recordings
+
+The Village's lute was still the plucked-string model while the Tavern's plays the
+developer's classical guitar. It now plays the same recordings (`SamplePart luteRec`,
+the model behind it as the fallback), voiced apart from the Tavern's:
+
+| | Tavern lute (warm room) | Village lute (market, outdoors) |
+|---|---|---|
+| Strings | paired courses (a second string 4 cents off, 45 %) | one plain string per note |
+| Tone | 3.2-13 kHz low-pass, darker when soft | 8-19 kHz, little darkening with velocity |
+| Body | a lute's body, 35 % | a guitar's body, 6 % |
+| Sympathetic strings | 3 % | 1.5 % |
+| Own effects (defaults) | Room 25 % | Room 10 %, a short tape slap (7 %), Tone 62 %, width 120 % |
+
+Levels set by measurement (Tests "balance", now with the Village): -0.3 LU against the
+Village's other instruments on average, within 1.5 LU in each Character. Tests: the
+Village lute in the recorded-instrument group (plays the recordings, differs from the
+model) and in Instrument mode (it sounds; 3 dB or more brighter than the Tavern's against
+its mids; clearly another sound).
+
+**Recorded "twins" still played by models** (not changed; the developer may want them
+next). Same instrument as a recording:
+- **Beach > Guitar**: "warm guitar-like plucks" from the plucked-string model; the guitar
+  recordings would fit (a nylon-string beach guitar).
+- **Palace > Strings** and **Military Camp > Strings**: string ensembles from the bowed
+  model; the violin recordings (sustain, pizzicato, col legno) are a solo violin, so a
+  section would need several detuned players over them (as the Forest strings do).
+Close kin (a Minilogue patch of the same kind exists, the instrument is synthesised):
+- pads: Spaceport Pads, Cyberpunk Megacity Rain Pad, Beach Breeze Pad (the soft pad plays
+  the Biodome and Nebula pads);
+- basses: City Synth Bass, Alien Hive Throb Bass, Asteroid Mining Grind Bass, Suburbs Bass
+  (the static-y bass plays the Megacity Grit Bass and the Station Reactor Pulse);
+- pulses and arps: Cyberpunk Megacity Neon Arp, Suburbs Pop Pulse, Alien Hive Pulses,
+  Alien Ruins Machine Pulses (the pulsating synth plays the Spaceport Pulses and the
+  Bridge Warp Core);
+- square beeps: Space Station Comms Beeps, Starship Bridge Consoles, Spaceship Computer
+  (the harsh square plays the Spaceport Data Blips and the Mining Drill).
+No other kalimba-like instrument (the kalimba plays the Forest Kalimba and the Biodome
+Water Plucks).
 
