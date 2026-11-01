@@ -5870,7 +5870,7 @@ the world, the patterns or muting everything else. Built on the single-instrumen
 - [x] 4. The instrument view: name and Place icon, Character, macros, effects, an on-screen keyboard lit by incoming notes
 - [x] 5. Instrument presets (separate from world presets) and a factory set
   (Parts 2, 4 and 5 were built together, in one push: they share the instrument screen. Part 3's last piece, the per-instrument level trims, went up on its own just before.)
-- [ ] 6. README (both workflows), tests (every instrument, CPU of several instances), DEVLOG handoff, final push without `[skip ci]`
+- [x] 6. README (both workflows), tests (every instrument, CPU of several instances), DEVLOG handoff, final push without `[skip ci]`
 
 ### Decisions
 
@@ -5987,4 +5987,42 @@ the world, the patterns or muting everything else. Built on the single-instrumen
   sets the instrument and its effects, STRIKE / RING labels, Character and Ambience
   buttons, the keyboard lit by host notes and playable, the factory tiles, a preset file
   saved and loaded, a preset leaving the world alone.
+
+Full suite (the CI's six shards, Linux, GCC, **with the recordings** prepared from the
+Samples repository in this container): **4374 passed, 1 failed** on the first run. The one
+failure was the scenes group's check that the scene browser keeps 150 px in the top bar
+(142 px after WORLD / INSTRUMENT went in); the switch was narrowed by 10 px and `scenes`,
+`editor`, `overlap` and `instrument` were run again: 155 passed, 0 failed. The baseline
+before this work, built the same way: 4234 passed, 0 failed. The AU harness runs on the
+macOS CI only.
+
+### Instrument mode handoff
+
+**Done**: all six parts. Parts 1 and 3 (the level trims) were pushed on their own, 2, 4 and
+5 together (they share the instrument screen), part 6's docs with `[skip ci]`; this last
+push is without it, so CI builds and tests once.
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Instrument mode check").
+
+**Known issues / limits**:
+- Nothing has been heard or clicked on a Mac: measured on Linux through `processBlock` and
+  the editor's components. The factory presets and their effect settings were chosen from
+  the tests and earlier reports, not by ear; the level trims are measured (one held note),
+  so an instrument that plays very differently across its range may still jump out.
+- A live note on a recorded instrument starts as the short hit and hands over to the long
+  one after the short notes' length; the hand-over is a 30 ms crossfade into the long
+  recording at the same point, which may be audible on some patches. Instruments without a
+  short articulation play their long recording from the start.
+- Mod wheel: vibrato or brightness per part, as Milestone 14 mapped it; not selectable.
+  Pitch-bend range is fixed per instrument (a tone; an octave on sirens, risers and gliding
+  leads).
+- In-tune check: Textures and FX are reported, not judged; Spaceport Data Blips, the Sea
+  Ship and Beach waves and the Mining drill are not strongest on the pressed pitch class.
+- The search box uses JUCE's text font (the pixel font cannot be typed in).
+- The Place's own effect character stays a little in the sound with Ambience off (at its
+  least, in its smallest room); the Castle's tape echo, for example, still trails.
+- Instrument mode always uses slot 0's engines; switching back to WORLD crossfades slot 0
+  to the scene's Place over 0.3 s, as any Place change does.
+- CPU: four instances measured about 6.4 % of one core here (a cloud container); check on
+  the MacBook Air.
 

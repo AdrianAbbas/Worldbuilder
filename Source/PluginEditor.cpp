@@ -692,11 +692,11 @@ void WorldbuilderEditor::resized() {
         arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 10 - 92, header.getCentreY() - 13, 92, 26));
         arrangementState.setBounds(juce::Rectangle<int>(arrangeToggle.getX() - 4 - 122, header.getCentreY() - 13, 122, 26));
         // WORLD / INSTRUMENT, stacked, right of the title.
-        modeArea = juce::Rectangle<int>(headerTitle.getRight() + 10, header.getCentreY() - 21, 88, 42);
+        modeArea = juce::Rectangle<int>(headerTitle.getRight() + 8, header.getCentreY() - 21, 80, 42);
         modeWorld.setBounds(modeArea.withHeight(20));
         modeInstrument.setBounds(modeArea.withTrimmedTop(22));
         // The scene browser, INSPIRE and UNDO, right of the switch.
-        auto row = juce::Rectangle<int>(modeArea.getRight() + 10, header.getCentreY() - 13, arrangementState.getX() - 6 - modeArea.getRight() - 10, 26);
+        auto row = juce::Rectangle<int>(modeArea.getRight() + 8, header.getCentreY() - 13, arrangementState.getX() - 6 - modeArea.getRight() - 8, 26);
         sceneUndo.setBounds(row.removeFromRight(54));
         row.removeFromRight(4);
         inspireToggle.setBounds(row.removeFromRight(74));
