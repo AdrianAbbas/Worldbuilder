@@ -132,6 +132,13 @@ public:
     // Rolling: the grid scrolls to keep the playhead in view (the editor's timer calls it).
     void followPlayhead();
 private:
+    // What the grid and the ruler draw besides the playhead, as one number (the notes, the
+    // view, the transport's regions, the look): the timer repaints them only when it changes,
+    // and only the playhead's columns when it alone moves.
+    uint64_t gridKey(int& playheadX, bool& rolling);
+    uint64_t gridDrawn = 0;
+    int gridQuietTicks = 0, playheadDrawn = -10000;
+    bool rollingDrawn = false;
 
 
     // One variant of an element as the editor works on it (its pattern in `pattern`, its

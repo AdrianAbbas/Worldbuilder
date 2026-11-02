@@ -39,6 +39,8 @@ private:
 
     WorldbuilderProcessor& processor;
     int slotShown = -1, elementShown = 0, variantShown = 0;
+    uint64_t keysDrawn = 0;   // what the keyboard last drew (see timerCallback)
+    int keysQuietTicks = 0;
     std::array<int, placeSlots> typesShown {};
     uint32_t recorderSeen = 0;
     juce::ComboBox scale, mode, variant, quantise, length;

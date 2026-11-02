@@ -1886,8 +1886,64 @@ void PatternEditor::timerCallback() {
     stopButton.setEnabled(!host);
     loopButton.setToggleState(processor.transport.loop.load(), juce::dontSendNotification);
     followPlayhead();
-    gridView->repaint();
-    ruler->repaint();
+    // The grid and the ruler repaint when what they draw has changed (a generated or
+    // recorded note, a scroll, the loop, the look), not on every tick; a playhead moving on
+    // repaints its old and new columns only; once a second everything regardless.
+    int x = 0;
+    bool rolling = false;
+    const auto key = gridKey(x, rolling);
+    if (key != gridDrawn || ++gridQuietTicks >= 30) {
+        gridDrawn = key;
+        gridQuietTicks = 0;
+        gridView->repaint();
+        ruler->repaint();
+    } else if (x != playheadDrawn || rolling != rollingDrawn) {
+        const int u = pixel::unit;
+        for (const int at : { playheadDrawn, x }) {
+            // The grid's column and its trail; the ruler's line and marker.
+            gridView->repaint(at - 4 * u, 0, 6 * u, gridView->getHeight());
+            ruler->repaint(at - keyWidth - 3 * u, 0, 7 * u, ruler->getHeight());
+        }
+    }
+    playheadDrawn = x;
+    rollingDrawn = rolling;
+}
+
+uint64_t PatternEditor::gridKey(int& playheadX, bool& rolling) {
+    uint64_t h = 1469598103934665603ull;
+    const auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+    const auto mixDouble = [&mix](double d) { mix(uint64_t(std::llround(d * 4096.0))); };
+    const double beat = toView(playheadBeat(processor, slotIndex, rolling));
+    const auto& p = notes();
+    const double perBeat = pat::stepsPerBeat(p.resolution);
+    // The playhead's pixel (the grid's; the ruler's is the same less the key column).
+    playheadX = beat < 0.0 ? -10000 : pixel::snap(int(gridView->xForStep(beat * perBeat)));
+    mixDouble(gridView->firstStep);
+    mixDouble(gridView->stepWidth);
+    mix(uint64_t(gridView->firstRow) ^ (uint64_t(gridView->rowHeight) << 20) ^ (uint64_t(gridView->getWidth()) << 32) ^ (uint64_t(gridView->getHeight()) << 48));
+    mix(uint64_t(p.count) ^ (uint64_t(uint16_t(p.lengthSteps)) << 16) ^ (uint64_t(p.resolution) << 32) ^ (uint64_t(p.bars) << 40));
+    for (int i = 0; i < p.count; ++i) {
+        const auto& n = p.notes[std::size_t(i)];
+        mix(uint64_t(uint16_t(n.step)) ^ (uint64_t(uint16_t(n.length)) << 16) ^ (uint64_t(uint8_t(n.degree)) << 32) ^ (uint64_t(uint8_t(n.alter)) << 40)
+            ^ (uint64_t(n.velocity) << 48));
+        mix(uint64_t(n.probability) ^ (uint64_t(n.flags) << 8));
+    }
+    mix(uint64_t(rows.size()) ^ (uint64_t(chromatic) << 32) ^ (uint64_t(int(viewMode)) << 40) ^ (uint64_t(uint8_t(clipSection)) << 48));
+    mix(uint64_t(uint32_t(slotIndex)) ^ (uint64_t(uint32_t(elementIndex)) << 32));
+    mix(uint64_t(uint32_t(variantIndex)) ^ (uint64_t(segments.size()) << 32));
+    for (const auto& seg : segments) {
+        mixDouble(seg.viewStart);
+        mixDouble(seg.beats);
+        mix(uint64_t(seg.linked));
+    }
+    auto& t = processor.transport;
+    mixDouble(t.loopStart.load());
+    mixDouble(t.loopEnd.load());
+    mixDouble(t.punchIn.load());
+    mixDouble(t.punchOut.load());
+    mix(uint64_t(t.loop.load()) | (uint64_t(t.punch.load()) << 1));
+    mix(uint64_t(uint32_t(pixel::theme().version)) ^ (uint64_t(pixel::theme().colours.accent.getARGB()) << 32));
+    return h;
 }
 
 void PatternEditor::setMuteSolo(bool mute, bool solo) {

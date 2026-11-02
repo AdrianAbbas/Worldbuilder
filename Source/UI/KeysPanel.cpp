@@ -281,8 +281,21 @@ void KeysPanel::timerCallback() {
         if (onPatternsChanged) onPatternsChanged();
     }
     refresh();
-    keyboard->repaint();
-    repaint(octaveArea);
+    // The keyboard and the octave repaint when a key lights or goes dark, the octave moves or
+    // the look changes (not on every tick); once a second regardless.
+    const auto& in = processor.engine.keysInput;
+    uint64_t key = uint64_t(uint32_t(processor.keys.octave.load())) ^ (uint64_t(uint32_t(pixel::theme().version)) << 32);
+    for (std::size_t i = 0; i < 4; ++i) {
+        key = (key ^ in.downBits[i].load(std::memory_order_relaxed)) * 1099511628211ull;
+        key = (key ^ in.soundBits[i].load(std::memory_order_relaxed)) * 1099511628211ull;
+    }
+    key = (key ^ uint64_t(pixel::theme().colours.accent.getARGB())) * 1099511628211ull;
+    if (key != keysDrawn || ++keysQuietTicks >= 30) {
+        keysDrawn = key;
+        keysQuietTicks = 0;
+        keyboard->repaint();
+        repaint(octaveArea);
+    }
 }
 
 void KeysPanel::paint(juce::Graphics& g) {
