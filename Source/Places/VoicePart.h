@@ -558,37 +558,56 @@ private:
     }
 
     // One reader over `m` samples, summed into the voice's buffers; how many of them it was
-    // still sounding at their start (a voice ends once all its readers have ended).
+    // still sounding at their start (a voice ends once all its readers have ended). Its state
+    // is held in locals for the chunk (the stores into the buffers would otherwise make the
+    // compiler read it back every sample) and written back after: the same arithmetic.
     static int renderReader(Reader& rd, float tailStep, float* vl, float* vr, int m) {
         const auto& z = *rd.zone;
+        const int16_t* const data = z.data;
+        const double last = double(z.length - 1);
+        const bool loops = z.loops();
+        const double loopEnd = double(z.loopEnd), loopLength = double(z.loopEnd - z.loopStart);
+        const double inc = double(rd.inc);
+        const float gain = rd.gain, panL = rd.pan.l, panR = rd.pan.r;
+        // A layer the vowel morph has all but faded out moves on unread.
+        const bool heard = std::abs(gain) > 1.0e-3f;
+        const bool linear = rd.linear;
+        double pos = rd.pos, tailPos = rd.tailPos;
+        float tailMix = rd.tailMix;
+        int delay = rd.delay;
+        bool done = rd.done;
         int i = 0;
         for (; i < m; ++i) {
-            if (rd.done) break;
-            if (rd.delay > 0) {
-                --rd.delay;
+            if (done) break;
+            if (delay > 0) {
+                --delay;
                 continue;
             }
-            // A layer the vowel morph has all but faded out moves on unread.
-            const bool heard = std::abs(rd.gain) > 1.0e-3f;
             float y = 0;
-            if (heard) y = rd.linear ? readLinear(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1))) : read(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1)));
-            if (rd.tailPos >= 0.0) {
-                rd.tailMix = std::min(1.0f, rd.tailMix + tailStep);
-                if (heard) y = y * (1.0f - rd.tailMix) + read(z.data, std::min(rd.tailPos, double(z.length - 1))) * rd.tailMix;
-                rd.tailPos += double(rd.inc);
-                if (rd.tailMix >= 1.0f) rd.pos = rd.tailPos, rd.tailPos = -1;
+            if (heard) y = linear ? readLinear(data, std::clamp(pos, 1.0, last)) : read(data, std::clamp(pos, 1.0, last));
+            if (tailPos >= 0.0) {
+                tailMix = std::min(1.0f, tailMix + tailStep);
+                if (heard) y = y * (1.0f - tailMix) + read(data, std::min(tailPos, last)) * tailMix;
+                tailPos += inc;
+                if (tailMix >= 1.0f) pos = tailPos, tailPos = -1;
             }
-            rd.pos += double(rd.inc);
-            if (z.loops() && rd.tailPos < 0.0 && rd.tailMix <= 0.0f && rd.pos >= double(z.loopEnd)) rd.pos -= double(z.loopEnd - z.loopStart);
-            if (rd.pos >= double(z.length - 1) || rd.tailPos >= double(z.length - 1)) rd.done = true;
-            y *= rd.gain;
-            vl[i] += y * rd.pan.l;
-            vr[i] += y * rd.pan.r;
+            pos += inc;
+            if (loops && tailPos < 0.0 && tailMix <= 0.0f && pos >= loopEnd) pos -= loopLength;
+            if (pos >= last || tailPos >= last) done = true;
+            y *= gain;
+            vl[i] += y * panL;
+            vr[i] += y * panR;
         }
+        rd.pos = pos;
+        rd.tailPos = tailPos;
+        rd.tailMix = tailMix;
+        rd.delay = delay;
+        rd.done = done;
         return i;
     }
 
-    // One voice over `m` samples (m <= chunk), added into the part's sums.
+    // One voice over `m` samples (m <= chunk), added into the part's sums (its state in
+    // locals for the chunk, as the readers').
     void renderVoice(Voice& v, float* outL, float* outR, int m) {
         std::array<float, dsp::chunk> vl {}, vr {};
         int sounding = 0;
@@ -604,37 +623,49 @@ private:
         const bool ring = patch.ringMix > 0.0f;
         const float ringMix = patch.ringMix;
         const bool tremolo = patch.tremoloDepth > 0.0f;
+        const float tremoloDepth = patch.tremoloDepth, tremoloHz = patch.tremoloHz, now = float(time);
+        auto hp = v.hp, lp = v.lp, bp = v.band;
+        float amp = v.amp, fade = v.fade, ringPhase = v.ringPhase;
+        const float attackStep = v.attackStep, releaseMul = v.releaseMul, gain = v.gain, chatterGain = v.chatterGain, ringInc = v.ringInc, seed = v.seed;
+        bool on = true;
         for (int i = 0; i < m; ++i) {
             if (i >= sounding) {
-                v.on = false;
-                return;
+                on = false;
+                break;
             }
             float side[2] { vl[std::size_t(i)], vr[std::size_t(i)] };
             for (int c = 0; c < 2; ++c) {
-                float y = lowCut ? v.hp[std::size_t(c)].tick(side[c]).hp : side[c];
-                y = v.lp[std::size_t(c)].tick(y).lp;
-                if (band) y = dsp::lerp(y, 1.6f * v.band[std::size_t(c)].bandpass(y), bandMix);
+                float y = lowCut ? hp[std::size_t(c)].tick(side[c]).hp : side[c];
+                y = lp[std::size_t(c)].tick(y).lp;
+                if (band) y = dsp::lerp(y, 1.6f * bp[std::size_t(c)].bandpass(y), bandMix);
                 if (drive) y = std::tanh(driveK * y) / driveNorm * driveLevel;
                 side[c] = y;
             }
-            float g = v.amp * v.fade * v.gain * v.chatterGain;
+            float g = amp * fade * gain * chatterGain;
             if (ring) {
-                v.ringPhase += v.ringInc;
-                v.ringPhase -= std::floor(v.ringPhase);
-                const float rm = std::sin(dsp::twoPi * v.ringPhase);
+                ringPhase += ringInc;
+                ringPhase -= std::floor(ringPhase);
+                const float rm = std::sin(dsp::twoPi * ringPhase);
                 for (auto& s : side) s = s * (1.0f - ringMix) + s * rm * ringMix * 1.4f;
             }
-            if (tremolo) g *= 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::sin(dsp::twoPi * float(time) * patch.tremoloHz + v.seed));
-            if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
-            v.fade *= v.releaseMul;
-            v.level = v.amp * v.fade * v.gain;
+            if (tremolo) g *= 1.0f - tremoloDepth * (0.5f + 0.5f * std::sin(dsp::twoPi * now * tremoloHz + seed));
+            if (amp < 1.0f) amp = std::min(1.0f, amp + attackStep);
+            fade *= releaseMul;
             outL[i] += side[0] * g;
             outR[i] += side[1] * g;
-            if (v.fade < 1.0e-4f) {
-                v.on = false;
-                return;
+            if (fade < 1.0e-4f) {
+                on = false;
+                break;
             }
         }
+        v.hp = hp;
+        v.lp = lp;
+        v.band = bp;
+        v.amp = amp;
+        v.fade = fade;
+        v.ringPhase = ringPhase;
+        v.level = amp * fade * gain;
+        v.on = on;
     }
 
     void resolve() {

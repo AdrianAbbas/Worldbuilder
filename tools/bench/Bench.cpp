@@ -13,6 +13,12 @@
 
 #include <ctime>
 #include <sys/resource.h>
+#if defined(__has_include)
+#if __has_include(<valgrind/callgrind.h>)
+#include <valgrind/callgrind.h>
+#define WB_CALLGRIND 1
+#endif
+#endif
 #if defined(__linux__)
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
@@ -126,12 +132,26 @@ int audio(int repeats) {
 }
 
 // Exact instruction counts (callgrind, which this function bounds:
-//   valgrind --tool=callgrind --toggle-collect='bench::measured*' WorldbuilderBench count --place temple):
+//   valgrind --tool=callgrind --instr-atstart=no --toggle-collect='bench::measured*' WorldbuilderBench count --place temple):
 // 2 s of the same busy Places after a second's warm-up. Deterministic, unlike time.
-[[gnu::noinline]] void measured(Host& h, double seconds) { h.render(seconds); }
+// (With valgrind's headers, run with --instr-atstart=no: everything else, the bank's
+// decoding above all, runs uninstrumented and many times faster.)
+[[gnu::noinline]] void measured(Host& h, double seconds) {
+#if WB_CALLGRIND
+    CALLGRIND_START_INSTRUMENTATION;
+#endif
+    h.render(seconds);
+#if WB_CALLGRIND
+    CALLGRIND_STOP_INSTRUMENTATION;
+#endif
+}
 int count() {
+    // Under valgrind the bank takes minutes to decode: wait for it, however long (the
+    // recordings must play, not the synthesised fallbacks).
     samples::Bank::get().load();
-    samples::Bank::get().waitUntilLoaded(60000);
+    while (samples::Bank::get().state() == samples::Bank::Loading) samples::Bank::get().waitUntilLoaded(1000);
+    std::fprintf(stderr, "bank: %s\n", samples::Bank::get().message().toRawUTF8());
+    if (!samples::Bank::get().ready()) return 1;
     for (int type : builtPlaces()) {
         auto st = busyPlaces(type);
         st.render(1.0);
