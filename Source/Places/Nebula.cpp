@@ -233,12 +233,14 @@ void NebulaPlace::configure(const PlaceContext& c) {
         p.detune = 14.0f;
         p.timing = 0.8f;
         p.spread = 0.9f;
-        p.wobbleCents = 12.0f;
-        p.wobbleHz = 0.07f;
+        // Tension (as the bowed drone's rosin did): brighter, rougher, more unsettled.
+        p.wobbleCents = 12.0f + 25.0f * tension;
+        p.wobbleHz = 0.07f + 0.2f * tension;
         p.attack = 3.5f;
         p.release = 3.0f;
         p.glide = 1.0f;
-        p.toneHz = lerpExp(1200.0f, 3200.0f, tone);
+        p.toneHz = lerpExp(1200.0f, 3200.0f, tone) * lerpExp(0.8f, 3.0f, tension);
+        p.drive = 0.25f * tension;
         p.lowCutHz = 30;
         p.voices = 3;
         p.gain = humGain[std::size_t(std::clamp(s.character, 0, 2))];

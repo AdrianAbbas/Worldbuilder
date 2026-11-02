@@ -285,8 +285,9 @@ void RuinsPlace::configure(const PlaceContext& c) {
         p.lowCutHz = 200;
         p.voices = 2;
         p.gain = ghostGain[std::size_t(std::clamp(s.character, 0, 2))] * (haunted ? 1.0f : (desolate ? 0.55f : 0.35f));
+        // Haunted: his whispering; elsewhere breaths and air ("shh", "fff", "sss") riding the gusts.
         auto& w = whisperRec.patch;
-        w.single = "voice-whisper";
+        w.single = haunted ? "voice-whisper" : "voice-breath";
         w.singers = haunted ? 2 : 1;
         w.startJitter = 1.0f;
         w.transpose = -3.0f;

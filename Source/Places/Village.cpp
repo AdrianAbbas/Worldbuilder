@@ -391,6 +391,14 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.rows[0] = { djembe::BigBass, djembe::BigTone, 0.25f, 0.0f, 1.0f, -0.15f, lerpExp(2500.0f, 9000.0f, tone), 0.6f, 35.0f };
         p.rows[1] = { djembe::SmallTone, djembe::SmallSlap, 0.3f, 0.0f, 0.8f, 0.25f, lerpExp(4000.0f, 14000.0f, tone), 0.6f, 80.0f };
         p.rows[0].gain = dawn ? 0.7f : 1.0f;
+        // Tension: harder hands (more slaps and open tones, brighter, louder).
+        p.rows[0].altChance = 0.25f + 0.45f * tension;
+        p.rows[1].altChance = 0.3f + 0.6f * tension;
+        // The large drum's bass leans in hardest (the low end swells as the synthesised
+        // frame drum's did).
+        p.velocityScale = lerp(0.85f, 1.6f, tension);
+        p.rows[0].gain *= lerp(0.85f, 1.4f, tension);
+        p.rows[1].toneHz *= lerpExp(0.7f, 1.6f, tension);
         p.spread = 0.15f;
         p.gain = drumsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }

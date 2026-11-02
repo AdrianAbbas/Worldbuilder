@@ -199,15 +199,19 @@ void TemplePlace::configure(const PlaceContext& c) {
     {
         auto& p = choirRec.patch;
         p = voiceFromChoir(choir.patch);
-        p.hum = forsaken ? 0.55f : (rite ? 0.35f : 0.2f);
-        p.singers = 5;
-        p.detune = 9.0f;
+        // Dawn: an open, bright section singing out; the rite: a dense, dark one, half of it
+        // humming; forsaken: a few monks humming in the dark, their pitch sagging.
+        p.hum = forsaken ? 0.65f : (rite ? 0.45f : 0.08f);
+        // Life fills the hall with more voices.
+        p.singers = (forsaken ? 2 : (rite ? 5 : 4)) + int(std::lround(3.0f * s.life));
+        p.vibratoDepth = 0.06f * s.life;   // more of them, livelier
+        p.lowCutHz = dawn ? 160.0f : 40.0f;   // dawn: light and airy
+        p.detune = forsaken ? 14.0f : (rite ? 11.0f : 7.0f);
         p.timing = 0.09f;
-        p.spread = 0.85f;
-        p.wobbleCents = forsaken ? 10.0f : 0.0f;
-        p.toneHz = lerpExp(2500.0f, 7000.0f, tone);
+        p.spread = forsaken ? 0.4f : (rite ? 0.7f : 0.95f);
+        p.wobbleCents = forsaken ? 14.0f : 0.0f;
+        p.toneHz = lerpExp(2500.0f, 7000.0f, tone) * (forsaken ? 0.5f : (rite ? 0.75f : 1.7f)) * lerp(0.8f, 1.3f, s.life);
         p.velocityTone = 0.9f;
-        p.voices = byQuality(q, 3, 4, 5);
         p.gain = choirGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Gongs: a soft mallet on a big plate; its partials beat and spread, a quarter-tone
@@ -270,16 +274,17 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.detune = 5.0f;
         p.timing = 0.25f;
         p.spread = 0.35f;
-        p.toneHz = lerpExp(2000.0f, 6000.0f, tone);
+        p.toneHz = lerpExp(2000.0f, 6000.0f, tone) * (forsaken ? 0.5f : 1.0f);
         p.vowelDrift = 0;
         p.gain = chantGain[std::size_t(std::clamp(s.character, 0, 2))];
         auto& d = droneRec.patch;
         d = p;
-        d.single = rite ? "voice-drone-ooh" : "voice-drone-hum";
+        d.single = rite ? "voice-drone-ooh" : (forsaken ? "voice-drone-aah" : "voice-drone-hum");
         d.singers = 2;
         d.detune = 4.0f;
         d.toneHz = 2500.0f;
-        d.gain = droneGain[std::size_t(std::clamp(s.character, 0, 2))];
+        d.singers = 2 + int(std::lround(s.life));
+        d.gain = (dawn ? 0.6f : 1.0f) * droneGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Temple bells: bright bells whose third and fifth partials are the scale's own.
     {

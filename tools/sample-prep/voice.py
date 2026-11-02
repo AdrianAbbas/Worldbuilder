@@ -461,13 +461,24 @@ def run(spec, source, out_dir, report, locate):
         zones = run_texture(spec, locate, report)
     if not zones:
         return []
-    # Velocity layers in loudness order (soft under full), per pitch: reported.
+    # Velocity layers in loudness order: the soft take of a note at least `softUnderDb`
+    # (default 6 dB) under the full one, each keeping its own tone. The hummed "mm" was
+    # sung louder soft than full (2-8 dB): its soft takes come down; reported.
     if mode == "sweep" and len(spec.get("layerNames", [])) > 1:
+        under = float(spec.get("softUnderDb", 6.0))
         for label in sorted({z["label"] for z in zones}, key=P.midi_of):
             lv = []
             for li in range(len(spec["layerNames"])):
                 mine = [P.note_loudness(z["audio"]) for z in zones if z["label"] == label and z["layer"] == li]
                 lv.append(float(np.mean(mine)) if mine else None)
-            if None not in lv and any(lv[i] >= lv[i + 1] for i in range(len(lv) - 1)):
-                report["warnings"].append(f"{spec['id']} {label}: the soft take is as loud as the full one ({', '.join(f'{v:.1f}' for v in lv)} LUFS)")
+            if None in lv or len(lv) < 2:
+                continue
+            if lv[0] > lv[1] - under:
+                trim = (lv[1] - under) - lv[0]
+                for z in zones:
+                    if z["label"] == label and z["layer"] == 0:
+                        z["audio"] = z["audio"] * 10 ** (trim / 20)
+                if lv[0] >= lv[1]:
+                    report["warnings"].append(f"{spec['id']} {label}: the soft take was as loud as the full one ({lv[0]:.1f} / {lv[1]:.1f} LUFS); "
+                                              f"soft brought {trim:+.1f} dB down, {under:.0f} dB under the full one")
     return [write_set(spec, zones, out_dir, report, unpitched=(mode == "texture"))]

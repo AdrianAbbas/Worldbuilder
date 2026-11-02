@@ -418,8 +418,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.toneHz = lerpExp(3500.0f, 9000.0f, tone);
         p.velocityTone = 0.8f;
         p.drive = besieged ? 0.15f * tension : 0.0f;
-        p.attack = 0.6f * choir.patch.attack;
-        p.voices = byQuality(q, 3, 4, 5);
+        p.attack = choir.patch.attack;   // the section swells in as the synthesised choir did
         p.gain = choirGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     level = { 0.11f, 0.16f, 0.22f, 0.4f, 0.6f, 0.5f };

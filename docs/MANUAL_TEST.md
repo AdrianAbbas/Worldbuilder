@@ -1000,3 +1000,31 @@ Nothing in the sound changed; this is about the look and that every control stil
   instruments quickly. In WORLD mode with three or four Places: the meters, the planet and
   the cards move smoothly. Activity Monitor: GarageBand's CPU with the WORLDBUILDER window
   open should be clearly lower than before.
+
+## Milestone 17 check (piano, voice, djembes, banjo)
+
+Install the CI package (the installer reports about 1,240 recorded notes in each bundle).
+Listen first to the renders the CI keeps (the Linux job's test logs, `renders/`): the
+piano's chromatic run soft to full, chords on the pedal and a melody; the choir from one
+singer to eight; every changed part before (the synthesised one) and after.
+
+1. **Piano**: Instrument mode, factory preset **Piano**. Play every register softly and
+   hard: the layers should rise evenly with no step; hold a low note (it should ring and
+   die away, never loop); release it (the damper); the top two octaves ring on after the
+   key. Hold the sustain pedal through chord changes and lift it.
+2. KEYS on the Mall's E-Piano in **Empty Night** and **Dead Mall** and the Suburbs' in
+   **Evening**: the acoustic piano; the other Characters: the electric piano as before.
+3. **Ruins**: the Piano Shards (reversed swells, short fragments), the Wind (a ghostly
+   voice and whispers or breaths under it), the Low Toms.
+4. **Choirs**: Castle, Palace, Temple (and its Chant Drone), Alien Ruins (Alien Choir and
+   Whispers), Asteroid Mining (Worker Hymn, in all three Characters), Alien Hive
+   (Formants), Starship Bridge (Crew Chatter), Cavern (Sub Drone: a hum under it), Nebula
+   (Deep Hum). Each should sound like itself, not the same choir everywhere; play the
+   Temple choir from the keyboard up high (above E5 it hands over to the synthesised
+   choir: listen for the seam).
+5. **Djembes**: Village Hand Drums, Tavern Frame Drum and Stomps, Desert Frame Drums,
+   Alien Ruins Ritual Drums: the grooves as before, the sound of hand drums; turn Tension
+   up in the Village and the Desert (harder hands).
+6. **Banjo**: the Temple Zither. Does it read as a zither or temple lute in the shimmer,
+   or as a banjo out of place? (If out of place: tell me, and it goes back to the model.)
+7. Levels against the other parts of each Place, by ear.

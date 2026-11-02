@@ -457,7 +457,8 @@
                     "stroke": "small-muted-slap",
                     "key": 55
                 }
-            ]
+            ],
+            "crossfade": true
         },
         {
             "id": "banjo",
@@ -522,7 +523,8 @@
                     ],
                     "takes": 9
                 }
-            ]
+            ],
+            "crossfade": true
         },
         {
             "id": "banjo-muted",
@@ -556,7 +558,8 @@
             "maxSeconds": 1.5,
             "partials": 3,
             "denoise": false,
-            "declip": true
+            "declip": true,
+            "refile": true
         },
         {
             "id": "voice-ooh",
@@ -835,8 +838,8 @@
             "name": "Voice, a gentle hummed melody (single notes)",
             "kind": "voice",
             "mode": "takes",
-            "stretchDown": 7,
-            "stretchUp": 4,
+            "stretchDown": 10,
+            "stretchUp": 10,
             "files": [
                 {
                     "file": "Male Gentle Humming melody.wav",

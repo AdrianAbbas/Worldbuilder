@@ -276,6 +276,10 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.rows = {};
         p.rows[0] = { djembe::BigBass, -1, 0.0f, 0.0f, 1.0f, 0.0f, lerpExp(2500.0f, 8000.0f, tone), 0.6f, 35.0f };
         p.rows[1] = { djembe::SmallSlap, djembe::SmallTone, 0.35f, 0.0f, 0.75f, 0.2f, lerpExp(5000.0f, 15000.0f, tone), 0.5f, 120.0f };
+        // Tension (and Danger with it): harder hands, into the louder layers, the doum
+        // pressing (as the synthesised drums answered it).
+        p.velocityScale = lerp(0.85f, 1.6f, tension);
+        p.rows[0].gain *= lerp(0.85f, 1.4f, tension);
         p.spread = 0.2f;
         p.gain = drumsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }

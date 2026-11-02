@@ -186,6 +186,8 @@ public:
         for (auto& v : voice) v = {};
         for (auto& h : held) h = {};
         for (auto& f : dc) f.reset();
+        scoops.reset();
+        gainNow = -1;
         time = 0;
     }
     void setKey(uint32_t key, uint32_t salt) override {
@@ -203,7 +205,11 @@ public:
         if (synth != nullptr) synth->stopLive(id);
         endLive(held, id);
     }
-    SlideDesign designed() const override { return sampled() ? SlideDesign { 0.0f, 0.0f, patch.glide } : fallback.designed(); }
+    SlideDesign designed() const override {
+        // Textures (whispers) follow no pitch: their slide stays the part's they replaced.
+        if (!sampled() || (single != nullptr && single->unpitched)) return fallback.designed();
+        return { 0.0f, 0.0f, patch.glide };
+    }
 
     void start(const PartFrame& f, const NoteOn& n) override {
         if (!sampled()) {
@@ -265,11 +271,16 @@ public:
         }
         held[std::size_t(k)].set(n);
         if (!patch.held && n.live == 0) held[std::size_t(k)].on = false;
+        // Scoop / Glide: a plain scoop from below into the note, as the choir has.
+        scoops.start(std::size_t(k), slide, 0.0f, rate);
+        v.scoop = scoops.now[std::size_t(k)];
         retune(v, 0.0f);
     }
 
     void update(const PartFrame& f) override {
-        if (main[0] == nullptr && single == nullptr && samples::Bank::get().ready()) resolve();
+        // The recordings: once the bank is ready, and again whenever the Place names other
+        // ones (it sets the patch in configure(), after prepare()).
+        if (samples::Bank::get().ready() && (!resolved || patch.single != resolvedSingle)) resolve();
         if (!sampled()) {
             fallback.bend = bend;
             fallback.mod = mod;
@@ -302,6 +313,8 @@ public:
                 v.target = 69.0f + 12.0f * std::log2(hz / 440.0f);
             }
             v.midi = v.target + (v.midi - v.target) * glide;
+            scoops.step(k);
+            v.scoop = scoops.now[k];
             v.age += dt;
             // The vowel drifting between its two recordings (each voice its own way).
             if (v.morph) {
@@ -327,14 +340,18 @@ public:
             return;
         }
         if (synth != nullptr) synth->render(left, right, n);
+        // The level glides (20 ms) to a new gain (a Character's own), never steps.
+        if (gainNow < 0.0f) gainNow = patch.gain;
+        const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
         for (int i = 0; i < n; ++i) {
+            gainNow += (patch.gain - gainNow) * follow;
             float l = 0, r = 0;
             for (auto& v : voice) {
                 if (!v.on) continue;
                 tick(v, l, r);
             }
-            left[i] += dc[0].hp(l) * patch.gain;
-            right[i] += dc[1].hp(r) * patch.gain;
+            left[i] += dc[0].hp(l) * gainNow;
+            right[i] += dc[1].hp(r) * gainNow;
         }
     }
 
@@ -362,7 +379,7 @@ private:
         int count = 0;
         float midi = 60, target = 60, velocity = 1, weight = 1, gain = 1, level = 0;
         float amp = 1, attackStep = 1, fade = 1, releaseMul = 1, tailStep = 0, age = 0, seed = 0;
-        float vowelT = 0, chatterGain = 1, ringPhase = 0, ringInc = 0, vibratoPhase = 0;
+        float vowelT = 0, chatterGain = 1, ringPhase = 0, ringInc = 0, vibratoPhase = 0, scoop = 0;
         std::array<dsp::Svf, 2> lp, hp, band;
     };
 
@@ -491,7 +508,7 @@ private:
     }
 
     void retune(Voice& v, float dt) {
-        float semis = v.midi + bend;
+        float semis = v.midi + bend - v.scoop;
         if (patch.wobbleCents > 0.0f) semis += 0.01f * patch.wobbleCents * noise.smooth(time * 0.7 + double(v.seed) * 5.0, double(patch.wobbleHz));
         if (patch.vibratoDepth > 0.0f || mod > 0.01f) {
             v.vibratoPhase += patch.vibratoHz * dt;
@@ -502,7 +519,7 @@ private:
         for (int i = 0; i < v.count; ++i) {
             auto& r = v.reader[std::size_t(i)];
             // Textures play at their own pitch, moved only by the transposition.
-            const float s = texture ? patch.transpose + bend : semis - r.zone->root;
+            const float s = texture ? patch.transpose + bend - v.scoop : semis - r.zone->root;
             r.inc = r.rateRatio * std::exp2((s + 0.01f * r.cents) / 12.0f);
         }
     }
@@ -585,6 +602,10 @@ private:
     void resolve() {
         auto& bank = samples::Bank::get();
         if (!bank.ready()) return;
+        resolved = true;
+        resolvedSingle = patch.single;
+        single = nullptr;
+        main.fill(nullptr);
         if (patch.single != nullptr) {
             single = bank.instrument(patch.single);
             topRoot = single != nullptr ? single->highRoot : 127.0f;
@@ -611,9 +632,13 @@ private:
     std::array<const samples::Instrument*, 4> main {};
     const samples::Instrument *humInst = nullptr, *stackOoh = nullptr, *stackAah = nullptr, *stackMm = nullptr, *single = nullptr;
     float topRoot = 127;
+    bool resolved = false;
+    const char* resolvedSingle = nullptr;
     std::array<Voice, maxVoices> voice {};
     std::array<HeldNote, maxVoices> held {};
+    Scoops<maxVoices> scoops;
     std::array<dsp::OnePole, 2> dc;
+    float gainNow = -1;
     double time = 0;
 };
 
@@ -630,7 +655,10 @@ inline VoicePatch voiceFromChoir(const ChoirPatch& c) {
     v.pan = c.pan;
     v.transpose = c.transpose;
     v.detune = c.detune;
-    v.voices = std::max(3, c.voices);
+    v.voices = c.voices;   // as many notes at once as the choir (its level depends on it)
+    // The synthesised choir's level follows velocity all the way (a soft note is quiet):
+    // so does the voice, with the soft and full takes' own tone on top.
+    v.velocityGain = 0.9f;
     return v;
 }
 

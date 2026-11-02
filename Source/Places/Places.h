@@ -57,7 +57,7 @@ private:
     // The choir (Milestone 17): the developer's voice, a full section in the stone hall; the
     // synthesised choir without the recordings and above them.
     VoicePart choirRec { choir, &choir };
-    static constexpr std::array<float, 3> choirGain { 0.297f, 0.323f, 0.222f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> choirGain { 0.4895f, 0.5717f, 0.3948f };   // per Character, level-matched (Tests "recordings")
     dsp::SmallSpace hall;
     dsp::TapeEcho echo;
     float echoSend = 0, hallWet = 0, hallSend = 0;
@@ -95,7 +95,7 @@ private:
     DrumPart drums;
     // The hand drums (Milestone 17): the developer's djembes (the shaker stays synthesised).
     HitPart drumsRec { drums };
-    static constexpr std::array<float, 3> drumsGain { 1.215f, 1.19f, 1.887f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> drumsGain { 1.168f, 1.13f, 1.781f };   // per Character, level-matched (Tests "recordings")
     ModalPart marimba, jingles;
     WindPart recorder;
     dsp::SmallSpace room;
@@ -281,7 +281,7 @@ private:
     // The formants (Milestone 17): the developer's vowels yammering fast, fluttering like
     // wings, small and metallic.
     VoicePart formantsRec { formants, &formants };
-    static constexpr std::array<float, 3> formantsGain { 1.183f, 1.189f, 1.546f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> formantsGain { 1.293f, 1.365f, 2.174f };   // per Character, level-matched (Tests "recordings")
     dsp::Shimmer shimmer;
     dsp::WarpDelay warp;
     dsp::Phasor ring;   // the shimmer's ring modulator
@@ -322,10 +322,10 @@ private:
     // notes; the plucked-string model without the recordings.
     SamplePart zitherRec { zither };
     LayerPart chantDrone { chantRec, droneRec };
-    static constexpr std::array<float, 3> zitherGain { 1.06f, 1.52f, 1.15f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> droneGain { 0.162f, 0.133f, 0.176f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> chantGain { 0.27f, 0.221f, 0.294f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> choirGain { 0.456f, 0.211f, 0.254f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> zitherGain { 1.154f, 1.524f, 1.307f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> droneGain { 0.1409f, 0.1204f, 0.1642f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> chantGain { 0.2349f, 0.2f, 0.2743f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> choirGain { 1.093f, 0.2946f, 0.3762f };   // per Character, level-matched (Tests "recordings")
     dsp::Shimmer shimmer;
     dsp::SmallSpace hall;
     std::array<dsp::OnePole, 4> tilt;
@@ -359,7 +359,7 @@ private:
     NullPart silent;
     VoicePart humRec { silent, nullptr };
     LayerPart droneLayer { drone, humRec };
-    static constexpr std::array<float, 3> humGain { 2.6f, 1.5f, 1.9f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> humGain { 0.9634f, 0.6107f, 0.6609f };   // per Character, level-matched (Tests "recordings")
     ModalPart taps, crystals;
     BowedPart bass;
     DrumPart rumble;
@@ -410,8 +410,8 @@ private:
     HitPart tomsRec { toms };
     static constexpr std::array<float, 3> whisperGain { 0.34f, 0.122f, 0.22f };   // per Character, level-matched (Tests "recordings")
     static constexpr std::array<float, 3> ghostGain { 0.34f, 0.122f, 0.22f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> tomsGain { 4.3f, 3.7f, 5.5f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> shardsGain { 2.85f, 3.9f, 2.74f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> tomsGain { 4.565f, 4.161f, 4.134f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> shardsGain { 3.216f, 4.442f, 3.015f };   // per Character, level-matched (Tests "recordings")
     dsp::LoFi lofi;
     dsp::ReverseEcho reverse, reverseViolin;
     dsp::SmallSpace hall;
@@ -546,7 +546,7 @@ private:
     // The acoustic piano (Milestone 17): the developer's recordings in the Evening; the
     // electric piano (the model) the rest of the time, and without the recordings.
     SamplePart pianoRec { piano };
-    static constexpr std::array<float, 3> pianoGain { 1.0f, 3.6f, 1.0f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> pianoGain { 1.0f, 4.007f, 1.0f };   // per Character, level-matched (Tests "recordings")
     SynthPart pulse, bass;
     ModalPart chimes, box;
     DrumPart sprinkler;
@@ -583,7 +583,7 @@ private:
     // The acoustic piano (Milestone 17) on an empty night and in the dead mall; the
     // electric piano on a busy weekend and without the recordings.
     SamplePart pianoRec { piano };
-    static constexpr std::array<float, 3> pianoGain { 1.0f, 5.43f, 9.6f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> pianoGain { 1.0f, 5.859f, 10.04f };   // per Character, level-matched (Tests "recordings")
     ModalPart vibes, chimes;
     SynthPart escalator;
     WindPart fountain;
@@ -690,7 +690,7 @@ private:
     DrumPart drums;
     // The frame drums (Milestone 17): the djembes (the riq's jingles stay synthesised).
     HitPart drumsRec { drums };
-    static constexpr std::array<float, 3> drumsGain { 2.56f, 3.96f, 2.457f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> drumsGain { 2.329f, 2.686f, 2.296f };   // per Character, level-matched (Tests "recordings")
     WindPart ney, wind;
     SynthPart tanpura;
     ModalPart chimes;
@@ -732,7 +732,7 @@ private:
     // The choir (Milestone 17): the developer's voice, a small bright court choir (ghostly in
     // the fallen palace).
     VoicePart choirRec { choir, &choir };
-    static constexpr std::array<float, 3> choirGain { 0.279f, 0.168f, 0.302f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> choirGain { 0.5465f, 0.287f, 0.5489f };   // per Character, level-matched (Tests "recordings")
     dsp::SmallSpace hall;
     std::array<dsp::OnePole, 4> tilt;
     std::array<dsp::OnePole, 2> shelf;   // presence
@@ -767,8 +767,8 @@ private:
     // The frame drum and the stomps (Milestone 17): the djembes' low strokes (the clap
     // stays synthesised).
     HitPart drumRec { drum }, stompsRec { stomps };
-    static constexpr std::array<float, 3> stompsGain { 2.166f, 3.35f, 2.84f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> drumGain { 1.605f, 2.497f, 1.327f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> stompsGain { 2.595f, 3.377f, 3.28f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> drumGain { 1.972f, 3.047f, 1.532f };   // per Character, level-matched (Tests "recordings")
     BowedPart fiddle;
     SamplePart luteRec { lute }, fiddleRec { fiddle };
     ModalPart glasses;
@@ -885,7 +885,7 @@ private:
     // The crew chatter (Milestone 17): the developer's unintelligible whispering, distant
     // murmurs through a comms channel.
     VoicePart chatterRec { chatter, nullptr };
-    static constexpr std::array<float, 3> chatterGain { 0.30f, 0.24f, 0.29f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> chatterGain { 1.381f, 0.9577f, 1.234f };   // per Character, level-matched (Tests "recordings")
     ModalPart pings;
     dsp::SmallSpace hall;
     dsp::Radio intercom;
@@ -927,7 +927,7 @@ private:
     ChoirPart hymn;
     // The worker hymn (Milestone 17): the developer's voice, mostly hummed, gritty, low.
     VoicePart hymnRec { hymn, &hymn };
-    static constexpr std::array<float, 3> hymnGain { 0.401f, 0.286f, 0.417f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> hymnGain { 0.5561f, 0.659f, 0.462f };   // per Character, level-matched (Tests "recordings")
     dsp::SmallSpace room;
     dsp::Slapback slap;
     dsp::Warmth grit;
@@ -968,9 +968,9 @@ private:
     // drums the djembes pitched down and darkened.
     VoicePart choirRec { choir, &choir }, whispersRec { whispers, nullptr };
     HitPart ritualRec { ritual };
-    static constexpr std::array<float, 3> ritualGain { 4.16f, 2.01f, 2.21f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> whispersGain { 0.0837f, 0.097f, 0.0933f };   // per Character, level-matched (Tests "recordings")
-    static constexpr std::array<float, 3> choirGain { 0.586f, 0.57f, 0.651f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> ritualGain { 3.632f, 2.405f, 2.175f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> whispersGain { 0.5161f, 0.5879f, 0.5707f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> choirGain { 0.7779f, 0.7832f, 0.9967f };   // per Character, level-matched (Tests "recordings")
     dsp::Shimmer vast;
     dsp::WarpDelay warp;
     dsp::ReverseEcho reverse;
@@ -1009,7 +1009,7 @@ private:
     // The deep hum (Milestone 17): the developer's "ooo" drone, slowed, detuned and spread
     // into a cosmic hum; the bowed drone without the recordings.
     VoicePart droneRec { drone, nullptr };
-    static constexpr std::array<float, 3> humGain { 1.186f, 1.186f, 0.689f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> humGain { 0.2489f, 0.2489f, 0.1569f };   // per Character, level-matched (Tests "recordings")
     DripPart dust;
     NoisePart flares;
     dsp::Shimmer infinite;

@@ -831,11 +831,6 @@ def process_set(spec, source, room, out_dir, report):
             zones.remove(z)
             report["warnings"].append(f"{sid} {z['label']} take {z['rr'] + 1}: dropped, its pitch wanders while held ({z['wander']:.0f} cents); "
                                       f"{len(others)} steady take{'s' if len(others) > 1 else ''} left")
-    # A note played on another pitch than its label (more than half a semitone) is filed
-    # under the pitch it sounds (a round-robin there when that note was recorded too).
-    for z in zones:
-        if abs(z["root"] - midi_of(z["label"])) >= 0.5 and spec["kind"] == "pluck":
-            z["label"] = name_of(z["root"])
     for key in {(z["layer"], z["label"]) for z in zones}:
         for i, z in enumerate(sorted([z for z in zones if (z["layer"], z["label"]) == key], key=lambda z: (z["fi"], z["rr"]))):
             z["rr"] = i
@@ -892,6 +887,22 @@ def process_set(spec, source, room, out_dir, report):
                 report["warnings"].append(f"{sid} {label}: the velocity layers are not in loudness order "
                                           f"({', '.join(f'{v:.1f}' for v in levels)} dB); kept as labelled")
 
+    # A note played on another pitch than its label (more than half a semitone) is filed
+    # under the pitch it sounds, a round-robin there when that note was recorded too (after
+    # the levelling above, which works on the labels as played). Only where the label it
+    # sounds as was also recorded in that layer (the palm-muted banjo's "B3" played as a
+    # D4); a lone mislabelled note (the soft guitar's "A#5", an A5) keeps its name.
+    if spec["kind"] == "pluck" and spec.get("refile", False):
+        moved = False
+        for z in zones:
+            sounds = name_of(z["root"])
+            if abs(z["root"] - midi_of(z["label"])) >= 0.5 and any(o is not z and o["layer"] == z["layer"] and o["label"] == sounds for o in zones):
+                z["label"] = sounds
+                moved = True
+        if moved:
+            for key in {(z["layer"], z["label"]) for z in zones}:
+                for i, z in enumerate(sorted([z for z in zones if (z["layer"], z["label"]) == key], key=lambda z: (z["fi"], z["rr"]))):
+                    z["rr"] = i
     # Key ranges: each recorded pitch covers up to halfway to its neighbours; the ends
     # stretch a fifth (the sampler folds anything further by octaves).
     mapping_zones = []
@@ -913,7 +924,7 @@ def process_set(spec, source, room, out_dir, report):
             mz["release"] = z["release"]
         mapping_zones.append(mz)
     mapping_zones.sort(key=lambda m: (m["root"], m["layer"], m["rr"]))
-    mapping = {"id": sid, "name": spec["name"], "kind": spec["kind"], "rate": RATE, "channels": 1,
+    mapping = {"id": sid, "name": spec["name"], "kind": spec["kind"], "rate": RATE, "channels": 1, "crossfade": bool(spec.get("crossfade", False)),
                "layers": [l["name"] for l in spec["layers"]] if not merge else [spec["id"].split("-")[-1]], "gainDb": round(20 * math.log10(gain), 2), "zones": mapping_zones}
     with open(os.path.join(out_dir, f"{sid}.json"), "w") as f:
         json.dump(mapping, f, indent=1)
@@ -953,6 +964,9 @@ def main():
     import chromatic
     import voice
     import hits
+    # The other modules import this file as "prepare" (a second copy of it when it runs as
+    # a script): they get the same finder.
+    sweeps.P.LOCATE = LOCATE
 
     def record(mapping, group):
         index.append(mapping["id"])
@@ -966,7 +980,8 @@ def main():
         for key in ("file",):
             if key in spec:
                 out.append(spec[key])
-        for l in spec.get("layers", []) + spec.get("short", []) + ([spec["long"]] if "long" in spec else []) + spec.get("files", []):
+        for l in (spec.get("layers", []) + spec.get("short", []) + ([spec["long"]] if "long" in spec else []) + spec.get("files", [])
+                  + spec.get("extra", []) + spec.get("falsetto", [])):
             out.append(l["file"] if isinstance(l, dict) else l)
         return out
 

@@ -828,3 +828,4 @@ void testRecordings(Suite& s) {
                 std::to_string(written) + " files in " + rendersFolder().getFullPathName().toStdString());
     }
 }
+

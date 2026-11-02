@@ -384,17 +384,17 @@ Since Milestone 17 the developer's piano, voice, djembes and banjo play these:
 | Suburbs | E-Piano (Evening) | acoustic piano, 88 keys (3 velocity layers, held notes) | felt-soft tone, gentle dampers through the warm tape; Sunny Afternoon and Uncanny keep the electric piano |
 | Mall | E-Piano (Empty Night, Dead Mall) | acoustic piano | a lone piano in the atrium; in the dead mall slowed, detuned and wobbling; Busy Weekend keeps the electric piano |
 | Ruins | Piano Shards | acoustic piano | most notes played backwards (the decay swelling into the strike), the rest held fragments the damper stops; lo-fi and reverse echoes |
-| Ruins | Wind | voice: ghostly falsetto "ooh" and whispering (a layer under the wind) | far off and dark, closer when Haunted |
+| Ruins | Wind | voice: ghostly falsetto "ooh", and whispering (Haunted) or breaths and air ("shh", "fff") elsewhere (a layer under the wind) | far off and dark, closer when Haunted |
 | Ruins | Low Toms | large djembe (tone and bass, pitched down) | dark and distant |
 | Castle | Choir | voice: vowels, choir stacks | a full male section (six singers), dark hall tone; rougher when Besieged |
 | Palace | Choir | voice | a small, bright court choir (four singers); in the Fallen Palace a ghostly, drifting "ooh" |
 | Temple | Choir | voice | monks: dark, slow, humming voices among the singers |
-| Temple | Chant Drone | voice: the gravelly low chant, the hummed and "ooo" drones under it | nearly still, two takes apart |
+| Temple | Chant Drone | voice: the gravelly low chant, a hummed, "ooo" or "aah" drone under it (by Character) | nearly still, two takes apart |
 | Temple | Zither | banjo (3 velocity layers, round-robins on the open fifth string; palm-muted for the quickest notes) | a zither's box under it, the open strings ringing in sympathy, a second string a hair off, in the long shimmer |
 | Alien Ruins | Alien Choir | voice | ring-modulated against a sub-octave, every singer drifting, slow swells (an octave down for the Guardian) |
 | Alien Ruins | Whispers | voice: unintelligible whispering (normal, higher, lower) | three murmuring at once, slowed a little and drifting |
 | Alien Ruins | Ritual Drums | djembes | pitched down five and seven semitones, darkened (the rattle stays synthesised) |
-| Asteroid Mining Colony | Worker Hymn | voice, mostly hummed | a few tired singers, dark and gritty |
+| Asteroid Mining Colony | Worker Hymn | voice, mostly hummed; a grungy "eeeh" in a Cave-in; gentle hummed notes on the Night Shift | a few tired singers, dark and gritty |
 | Cavern | Sub Drone | the hummed low drone (a layer under the sub drone) | an octave above the sub, quiet and dark |
 | Nebula | Deep Hum | the "ooo" drone | three takes detuned and spread, drifting, its top rolled off |
 | Alien Hive | Formants | voice: vowels | the vowel racing between "ooh" and "ee", an octave up, wing-flutter tremolo, ring modulation, a band-pass |

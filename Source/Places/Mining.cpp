@@ -274,7 +274,17 @@ void MiningPlace::configure(const PlaceContext& c) {
         p.velocityTone = 0.7f;
         p.drive = cavein ? 0.25f + 0.25f * tension : 0.12f;
         p.lowCutHz = 70;
-        p.voices = byQuality(q, 3, 4, 5);
+        // A cave-in: the grungy, straining "eeeh" (five takes) on the hymn's notes; the
+        // night shift: the gentle hummed notes, a few tired voices.
+        if (cavein) {
+            p.single = "voice-grit";
+            p.singers = 4;
+            p.timing = 0.12f;
+        } else if (night) {
+            p.single = "voice-hum";
+            p.singers = 3;
+            p.timing = 0.2f;
+        }
         p.gain = hymnGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // The beacon: a pure, ocarina-like lead with a slow wide vibrato.

@@ -6267,6 +6267,210 @@ Places and instruments:
 - [x] Desert: Frame Drums
 - [x] Banjo: Temple Zither (Desert Oud and Tavern Lute Strum keep the guitar recordings)
 
+
 Finish:
 - [ ] Tests: tuning (cents), velocity layers, clicks (loops, note-offs, handovers), levels, Place identity; listening renders in test-logs
 - [ ] CI: fetch and prepare (Prepared: N notes per set), README, DEVLOG handoff, final push without `[skip ci]`, CI green
+
+### What is in the recordings (checked against the audio)
+
+The Samples repository's `notes.txt` describes the Minilogue, the guitar, kalimba and
+violin, the banjo and the djembes, and has an unfilled template for the piano; it says
+nothing about the voice. All 53 new files are 44.1 kHz 24-bit WAVs, dual mono, in the
+repository's root (no `01-voice/` or `02-piano/` folders yet: the finder looks there too,
+and anywhere else, by name). What I found:
+
+- **Exports normalised one file at a time.** Every piano, djembe and banjo file peaks at
+  -0.1 dBFS, so the gain between them is not in the files. The piano's and banjo's come
+  back from their noise floors (the same room and preamp): piano soft -14.2 dB, medium
+  -8.4 dB, long -2.2 dB against the full sweep; banjo soft -9.2, medium -6.6, hard +8.3 dB.
+  The djembe files are gated to digital silence between hits (no floor to go by): each
+  stroke keeps its own level and the Places set each row's. The voice files are not
+  normalised (peaks -15 to -41 dBFS): their levels are as sung.
+- **Piano**: 88 keys, A0 to C8, in all four sweeps, in order. Its tuning: the middle sits
+  on A440 (offset -0.4 cents, taken off), with a natural stretch from -15 cents at A0 to
+  +25 at C8 (kept). One key off the curve, A7 (+14 cents: its unisons have drifted; tuned
+  onto it). Held notes last 2-3 s before the damper (the long sweep is not a fade-out):
+  beyond that each key's decay is continued by resynthesis of its own partials (to about
+  7 s in the bass, 3.5 s at the top); A#3's could not be modelled (a key held past its
+  2.5 s just ends). Bleed from the previous key at the onset is 40-60 dB down (the dampers
+  work); the subtraction runs where it is within 45 dB. The layers' attacks were up to
+  5 ms apart: aligned (otherwise crossfaded layers cancel by up to 7 dB).
+- **Voice**: everything sounds **an octave above its file name**, except the "mmm vocal
+  choire A2" stack (it is A2) and "mmm vocal choire A2_1" (sung on E2: the gravelly low
+  chant). The chest sweeps are E3, G3, A3 (not A#: sung 13-39 cents under A3 in every
+  file), C#4, E4, G4, A#4; the falsetto C#5 and E5 (the "aah" one nearer C5 +42); the
+  "G1" drones are G2, the "A2" aah drone A3, the "E2" choir stacks E3 (one aah take on E2),
+  the "E3" stacks E4 with two takes on E3, the falsetto "E4" stack E5. The grit is on A3
+  (-25 cents), the hummed melody D3 and B2, the ghostly "ooh" free glides around F5-G#5.
+  Floors about -88 dBFS (no noise reduction needed).
+- **Djembes**: ten strokes (large and small: bass, tone, slap, muted bass, muted slap),
+  nine hits each. The player's dynamics do not always follow soft, medium, hard: in eight
+  of the ten files one or two hits of a "dynamic" are louder or softer than the next
+  group's; the hits are layered by how loud they sound (each move reported).
+- **Banjo**: the three sweeps (D3 F3 G#3 B3 D4 F4 G#4 B4 D5 F5 G#5, every 3 semitones) and
+  the open fifth string (G4, three per dynamic) all tuned 10-46 cents flat (the sampler
+  plays them in tune). The palm-muted sweep's "B3" is played as a D4.
+
+### Re-record (bad notes and hits)
+
+- **Piano, barely struck** (replaced by the neighbouring key, shifted a semitone): soft
+  **F3** (28 dB under its neighbours), soft **D4** (22), soft **G#4** (24), soft **G#6**
+  (13), soft **C#7** (14), soft **G7** (15), medium **G#7** (21), the held **G#6** (16).
+- **Piano, A7**: its three strings are 14 cents off the rest of the treble (a tuning).
+- **Banjo, clipped while recording** (rebuilt by a spline): the hard sweep's **B4, D5,
+  F5** (flat tops up to 18 samples) and the palm-muted **D5**. Record them a little softer.
+- **Banjo**: the palm-muted "B3" was played as a D4 (filed as a second D4 take): B3 is missing.
+- **Voice, "Male Vocal ee full sweep_1"**: 10-17 dB less bright than the other full "ee"
+  on every note (more like "ih" or "oo"): left out. Re-record, or say which vowel it is.
+- **Voice, hummed "mm" full sweep**: 2-8 dB quieter than the soft one on every note (the
+  soft takes are brought 6 dB under the full ones).
+- **Voice, "aah" falsetto C#5**: sung about 60 cents flat (nearer C5).
+- **Djembes**: the dynamics within each file are uneven (see above; the hard small slaps
+  are quieter than two of the medium ones). Three even hits per dynamic would give
+  smoother layers.
+
+### Decisions
+
+- **Where the piano plays.** WORLDBUILDER's instruments are each Place's six, so a
+  "Piano" is an acoustic-piano Character of an existing electric piano rather than a new
+  element: the **Suburbs' E-Piano in the Evening**, the **Mall's on an Empty Night and in
+  the Dead Mall** (long soft sevenths, a lone piano in an empty atrium, a worn vaporwave
+  piano); Sunny Afternoon, Uncanny and Busy Weekend (and the City) keep the electric
+  pianos. KEYS and SINGLE play it in those Characters; Instrument mode's factory preset
+  **Piano** is the Mall's on an Empty Night. The SamplePart has an `off` switch: the
+  Characters that keep the model play it, and notes already sounding ring on across a
+  Character change.
+- **The piano as an instrument**: short hits (up to an eighth, and every live note's
+  start) as three velocity layers crossfaded; held notes from the long sweep, the soft and
+  full ones derived from it (a gain and a high shelf per key, measured from the short
+  layers; they share the medium audio); natural decay while held, each key's measured
+  damper when let go (the top 20 keys undamped); the pedal holds keys until it lifts.
+  Velocity crossfades move the level evenly in dB from one layer's loudness to the next
+  and the tone equal-power (a plain equal-power fade jumped up to 6 dB where the louder
+  layer came in).
+- **Piano Shards**: 65-85 % of the notes play backwards (the held note's decay from the
+  note's written length back to its strike), the rest are held fragments the damper stops.
+- **The voice sampler** (`VoicePart`): the vowels ooh, oh, aah, ee on the choir's scale
+  ("eh" between aah and ee), hum blended in; soft and full takes crossfaded; loops away
+  from the scoop into each note, tuned on their harmonics; recorded tails on release; an
+  ensemble of up to eight singers from the choir stacks (a few cents apart, up to 0.15 s
+  late, spread); above E5 a little shifting, then the synthesised choir over a fifth.
+  Level follows velocity as the synthesised choir's did. Each Place's colour is in the
+  README's table; the tests check that no two Places' voices are alike.
+- **The KEYS / Instrument-mode choirs** are the Places' choirs: they sing with the voice.
+- **The djembe kit** (`HitPart`): rows name strokes; velocity layers crossfade; three
+  takes per layer as round-robins; Tension plays harder in the Village (into the louder
+  layers) as the synthesised drums answered it. Rows without a stroke (the shaker, the
+  riq, the rattle, the clap) stay synthesised. Each row keeps its old drum's pitch drop
+  for Scoop / Glide.
+- **The banjo**: the **Temple Zither** (a synthesised pluck until now) plays it, bright
+  and resonant in the shimmer (a zither's box, sympathetic strings, a second string a
+  hair off; the palm-muted takes for the quickest notes). The Desert Oud and the Tavern
+  Lute Strum already play the guitar recordings, a closer instrument than a skin-headed
+  banjo, so they keep them. A factory preset is not needed: the Temple Zither is the
+  playable banjo in KEYS and Instrument mode.
+- **Levels**: every recorded part is level-matched to the synthesised part it replaced,
+  per Character (LUFS, gated, 24 s at Activity 0.9: within 0.7 LU); the layers (the hum
+  under the Cavern's sub drone, the ghost and whispers under the Ruins' wind) add 2 LU.
+- **Fallbacks**: every changed part keeps its synthesised part; a build without the
+  recordings (or without a set) plays exactly what it played before.
+
+### Which parts play which recordings (all of them, after this milestone)
+
+| Place | Part (KEYS / Instrument mode name) | Recordings (bank ids) |
+|---|---|---|
+| Suburbs | E-Piano, **Evening** only | piano: `piano-short` (soft, medium, full), `piano-long` (held; soft and full derived) |
+| Mall | E-Piano, **Empty Night** and **Dead Mall** | piano (as above); factory preset **Piano** |
+| Ruins | Piano Shards | piano (`piano-long` backwards, held fragments) |
+| Ruins | Wind (a layer under it) | `voice-ghost` (ghostly falsetto "ooh"), and `voice-whisper` (Haunted) or `voice-breath` (Overgrown, Desolate) |
+| Ruins | Violin Textures | violin (`violin-sustain`, `violin-pizz`, `violin-collegno`; Milestone 15a) |
+| Ruins | Low Toms | `djembe`: large tone (-4 st), large bass (-2 st) |
+| Castle | Choir | voice: `voice-ooh`, `voice-oh`, `voice-aah`, `voice-ee` (soft / full, falsetto), `voice-choir-ooh`, `voice-choir-aah` (singers) |
+| Palace | Choir | voice (as the Castle's) |
+| Temple | Choir | voice (as above, plus `voice-mm` and `voice-choir-mm` for the humming monks) |
+| Temple | Chant Drone | `voice-chant` (the low gravelly chant) with `voice-drone-hum` (Sacred Dawn), `voice-drone-ooh` (Ancient Rite) or `voice-drone-aah` (Forsaken) under it |
+| Temple | Zither | `banjo` (soft, medium, hard; the open fifth string's round-robins), `banjo-muted` (sixteenths) |
+| Alien Ruins | Alien Choir | voice (vowels and stacks, ring-modulated) |
+| Alien Ruins | Whispers | `voice-whisper` (normal, higher, lower) |
+| Alien Ruins | Ritual Drums | `djembe`: large bass (-5 st) and tone, large and small muted slaps (-7 st) |
+| Asteroid Mining Colony | Worker Hymn | voice, mostly `voice-mm` / `voice-choir-mm` (Shift Change); `voice-grit` (Cave-in); `voice-hum` (Night Shift) |
+| Asteroid Mining Colony | Drill | Minilogue harsh square (15b) |
+| Cavern | Sub Drone (a layer under it) | `voice-drone-hum` |
+| Nebula | Deep Hum | `voice-drone-ooh` |
+| Nebula | Nebula Pads | Minilogue soft pad (15b) |
+| Alien Hive | Formants | voice (vowels, racing between "ooh" and "ee") |
+| Starship Bridge | Crew Chatter | `voice-whisper` |
+| Starship Bridge | Warp Core | Minilogue pulsating synth (15b) |
+| Village | Hand Drums | `djembe`: large bass (tone on some hits), small tone (slap on some hits) |
+| Village | Lute | guitar (hotfix after Instrument mode) |
+| Tavern | Frame Drum | `djembe`: large bass, large muted bass; the rim the small muted slap |
+| Tavern | Stomps | `djembe`: large muted bass (-3 st), large bass on the heavier ones |
+| Tavern | Lute Strum, Fiddle | guitar; violin (15a) |
+| Desert | Frame Drums | `djembe`: large bass (doum), small slap and tone (tek) |
+| Desert | Oud | guitar (15a) |
+| Forest | Kalimba, Strings | kalimba; violin (15a) |
+| Biodome | Water Plucks, Pads | kalimba (15a); Minilogue soft pad (15b) |
+| Cyberpunk Megacity | Grit Bass, Glitch Stabs | Minilogue static-y bass, cyberpunk synth (15b) |
+| Space Station | Reactor Pulse | Minilogue static-y bass (15b) |
+| Spaceport | Pulses, Data Blips | Minilogue pulsating synth, harsh square (15b) |
+
+Also: the Mining Worker Hymn plays `voice-grit` (the grungy "eeeh") in a Cave-in and
+`voice-hum` (the hummed melody's notes) on the Night Shift; the Ruins' Wind carries
+`voice-breath` (breaths, "shh", "fff", "sss") when Overgrown or Desolate (the whispers
+when Haunted); the Temple's Chant Drone has `voice-drone-aah` under it when Forsaken.
+Every voice recording is used. The banjo's open-chord strumming and head knocks are not
+prepared (listed as unused in the manifest, with reasons: no part needs a single
+strummed chord, and the djembes cover the hand percussion).
+
+### Size and memory
+
+- **Samples**: 1,239 notes (FLAC 77.5 MB, from 34 MB): the piano 352 (two articulations;
+  the derived held layers share audio), the voice 154, the djembes 90, the banjo 53.
+- **Memory**: about 210 MB for the bank (from 83 MB), once per process; loaded in about
+  1.5 s here. Most of it is the piano (59 MB) and the guitar, kalimba, djembe and banjo
+  (10-16 MB each). Tails end 55-60 dB under each note's peak.
+- **Package**: each plugin bundle carries its own copy (+44 MB each).
+
+### Tests (`--only recordings`, 119 checks; `--only recaudit` prints the level audit)
+
+- **Bank**: every key A0-C8 has its three short layers and its held note (with the derived
+  soft and full); the djembe's 90 hits; the banjo's 33 + 9; all 17 voice sets.
+- **Piano in tune** (cents from equal temperament, every key measured on its fundamental
+  from C2 up; the log prints every third key): within 35 cents everywhere (its stretch:
+  about -13 cents at C2, 0 at C4, +24 at C8), neighbouring keys within 8 cents (12 above
+  C7), the middle (F3-F5) on A440 within 6 cents (measured: -0.07).
+- **Velocity layers**: the piano's short hits from velocity 0.05 to 0.95 rise at every
+  step (no dip over 1 dB, no jump over 4 dB) at nine keys from A1 to C7, brighter as they
+  rise; the voice's soft to full (no dip over 1.5 dB); every djembe stroke (no dip over
+  1.5 dB) with three different takes per layer.
+- **No clicks**: the piano's short-to-long hand-over and its damper (six keys), a key held
+  8 s dying away without rising (no loop) or clicking; every voice loop held 6 s (no step
+  6 dB sharper than the take's own); a voice note's release through its recorded tail; the
+  instruments leaving at an Arrangement boundary (against the music's own motion before
+  it: a low voice's pitch period fills a 5 ms window).
+- **Pedal**: a released key rings on while the pedal is down and is damped when it lifts.
+- **Voice**: every vowel note in tune on its loop (within 15 cents, two drifting takes at
+  most: the log prints them all), the vowel morph ("ooh" dark, "ee" bright), the ensemble
+  (1, 4, 8 singers wider and fuller), the extension above E5 in tune.
+- **Banjo** in tune from D3 to G#5 (within 15 cents; the log prints them).
+- **Places**: every changed part (22) plays the recordings, audible and finite in every
+  Character, level-matched to its fallback within 2.5 LU (the layers add at most 3 LU),
+  and the Characters that keep the model are unchanged; no two Places' voices alike
+  (fingerprint distance 3 or more; closest: Palace / Temple choirs at about 5).
+- **KEYS / Instrument mode**: the factory preset "Piano" exists and plays the recordings
+  in tune; the Temple and Castle choirs sing with the voice, in tune.
+- **Renders** (the CI's Linux test logs, `renders/`, 26 WAVs): the piano's chromatic run
+  soft to full, pedal chords, a melody; the choir from one to eight singers; every
+  changed part before (fallback) and after (recordings), 8 s each.
+
+Other groups changed by this work:
+- **Arrangement**: "no jump as the instruments leave" now compares against the music's own
+  5 ms motion before the boundary (the Castle's recorded choir, a low male voice, swings
+  6-7 dB window to window while holding a note).
+- **Scoop / Glide**: the voices scoop into their notes as the synthesised choirs did;
+  the textures (whispers) keep their replaced parts' defaults; each djembe row keeps its
+  old drum's pitch drop (the defaults table needed no other change).
+- **Village / Desert Tension and Danger**, **Temple Life and Characters**, **Nebula
+  Tension**: the recorded parts answer them (harder hands into the louder layers; a
+  brighter, rougher hum; more singers; a denser, darker rite against an airy dawn).

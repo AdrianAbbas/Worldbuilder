@@ -4454,7 +4454,14 @@ void testArrangement(Suite& s) {
         const auto env = envelopeDb(audio, 0.005, 4.0);
         double rise = 0;
         for (std::size_t i = 1; i < std::min<std::size_t>(env.size(), 100); ++i) rise = std::max(rise, env[i] - env[i - 1]);
-        s.check(rise < 6.0, "no jump as the instruments leave", fmt(rise) + " dB largest 5 ms rise");
+        // Against the music's own motion just before the boundary (Milestone 17: a low sung
+        // voice's pitch period is about the 5 ms window, so its level swings window to
+        // window by several dB while it simply holds a note).
+        const auto steadyEnv = envelopeDb(audio, 0.005, 3.0);
+        double natural = 0;
+        for (std::size_t i = 1; i < std::min<std::size_t>(steadyEnv.size(), 160); ++i) natural = std::max(natural, steadyEnv[i] - steadyEnv[i - 1]);
+        s.check(rise < std::max(6.0, natural + 1.5), "no jump as the instruments leave (no 5 ms rise beyond 6 dB or the music's own motion before)",
+                fmt(rise) + " dB largest 5 ms rise, " + fmt(natural) + " dB before the boundary");
     }
     {
         // Deterministic from any start bar: playing from bar 2 equals a fresh start at bar 2,

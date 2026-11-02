@@ -34,7 +34,10 @@ struct HitRow {
     float lowCutHz = 30;
     float decay = 0;          // > 0: the hit dies away faster (seconds to fall 60 dB more)
     float startSeconds = 0;   // skipped at the start (a softer attack)
-    float bendSemis = 0;      // a pitch drop after the strike (as Scoop / Glide allows)
+    // A pitch drop after the strike (as Scoop / Glide allows), semitones; by default the
+    // synthesised drum's own (the row it replaces), so Scoop / Glide acts as it did.
+    static constexpr float asDrum = 1.0e9f;
+    float bendSemis = asDrum;
 };
 
 struct HitPatch {
@@ -44,6 +47,7 @@ struct HitPatch {
     float velocityGain = 0.35f;   // how much velocity scales the level (the layers do the rest)
     float even = 0.4f;            // evens the takes' loudness within a layer
     float drive = 0;              // a little grit (a cramped room, a tape)
+    float velocityScale = 1;      // played harder or softer (into the louder or softer layers)
     int voices = 8;
 };
 
@@ -82,6 +86,7 @@ public:
         fallback.reset();
         for (auto& v : voice) v = {};
         for (auto& f : dc) f.reset();
+        gainNow = -1;
     }
     void setKey(uint32_t key, uint32_t salt) override {
         Part::setKey(key, salt);
@@ -89,10 +94,14 @@ public:
     }
     SlideDesign designed() const override {
         if (!sampled()) return fallback.designed();
+        // As the synthesised kit reports it (its drums' deepest bend), with the sampled
+        // rows' own bends where they set one.
         float deepest = 0;
-        for (const auto& row : patch.rows)
-            if (std::abs(row.bendSemis) > std::abs(deepest)) deepest = row.bendSemis;
-        return { deepest, deepest != 0.0f ? 0.06f : 0.0f, 0.0f };
+        for (std::size_t r = 0; r < patch.rows.size(); ++r) {
+            const float b = bendOf(r);
+            if (std::abs(b) > std::abs(deepest)) deepest = b;
+        }
+        return { deepest, deepest != 0.0f ? dsp::Drum::pitchSeconds : 0.0f, 0.0f };
     }
 
     void start(const PartFrame& f, const NoteOn& n) override {
@@ -103,7 +112,8 @@ public:
             return;
         }
         const int stroke = (row.alt >= 0 && n.random < row.altChance) ? row.alt : row.stroke;
-        const auto pair = kit->crossfade ? kit->findPair(stroke, n.velocity, n.random2) : samples::ZonePair { kit->find(stroke, n.velocity, n.random2), nullptr, 0.0f };
+        const float velocity = dsp::clamp01(n.velocity * patch.velocityScale);
+        const auto pair = kit->crossfade ? kit->findPair(stroke, velocity, n.random2) : samples::ZonePair { kit->find(stroke, velocity, n.random2), nullptr, 0.0f };
         if (pair.a == nullptr) return;
         auto& v = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const Voice& x) { return x.on ? x.level + 1.0e-9f : 0.0f; })];
         v = {};
@@ -122,16 +132,17 @@ public:
             v.gainA = ga * even(*v.a);
             v.gainB = gb * even(*v.b);
         }
-        v.gain = row.gain * (1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(n.velocity), 1.2f));
+        v.gain = row.gain * (1.0f - patch.velocityGain + patch.velocityGain * std::pow(velocity, 1.2f));
         v.pos = double(std::max(0.0f, row.startSeconds) * kit->rate);
         // A bend from above after the strike, as Scoop / Glide says.
-        const float bend = slide.depth(row.bendSemis) + slide.plain(row.bendSemis);
+        const float designedBend = bendOf(std::size_t(std::clamp(n.row, 0, 3)));
+        const float bend = slide.depth(designedBend) + slide.plain(designedBend);
         v.bend = bend;
-        v.bendMul = bend != 0.0f ? std::exp(-1.0f / (std::max(slide.time(0.06f), 0.005f) * rate)) : 0.0f;
+        v.bendMul = bend != 0.0f ? std::exp(-1.0f / (std::max(slide.time(dsp::Drum::pitchSeconds), 0.002f) * rate)) : 0.0f;
         v.semis = row.semis;
         v.ratio = kit->rate / rate;
         v.fadeMul = row.decay > 0.0f ? std::exp(-6.9078f / (row.decay * weight::skin * n.decay * rate)) : 1.0f;
-        const float cutoff = row.toneHz * std::exp2(-row.velocityTone * (1.0f - dsp::clamp01(n.velocity))) * std::exp2(1.5f * mod);
+        const float cutoff = row.toneHz * std::exp2(-row.velocityTone * (1.0f - velocity)) * std::exp2(1.5f * mod);
         v.lp.set(std::min(cutoff, 0.45f * rate), 0.6f, rate);
         v.hp.set(std::max(row.lowCutHz, 10.0f), 0.6f, rate);
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(row.pan, patch.spread, n.random));
@@ -148,7 +159,10 @@ public:
     void render(float* left, float* right, int n) override {
         fallback.render(left, right, n);
         if (!sampled()) return;
+        if (gainNow < 0.0f) gainNow = patch.gain;
+        const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
         for (int i = 0; i < n; ++i) {
+            gainNow += (patch.gain - gainNow) * follow;   // a new gain glides in over 20 ms
             float l = 0, r = 0;
             for (auto& v : voice) {
                 if (!v.on) continue;
@@ -161,8 +175,8 @@ public:
                 l = std::tanh(k * l) / k * (1.0f + 0.5f * patch.drive);
                 r = std::tanh(k * r) / k * (1.0f + 0.5f * patch.drive);
             }
-            left[i] += dc[0].hp(l) * patch.gain;
-            right[i] += dc[1].hp(r) * patch.gain;
+            left[i] += dc[0].hp(l) * gainNow;
+            right[i] += dc[1].hp(r) * gainNow;
         }
     }
 
@@ -185,6 +199,13 @@ private:
         dsp::Svf lp, hp;
         dsp::PanGains pan { 0.7071f, 0.7071f };
     };
+
+    // A row's designed bend (semitones): its own, or the synthesised drum's it replaces.
+    float bendOf(std::size_t r) const {
+        const auto& row = patch.rows[r];
+        if (row.bendSemis < HitRow::asDrum * 0.5f) return row.bendSemis;
+        return 12.0f * std::log2(std::max(fallback.patch.rows[r].bend, 0.01f));
+    }
 
     static float read(const int16_t* d, double pos) {
         const auto i = int(pos);
@@ -223,6 +244,7 @@ private:
     const samples::Instrument* kit = nullptr;
     std::array<Voice, maxVoices> voice {};
     std::array<dsp::OnePole, 2> dc;
+    float gainNow = -1;
 };
 
 } // namespace wb

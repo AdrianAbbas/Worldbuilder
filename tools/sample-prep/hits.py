@@ -171,7 +171,7 @@ def run(spec, source, out_dir, report, locate):
         return []
     zones.sort(key=lambda z: (z["loKey"], z["layer"], z["rr"]))
     mapping = {"id": sid, "name": spec["name"], "kind": "hits", "rate": RATE, "channels": 1, "layers": layers, "gainDb": 0.0,
-               "strokes": strokes, "zones": zones}
+               "crossfade": bool(spec.get("crossfade", True)), "strokes": strokes, "zones": zones}
     with open(os.path.join(out_dir, f"{sid}.json"), "w") as f:
         json.dump(mapping, f, indent=1)
     report.setdefault("strokes", {})[sid] = strokes
