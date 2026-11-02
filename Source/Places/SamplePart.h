@@ -62,6 +62,25 @@ struct SamplePatch {
     // The voices' low-pass follows toneHz (and the mod wheel) while they sound, not only at
     // the note's start: a filter opening through a build.
     bool liveTone = false;
+    // Milestone 17. Velocity layers crossfade (where the recordings' mapping asks for it):
+    // a velocity between two layers plays both, weighted.
+    bool crossfade = true;
+    // A piano: a held key rings with its natural decay (no loop) and its damper stops it
+    // when the key (or the pedal) lets go, in the recorded damper time (`damperScale`
+    // times it; `release` where a key has none). Keys from `undampedFrom` up have no
+    // damper (they ring on, as on a piano's top octaves).
+    bool damper = false;
+    float damperScale = 1;
+    int undampedFrom = 128;
+    // Notes played backwards (a piano's decay swelling into its strike): the chance per
+    // note, and the longest stretch played (seconds; a note's own length if shorter).
+    float reverse = 0, reverseSeconds = 2.0f, reverseShortest = 0.35f;
+    // Live and pattern notes alike end at most this long after they start (seconds, 0: no
+    // limit): a fragment.
+    float fragmentSeconds = 0;
+    // Off: new notes play on the synthesised part (a Character that keeps its model, as the
+    // Suburbs' sunny electric piano); notes already sounding ring on.
+    bool off = false;
 };
 
 class SamplePart final : public Part {
@@ -88,7 +107,8 @@ public:
     explicit SamplePart(Part& synthFallback) : fallback(synthFallback) {}
 
     // True when the recordings play (false: the fallback does).
-    bool sampled() const { return main != nullptr; }
+    bool sampled() const { return main != nullptr && !patch.off; }
+    bool loaded() const { return main != nullptr; }
 
     void prepare(float r) override {
         rate = r;
@@ -121,10 +141,8 @@ public:
     bool sustains() const override { return sampled() ? patch.held : fallback.sustains(); }
     float transposeSemis() const override { return sampled() ? patch.transpose : fallback.transposeSemis(); }
     void stopLive(int id) override {
-        if (!sampled()) {
-            fallback.stopLive(id);
-            return;
-        }
+        fallback.stopLive(id);
+        if (!loaded()) return;
         for (std::size_t k = 0; k < voice.size(); ++k)
             if (voice[k].on && held[k].live == id) {
                 // A short hit played live (released before it became a long one) rings as
@@ -144,6 +162,7 @@ public:
         if (!sampled()) {
             fallback.slide = slide;
             fallback.start(f, n);
+            fallbackAge = 0;   // it rings on after the samples come back on
             return;
         }
         lastPlayed = n.semis + patch.transpose;
@@ -159,7 +178,10 @@ private:
         float midi = 69.0f + 12.0f * std::log2(std::max(hz, 1.0f) / 440.0f);
         while (midi < float(patch.lowestKey) - 0.5f) midi += 12.0f;
         while (midi > float(patch.highestKey) + 0.5f && midi - 12.0f >= float(patch.lowestKey) - 0.5f) midi -= 12.0f;
-        const auto* zone = inst->find(int(std::lround(midi)), n.velocity, n.random2);
+        samples::ZonePair pair;
+        if (inst->crossfade && patch.crossfade) pair = inst->findPair(int(std::lround(midi)), n.velocity, n.random2);
+        else pair.a = inst->find(int(std::lround(midi)), n.velocity, n.random2);
+        const auto* zone = pair.a;
         if (zone == nullptr) return;
 
         const int limit = std::clamp(patch.voices, 1, maxVoices);
@@ -167,7 +189,7 @@ private:
         // quickly and the new one comes in without its full attack. (Not a short hit: it is
         // all attack.)
         bool legato = false;
-        if (patch.held && n.live == 0 && inst != shortOne)
+        if (patch.held && n.live == 0 && inst != shortOne && !patch.damper)
             for (int i = 0; i < limit; ++i) {
                 const auto& h = held[std::size_t(i)];
                 auto& old = voice[std::size_t(i)];
@@ -199,12 +221,38 @@ private:
         v.on = true;
         v.zone = zone;
         v.wait = wait;
+        // The second layer of a crossfade, and both layers' weights (equal power, each at
+        // its zone's own gain: a derived layer's level).
+        if (pair.b != nullptr && pair.mix > 0.001f) {
+            v.zoneB = pair.b;
+            samples::crossfadeGains(*zone, *pair.b, pair.mix, v.mixA, v.mixB);
+        } else {
+            v.mixA = dsp::dbToGain(zone->gainDb);
+        }
+        // A derived layer's brightness: a high shelf (the weighted mix of the two layers').
+        const float shelfDb = pair.b != nullptr ? dsp::lerp(zone->shelfDb, pair.b->shelfDb, pair.mix) : zone->shelfDb;
+        v.shelf = std::abs(shelfDb) > 0.05f;
+        v.shelfGain = dsp::dbToGain(shelfDb);
+        if (v.shelf) {
+            v.shelfLp.setCutoff(std::min(zone->shelfHz, 0.4f * rate), rate);
+            v.shelfLp.reset();
+        }
         v.midi = v.target = midi;
         v.rateRatio = inst->rate / rate;
         const bool quick = patch.held && n.live == 0 && n.seconds < patch.quickBelow;
         const float skip = skipOver >= 0.0f ? skipOver : (quick ? patch.quickSeconds : (legato ? 0.08f : patch.startSeconds));
         v.pos = double(std::min(skip * inst->rate, float(zone->length) * 0.25f));
         if (zone->loops() && v.pos >= double(zone->loopStart)) v.pos = double(zone->loopStart);
+        v.posB = v.pos;
+        if (v.zoneB != nullptr && v.zoneB->loops() && v.posB >= double(v.zoneB->loopStart)) v.posB = double(v.zoneB->loopStart);
+        // Backwards: from where the note would have got to, back to its strike.
+        v.backwards = patch.reverse > 0.0f && n.random < patch.reverse && skipOver < 0.0f;
+        if (v.backwards) {
+            const float span = std::clamp(n.live != 0 ? patch.reverseSeconds : std::min(n.seconds, patch.reverseSeconds), patch.reverseShortest, patch.reverseSeconds);
+            v.pos = std::min(double(span * inst->rate), double(zone->length - 4));
+            v.posB = v.zoneB != nullptr ? std::min(v.pos, double(v.zoneB->length - 4)) : v.pos;
+        }
+        v.limit = patch.fragmentSeconds > 0.0f ? int(patch.fragmentSeconds * rate) : -1;
         // Level: velocity (the layers already differ), evened toward the median loudness
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
@@ -233,6 +281,9 @@ private:
         v.velocity = velocity;
         held[std::size_t(k)].set(n);
         if ((!patch.held || (patch.shortRings && inst == shortOne && !zone->loops())) && n.live == 0) held[std::size_t(k)].on = false;   // it rings
+        if (v.backwards) held[std::size_t(k)].on = false;   // a reversed note plays to its strike
+        // An undamped piano key rings on whatever the key does.
+        if (patch.damper && midi >= float(patch.undampedFrom) - 0.5f && n.live == 0) held[std::size_t(k)].on = false;
         held[std::size_t(k)].semis = n.semis;
         // Live (KEYS, Instrument mode): a short hit first; held past the short notes'
         // length it hands over to the long hit (see update()).
@@ -246,15 +297,16 @@ public:
 
     void update(const PartFrame& f) override {
         if (main == nullptr && samples::Bank::get().ready()) resolve();
-        if (!sampled()) {
+        if (!sampled() || fallbackAge < fallbackRings) {
             fallback.bend = bend;
             fallback.mod = mod;
             fallback.instrumentMode = instrumentMode;
             fallback.drone = drone;
             fallback.slide = slide;
             fallback.update(f);
-            return;
+            if (!sampled() && !anySounding()) return;
         }
+        if (!loaded()) return;
         if (patch.body != bodyType) {
             bodyType = std::clamp(patch.body, 0, dsp::BodyCount - 1);
             const auto& b = dsp::bodies[std::size_t(bodyType)];
@@ -310,9 +362,10 @@ public:
     }
 
     void render(float* left, float* right, int n) override {
-        if (!sampled()) {
+        if (!sampled() || fallbackAge < fallbackRings) {
             fallback.render(left, right, n);
-            return;
+            if (sampled()) fallbackAge += n;
+            if (!loaded() || !anySounding()) return;
         }
         const auto& b = dsp::bodies[std::size_t(std::max(bodyType, 0))];
         const float amount = dsp::clamp01(patch.bodyAmount);
@@ -363,6 +416,11 @@ public:
         return { patch.scoopSemis, patch.scoopSemis != 0.0f ? patch.scoopSeconds : 0.0f, patch.held ? patch.glide : 0.0f };
     }
 
+    bool anySounding() const {
+        for (const auto& v : voice)
+            if (v.on) return true;
+        return false;
+    }
     // How many voices sound (tests).
     int sounding() const {
         int c = 0;
@@ -372,8 +430,13 @@ public:
 
 private:
     struct Voice {
-        bool on = false, releasing = false, course = false;
+        bool on = false, releasing = false, course = false, backwards = false, shelf = false;
         const samples::Zone* zone = nullptr;
+        const samples::Zone* zoneB = nullptr;   // a crossfade's second layer
+        double posB = 0, tailPosB = -1;
+        float incB = 1, mixA = 1, mixB = 0, shelfGain = 1;
+        int limit = -1;                        // samples left of a fragment (-1: no limit)
+        dsp::OnePole shelfLp;
         const samples::Zone* courseZone = nullptr;
         double pos = 0, coursePos = 0, tailPos = -1;
         float rateRatio = 1, inc = 1, courseRatio = 1;
@@ -400,48 +463,86 @@ private:
         return (((c3 * t + c2) * t + c1) * t + x0) * (1.0f / 32768.0f);
     }
 
+    // One zone's sample at `pos`, then its position moved on: its loop (unless the note is
+    // letting go), its crossing into the recorded tail.
+    float advance(const samples::Zone& z, double& pos, double& tailPos, float inc, bool releasing, float tailMix) const {
+        float y = read(z.data, std::clamp(pos, 1.0, double(z.length - 1)));
+        if (tailPos >= 0.0) {
+            y = y * (1.0f - tailMix) + read(z.data, tailPos) * tailMix;
+            tailPos += double(inc);
+        }
+        pos += double(inc);
+        if (z.loops() && !releasing && inc > 0.0f && pos >= double(z.loopEnd)) pos -= double(z.loopEnd - z.loopStart);
+        if (tailPos >= double(z.length - 1)) tailPos = -1, pos = double(z.length);
+        return y;
+    }
+
     float tick(Voice& v) {
         if (v.wait > 0) {
             --v.wait;
             return 0.0f;
         }
         const auto& z = *v.zone;
-        float y = read(z.data, v.pos);
-        if (v.course && v.coursePos >= 0.0) {
-            const auto& c = *v.courseZone;
-            if (v.coursePos < double(c.length - 1)) y += patch.courseLevel * read(c.data, v.coursePos);
-        }
-        if (v.tailPos >= 0.0) {
-            // Crossing into the recorded release tail.
-            y = y * (1.0f - v.tailMix) + read(z.data, v.tailPos) * v.tailMix;
-            v.tailPos += double(v.inc);
-            v.tailMix += v.tailStep;
-            if (v.tailMix >= 1.0f) {
-                v.pos = v.tailPos;
-                v.tailPos = -1;
+        float y = 0;
+        if (v.backwards) {
+            y = read(z.data, std::max(v.pos, 1.0)) * v.mixA;
+            if (v.zoneB != nullptr) y += read(v.zoneB->data, std::max(v.posB, 1.0)) * v.mixB;
+            v.pos -= double(v.inc);
+            v.posB -= double(v.incB);
+        } else {
+            y = advance(z, v.pos, v.tailPos, v.inc, v.releasing, v.tailMix) * v.mixA;
+            if (v.zoneB != nullptr) y += advance(*v.zoneB, v.posB, v.tailPosB, v.incB, v.releasing, v.tailMix) * v.mixB;
+            if (v.tailPos >= 0.0 || v.tailPosB >= 0.0) {
+                v.tailMix += v.tailStep;
+                if (v.tailMix >= 1.0f) {
+                    if (v.tailPos >= 0.0) v.pos = v.tailPos, v.tailPos = -1;
+                    if (v.tailPosB >= 0.0) v.posB = v.tailPosB, v.tailPosB = -1;
+                    v.tailMix = 0;
+                }
             }
         }
-        v.pos += double(v.inc);
+        if (v.course && v.coursePos >= 0.0) {
+            const auto& c = *v.courseZone;
+            if (v.coursePos < double(c.length - 1)) y += patch.courseLevel * read(c.data, v.coursePos) * v.mixA;
+        }
         v.coursePos += double(v.inc * v.courseRatio);
         if (v.course && v.courseZone->loops() && !v.releasing && v.coursePos >= double(v.courseZone->loopEnd))
             v.coursePos -= double(v.courseZone->loopEnd - v.courseZone->loopStart);
-        if (z.loops() && !v.releasing && v.pos >= double(z.loopEnd)) v.pos -= double(z.loopEnd - z.loopStart);
-        if (v.tailPos >= double(z.length - 1)) v.tailPos = -1, v.tailMix = 0, v.pos = double(z.length);
+        if (v.shelf) {
+            const float lo = v.shelfLp.lp(y);
+            y = lo + v.shelfGain * (y - lo);
+        }
         if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
         v.fade *= v.fadeMul * v.releaseMul;
         const float out = v.filter.tick(y).lp * v.amp * v.fade * v.gain;
-        if (v.pos >= double(z.length - 1) || v.fade < 1.0e-4f) v.on = false;
+        const bool endA = v.backwards ? v.pos <= 1.0 : v.pos >= double(z.length - 1);
+        if (endA || v.fade < 1.0e-4f) v.on = false;
+        if (v.limit >= 0) {
+            // A fragment: a 15 ms fade as its time runs out.
+            if (--v.limit <= 0) v.on = false;
+            else if (v.limit < int(0.015f * rate)) v.fade *= 0.997f;
+        }
         return out;
     }
 
     void release(Voice& v, float seconds = -1.0f) {
         if (v.releasing) return;
+        if (v.backwards && seconds <= 0.0f) return;   // it plays to its strike
+        if (patch.damper && seconds <= 0.0f) {
+            // A piano key let go: undamped strings ring on; elsewhere the damper, as recorded.
+            if (v.midi >= float(patch.undampedFrom) - 0.5f) return;
+            v.releasing = true;
+            const float s = (v.zone->damperSeconds > 0.0f ? v.zone->damperSeconds : patch.release) * patch.damperScale;
+            v.releaseMul = std::exp(-6.9078f / (std::max(s, 0.02f) * rate));
+            return;
+        }
         v.releasing = true;
         const float s = seconds > 0.0f ? seconds : patch.release * weight::release;
         const auto& z = *v.zone;
         if (seconds <= 0.0f && patch.recordedTail && z.release > 0 && v.pos < double(z.release)) {
             // The bow lifts: the recorded tail, faded in over 40 ms, and a slower release on top.
             v.tailPos = double(z.release);
+            if (v.zoneB != nullptr && v.zoneB->release > 0 && v.posB < double(v.zoneB->release)) v.tailPosB = double(v.zoneB->release);
             v.tailMix = 0;
             v.tailStep = 1.0f / (0.04f * rate);
             v.releaseMul = std::exp(-6.9078f / (std::max(s * 2.0f, 0.05f) * rate));
@@ -460,6 +561,7 @@ private:
             semis += depth * std::sin(dsp::twoPi * v.vibratoPhase);
         }
         v.inc = v.rateRatio * std::exp2(semis / 12.0f);
+        if (v.zoneB != nullptr) v.incB = v.rateRatio * std::exp2((semis + v.zone->root - v.zoneB->root) / 12.0f);
     }
 
     const samples::Instrument* articulation(const NoteOn& n) const {
@@ -492,9 +594,38 @@ private:
     std::array<dsp::OnePole, 2> openDamp;
     std::array<float, 2> openPeriod { 400, 300 };
     float lastPlayed = 0;
+    // Samples since the fallback last started a note (it renders while its notes may ring).
+    int fallbackAge = 1 << 30;
+    static constexpr int fallbackRings = 48000 * 12;
     double strumBeat = -1.0e9;
     float strumFirst = 0, trem = 1, gainNow = -1;
     int strumCount = 0;
 };
+
+// The developer's piano (Milestone 17), as every Place that plays it starts from: the held
+// notes (natural decay, the dampers as recorded, the top keys undamped), the short hits
+// for short written notes (they ring as recorded, damper and all), velocity layers
+// crossfaded. A Place then sets its own tone, level and effects.
+inline SamplePatch pianoPatch() {
+    SamplePatch p;
+    p.instrument = "piano-long";
+    p.shortInstrument = "piano-short";
+    p.shortBeats = 0.5f;
+    p.shortRings = true;
+    p.held = true;
+    p.recordedTail = false;
+    p.damper = true;
+    p.undampedFrom = 89;          // F6: the strings above have no dampers
+    p.release = 0.25f;            // a key without a measured damper time
+    p.crossfade = true;
+    p.velocityGain = 0.3f;        // the layers carry most of the dynamics
+    p.velocityTone = 0.35f;
+    p.even = 0.35f;
+    p.toneHz = 18000;
+    p.spread = 0.25f;
+    p.voices = 8;
+    p.legatoSeconds = 0.02f;
+    return p;
+}
 
 } // namespace wb

@@ -41,6 +41,12 @@ void Instrument::index() {
         std::nth_element(levels.begin(), levels.begin() + std::ptrdiff_t(levels.size() / 2), levels.end());
         layerMedianDb[std::size_t(layer)] = levels[levels.size() / 2];
     }
+    for (int layer = 0; layer < int(layerCentre.size()); ++layer) {
+        float lo = 1, hi = 0;
+        for (const auto& z : zones)
+            if (z.layer == layer) lo = std::min(lo, z.loVel), hi = std::max(hi, z.hiVel);
+        layerCentre[std::size_t(layer)] = hi >= lo ? 0.5f * (lo + hi) : float(layer) / float(std::max(1, layers - 1));
+    }
     lowKey = std::clamp(lowKey, 0, 127);
     highKey = std::clamp(highKey, lowKey, 127);
     table.assign(std::size_t(128 * layers), Slot {});
@@ -96,6 +102,43 @@ const Zone* Instrument::find(int key, float velocity, float pick) const {
     if (s.count <= 0) return nullptr;
     const int k = std::clamp(int(pick * float(s.count)), 0, s.count - 1);
     return &zones[std::size_t(order[std::size_t(s.first + k)])];
+}
+
+ZonePair Instrument::findPair(int key, float velocity, float pick) const {
+    ZonePair p;
+    if (zones.empty() || table.empty()) return p;
+    key = std::clamp(foldKey(key), 0, 127);
+    // The layers this key has, in order.
+    std::array<int, 8> have {};
+    int n = 0;
+    for (int l = 0; l < layers && n < int(have.size()); ++l)
+        if (table[std::size_t(key * layers + l)].count > 0) have[std::size_t(n++)] = l;
+    if (n == 0) return p;
+    const auto zoneOf = [&](int layer) {
+        const auto& s = table[std::size_t(key * layers + layer)];
+        const int k = std::clamp(int(pick * float(s.count)), 0, s.count - 1);
+        return &zones[std::size_t(order[std::size_t(s.first + k)])];
+    };
+    const auto centre = [&](int layer) { return layerCentre[std::size_t(std::clamp(layer, 0, int(layerCentre.size()) - 1))]; };
+    if (n == 1 || velocity <= centre(have[0])) {
+        p.a = zoneOf(have[0]);
+        return p;
+    }
+    if (velocity >= centre(have[std::size_t(n - 1)])) {
+        p.a = zoneOf(have[std::size_t(n - 1)]);
+        return p;
+    }
+    for (int i = 0; i + 1 < n; ++i) {
+        const float c0 = centre(have[std::size_t(i)]), c1 = centre(have[std::size_t(i + 1)]);
+        if (velocity >= c0 && velocity <= c1) {
+            p.a = zoneOf(have[std::size_t(i)]);
+            p.b = zoneOf(have[std::size_t(i + 1)]);
+            p.mix = c1 > c0 ? (velocity - c0) / (c1 - c0) : 0.0f;
+            return p;
+        }
+    }
+    p.a = zoneOf(have[0]);
+    return p;
 }
 
 //==============================================================================
@@ -211,15 +254,56 @@ bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<i
     into.rate = float(double(json["rate"]));
     if (!(into.rate > 1000.0f)) into.rate = 44100.0f;
     into.layers = std::max(1, json["layers"].getArray() != nullptr ? json["layers"].getArray()->size() : 1);
+    into.crossfade = bool(json["crossfade"]);
+    into.unpitched = bool(json["unpitched"]);
     // One buffer for the instrument, sized from the mapping before anything points into it.
+    // Zones that share a recording (derived layers) share its audio.
     std::size_t need = 0;
-    for (const auto& z : *zones) need += std::size_t(int(z["length"])) + padBefore + padAfter;
+    {
+        juce::StringArray seen;
+        for (const auto& z : *zones)
+            if (!seen.contains(z["file"].toString())) {
+                seen.add(z["file"].toString());
+                need += std::size_t(int(z["length"])) + padBefore + padAfter;
+            }
+    }
     pool.assign(need, 0);
+    juce::StringArray loadedFiles;
+    std::vector<std::pair<int16_t*, int>> loadedData;
     juce::FlacAudioFormat flac;
     juce::AudioBuffer<float> buffer;
     std::size_t at = 0;
     for (const auto& z : *zones) {
         if (cancel) return false;
+        const int seenAt = loadedFiles.indexOf(z["file"].toString());
+        if (seenAt >= 0) {
+            // A derived layer: the same audio, its own gain and shelf.
+            Zone zone;
+            zone.data = loadedData[std::size_t(seenAt)].first;
+            zone.length = loadedData[std::size_t(seenAt)].second;
+            zone.root = float(double(z["root"]));
+            zone.loKey = int(z["loKey"]);
+            zone.hiKey = int(z["hiKey"]);
+            zone.loVel = float(double(z["loVel"]));
+            zone.hiVel = float(double(z["hiVel"]));
+            zone.layer = std::clamp(int(z["layer"]), 0, into.layers - 1);
+            zone.rr = int(z["rr"]);
+            zone.rmsDb = float(double(z["rms"]));
+            zone.loudnessDb = z.hasProperty("loudness") ? float(double(z["loudness"])) : zone.rmsDb;
+            zone.gainDb = z.hasProperty("gainDb") ? float(double(z["gainDb"])) : 0.0f;
+            zone.shelfDb = z.hasProperty("shelfDb") ? float(double(z["shelfDb"])) : 0.0f;
+            zone.shelfHz = z.hasProperty("shelfHz") ? float(double(z["shelfHz"])) : 1000.0f;
+            zone.damperSeconds = z.hasProperty("damperSeconds") ? float(double(z["damperSeconds"])) : -1.0f;
+            for (const auto& other : into.zones)
+                if (other.data == zone.data) {
+                    zone.loopStart = other.loopStart;
+                    zone.loopEnd = other.loopEnd;
+                    zone.release = other.release;
+                    break;
+                }
+            into.zones.push_back(zone);
+            continue;
+        }
         const auto file = from.getChildFile(z["file"].toString());
         auto stream = std::make_unique<juce::FileInputStream>(file);
         if (!stream->openedOk()) {
@@ -249,6 +333,10 @@ bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<i
         zone.rr = int(z["rr"]);
         zone.rmsDb = float(double(z["rms"]));
         zone.loudnessDb = z.hasProperty("loudness") ? float(double(z["loudness"])) : zone.rmsDb;
+        zone.gainDb = z.hasProperty("gainDb") ? float(double(z["gainDb"])) : 0.0f;
+        zone.shelfDb = z.hasProperty("shelfDb") ? float(double(z["shelfDb"])) : 0.0f;
+        zone.shelfHz = z.hasProperty("shelfHz") ? float(double(z["shelfHz"])) : 1000.0f;
+        zone.damperSeconds = z.hasProperty("damperSeconds") ? float(double(z["damperSeconds"])) : -1.0f;
         if (z.hasProperty("loopStart")) {
             zone.loopStart = int(z["loopStart"]);
             zone.loopEnd = int(z["loopEnd"]);
@@ -260,6 +348,8 @@ bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<i
             if (zone.release <= zone.loopEnd || zone.release >= length - 64) zone.release = -1;
         }
         into.zones.push_back(zone);
+        loadedFiles.add(z["file"].toString());
+        loadedData.emplace_back(data, length);
         at += std::size_t(length) + padBefore + padAfter;
     }
     into.index();

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <thread>
@@ -34,8 +35,31 @@ struct Zone {
     int release = -1;                // where the recorded release tail starts, -1: none
     float rmsDb = -20;               // level of its first 300 ms
     float loudnessDb = -20;          // how loud it sounds (K-weighted, its loudest 400 ms; rmsDb in older maps)
+    // A layer derived from another recording (Milestone 17: the piano's soft and full held
+    // notes from the medium ones): played at this gain, through a high shelf of shelfDb
+    // above shelfHz (brightness). 0 dB for a recording played as it is.
+    float gainDb = 0, shelfDb = 0, shelfHz = 1000;
+    float damperSeconds = -1;        // a piano key's damper: seconds to fall 60 dB (-1: the part's own)
     bool loops() const { return loopEnd > loopStart && loopStart >= 0; }
 };
+
+// Two zones of neighbouring velocity layers for a crossfade: `a` at (1 - mix), `b` at mix.
+struct ZonePair {
+    const Zone* a = nullptr;
+    const Zone* b = nullptr;
+    float mix = 0;
+};
+
+// The gains of a velocity crossfade (each zone's own gainDb included): the tone moves from
+// `a` to `b` (equal power), the level from a's loudness to b's evenly in dB, so the layers'
+// steps (up to 20 dB on a piano) become an even rise instead of a jump where the louder
+// layer comes in.
+inline void crossfadeGains(const Zone& a, const Zone& b, float mix, float& ga, float& gb) {
+    const float m = std::clamp(mix, 0.0f, 1.0f);
+    const float target = a.loudnessDb + (b.loudnessDb - a.loudnessDb) * m;
+    ga = std::cos(1.5707963f * m) * std::pow(10.0f, (target - a.loudnessDb + a.gainDb) / 20.0f);
+    gb = std::sin(1.5707963f * m) * std::pow(10.0f, (target - b.loudnessDb + b.gainDb) / 20.0f);
+}
 
 // One recorded instrument (or articulation): its notes and how they map.
 class Instrument {
@@ -54,7 +78,13 @@ public:
     // The zone for a key and velocity (0..1); `pick` (0..1) chooses among the
     // round-robin takes. Keys outside the instrument fold in by octaves.
     const Zone* find(int key, float velocity, float pick) const;
+    // Velocity crossfades (Milestone 17): the two layers around `velocity` (each layer
+    // centred in its velocity range), the same round-robin `pick` in both.
+    ZonePair findPair(int key, float velocity, float pick) const;
     int foldKey(int key) const;
+    bool crossfade = false;          // the mapping asks for crossfaded velocity layers
+    bool unpitched = false;          // textures (whispers, breaths): every key plays them at their own pitch
+    std::array<float, 8> layerCentre {};   // each layer's velocity centre
     // Built once after loading.
     void index();
 
