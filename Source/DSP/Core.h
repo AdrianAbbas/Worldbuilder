@@ -88,7 +88,10 @@ struct Svf {
         a2 = g * a1;
         a3 = g * a2;
     }
-    Out tick(float v0) {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    inline Out tick(float v0) {
         const float v3 = v0 - ic2;
         const float v1 = a1 * ic1 + a2 * v3;
         const float v2 = ic2 + a2 * ic1 + a3 * v3;

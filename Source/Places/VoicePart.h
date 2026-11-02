@@ -280,7 +280,7 @@ public:
     void update(const PartFrame& f) override {
         // The recordings: once the bank is ready, and again whenever the Place names other
         // ones (it sets the patch in configure(), after prepare()).
-        if (samples::Bank::get().ready() && (!resolved || patch.single != resolvedSingle)) resolve();
+        if ((!resolved || patch.single != resolvedSingle) && samples::Bank::get().ready()) resolve();
         if (!sampled()) {
             fallback.bend = bend;
             fallback.mod = mod;
@@ -343,15 +343,19 @@ public:
         // The level glides (20 ms) to a new gain (a Character's own), never steps.
         if (gainNow < 0.0f) gainNow = patch.gain;
         const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
-        for (int i = 0; i < n; ++i) {
-            gainNow += (patch.gain - gainNow) * follow;
-            float l = 0, r = 0;
-            for (auto& v : voice) {
-                if (!v.on) continue;
-                tick(v, l, r);
+        // Each voice is rendered over the whole chunk (its readers one after another, then
+        // its colour), not sample by sample across every voice: the same sums in the same
+        // order (the output is bit for bit what it was), in tight loops.
+        for (int at = 0; at < n; at += dsp::chunk) {
+            const int m = std::min(dsp::chunk, n - at);
+            std::array<float, dsp::chunk> sumL {}, sumR {};
+            for (auto& v : voice)
+                if (v.on) renderVoice(v, sumL.data(), sumR.data(), m);
+            for (int i = 0; i < m; ++i) {
+                gainNow += (patch.gain - gainNow) * follow;
+                left[at + i] += dc[0].hp(sumL[std::size_t(i)]) * gainNow;
+                right[at + i] += dc[1].hp(sumR[std::size_t(i)]) * gainNow;
             }
-            left[i] += dc[0].hp(l) * gainNow;
-            right[i] += dc[1].hp(r) * gainNow;
         }
     }
 
@@ -553,27 +557,23 @@ private:
         v.releaseMul = std::exp(-6.9078f / (std::max(tail ? s * 1.5f : s, 0.02f) * rate));
     }
 
-#if defined(__GNUC__) || defined(__clang__)
-    [[gnu::always_inline]]
-#endif
-    inline void tick(Voice& v, float& outL, float& outR) {
-        float l = 0, r = 0;
-        bool any = false;
-        for (int i = 0; i < v.count; ++i) {
-            auto& rd = v.reader[std::size_t(i)];
-            if (rd.done) continue;
-            any = true;
+    // One reader over `m` samples, summed into the voice's buffers; how many of them it was
+    // still sounding at their start (a voice ends once all its readers have ended).
+    static int renderReader(Reader& rd, float tailStep, float* vl, float* vr, int m) {
+        const auto& z = *rd.zone;
+        int i = 0;
+        for (; i < m; ++i) {
+            if (rd.done) break;
             if (rd.delay > 0) {
                 --rd.delay;
                 continue;
             }
-            const auto& z = *rd.zone;
             // A layer the vowel morph has all but faded out moves on unread.
             const bool heard = std::abs(rd.gain) > 1.0e-3f;
             float y = 0;
             if (heard) y = rd.linear ? readLinear(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1))) : read(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1)));
             if (rd.tailPos >= 0.0) {
-                rd.tailMix = std::min(1.0f, rd.tailMix + v.tailStep);
+                rd.tailMix = std::min(1.0f, rd.tailMix + tailStep);
                 if (heard) y = y * (1.0f - rd.tailMix) + read(z.data, std::min(rd.tailPos, double(z.length - 1))) * rd.tailMix;
                 rd.tailPos += double(rd.inc);
                 if (rd.tailMix >= 1.0f) rd.pos = rd.tailPos, rd.tailPos = -1;
@@ -582,40 +582,59 @@ private:
             if (z.loops() && rd.tailPos < 0.0 && rd.tailMix <= 0.0f && rd.pos >= double(z.loopEnd)) rd.pos -= double(z.loopEnd - z.loopStart);
             if (rd.pos >= double(z.length - 1) || rd.tailPos >= double(z.length - 1)) rd.done = true;
             y *= rd.gain;
-            l += y * rd.pan.l;
-            r += y * rd.pan.r;
+            vl[i] += y * rd.pan.l;
+            vr[i] += y * rd.pan.r;
         }
-        if (!any) {
-            v.on = false;
-            return;
-        }
-        // The Place's colour, per side.
-        float side[2] { l, r };
+        return i;
+    }
+
+    // One voice over `m` samples (m <= chunk), added into the part's sums.
+    void renderVoice(Voice& v, float* outL, float* outR, int m) {
+        std::array<float, dsp::chunk> vl {}, vr {};
+        int sounding = 0;
+        for (int k = 0; k < v.count; ++k) sounding = std::max(sounding, renderReader(v.reader[std::size_t(k)], v.tailStep, vl.data(), vr.data(), m));
+        // The Place's colour, per side (the patch's settings, read once).
         const bool lowCut = patch.lowCutHz > 45.0f;   // (below that the part's DC filter is enough)
-        for (int c = 0; c < 2; ++c) {
-            float y = lowCut ? v.hp[std::size_t(c)].tick(side[c]).hp : side[c];
-            y = v.lp[std::size_t(c)].tick(y).lp;
-            if (patch.bandHz > 0.0f || patch.bandFollow > 0.0f) y = dsp::lerp(y, 1.6f * v.band[std::size_t(c)].bandpass(y), patch.bandMix);
-            if (patch.drive > 0.0f) {
-                const float k = 1.0f + 12.0f * patch.drive;
-                y = std::tanh(k * y) / std::tanh(k) * (1.0f / (1.0f + 0.5f * patch.drive));
+        const bool band = patch.bandHz > 0.0f || patch.bandFollow > 0.0f;
+        const float bandMix = patch.bandMix;
+        const bool drive = patch.drive > 0.0f;
+        const float driveK = 1.0f + 12.0f * patch.drive;
+        const float driveNorm = drive ? std::tanh(driveK) : 1.0f;
+        const float driveLevel = 1.0f / (1.0f + 0.5f * patch.drive);
+        const bool ring = patch.ringMix > 0.0f;
+        const float ringMix = patch.ringMix;
+        const bool tremolo = patch.tremoloDepth > 0.0f;
+        for (int i = 0; i < m; ++i) {
+            if (i >= sounding) {
+                v.on = false;
+                return;
             }
-            side[c] = y;
+            float side[2] { vl[std::size_t(i)], vr[std::size_t(i)] };
+            for (int c = 0; c < 2; ++c) {
+                float y = lowCut ? v.hp[std::size_t(c)].tick(side[c]).hp : side[c];
+                y = v.lp[std::size_t(c)].tick(y).lp;
+                if (band) y = dsp::lerp(y, 1.6f * v.band[std::size_t(c)].bandpass(y), bandMix);
+                if (drive) y = std::tanh(driveK * y) / driveNorm * driveLevel;
+                side[c] = y;
+            }
+            float g = v.amp * v.fade * v.gain * v.chatterGain;
+            if (ring) {
+                v.ringPhase += v.ringInc;
+                v.ringPhase -= std::floor(v.ringPhase);
+                const float rm = std::sin(dsp::twoPi * v.ringPhase);
+                for (auto& s : side) s = s * (1.0f - ringMix) + s * rm * ringMix * 1.4f;
+            }
+            if (tremolo) g *= 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::sin(dsp::twoPi * float(time) * patch.tremoloHz + v.seed));
+            if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
+            v.fade *= v.releaseMul;
+            v.level = v.amp * v.fade * v.gain;
+            outL[i] += side[0] * g;
+            outR[i] += side[1] * g;
+            if (v.fade < 1.0e-4f) {
+                v.on = false;
+                return;
+            }
         }
-        float g = v.amp * v.fade * v.gain * v.chatterGain;
-        if (patch.ringMix > 0.0f) {
-            v.ringPhase += v.ringInc;
-            v.ringPhase -= std::floor(v.ringPhase);
-            const float ring = std::sin(dsp::twoPi * v.ringPhase);
-            for (auto& s : side) s = s * (1.0f - patch.ringMix) + s * ring * patch.ringMix * 1.4f;
-        }
-        if (patch.tremoloDepth > 0.0f) g *= 1.0f - patch.tremoloDepth * (0.5f + 0.5f * std::sin(dsp::twoPi * float(time) * patch.tremoloHz + v.seed));
-        if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
-        v.fade *= v.releaseMul;
-        v.level = v.amp * v.fade * v.gain;
-        outL += side[0] * g;
-        outR += side[1] * g;
-        if (v.fade < 1.0e-4f) v.on = false;
     }
 
     void resolve() {

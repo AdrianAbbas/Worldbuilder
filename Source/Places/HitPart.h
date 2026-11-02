@@ -139,6 +139,7 @@ public:
         const float bend = slide.depth(designedBend) + slide.plain(designedBend);
         v.bend = bend;
         v.bendMul = bend != 0.0f ? std::exp(-1.0f / (std::max(slide.time(dsp::Drum::pitchSeconds), 0.002f) * rate)) : 0.0f;
+        v.bendMul32 = std::pow(v.bendMul, 32.0f);   // (the bend moves every 32 samples)
         v.semis = row.semis;
         v.ratio = kit->rate / rate;
         v.fadeMul = row.decay > 0.0f ? std::exp(-6.9078f / (row.decay * weight::skin * n.decay * rate)) : 1.0f;
@@ -161,15 +162,23 @@ public:
         if (!sampled()) return;
         if (gainNow < 0.0f) gainNow = patch.gain;
         const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
+        // The hits one after another over each chunk (the same sums in the same order as
+        // sample by sample across them: bit for bit the same output, in tight loops).
+        std::array<float, dsp::chunk> sumL {}, sumR {};
         for (int i = 0; i < n; ++i) {
-            gainNow += (patch.gain - gainNow) * follow;   // a new gain glides in over 20 ms
-            float l = 0, r = 0;
-            for (auto& v : voice) {
-                if (!v.on) continue;
-                const float y = tick(v);
-                l += y * v.pan.l;
-                r += y * v.pan.r;
+            if (i % dsp::chunk == 0) {
+                const int m = std::min(dsp::chunk, n - i);
+                std::fill(sumL.begin(), sumL.end(), 0.0f);
+                std::fill(sumR.begin(), sumR.end(), 0.0f);
+                for (auto& v : voice)
+                    for (int k = 0; k < m && v.on; ++k) {
+                        const float y = tick(v);
+                        sumL[std::size_t(k)] += y * v.pan.l;
+                        sumR[std::size_t(k)] += y * v.pan.r;
+                    }
             }
+            gainNow += (patch.gain - gainNow) * follow;   // a new gain glides in over 20 ms
+            float l = sumL[std::size_t(i % dsp::chunk)], r = sumR[std::size_t(i % dsp::chunk)];
             if (patch.drive > 0.0f) {
                 const float k = 1.0f + 8.0f * patch.drive;
                 l = std::tanh(k * l) / k * (1.0f + 0.5f * patch.drive);
@@ -193,7 +202,7 @@ private:
         const samples::Zone* a = nullptr;
         const samples::Zone* b = nullptr;
         double pos = 0;
-        float gainA = 1, gainB = 0, gain = 1, ratio = 1, semis = 0, bend = 0, bendMul = 0, fade = 1, fadeMul = 1, level = 0;
+        float gainA = 1, gainB = 0, gain = 1, ratio = 1, semis = 0, bend = 0, bendMul = 0, bendMul32 = 0, fade = 1, fadeMul = 1, level = 0;
         int wait = 0, step = 0;
         float inc = 1;
         dsp::Svf lp, hp;
@@ -207,7 +216,10 @@ private:
         return 12.0f * std::log2(std::max(fallback.patch.rows[r].bend, 0.01f));
     }
 
-    static float read(const int16_t* d, double pos) {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    static inline float read(const int16_t* d, double pos) {
         const auto i = int(pos);
         const float t = float(pos - double(i));
         const float xm1 = d[i - 1], x0 = d[i], x1 = d[i + 1], x2 = d[i + 2];
@@ -222,7 +234,7 @@ private:
 #endif
     inline float tick(Voice& v) {
         if ((v.step++ & 31) == 0) {
-            v.bend *= std::pow(v.bendMul, 32.0f);
+            v.bend *= v.bendMul32;
             v.inc = v.ratio * std::exp2((v.semis + v.bend + this->bend) / 12.0f);
         }
         float y = read(v.a->data, std::max(v.pos, 1.0)) * v.gainA;

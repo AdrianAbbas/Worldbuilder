@@ -377,16 +377,24 @@ public:
         const float target = patch.gain * trem;
         if (gainNow < 0.0f) gainNow = target;
         const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
+        // The voices one after another over each chunk (the same sums in the same order as
+        // sample by sample across them: bit for bit the same output, in tight loops).
+        std::array<float, dsp::chunk> sumL {}, sumR {};
         for (int i = 0; i < n; ++i) {
+            if (i % dsp::chunk == 0) {
+                const int m = std::min(dsp::chunk, n - i);
+                std::fill(sumL.begin(), sumL.end(), 0.0f);
+                std::fill(sumR.begin(), sumR.end(), 0.0f);
+                for (auto& v : voice)
+                    for (int k = 0; k < m && v.on; ++k) {
+                        const float y = (v.plain && v.wait <= 0) ? tickPlain(v, *v.zone) : tick(v);
+                        sumL[std::size_t(k)] += y * v.pan.l;
+                        sumR[std::size_t(k)] += y * v.pan.r;
+                    }
+            }
             gainNow += (target - gainNow) * follow;
             const float g = gainNow;
-            float l = 0, r = 0;
-            for (auto& v : voice) {
-                if (!v.on) continue;
-                const float y = (v.plain && v.wait <= 0) ? tickPlain(v, *v.zone) : tick(v);
-                l += y * v.pan.l;
-                r += y * v.pan.r;
-            }
+            float l = sumL[std::size_t(i % dsp::chunk)], r = sumR[std::size_t(i % dsp::chunk)];
             if (body) {
                 float bl = l * direct, br = r * direct;
                 for (std::size_t k = 0; k < 4; ++k) {
@@ -454,7 +462,10 @@ private:
         NoteOn note {};
     };
 
-    static float read(const int16_t* d, double pos) {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    static inline float read(const int16_t* d, double pos) {
         const auto i = int(pos);
         const float t = float(pos - double(i));
         const float xm1 = d[i - 1], x0 = d[i], x1 = d[i + 1], x2 = d[i + 2];
@@ -466,7 +477,10 @@ private:
 
     // One zone's sample at `pos`, then its position moved on: its loop (unless the note is
     // letting go), its crossing into the recorded tail.
-    float advance(const samples::Zone& z, double& pos, double& tailPos, float inc, bool releasing, float tailMix) const {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    inline float advance(const samples::Zone& z, double& pos, double& tailPos, float inc, bool releasing, float tailMix) const {
         float y = read(z.data, std::clamp(pos, 1.0, double(z.length - 1)));
         if (tailPos >= 0.0) {
             y = y * (1.0f - tailMix) + read(z.data, tailPos) * tailMix;
@@ -512,7 +526,10 @@ private:
         return out;
     }
 
-    float tick(Voice& v) {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    inline float tick(Voice& v) {
         if (v.wait > 0) {
             --v.wait;
             return 0.0f;
