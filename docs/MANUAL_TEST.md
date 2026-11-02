@@ -1003,7 +1003,7 @@ Nothing in the sound changed; this is about the look and that every control stil
 
 ## Milestone 17 check (piano, voice, djembes, banjo)
 
-Install the CI package (the installer reports about 1,240 recorded notes in each bundle).
+Install the CI package (the installer reports 1,179 recorded notes in each bundle).
 Listen first to the renders the CI keeps (the Linux job's test logs, `renders/`): the
 piano's chromatic run soft to full, chords on the pedal and a melody; the choir from one
 singer to eight; every changed part before (the synthesised one) and after.

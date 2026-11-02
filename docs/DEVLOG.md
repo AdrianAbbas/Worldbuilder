@@ -6424,7 +6424,7 @@ strummed chord, and the djembes cover the hand percussion).
 
 ### Size and memory
 
-- **Samples**: 1,239 notes (FLAC 77.5 MB, from 34 MB): the piano 352 (two articulations;
+- **Samples**: 1,179 notes in all (FLAC 77.5 MB, from 34 MB; 650 new): the piano 352 (two articulations;
   the derived held layers share audio), the voice 154, the djembes 90, the banjo 53.
 - **Memory**: about 210 MB for the bank (from 83 MB), once per process; loaded in about
   1.5 s here. Most of it is the piano (59 MB) and the guitar, kalimba, djembe and banjo
@@ -6523,6 +6523,12 @@ renders first (the Linux job's test-log artifact, `renders/`).
   (7.97 dB: the recorded djembes have fewer extreme highs); the Castle choir sits up to
   1.4 LU under its fallback (raising it costs the Split output check its margin).
 - Memory grows from about 83 MB to about 210 MB per host process (the bank is shared by
-  every instance); the download by about 88 MB (both bundles).
+  every instance); each plugin bundle from about 59 MB to 102 MB (CI: 1,179 notes, 77 MB
+  of samples in each).
+
+**CI** (run 41404371163, the push before this note): macOS (universal build, smoke tests
+on arm64 and x86_64, bundle checks, a quarantined install, auval and the AU harness) and
+Linux (the full suite: 4517 passed, 0 failed) green; the sample preparation's
+"Prepared: N notes" lines are notices in both jobs' logs.
 - The new instruments' renders in the CI artifact contain the recordings (as the plugin
   package always has): the artifact is visible to any signed-in GitHub user while kept.
