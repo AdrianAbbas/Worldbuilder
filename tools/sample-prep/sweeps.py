@@ -251,7 +251,8 @@ def find_loop(y, f0, a, b, min_len=0.6, max_len=2.2):
 
 def process(spec, source, report):
     """The notes of one recording, labelled and trimmed (not yet levelled or written)."""
-    sid, path = spec["id"], os.path.join(source, spec["file"])
+    sid = spec["id"]
+    path = (P.LOCATE(spec["file"]) if P.LOCATE else None) or os.path.join(source, spec["file"])
     keys, long_note = spec.get("keys", 37), spec["articulation"] == "long"
     if not os.path.exists(path):
         report["problems"].append(f"{sid}: missing file '{spec['file']}'")

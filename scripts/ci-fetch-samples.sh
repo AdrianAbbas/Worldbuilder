@@ -22,10 +22,13 @@ if ! git -c http.extraheader="AUTHORIZATION: basic $auth" clone -q --depth 1 "ht
     echo "::error title=Samples fetch failed::Could not clone $repo with SAMPLES_TOKEN. Check that the token has not expired and has Contents: read access to $repo."
     exit 1
 fi
-echo "Samples: $(git -C "$checkout" log -1 --format='%h %s') ($(find "$checkout" -maxdepth 1 -iname '*.mp3' | wc -l | tr -d ' ') MP3s, $(find "$checkout" -maxdepth 1 -iname '*.wav' | wc -l | tr -d ' ') WAVs)"
+# Recordings may sit in subfolders (01-voice/, 02-piano/...) and be MP3s or WAVs.
+echo "Samples: $(git -C "$checkout" log -1 --format='%h %s') ($(find "$checkout" -path "$checkout/.git" -prune -o -iname '*.mp3' -print | wc -l | tr -d ' ') MP3s, $(find "$checkout" -path "$checkout/.git" -prune -o -iname '*.wav' -print | wc -l | tr -d ' ') WAVs)"
 
 python3 -m pip install --quiet -r "$here/tools/sample-prep/requirements.txt"
 python3 "$here/tools/sample-prep/prepare.py" --source "$checkout" --out "$out" | tee "$out.log"
+# The summary per sample set ("Prepared: N notes (set: ...)") as notices in the run's log.
+{ grep '^Prepared:' "$out.log" || true; } | while read -r line; do echo "::notice title=Samples::$line"; done
 # The recordings themselves are not needed after preparation.
 rm -rf "$checkout"
 test -f "$out/index.json"

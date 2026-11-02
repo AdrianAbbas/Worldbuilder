@@ -46,6 +46,7 @@ import soundfile as sf
 from scipy import signal
 
 RATE = 44100
+LOCATE = None   # set by main(): finds a manifest's file anywhere under --source
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 DECODER_DELAY = 529
 
@@ -65,6 +66,54 @@ def name_of(midi):
 
 def db(x):
     return 20.0 * np.log10(np.maximum(np.abs(x), 1e-12))
+
+
+AUDIO_EXT = (".mp3", ".wav", ".aif", ".aiff", ".flac")
+
+
+def audio_files(source):
+    """Every recording under `source` (subfolders too), as paths relative to it."""
+    out = []
+    for dp, dns, fns in os.walk(source):
+        dns[:] = sorted(d for d in dns if not d.startswith("."))
+        for fn in sorted(fns):
+            if fn.lower().endswith(AUDIO_EXT) and not fn.startswith("."):
+                out.append(os.path.relpath(os.path.join(dp, fn), source))
+    return out
+
+
+def norm_name(name):
+    """A file name compared loosely: no folder, extension, case or spacing differences."""
+    stem = os.path.splitext(os.path.basename(name))[0].lower()
+    return re.sub(r"[^a-z0-9]+", "", stem)
+
+
+def make_locator(source):
+    """Finds a manifest's file anywhere under `source`: the exact relative path, else the
+    same name in any subfolder (any audio extension: a WAV re-export of an MP3, or the
+    recordings moved into folders such as 01-voice/ or 02-piano/)."""
+    files = audio_files(source)
+    by_norm = {}
+    for f in files:
+        by_norm.setdefault(norm_name(f), []).append(f)
+    used = set()
+
+    def locate(name):
+        if os.path.exists(os.path.join(source, name)):
+            used.add(os.path.normpath(name))
+            return os.path.join(source, name)
+        hits = by_norm.get(norm_name(name), [])
+        # Prefer the same extension, then WAV (lossless) over MP3.
+        hits = sorted(hits, key=lambda f: (os.path.splitext(f)[1].lower() != os.path.splitext(name)[1].lower(),
+                                           os.path.splitext(f)[1].lower() != ".wav"))
+        if hits:
+            used.add(os.path.normpath(hits[0]))
+            return os.path.join(source, hits[0])
+        return None
+
+    locate.files = files
+    locate.used = used
+    return locate
 
 
 def k_weight(x, rate=RATE):
@@ -142,6 +191,45 @@ def load(path):
     nz = np.nonzero(np.abs(mono) > 0)[0]
     end = int(nz[-1]) + 1 if len(nz) else 0
     return mono[:end], note, corr, len(mono) - end
+
+
+class _Clips(list):
+    runs = ()
+
+
+def declip(x):
+    """Rebuilds flat tops (3 or more samples at the file's peak, after normalisation) with
+    a cubic spline through the samples around them. Returns (x, start samples of the
+    runs, with .runs = [(start, length)])."""
+    peak = np.abs(x).max()
+    at = np.abs(x) >= 0.999 * peak
+    runs, i = [], 0
+    n = len(x)
+    while i < n:
+        if at[i]:
+            j = i
+            while j < n and at[j]:
+                j += 1
+            if j - i >= 3:
+                runs.append((i, j - i))
+            i = j
+        else:
+            i += 1
+    y = x.copy()
+    from scipy.interpolate import CubicSpline
+    for s, length in runs:
+        a, b = max(0, s - 8), min(n, s + length + 8)
+        idx = np.r_[a:s, s + length:b]
+        if len(idx) < 4:
+            continue
+        cs = CubicSpline(idx, x[idx])
+        fill = cs(np.arange(s, s + length))
+        # Never lower the flat top: the true peak was at least that high.
+        sign = np.sign(x[s])
+        y[s:s + length] = sign * np.maximum(np.abs(fill), np.abs(x[s:s + length]))
+    out = _Clips(s for s, _ in runs)
+    out.runs = runs
+    return y, out
 
 
 # ---------------------------------------------------------------------------
@@ -579,17 +667,29 @@ def process_set(spec, source, room, out_dir, report):
     # stopped pizzicato) become one key map; shared notes are extra round-robins.
     merge = spec.get("mergeLayers", False)
     merged_rr = {}
-    for li, layer in enumerate(spec["layers"]):
-        path = os.path.join(source, layer["file"])
+    # "extra" files hold more takes of some notes at every dynamic (the banjo's open fifth
+    # string, three soft, three medium, three hard): their takes join the velocity layers
+    # by how loud they sound, as round-robins.
+    files = spec["layers"] + spec.get("extra", [])
+    for li, layer in enumerate(files):
+        path = LOCATE(layer["file"]) or os.path.join(source, layer["file"])
         notes = layer.get("notes", spec.get("notes"))
         expected = [midi_of(n) for n in notes]
-        takes = spec.get("takes", 1)
+        takes = layer.get("takes", spec.get("takes", 1))
+        first_zone = len(zones)
         count = len(expected) * takes if takes > 0 else 0
         if not os.path.exists(path):
             report["problems"].append(f"{sid}: missing file '{layer['file']}'")
             continue
         raw, gap_note, corr, trailing = load(path)
-        x, before, after, quiet = denoise(raw, room)
+        clipped = []
+        if spec.get("declip"):
+            raw, clipped = declip(raw)
+        if spec.get("denoise", True):
+            x, before, after, quiet = denoise(raw, room)
+        else:
+            # A clean line (or exports gated to silence): the floor only measured.
+            x, before, after, quiet = raw, quiet_floor(raw), quiet_floor(raw), 0
         floors.append(before)
         x = signal.sosfiltfilt(signal.butter(2, 25, "highpass", fs=RATE, output="sos"), x)
         env = envelope(x)
@@ -661,8 +761,8 @@ def process_set(spec, source, room, out_dir, report):
             rr = merged_rr.get(key, 0)
             merged_rr[key] = rr + 1
             rr_count[label] = rr_count.get(label, 0) + 1
-            zone = {"label": name_of(label), "root": round(midi, 3), "layer": 0 if merge else li, "velocity": layer["velocity"], "rr": rr,
-                    "audio": y, "source": layer["file"], "at": round(start / RATE, 3)}
+            zone = {"label": name_of(label), "root": round(midi, 3), "layer": 0 if merge else li, "velocity": layer.get("velocity", [0.0, 1.0]), "rr": rr,
+                    "audio": y, "source": layer["file"], "at": round(start / RATE, 3), "fi": li}
             if bowed and spec.get("loop"):
                 region = sustain_region(y)
                 loop = find_loop(y, 440 * 2 ** ((midi - 69) / 12), region) if region else None
@@ -692,6 +792,29 @@ def process_set(spec, source, room, out_dir, report):
             entry["notes"].append(note)
             zones.append(zone)
         entry["found"] = len(entry["notes"])
+        if clipped:
+            # Where the recording clipped, by the note it falls in.
+            at_notes = []
+            for t in clipped:
+                owner = None
+                for nt in entry["notes"]:
+                    if nt["at"] <= t / RATE < nt["at"] + nt["seconds"]:
+                        owner = nt["label"]
+                at_notes.append(owner or f"{t / RATE:.2f}s")
+            names = sorted(set(at_notes), key=lambda s: (len(s), s))
+            report["problems"].append(f"{sid}/{layer['name']}: the recording clipped ({len(clipped)} flat tops, up to "
+                                      f"{max(c[1] for c in clipped.runs) if hasattr(clipped, 'runs') else '?'} samples) in "
+                                      f"{', '.join(names)}; rebuilt by a spline (re-record those notes a little softer)")
+        if li >= len(spec["layers"]):
+            # An extra file: its takes go to the layers by loudness (quietest third soft...).
+            mine = zones[first_zone:]
+            ranked = sorted(mine, key=lambda z: note_loudness(z["audio"]))
+            per = max(1, len(ranked) // len(spec["layers"]))
+            for rank, z in enumerate(ranked):
+                z["layer"] = min(len(spec["layers"]) - 1, rank // per)
+                z["velocity"] = spec["layers"][z["layer"]]["velocity"]
+            entry["layer"] += " (takes shared out by loudness: " + ", ".join(
+                f"{spec['layers'][l]['name']} {sum(1 for z in mine if z['layer'] == l)}" for l in range(len(spec["layers"]))) + ")"
         report["files"].append(entry)
         if takes == 0:
             entry["takesPerNote"] = {name_of(k): v for k, v in sorted(rr_count.items())}
@@ -708,8 +831,13 @@ def process_set(spec, source, room, out_dir, report):
             zones.remove(z)
             report["warnings"].append(f"{sid} {z['label']} take {z['rr'] + 1}: dropped, its pitch wanders while held ({z['wander']:.0f} cents); "
                                       f"{len(others)} steady take{'s' if len(others) > 1 else ''} left")
+    # A note played on another pitch than its label (more than half a semitone) is filed
+    # under the pitch it sounds (a round-robin there when that note was recorded too).
+    for z in zones:
+        if abs(z["root"] - midi_of(z["label"])) >= 0.5 and spec["kind"] == "pluck":
+            z["label"] = name_of(z["root"])
     for key in {(z["layer"], z["label"]) for z in zones}:
-        for i, z in enumerate(sorted([z for z in zones if (z["layer"], z["label"]) == key], key=lambda z: z["rr"])):
+        for i, z in enumerate(sorted([z for z in zones if (z["layer"], z["label"]) == key], key=lambda z: (z["fi"], z["rr"]))):
             z["rr"] = i
 
     # The layers of one instrument were recorded at different input levels (the soft
@@ -719,8 +847,8 @@ def process_set(spec, source, room, out_dir, report):
         mean = float(np.mean(floors))
         trims = [mean - f for f in floors]
         for z in zones:
-            z["audio"] = z["audio"] * 10 ** (trims[z["layer"]] / 20)
-        report["levelling"][sid] = {spec["layers"][i]["name"]: {"floorDb": round(floors[i], 1), "trimDb": round(trims[i], 1)} for i in range(len(floors))}
+            z["audio"] = z["audio"] * 10 ** (trims[z["fi"]] / 20)
+        report["levelling"][sid] = {files[i].get("name", files[i]["file"]): {"floorDb": round(floors[i], 1), "trimDb": round(trims[i], 1)} for i in range(len(floors))}
     # The noise floors bring the layers near each other, but not into a usable order: the
     # player's touch changed across the register too (the medium guitar takes match the
     # hard ones on the low strings and fall 12-20 dB under them above G4). With
@@ -794,52 +922,91 @@ def process_set(spec, source, room, out_dir, report):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--source", required=True, help="folder with the recordings (the Samples repository)")
+    ap.add_argument("--source", required=True, help="folder with the recordings (the Samples repository; subfolders are searched)")
     ap.add_argument("--out", required=True, help="output folder (not in the repository)")
     ap.add_argument("--manifest", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.json"))
     ap.add_argument("--only", help="comma-separated set ids")
     args = ap.parse_args()
 
+    global LOCATE
     with open(args.manifest) as f:
         manifest = json.load(f)
     os.makedirs(args.out, exist_ok=True)
-    room_raw, room_note, _, _ = load(os.path.join(args.source, manifest["roomTone"]))
+    LOCATE = make_locator(args.source)
+    room_path = LOCATE(manifest["roomTone"])
+    if room_path is None:
+        raise SystemExit(f"the room tone '{manifest['roomTone']}' is not in {args.source}")
+    room_raw, room_note, _, _ = load(room_path)
     room = room_profile(room_raw)
     report = {"roomTone": {"file": manifest["roomTone"], "seconds": round(len(room_raw) / RATE, 1), "padding": room_note,
                            "levelDb": round(float(db(np.sqrt(np.mean(room_raw ** 2)))), 1)},
               "files": [], "problems": [], "warnings": [], "sets": {}, "levelling": {}, "layerSteps": {}}
     report["patches"] = {}
-    known = {manifest["roomTone"]} | {u["file"] for u in manifest.get("unused", [])}
+    for u in manifest.get("unused", []):
+        LOCATE(u["file"])
     only = set(args.only.split(",")) if args.only else None
     index = []
     synths = []
+    # The other modules use this one's helpers.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import sweeps
+    import chromatic
+    import voice
+    import hits
+
+    def record(mapping, group):
+        index.append(mapping["id"])
+        seconds = sum(z["length"] for z in mapping["zones"]) / RATE
+        report["sets"][mapping["id"]] = {"zones": len(mapping["zones"]), "seconds": round(seconds, 1), "group": group,
+                                         "loops": sum(1 for z in mapping["zones"] if "loopStart" in z),
+                                         "files": len({z["file"] for z in mapping["zones"]})}
+
+    def files_of(spec):
+        out = []
+        for key in ("file",):
+            if key in spec:
+                out.append(spec[key])
+        for l in spec.get("layers", []) + spec.get("short", []) + ([spec["long"]] if "long" in spec else []) + spec.get("files", []):
+            out.append(l["file"] if isinstance(l, dict) else l)
+        return out
+
     for spec in manifest["sets"]:
-        if spec["kind"] == "synth":
-            known.add(spec["file"])
-            if not only or spec["id"] in only:
-                synths.append(spec)
+        group = spec.get("group", spec["id"])
+        if only and spec["id"] not in only and group not in only:
+            for f in files_of(spec):
+                LOCATE(f)      # known, just not prepared this time
             continue
-        known |= {l["file"] for l in spec["layers"]}
-        if only and spec["id"] not in only:
+        kind = spec["kind"]
+        if kind == "synth":
+            synths.append(spec)
+            continue
+        if kind == "piano":
+            for mapping in chromatic.run(spec, args.source, args.out, report, LOCATE):
+                record(mapping, group)
+            continue
+        if kind == "voice":
+            for mapping in voice.run(spec, args.source, args.out, report, LOCATE):
+                record(mapping, group)
+            continue
+        if kind == "hits":
+            for mapping in hits.run(spec, args.source, args.out, report, LOCATE):
+                record(mapping, group)
             continue
         print(f"[{spec['id']}] ...", flush=True)
         mapping = process_set(spec, args.source, room, args.out, report)
         if mapping:
-            index.append(spec["id"])
-            seconds = sum(z["length"] for z in mapping["zones"]) / RATE
-            report["sets"][spec["id"]] = {"zones": len(mapping["zones"]), "seconds": round(seconds, 1),
-                                          "loops": sum(1 for z in mapping["zones"] if "loopStart" in z)}
-    # The synth sweeps (sweeps.py uses this module's helpers, so it is imported here).
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import sweeps
+            record(mapping, group)
     for mapping in sweeps.run(synths, args.source, args.out, report):
-        index.append(mapping["id"])
-        seconds = sum(z["length"] for z in mapping["zones"]) / RATE
-        report["sets"][mapping["id"]] = {"zones": len(mapping["zones"]), "seconds": round(seconds, 1),
-                                         "loops": sum(1 for z in mapping["zones"] if "loopStart" in z)}
-    for name in sorted(os.listdir(args.source)):
-        if name.lower().endswith((".mp3", ".wav", ".aif", ".aiff", ".flac")) and name not in known:
+        record(mapping, next((s.get("group", s["patch"]) for s in synths if s["id"] == mapping["id"]), mapping["id"]))
+    for name in LOCATE.files:
+        if os.path.normpath(name) not in LOCATE.used:
             report["problems"].append(f"'{name}' is not in the manifest (not used)")
+    if only and os.path.exists(os.path.join(args.out, "index.json")):
+        # A partial run (development): the instruments prepared earlier stay listed.
+        with open(os.path.join(args.out, "index.json")) as f:
+            earlier = [i for i in json.load(f).get("instruments", []) if i not in index and os.path.exists(os.path.join(args.out, f"{i}.json"))]
+        known = {s["id"] for s in manifest["sets"]} | {s["id"] + "-short" for s in manifest["sets"]} | {s["id"] + "-long" for s in manifest["sets"]}
+        index = [i for i in earlier if i in known] + index
     with open(os.path.join(args.out, "index.json"), "w") as f:
         json.dump({"version": 1, "instruments": index}, f, indent=1)
     total = sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(args.out) for fn in fns if fn.endswith(".flac"))
@@ -873,6 +1040,15 @@ def main():
     for sid, notes in report["layerSteps"].items():
         print(f"{sid}: layer steps per note (dB): " + "; ".join(f"{label} " + " ".join(f"{k} {v:+.1f}" for k, v in t.items()) for label, t in notes.items()))
     print(f"\nFLAC total: {total / 1e6:.2f} MB")
+    # One line per sample set (the CI log's summary): how many notes it prepared.
+    groups = {}
+    for sid, s in report["sets"].items():
+        g = groups.setdefault(s["group"], {"notes": 0, "files": 0, "sets": []})
+        g["notes"] += s["files"]
+        g["sets"].append(sid)
+    print()
+    for g, s in groups.items():
+        print(f"Prepared: {s['notes']} notes ({g}: {', '.join(s['sets'])})")
     print(f"\nCould not match ({len(report['problems'])}):" if report["problems"] else "\nEverything matched.")
     for p in report["problems"]:
         print(f" - {p}")

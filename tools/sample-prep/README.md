@@ -1,7 +1,8 @@
 # Sample preparation (Milestone 15)
 
-`prepare.py` turns the developer's recordings (MP3s and WAVs in the root of the private
-`AdrianAbbas/Samples` repository) into what WORLDBUILDER's sampler loads: mono 16-bit
+`prepare.py` turns the developer's recordings (MP3s and WAVs anywhere in the private
+`AdrianAbbas/Samples` repository, in its root or in subfolders such as `01-voice/` or
+`02-piano/`) into what WORLDBUILDER's sampler loads: mono 16-bit
 FLAC notes and one mapping file per instrument. The recordings and the prepared notes
 never go into this public repository: CI fetches the recordings with a token
 (`scripts/ci-fetch-samples.sh`) and the output lives in the build folder.
@@ -68,3 +69,55 @@ time, once with short hits and once with long (held) hits. Per recording:
    (the sampler folds anything further by octaves). The report checks that the short
    hits really are the shorter (the static-y bass's two files are named the other way
    round: the manifest assigns them by what they contain).
+
+**Finding the recordings** (Milestone 17): a manifest entry names a file; it is looked for
+at that path, then by the same name (case, spacing and extension aside) in any subfolder,
+so the recordings can be moved into folders or re-exported as WAVs without touching the
+manifest. Every audio file the manifest does not mention is reported. At the end the log
+says, per sample set, `Prepared: N notes (set: instruments)` (CI repeats these lines as
+notices).
+
+**Piano** (`chromatic.py`, `"kind": "piano"`): four sweeps of all 88 keys (three of short
+hits, soft / medium / full; one of held notes at medium strength).
+
+1. Onsets: every rise in the spectrum is a candidate; each key is assigned, in order, the
+   candidate where its own partials rise most (dampers, pedal thumps and re-strikes never
+   shift the labels); then refined to the hammer's attack.
+2. The previous key ringing on into this one: where it is still within 45 dB, its partials
+   are fitted just before the onset and the extrapolated tail subtracted.
+3. Pitch: each key's inharmonic partials (f_n = n f0 sqrt(1 + B n^2)) give f0 and B. The
+   stretch curve across the keys (a running median) is kept; its offset from A440 (the
+   median over F3-F5) is taken off, and keys more than 8 cents off the curve (drifted
+   unisons) are pulled onto it.
+4. Short hits end once faded (the damper is recorded). Held notes: the damper point (where
+   the decay steepens) is found; beyond it the note's own partials, fitted on the last half
+   second of the hold, carry the natural decay on (additive resynthesis, crossfaded in
+   phase), so a key held longer than it was recorded rings on and dies away. No loops.
+5. Bad keys (no onset, barely struck, far louder, no pitch) are replaced by the nearest
+   good key of the layer (the sampler shifts it) and reported.
+6. Levels: each file's gain from its noise floor (the exports were normalised one by one);
+   the layer steps smoothed across the keys; every layer's attack aligned to the medium
+   take's (cross-correlation, so crossfaded layers do not comb-filter); the held notes
+   matched to the medium short hits. The soft and full held notes are the medium ones with
+   a gain and a high shelf measured from the short layers (derived zones share the audio).
+
+**Voice** (`voice.py`, `"kind": "voice"`): vowel sweeps (soft / full layers, the falsetto
+on top), choir stacks (five or six takes of a note: round-robins the ensemble draws its
+singers from), drones, the chant, the grit, the hummed melody, the ghostly falsetto, and
+textures (the whispering takes as long looped zones; breaths and consonants cut one by one).
+Pitches come from the audio: the strongest harmonic series, moved an octave down while the
+lower octave's odd harmonics are there, and in a sweep the notes' order settles the octave
+(the chest sweeps sound an octave above their file names; reported). Loops keep clear of
+the first 0.6 s (the scoop into the note) and are tuned to where their harmonics carry the
+most energy.
+
+**Hits** (`hits.py`, `"kind": "hits"`): the djembes, one file per stroke with three hits
+per dynamic. The nine loudest onsets are the hits; they are layered by how loud they sound
+(the recorded order is reported where it disagrees); the three takes of a layer are
+round-robins; every stroke sits on its own key of one `djembe` instrument.
+
+**Banjo** (`"kind": "pluck"`, as the guitar): the three sweeps with `"declip"` (the hard
+and palm-muted sweeps clipped while recording: flat tops rebuilt by a spline, reported by
+note) and `"extra"` files (the open fifth string, nine takes: shared out to the layers by
+loudness as round-robins). A note played on another pitch than its label is filed under
+the pitch it sounds.

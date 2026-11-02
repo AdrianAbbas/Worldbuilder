@@ -140,7 +140,8 @@
             "takes": 3,
             "maxSeconds": 9.0,
             "partials": 3,
-            "loop": true
+            "loop": true,
+            "group": "violin"
         },
         {
             "id": "violin-pizz",
@@ -185,7 +186,8 @@
             "takes": 3,
             "mergeLayers": true,
             "maxSeconds": 3.0,
-            "partials": 3
+            "partials": 3,
+            "group": "violin"
         },
         {
             "id": "violin-collegno",
@@ -209,7 +211,8 @@
             ],
             "takes": 0,
             "maxSeconds": 3.0,
-            "partials": 3
+            "partials": 3,
+            "group": "violin"
         },
         {
             "id": "mlg-staticbass-short",
@@ -221,7 +224,8 @@
             "keys": 37,
             "maxSeconds": 2.0,
             "endStretch": 7,
-            "fileSays": "the recordings' names are swapped: the file named 'long hit' holds each note about 1 s (decaying hits) and 'short hit' about 2.5 s (held with release); used as they sound"
+            "fileSays": "the recordings' names are swapped: the file named 'long hit' holds each note about 1 s (decaying hits) and 'short hit' about 2.5 s (held with release); used as they sound",
+            "group": "minilogue"
         },
         {
             "id": "mlg-staticbass-long",
@@ -234,7 +238,8 @@
             "maxSeconds": 6.0,
             "endStretch": 7,
             "loop": true,
-            "fileSays": "the recordings' names are swapped (see the short hits); this one is held"
+            "fileSays": "the recordings' names are swapped (see the short hits); this one is held",
+            "group": "minilogue"
         },
         {
             "id": "mlg-cyberpunk-short",
@@ -245,7 +250,8 @@
             "file": "Cyberpunk Synth 1 short sweep (-1 octave range compared to rest).wav",
             "keys": 37,
             "maxSeconds": 2.0,
-            "endStretch": 7
+            "endStretch": 7,
+            "group": "minilogue"
         },
         {
             "id": "mlg-cyberpunk-long",
@@ -257,7 +263,8 @@
             "keys": 37,
             "maxSeconds": 6.0,
             "endStretch": 7,
-            "loop": true
+            "loop": true,
+            "group": "minilogue"
         },
         {
             "id": "mlg-pulse-short",
@@ -268,7 +275,8 @@
             "file": "Pulsating Synth 1 short hits sweep.wav",
             "keys": 37,
             "maxSeconds": 2.0,
-            "endStretch": 7
+            "endStretch": 7,
+            "group": "minilogue"
         },
         {
             "id": "mlg-pulse-long",
@@ -280,7 +288,8 @@
             "keys": 37,
             "maxSeconds": 6.0,
             "endStretch": 7,
-            "loop": true
+            "loop": true,
+            "group": "minilogue"
         },
         {
             "id": "mlg-softpad-short",
@@ -291,7 +300,8 @@
             "file": "Soft pad 1 short hits sweep.wav",
             "keys": 37,
             "maxSeconds": 2.0,
-            "endStretch": 7
+            "endStretch": 7,
+            "group": "minilogue"
         },
         {
             "id": "mlg-softpad-long",
@@ -303,7 +313,8 @@
             "keys": 37,
             "maxSeconds": 6.0,
             "endStretch": 7,
-            "loop": true
+            "loop": true,
+            "group": "minilogue"
         },
         {
             "id": "mlg-square-short",
@@ -314,7 +325,8 @@
             "file": "harsh square low high synth short hits sweep.wav",
             "keys": 37,
             "maxSeconds": 2.0,
-            "endStretch": 7
+            "endStretch": 7,
+            "group": "minilogue"
         },
         {
             "id": "mlg-square-long",
@@ -326,7 +338,760 @@
             "keys": 37,
             "maxSeconds": 6.0,
             "endStretch": 7,
-            "loop": true
+            "loop": true,
+            "group": "minilogue"
+        },
+        {
+            "id": "piano",
+            "group": "piano",
+            "name": "Acoustic piano (88 keys, A0-C8)",
+            "kind": "piano",
+            "lowest": "A0",
+            "keys": 88,
+            "outlierCents": 8.0,
+            "short": [
+                {
+                    "file": "Piano Soft sweep short notes.wav",
+                    "name": "soft",
+                    "velocity": [
+                        0.0,
+                        0.4
+                    ]
+                },
+                {
+                    "file": "Piano medium sweep short notes.wav",
+                    "name": "medium",
+                    "velocity": [
+                        0.4,
+                        0.72
+                    ]
+                },
+                {
+                    "file": "Piano full sweep short notes.wav",
+                    "name": "full",
+                    "velocity": [
+                        0.72,
+                        1.0
+                    ]
+                }
+            ],
+            "long": {
+                "file": "Piano sweep long notes.wav",
+                "name": "medium"
+            }
+        },
+        {
+            "id": "djembe",
+            "group": "djembe",
+            "name": "Djembes, large and small (bass, tone, slap, muted bass, muted slap)",
+            "kind": "hits",
+            "hitsPerFile": 9,
+            "layers": [
+                "soft",
+                "medium",
+                "hard"
+            ],
+            "velocity": [
+                [
+                    0.0,
+                    0.4
+                ],
+                [
+                    0.4,
+                    0.75
+                ],
+                [
+                    0.75,
+                    1.0
+                ]
+            ],
+            "maxSeconds": 1.2,
+            "files": [
+                {
+                    "file": "Big Djembe Bass hit.wav",
+                    "stroke": "big-bass",
+                    "key": 36
+                },
+                {
+                    "file": "Big Djembe Tone hit.wav",
+                    "stroke": "big-tone",
+                    "key": 38
+                },
+                {
+                    "file": "Big Djembe Slap hit.wav",
+                    "stroke": "big-slap",
+                    "key": 40
+                },
+                {
+                    "file": "Big Djembe Muted bass hit.wav",
+                    "stroke": "big-muted-bass",
+                    "key": 41
+                },
+                {
+                    "file": "Big Djembe Muted slap hit.wav",
+                    "stroke": "big-muted-slap",
+                    "key": 43
+                },
+                {
+                    "file": "Small Djembe Bass hit.wav",
+                    "stroke": "small-bass",
+                    "key": 48
+                },
+                {
+                    "file": "Small Djembe Tone hit.wav",
+                    "stroke": "small-tone",
+                    "key": 50
+                },
+                {
+                    "file": "Small Djembe slap hit.wav",
+                    "stroke": "small-slap",
+                    "key": 52
+                },
+                {
+                    "file": "Small Djembe Muted bass hit.wav",
+                    "stroke": "small-muted-bass",
+                    "key": 53
+                },
+                {
+                    "file": "Small Djembe Muted slap hit.wav",
+                    "stroke": "small-muted-slap",
+                    "key": 55
+                }
+            ]
+        },
+        {
+            "id": "banjo",
+            "group": "banjo",
+            "name": "Banjo, 5-string, open G (gDGBD), picked",
+            "kind": "pluck",
+            "layers": [
+                {
+                    "file": "Banjo Soft Sweep.wav",
+                    "name": "soft",
+                    "velocity": [
+                        0.0,
+                        0.42
+                    ]
+                },
+                {
+                    "file": "Banjo Medium Sweep.wav",
+                    "name": "medium",
+                    "velocity": [
+                        0.42,
+                        0.75
+                    ]
+                },
+                {
+                    "file": "Banjo Hard Sweep.wav",
+                    "name": "hard",
+                    "velocity": [
+                        0.75,
+                        1.0
+                    ]
+                }
+            ],
+            "notes": [
+                "D3",
+                "F3",
+                "G#3",
+                "B3",
+                "D4",
+                "F4",
+                "G#4",
+                "B4",
+                "D5",
+                "F5",
+                "G#5"
+            ],
+            "takes": 1,
+            "layerStepsDb": [
+                -9.0,
+                -4.0,
+                0.0
+            ],
+            "maxSeconds": 3.0,
+            "partials": 3,
+            "denoise": false,
+            "declip": true,
+            "extra": [
+                {
+                    "file": "Banjo 5th string open (3x soft, 3x medium, 3x hard).wav",
+                    "name": "open fifth string",
+                    "notes": [
+                        "G4"
+                    ],
+                    "takes": 9
+                }
+            ]
+        },
+        {
+            "id": "banjo-muted",
+            "group": "banjo",
+            "name": "Banjo, palm-muted near the bridge",
+            "kind": "pluck",
+            "layers": [
+                {
+                    "file": "Banjo Palm Muted Sweep.wav",
+                    "name": "muted",
+                    "velocity": [
+                        0.0,
+                        1.0
+                    ]
+                }
+            ],
+            "notes": [
+                "D3",
+                "F3",
+                "G#3",
+                "B3",
+                "D4",
+                "F4",
+                "G#4",
+                "B4",
+                "D5",
+                "F5",
+                "G#5"
+            ],
+            "takes": 1,
+            "maxSeconds": 1.5,
+            "partials": 3,
+            "denoise": false,
+            "declip": true
+        },
+        {
+            "id": "voice-ooh",
+            "group": "voice",
+            "name": "Voice, 'ooh' (chest, falsetto on top)",
+            "kind": "voice",
+            "mode": "sweep",
+            "layerNames": [
+                "soft",
+                "full"
+            ],
+            "velocity": [
+                [
+                    0.0,
+                    0.55
+                ],
+                [
+                    0.55,
+                    1.0
+                ]
+            ],
+            "layers": [
+                {
+                    "file": "Male Vocal Ooh soft sweep.wav",
+                    "name": "soft",
+                    "layer": 0,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                },
+                {
+                    "file": "Male Vocal ooh full sweep.wav",
+                    "name": "full",
+                    "layer": 1,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                }
+            ],
+            "stretchDown": 12,
+            "stretchUp": 7,
+            "falsetto": [
+                {
+                    "file": "Male Vocal ooh falsetto sweep.wav",
+                    "name": "falsetto",
+                    "notes": [
+                        "C#4",
+                        "E4"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "voice-oh",
+            "group": "voice",
+            "name": "Voice, 'oh'",
+            "kind": "voice",
+            "mode": "sweep",
+            "layerNames": [
+                "soft",
+                "full"
+            ],
+            "velocity": [
+                [
+                    0.0,
+                    0.55
+                ],
+                [
+                    0.55,
+                    1.0
+                ]
+            ],
+            "layers": [
+                {
+                    "file": "Male Vocal oh soft sweep.wav",
+                    "name": "soft",
+                    "layer": 0,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                }
+            ],
+            "stretchDown": 12,
+            "stretchUp": 7
+        },
+        {
+            "id": "voice-aah",
+            "group": "voice",
+            "name": "Voice, 'aah' (chest, falsetto on top)",
+            "kind": "voice",
+            "mode": "sweep",
+            "layerNames": [
+                "soft",
+                "full"
+            ],
+            "velocity": [
+                [
+                    0.0,
+                    0.55
+                ],
+                [
+                    0.55,
+                    1.0
+                ]
+            ],
+            "layers": [
+                {
+                    "file": "Male Vocal aah soft sweep.wav",
+                    "name": "soft",
+                    "layer": 0,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                },
+                {
+                    "file": "Male Vocal aah full sweep.wav",
+                    "name": "full",
+                    "layer": 1,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                }
+            ],
+            "stretchDown": 12,
+            "stretchUp": 7,
+            "falsetto": [
+                {
+                    "file": "Male Vocal aah falsetto sweep.wav",
+                    "name": "falsetto",
+                    "notes": [
+                        "C#4",
+                        "E4"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "voice-ee",
+            "group": "voice",
+            "name": "Voice, 'ee'",
+            "kind": "voice",
+            "mode": "sweep",
+            "layerNames": [
+                "soft",
+                "full"
+            ],
+            "velocity": [
+                [
+                    0.0,
+                    0.55
+                ],
+                [
+                    0.55,
+                    1.0
+                ]
+            ],
+            "layers": [
+                {
+                    "file": "Male Vocal ee soft sweep.wav",
+                    "name": "soft",
+                    "layer": 0,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                },
+                {
+                    "file": "Male Vocal ee full sweep.wav",
+                    "name": "full",
+                    "layer": 1,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                }
+            ],
+            "stretchDown": 12,
+            "stretchUp": 7
+        },
+        {
+            "id": "voice-mm",
+            "group": "voice",
+            "name": "Voice, hummed 'mm'",
+            "kind": "voice",
+            "mode": "sweep",
+            "layerNames": [
+                "soft",
+                "full"
+            ],
+            "velocity": [
+                [
+                    0.0,
+                    0.55
+                ],
+                [
+                    0.55,
+                    1.0
+                ]
+            ],
+            "layers": [
+                {
+                    "file": "Male Vocal mm soft sweep.wav",
+                    "name": "soft",
+                    "layer": 0,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                },
+                {
+                    "file": "Male Vocal mm full sweep.wav",
+                    "name": "full",
+                    "layer": 1,
+                    "notes": [
+                        "E2",
+                        "G2",
+                        "A#2",
+                        "C#3",
+                        "E3",
+                        "G3",
+                        "A#3"
+                    ]
+                }
+            ],
+            "stretchDown": 12,
+            "stretchUp": 7
+        },
+        {
+            "id": "voice-hum",
+            "group": "voice",
+            "name": "Voice, a gentle hummed melody (single notes)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 7,
+            "stretchUp": 4,
+            "files": [
+                {
+                    "file": "Male Gentle Humming melody.wav",
+                    "name": "hum",
+                    "minSeconds": 1.5,
+                    "below": 18.0
+                }
+            ]
+        },
+        {
+            "id": "voice-choir-ooh",
+            "group": "voice",
+            "name": "Voice choir stacks, 'ooh' (five or six takes per note)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 12,
+            "stretchUp": 7,
+            "files": [
+                {
+                    "file": "Male Vocal ooh vocal choir E2.wav",
+                    "name": "ooh",
+                    "note": "E2",
+                    "takes": 5
+                },
+                {
+                    "file": "Male Vocal ooh vocal choir A2.wav",
+                    "name": "ooh",
+                    "note": "A2",
+                    "takes": 6
+                },
+                {
+                    "file": "Male Vocal ooh vocal choir E3.wav",
+                    "name": "ooh",
+                    "note": "E3",
+                    "takes": 5,
+                    "octavesApart": true
+                },
+                {
+                    "file": "Male Vocal ooh vocal choir falsetto E4.wav",
+                    "name": "ooh-falsetto",
+                    "note": "E4",
+                    "takes": 6
+                }
+            ]
+        },
+        {
+            "id": "voice-choir-aah",
+            "group": "voice",
+            "name": "Voice choir stacks, 'aah'",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 12,
+            "stretchUp": 7,
+            "files": [
+                {
+                    "file": "Male Vocal aah vocal choir E2.wav",
+                    "name": "aah",
+                    "note": "E2",
+                    "takes": 5,
+                    "octavesApart": true
+                },
+                {
+                    "file": "Male Vocal aah vocal choir A2.wav",
+                    "name": "aah",
+                    "note": "A2",
+                    "takes": 5
+                },
+                {
+                    "file": "Male Vocal aah vocal choir E3.wav",
+                    "name": "aah",
+                    "note": "E3",
+                    "takes": 5,
+                    "octavesApart": true
+                }
+            ]
+        },
+        {
+            "id": "voice-choir-mm",
+            "group": "voice",
+            "name": "Voice choir stack, hummed 'mmm'",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 12,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Vocal mmm vocal choire A2.wav",
+                    "name": "mmm",
+                    "note": "A2",
+                    "takes": 5
+                }
+            ]
+        },
+        {
+            "id": "voice-drone-hum",
+            "group": "voice",
+            "name": "Voice drone, hummed \"mmm\" (the file says G1)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 24,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Vocal mmm low drone G1.wav",
+                    "name": "hum",
+                    "note": "G1",
+                    "takes": 2,
+                    "minSeconds": 4.0,
+                    "mergeGap": 0.6,
+                    "maxLoop": 6.0
+                }
+            ]
+        },
+        {
+            "id": "voice-drone-ooh",
+            "group": "voice",
+            "name": "Voice drone, \"ooo\" (the file says G1)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 24,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Vocal ooo low drone G1.wav",
+                    "name": "ooh",
+                    "note": "G1",
+                    "takes": 2,
+                    "minSeconds": 4.0,
+                    "mergeGap": 0.6,
+                    "maxLoop": 6.0
+                }
+            ]
+        },
+        {
+            "id": "voice-drone-aah",
+            "group": "voice",
+            "name": "Voice drone, \"aah\" (the file says A2)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 24,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Vocal aaah low drone A2.wav",
+                    "name": "aah",
+                    "note": "A2",
+                    "takes": 2,
+                    "minSeconds": 4.0,
+                    "mergeGap": 0.6,
+                    "maxLoop": 6.0
+                }
+            ]
+        },
+        {
+            "id": "voice-chant",
+            "group": "voice",
+            "name": "Voice, a gravelly monk chant (hummed, low)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 12,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Vocal mmm vocal choire A2_1.wav",
+                    "name": "chant",
+                    "note": "A2",
+                    "takes": 2,
+                    "minSeconds": 3.0,
+                    "mergeGap": 0.5,
+                    "maxLoop": 5.0
+                }
+            ]
+        },
+        {
+            "id": "voice-grit",
+            "group": "voice",
+            "name": "Voice, a grungy 'eeeh' (five takes)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 12,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Grungy eeeh (approximately A2, 5 takes, each strays little from note).wav",
+                    "name": "grit",
+                    "note": "A2",
+                    "takes": 5
+                }
+            ]
+        },
+        {
+            "id": "voice-ghost",
+            "group": "voice",
+            "name": "Voice, ghostly falsetto 'ooh' (free glides)",
+            "kind": "voice",
+            "mode": "takes",
+            "stretchDown": 24,
+            "stretchUp": 12,
+            "files": [
+                {
+                    "file": "Male Ghostly Ooh (no particular notes.wav",
+                    "name": "ghost",
+                    "takes": 3,
+                    "minSeconds": 2.0,
+                    "mergeGap": 0.6,
+                    "below": 24.0
+                }
+            ]
+        },
+        {
+            "id": "voice-whisper",
+            "group": "voice",
+            "name": "Voice, unintelligible whispering (normal, higher, lower voice)",
+            "kind": "voice",
+            "mode": "texture",
+            "cut": "whole",
+            "files": [
+                {
+                    "file": "Male unintelligble whispers 1.wav",
+                    "name": "normal",
+                    "order": 0
+                },
+                {
+                    "file": "Male unintelligble whispers 2.wav",
+                    "name": "higher",
+                    "order": 1
+                },
+                {
+                    "file": "Male unintelligble whispers 3.wav",
+                    "name": "lower",
+                    "order": 2
+                }
+            ]
+        },
+        {
+            "id": "voice-breath",
+            "group": "voice",
+            "name": "Voice, breaths and air (shh, hhh, fff, sss)",
+            "kind": "voice",
+            "mode": "texture",
+            "cut": "events",
+            "files": [
+                {
+                    "file": "Male Vocal slow breaths.wav",
+                    "name": "breath",
+                    "below": 30.0,
+                    "minSeconds": 0.4
+                },
+                {
+                    "file": "Male shh, hhh, fff, sss, whispers.wav",
+                    "name": "air",
+                    "below": 30.0,
+                    "minSeconds": 0.3
+                }
+            ]
         }
     ],
     "unused": [
@@ -337,6 +1102,18 @@
         {
             "file": "Wood tapping with transients from metal.mp3",
             "why": "The same audio as 'Varying Sweep...' (re-encoded, one second longer)."
+        },
+        {
+            "file": "Banjo Open Chord Strumming.wav",
+            "why": "One open G chord strummed down and up: no note map or strum pattern needs it (the strums are played from the single notes)."
+        },
+        {
+            "file": "Banjo drum head knocks.wav",
+            "why": "Knocks on the banjo's head: percussion no Place needs (the djembes cover the hand drums)."
+        },
+        {
+            "file": "Male Vocal ee full sweep_1.wav",
+            "why": "A second full 'ee' sweep that sounds 10-17 dB less bright than the first on every note (more like 'ih' or 'oo'): it would dull the 'ee' at random as a round-robin. Re-record it, or say what vowel it is meant to be."
         }
     ]
 }
