@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-MallPlace::MallPlace() : EnsemblePlace(2500) { setParts({ &piano, &vibes, &chimes, &escalator, &fountain, &drums }); }
+MallPlace::MallPlace() : EnsemblePlace(2500) { setParts({ &pianoRec, &vibes, &chimes, &escalator, &fountain, &drums }); }
 
 void MallPlace::prepareFx() {
     hall.prepare(rate);
@@ -179,6 +179,22 @@ void MallPlace::configure(const PlaceContext& c) {
     const double t = double(c.clock) / rate;
     const bool busyWeekend = s.character == BusyWeekend, empty = s.character == EmptyNight, dead = s.character == DeadMall;
 
+    // The acoustic piano (Milestone 17), on an empty night and in the dead mall: a lone
+    // piano in the atrium; dead, the mall's slow detune and dim hall make it a worn,
+    // seasick memory of one. A busy weekend keeps the electric piano.
+    {
+        auto& p = pianoRec.patch;
+        p = pianoPatch();
+        p.off = busyWeekend;
+        p.toneHz = lerpExp(3000.0f, 14000.0f, tone) * (dead ? 0.6f : 1.0f);
+        p.velocityTone = dead ? 0.8f : 0.45f;
+        p.vibratoHz = 0.4f;
+        p.vibratoDepth = dead ? 0.06f + 0.1f * tension : 0.0f;   // the tape wobble
+        p.damperScale = dead ? 2.0f : 1.2f;
+        p.spread = 0.4f;
+        p.voices = byQuality(q, 6, 8, 8);
+        p.gain = pianoGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // Electric piano: a glassy FM tine, a soft bell on the attack.
     {
         auto& p = piano.patch;

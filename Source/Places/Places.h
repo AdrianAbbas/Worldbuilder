@@ -5,6 +5,8 @@
 #include "Ensemble.h"
 #include "HurdyGurdy.h"
 #include "SamplePart.h"
+#include "VoicePart.h"
+#include "HitPart.h"
 #include <memory>
 
 namespace wb {
@@ -52,6 +54,10 @@ private:
     DrumPart timpani;
     PluckPart harp;
     ChoirPart choir;
+    // The choir (Milestone 17): the developer's voice, a full section in the stone hall; the
+    // synthesised choir without the recordings and above them.
+    VoicePart choirRec { choir, &choir };
+    static constexpr std::array<float, 3> choirGain { 0.297f, 0.323f, 0.222f };   // per Character, level-matched (Tests "recordings")
     dsp::SmallSpace hall;
     dsp::TapeEcho echo;
     float echoSend = 0, hallWet = 0, hallSend = 0;
@@ -87,6 +93,9 @@ private:
     SamplePart luteRec { lute };
     HurdyGurdyPart hurdy;
     DrumPart drums;
+    // The hand drums (Milestone 17): the developer's djembes (the shaker stays synthesised).
+    HitPart drumsRec { drums };
+    static constexpr std::array<float, 3> drumsGain { 1.215f, 1.19f, 1.887f };   // per Character, level-matched (Tests "recordings")
     ModalPart marimba, jingles;
     WindPart recorder;
     dsp::SmallSpace room;
@@ -269,6 +278,10 @@ private:
     FmPart calls, swarm;
     DrumPart chitter;
     ChoirPart formants;
+    // The formants (Milestone 17): the developer's vowels yammering fast, fluttering like
+    // wings, small and metallic.
+    VoicePart formantsRec { formants, &formants };
+    static constexpr std::array<float, 3> formantsGain { 1.183f, 1.189f, 1.546f };   // per Character, level-matched (Tests "recordings")
     dsp::Shimmer shimmer;
     dsp::WarpDelay warp;
     dsp::Phasor ring;   // the shimmer's ring modulator
@@ -300,6 +313,19 @@ private:
     ChoirPart choir, chant;
     ModalPart gongs, bowls, bells;
     PluckPart zither;
+    // Milestone 17: the developer's voice. The choir: dark, humming monks among the singers.
+    // The chant drone: the gravelly low chant with the low hummed and "ooo" drones under it.
+    NullPart silent;
+    VoicePart choirRec { choir, &choir }, chantRec { chant, nullptr }, droneRec { silent, nullptr };
+    // The zither (Milestone 17): the developer's banjo, bright and resonant (a skin-headed
+    // twang, like a temple lute's, in the shimmer), its palm-muted takes for the quickest
+    // notes; the plucked-string model without the recordings.
+    SamplePart zitherRec { zither };
+    LayerPart chantDrone { chantRec, droneRec };
+    static constexpr std::array<float, 3> zitherGain { 1.06f, 1.52f, 1.15f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> droneGain { 0.162f, 0.133f, 0.176f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> chantGain { 0.27f, 0.221f, 0.294f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> choirGain { 0.456f, 0.211f, 0.254f };   // per Character, level-matched (Tests "recordings")
     dsp::Shimmer shimmer;
     dsp::SmallSpace hall;
     std::array<dsp::OnePole, 4> tilt;
@@ -329,6 +355,11 @@ private:
 
     DripPart drips;
     SynthPart drone;
+    // Milestone 17: a hum layer under the sub drone (the developer's low hummed drone).
+    NullPart silent;
+    VoicePart humRec { silent, nullptr };
+    LayerPart droneLayer { drone, humRec };
+    static constexpr std::array<float, 3> humGain { 2.6f, 1.5f, 1.9f };   // per Character, level-matched (Tests "recordings")
     ModalPart taps, crystals;
     BowedPart bass;
     DrumPart rumble;
@@ -369,6 +400,18 @@ private:
     ChoirPart ghost;
     SamplePart violin { ghost };
     DrumPart toms;
+    // Milestone 17: the piano shards from the developer's piano (reversed swells and
+    // fragments; the FM piano without the recordings), a ghostly falsetto "ooh" and
+    // whispers under the wind, the low toms from the large djembe.
+    SamplePart shardsRec { shards };
+    NullPart silent;
+    VoicePart ghostRec { silent, nullptr }, whisperRec { silent, nullptr };
+    LayerPart windGhost { wind, ghostRec }, windLayer { windGhost, whisperRec };
+    HitPart tomsRec { toms };
+    static constexpr std::array<float, 3> whisperGain { 0.34f, 0.122f, 0.22f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> ghostGain { 0.34f, 0.122f, 0.22f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> tomsGain { 4.3f, 3.7f, 5.5f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> shardsGain { 2.85f, 3.9f, 2.74f };   // per Character, level-matched (Tests "recordings")
     dsp::LoFi lofi;
     dsp::ReverseEcho reverse, reverseViolin;
     dsp::SmallSpace hall;
@@ -500,6 +543,10 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     FmPart piano;
+    // The acoustic piano (Milestone 17): the developer's recordings in the Evening; the
+    // electric piano (the model) the rest of the time, and without the recordings.
+    SamplePart pianoRec { piano };
+    static constexpr std::array<float, 3> pianoGain { 1.0f, 3.6f, 1.0f };   // per Character, level-matched (Tests "recordings")
     SynthPart pulse, bass;
     ModalPart chimes, box;
     DrumPart sprinkler;
@@ -533,6 +580,10 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     FmPart piano;
+    // The acoustic piano (Milestone 17) on an empty night and in the dead mall; the
+    // electric piano on a busy weekend and without the recordings.
+    SamplePart pianoRec { piano };
+    static constexpr std::array<float, 3> pianoGain { 1.0f, 5.43f, 9.6f };   // per Character, level-matched (Tests "recordings")
     ModalPart vibes, chimes;
     SynthPart escalator;
     WindPart fountain;
@@ -637,6 +688,9 @@ private:
     // synthesised oud behind it plays only without samples.
     SamplePart oudRec { oud };
     DrumPart drums;
+    // The frame drums (Milestone 17): the djembes (the riq's jingles stay synthesised).
+    HitPart drumsRec { drums };
+    static constexpr std::array<float, 3> drumsGain { 2.56f, 3.96f, 2.457f };   // per Character, level-matched (Tests "recordings")
     WindPart ney, wind;
     SynthPart tanpura;
     ModalPart chimes;
@@ -675,6 +729,10 @@ private:
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;
+    // The choir (Milestone 17): the developer's voice, a small bright court choir (ghostly in
+    // the fallen palace).
+    VoicePart choirRec { choir, &choir };
+    static constexpr std::array<float, 3> choirGain { 0.279f, 0.168f, 0.302f };   // per Character, level-matched (Tests "recordings")
     dsp::SmallSpace hall;
     std::array<dsp::OnePole, 4> tilt;
     std::array<dsp::OnePole, 2> shelf;   // presence
@@ -706,6 +764,11 @@ private:
     // guitar and the violin); the synthesised models behind them play only without samples.
     PluckPart lute;
     DrumPart drum, stomps;
+    // The frame drum and the stomps (Milestone 17): the djembes' low strokes (the clap
+    // stays synthesised).
+    HitPart drumRec { drum }, stompsRec { stomps };
+    static constexpr std::array<float, 3> stompsGain { 2.166f, 3.35f, 2.84f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> drumGain { 1.605f, 2.497f, 1.327f };   // per Character, level-matched (Tests "recordings")
     BowedPart fiddle;
     SamplePart luteRec { lute }, fiddleRec { fiddle };
     ModalPart glasses;
@@ -819,6 +882,10 @@ private:
     SamplePart coreRec { core };
     DrumPart tactical;
     ChoirPart chatter;
+    // The crew chatter (Milestone 17): the developer's unintelligible whispering, distant
+    // murmurs through a comms channel.
+    VoicePart chatterRec { chatter, nullptr };
+    static constexpr std::array<float, 3> chatterGain { 0.30f, 0.24f, 0.29f };   // per Character, level-matched (Tests "recordings")
     ModalPart pings;
     dsp::SmallSpace hall;
     dsp::Radio intercom;
@@ -858,6 +925,9 @@ private:
     ModalPart clanks;
     WindPart dust, beacon;
     ChoirPart hymn;
+    // The worker hymn (Milestone 17): the developer's voice, mostly hummed, gritty, low.
+    VoicePart hymnRec { hymn, &hymn };
+    static constexpr std::array<float, 3> hymnGain { 0.401f, 0.286f, 0.417f };   // per Character, level-matched (Tests "recordings")
     dsp::SmallSpace room;
     dsp::Slapback slap;
     dsp::Warmth grit;
@@ -893,6 +963,14 @@ private:
     SynthPart drone;
     DrumPart ritual;
     WindPart whispers;
+    // Milestone 17: the developer's voice and djembes. The alien choir ring-modulated and
+    // drifting; the whispers his unintelligible whispering (three voices); the ritual
+    // drums the djembes pitched down and darkened.
+    VoicePart choirRec { choir, &choir }, whispersRec { whispers, nullptr };
+    HitPart ritualRec { ritual };
+    static constexpr std::array<float, 3> ritualGain { 4.16f, 2.01f, 2.21f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> whispersGain { 0.0837f, 0.097f, 0.0933f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> choirGain { 0.586f, 0.57f, 0.651f };   // per Character, level-matched (Tests "recordings")
     dsp::Shimmer vast;
     dsp::WarpDelay warp;
     dsp::ReverseEcho reverse;
@@ -928,6 +1006,10 @@ private:
     WindPart wind;
     ModalPart bells;
     BowedPart drone;
+    // The deep hum (Milestone 17): the developer's "ooo" drone, slowed, detuned and spread
+    // into a cosmic hum; the bowed drone without the recordings.
+    VoicePart droneRec { drone, nullptr };
+    static constexpr std::array<float, 3> humGain { 1.186f, 1.186f, 0.689f };   // per Character, level-matched (Tests "recordings")
     DripPart dust;
     NoisePart flares;
     dsp::Shimmer infinite;

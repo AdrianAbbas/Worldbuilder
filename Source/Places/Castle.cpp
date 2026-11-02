@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-CastlePlace::CastlePlace() : EnsemblePlace(1100) { setParts({ &drone, &bells, &horns, &timpani, &harp, &choir }); }
+CastlePlace::CastlePlace() : EnsemblePlace(1100) { setParts({ &drone, &bells, &horns, &timpani, &harp, &choirRec }); }
 
 void CastlePlace::prepareFx() {
     hall.prepare(rate);
@@ -403,6 +403,24 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.spread = 0.7f;
         p.voices = byQuality(q, 2, 3, 4);
         p.gain = 1.0f;
+    }
+    // The recorded choir (Milestone 17): the developer's voice as a full male section in the
+    // stone hall: six singers from the choir stacks, the vowel as the synthesised choir's,
+    // a dark hall tone; besieged, the section grows rougher (more singers, wider, gritty).
+    {
+        auto& p = choirRec.patch;
+        p = voiceFromChoir(choir.patch);
+        const bool besieged = s.character == 2;
+        p.singers = besieged ? 7 : 6;
+        p.detune = 6.0f + 6.0f * s.era + (besieged ? 6.0f : 0.0f);
+        p.timing = 0.06f;
+        p.spread = 0.75f;
+        p.toneHz = lerpExp(3500.0f, 9000.0f, tone);
+        p.velocityTone = 0.8f;
+        p.drive = besieged ? 0.15f * tension : 0.0f;
+        p.attack = 0.6f * choir.patch.attack;
+        p.voices = byQuality(q, 3, 4, 5);
+        p.gain = choirGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     level = { 0.11f, 0.16f, 0.22f, 0.4f, 0.6f, 0.5f };
 

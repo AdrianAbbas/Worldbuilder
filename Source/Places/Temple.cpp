@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-TemplePlace::TemplePlace() : EnsemblePlace(1800) { setParts({ &choir, &gongs, &bowls, &chant, &bells, &zither }); }
+TemplePlace::TemplePlace() : EnsemblePlace(1800) { setParts({ &choirRec, &gongs, &bowls, &chantDrone, &bells, &zitherRec }); }
 
 void TemplePlace::prepareFx() {
     shimmer.prepare(rate);
@@ -194,6 +194,22 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 2, 3, 4);
         p.gain = 1.0f;
     }
+    // The recorded choir (Milestone 17): monks in a sacred hall, dark and slow; humming
+    // voices among the singers (more as the temple is forsaken, where the pitch sags too).
+    {
+        auto& p = choirRec.patch;
+        p = voiceFromChoir(choir.patch);
+        p.hum = forsaken ? 0.55f : (rite ? 0.35f : 0.2f);
+        p.singers = 5;
+        p.detune = 9.0f;
+        p.timing = 0.09f;
+        p.spread = 0.85f;
+        p.wobbleCents = forsaken ? 10.0f : 0.0f;
+        p.toneHz = lerpExp(2500.0f, 7000.0f, tone);
+        p.velocityTone = 0.9f;
+        p.voices = byQuality(q, 3, 4, 5);
+        p.gain = choirGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // Gongs: a soft mallet on a big plate; its partials beat and spread, a quarter-tone
     // off any note above the fifth.
     {
@@ -243,6 +259,28 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.vibratoDepth = 0.03f;
         p.gain = 1.0f;
     }
+    // The recorded chant drone (Milestone 17): the developer's gravelly low chant (two takes,
+    // a little apart), with the hummed and "ooo" drones under it, an octave down from
+    // where they were sung, nearly still.
+    {
+        auto& p = chantRec.patch;
+        p = voiceFromChoir(chant.patch);
+        p.single = "voice-chant";
+        p.singers = 2;
+        p.detune = 5.0f;
+        p.timing = 0.25f;
+        p.spread = 0.35f;
+        p.toneHz = lerpExp(2000.0f, 6000.0f, tone);
+        p.vowelDrift = 0;
+        p.gain = chantGain[std::size_t(std::clamp(s.character, 0, 2))];
+        auto& d = droneRec.patch;
+        d = p;
+        d.single = rite ? "voice-drone-ooh" : "voice-drone-hum";
+        d.singers = 2;
+        d.detune = 4.0f;
+        d.toneHz = 2500.0f;
+        d.gain = droneGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // Temple bells: bright bells whose third and fifth partials are the scale's own.
     {
         auto& p = bells.patch;
@@ -270,6 +308,32 @@ void TemplePlace::configure(const PlaceContext& c) {
         p.shape = { 0.12f, 0.25f, 0.2f, 0.0f, 0.0f, 0.35f, 0.0f };
         p.sympathetic = 0.2f;
         p.gain = 1.0f;
+    }
+    // The recorded zither (Milestone 17): the developer's banjo, bright and resonant: the
+    // zither's shallow box under it, the open strings ringing in sympathy, the twang left
+    // bright (rounder when forsaken), each note a touch longer than the banjo's own, the
+    // quickest notes palm-muted plucks. In the temple's shimmer it reads as a temple lute,
+    // not a country banjo.
+    {
+        auto& p = zitherRec.patch;
+        p.instrument = "banjo";
+        p.tinyInstrument = "banjo-muted";
+        p.tinyBeats = 0.125f;
+        p.held = false;
+        p.toneHz = lerpExp(4000.0f, 14000.0f, tone) * (forsaken ? 0.6f : 1.0f);
+        p.velocityTone = 0.6f;
+        p.velocityGain = 0.35f;
+        p.even = 0.5f;
+        p.decay = forsaken ? 0.0f : 2.4f * lerp(1.0f, 0.6f, tension);
+        p.body = dsp::BodyZither;
+        p.bodyAmount = 0.3f;
+        p.sympathetic = 0.12f;
+        p.courseCents = 3.0f;          // a second string a hair off: shimmering, not twangy
+        p.courseLevel = 0.3f;
+        p.courseMs = 12.0f;
+        p.spread = 0.6f;
+        p.voices = byQuality(q, 4, 6, 8);
+        p.gain = zitherGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Tension: the chant and the gongs come forward; Machinery quickens the ritual.
     // The forsaken temple echoes emptily; the rite's crowd and incense hold it closer.

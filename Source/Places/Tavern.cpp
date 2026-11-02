@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-TavernPlace::TavernPlace() : EnsemblePlace(3000) { setParts({ &luteRec, &drum, &fiddleRec, &glasses, &squeezebox, &stomps }); }
+TavernPlace::TavernPlace() : EnsemblePlace(3000) { setParts({ &luteRec, &drumRec, &fiddleRec, &glasses, &squeezebox, &stompsRec }); }
 
 void TavernPlace::prepareFx() {
     room.prepare(rate);
@@ -283,6 +283,16 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.voices = 5;
         p.gain = 1.0f;
     }
+    // The recorded frame drum (Milestone 17): the large djembe's bass, its muted bass on some
+    // hits, warm in the wooden room; the rim a muted slap on the small one.
+    {
+        auto& p = drumRec.patch;
+        p.rows = {};
+        p.rows[0] = { djembe::BigBass, djembe::BigMutedBass, quiet ? 0.5f : 0.2f, 0.0f, 1.0f, 0.0f, lerpExp(2000.0f, 7000.0f, tone), 0.6f, 35.0f };
+        p.rows[1] = { djembe::SmallMutedSlap, -1, 0.0f, 0.0f, 0.7f, 0.2f, lerpExp(3500.0f, 10000.0f, tone), 0.5f, 120.0f };
+        p.spread = 0.1f;
+        p.gain = drumGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // The fiddle: bowed gut strings, harmonic, a quick bow (long and sweet in the corner).
     {
         auto& p = fiddle.patch;
@@ -403,6 +413,16 @@ void TavernPlace::configure(const PlaceContext& c) {
         p.spread = 0.5f;
         p.voices = 6;
         p.gain = 1.0f;
+    }
+    // The recorded stomps (Milestone 17): the djembes' low strokes, pitched down a little and
+    // dulled (boots on floorboards: the large drum's muted bass, its open bass on the
+    // heavier ones); the clap stays synthesised.
+    {
+        auto& p = stompsRec.patch;
+        p.rows = {};
+        p.rows[0] = { djembe::BigMutedBass, djembe::BigBass, brawl ? 0.4f : 0.2f, -3.0f, 1.0f, 0.0f, 1400.0f, 0.5f, 30.0f, 0.5f };
+        p.spread = 0.3f;
+        p.gain = stompsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Tension: drums, stomps and the squeezebox's bellows drive on, the lute shortens;
     // Life brings the glasses and the crowd's stamping; Machinery a busier drummer.

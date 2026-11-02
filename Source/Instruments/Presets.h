@@ -54,6 +54,14 @@ inline const std::vector<Preset>& factoryPresets() {
         preset("Reactor Bass", SpaceStation, 4, 0, { { PInstReverb, 0.1f }, { PInstReverbType, RevRoom } }),
         preset("Harsh Square Lead", Spaceport, 5, 0, { { PInstReverb, 0.2f }, { PInstReverbType, RevPlate }, { PInstDelay, 0.22f }, { PInstDelayType, DlyPingPong } }),
         preset("Warp Core Pulse", Bridge, 1, 0, { { PInstReverb, 0.3f }, { PInstReverbType, RevHall } }),
+        // Milestone 17: the developer's piano (the Mall's E-Piano on an empty night plays it),
+        // voice and djembes.
+        preset("Piano", Mall, 0, 1, { { PInstReverb, 0.2f }, { PInstReverbType, RevHall }, { PInstTone, 0.7f } }),
+        preset("Ruined Piano", Ruins, 0, 1, { { PInstReverb, 0.4f }, { PInstReverbType, RevCathedral } }),
+        preset("Voice Choir", Castle, 5, 0, { { PInstReverb, 0.45f }, { PInstReverbType, RevCathedral } }),
+        preset("Monk Chant", Temple, 3, 1, { { PInstReverb, 0.4f }, { PInstReverbType, RevCathedral } }),
+        preset("Alien Voices", AlienRuins, 2, 1, { { PInstReverb, 0.45f }, { PInstReverbType, RevCave } }),
+        preset("Djembes", Village, 2, 0, { { PInstReverb, 0.15f }, { PInstReverbType, RevRoom } }),
         // Models.
         preset("Cathedral Choir", Temple, 0, 0, { { PInstReverb, 0.5f }, { PInstReverbType, RevCathedral } }),
         preset("Castle Bells", Castle, 1, 0, { { PInstReverb, 0.4f }, { PInstReverbType, RevHall } }),

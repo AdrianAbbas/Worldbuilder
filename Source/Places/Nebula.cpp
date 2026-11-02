@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-NebulaPlace::NebulaPlace() : EnsemblePlace(3200) { setParts({ &padsRec, &wind, &bells, &drone, &dust, &flares }); }
+NebulaPlace::NebulaPlace() : EnsemblePlace(3200) { setParts({ &padsRec, &wind, &bells, &droneRec, &dust, &flares }); }
 
 void NebulaPlace::prepareFx() {
     infinite.prepare(rate);
@@ -223,6 +223,25 @@ void NebulaPlace::configure(const PlaceContext& c) {
         p.voices = 2;
         p.held = true;
         p.gain = 1.0f;
+    }
+    // The recorded deep hum (Milestone 17): the developer's "ooo" drone, three takes
+    // detuned and spread, drifting slowly, its top rolled off: a hum the size of a nebula.
+    {
+        auto& p = droneRec.patch;
+        p.single = "voice-drone-ooh";
+        p.singers = 3;
+        p.detune = 14.0f;
+        p.timing = 0.8f;
+        p.spread = 0.9f;
+        p.wobbleCents = 12.0f;
+        p.wobbleHz = 0.07f;
+        p.attack = 3.5f;
+        p.release = 3.0f;
+        p.glide = 1.0f;
+        p.toneHz = lerpExp(1200.0f, 3200.0f, tone);
+        p.lowCutHz = 30;
+        p.voices = 3;
+        p.gain = humGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Stardust: tiny glassy grains.
     {

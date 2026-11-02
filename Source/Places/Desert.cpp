@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-DesertPlace::DesertPlace() : EnsemblePlace(2800) { setParts({ &oudRec, &drums, &ney, &tanpura, &wind, &chimes }); }
+DesertPlace::DesertPlace() : EnsemblePlace(2800) { setParts({ &oudRec, &drumsRec, &ney, &tanpura, &wind, &chimes }); }
 
 void DesertPlace::prepareFx() {
     space.prepare(rate);
@@ -267,6 +267,17 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.spread = 0.15f;
         p.voices = 6;
         p.gain = 1.0f;
+    }
+    // The recorded frame drums (Milestone 17): the doum the large djembe's bass, the tek the
+    // small djembe's slap (its tone on some hits), dry in the open air; the riq stays
+    // synthesised.
+    {
+        auto& p = drumsRec.patch;
+        p.rows = {};
+        p.rows[0] = { djembe::BigBass, -1, 0.0f, 0.0f, 1.0f, 0.0f, lerpExp(2500.0f, 8000.0f, tone), 0.6f, 35.0f };
+        p.rows[1] = { djembe::SmallSlap, djembe::SmallTone, 0.35f, 0.0f, 0.75f, 0.2f, lerpExp(5000.0f, 15000.0f, tone), 0.5f, 120.0f };
+        p.spread = 0.2f;
+        p.gain = drumsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // The ney: a reed flute, very breathy, scooping into its notes (with Scoop / Glide on).
     {

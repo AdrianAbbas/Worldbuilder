@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-AlienRuinsPlace::AlienRuinsPlace() : EnsemblePlace(3100) { setParts({ &crystals, &pulses, &choir, &drone, &ritual, &whispers }); }
+AlienRuinsPlace::AlienRuinsPlace() : EnsemblePlace(3100) { setParts({ &crystals, &pulses, &choirRec, &drone, &ritualRec, &whispersRec }); }
 
 void AlienRuinsPlace::prepareFx() {
     vast.prepare(rate);
@@ -191,6 +191,29 @@ void AlienRuinsPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 3, 4, 6);
         p.gain = 1.0f;
     }
+    // The recorded alien choir (Milestone 17): the developer's voice made strange: ring
+    // modulated against a sub-octave of each note (an inharmonic shadow under it), each
+    // singer drifting in pitch on its own, slowly swelling, wide; the guardian louder,
+    // stranger, an octave lower.
+    {
+        auto& p = choirRec.patch;
+        p = voiceFromChoir(choir.patch);
+        p.singers = 5;
+        p.detune = 22.0f;
+        p.timing = 0.15f;
+        p.spread = 0.95f;
+        p.ringRatio = guardian ? 0.73f : 0.5f;
+        p.ringMix = guardian ? 0.55f : 0.35f + 0.2f * tension;
+        p.wobbleCents = 35.0f;
+        p.wobbleHz = 0.3f;
+        p.transpose = guardian ? -12.0f : 0.0f;
+        p.toneHz = lerpExp(2500.0f, 9000.0f, tone);
+        p.attack = 1.6f;
+        p.vowelDrift = 0.5f;
+        p.driftHz = 0.25f;
+        p.voices = byQuality(q, 3, 4, 6);
+        p.gain = choirGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // The sub drone: nearly pure, pressing down; its filter opens with Tension.
     {
         auto& p = drone.patch;
@@ -254,6 +277,18 @@ void AlienRuinsPlace::configure(const PlaceContext& c) {
         p.voices = 5;
         p.gain = 1.0f;
     }
+    // The recorded ritual drums (Milestone 17): the djembes pitched down and darkened, heavy
+    // and slow: the skin the large drum's bass five semitones down, the stone its muted slap
+    // seven down (a knock on rock); the rattle stays synthesised.
+    {
+        auto& p = ritualRec.patch;
+        p.rows = {};
+        p.rows[0] = { djembe::BigBass, djembe::BigTone, 0.2f, -5.0f, 1.0f, 0.0f, lerpExp(900.0f, 2500.0f, tone), 0.6f, 30.0f };
+        p.rows[1] = { djembe::BigMutedSlap, djembe::SmallMutedSlap, 0.3f, -7.0f, 0.8f, 0.2f, lerpExp(1200.0f, 3500.0f, tone), 0.5f, 60.0f };
+        p.drive = guardian ? 0.3f : 0.1f;
+        p.spread = 0.4f;
+        p.gain = ritualGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // Whispers: breath alone, narrow and vowel-like, drifting.
     {
         auto& p = whispers.patch;
@@ -270,6 +305,30 @@ void AlienRuinsPlace::configure(const PlaceContext& c) {
         p.spread = 0.9f;
         p.voices = 2;
         p.gain = 1.0f;
+    }
+    // The recorded whispers (Milestone 17): the developer's unintelligible whispering, the
+    // three takes (normal, higher, lower) murmuring at once from different places, a little
+    // slowed and drifting, as if something in the stones were speaking.
+    {
+        auto& p = whispersRec.patch;
+        p.single = "voice-whisper";
+        p.singers = 3;
+        p.startJitter = 1.0f;
+        p.transpose = -2.0f;
+        p.wobbleCents = 40.0f;
+        p.wobbleHz = 0.2f;
+        p.detune = 30.0f;
+        p.timing = 0.4f;
+        p.spread = 0.9f;
+        p.attack = 1.2f;
+        p.release = 1.8f;
+        p.toneHz = lerpExp(3000.0f, 8000.0f, tone);
+        p.lowCutHz = 150;
+        p.chatter = 0.25f;
+        p.chatterHz = 0.6f;
+        p.velocityGain = 0.3f;
+        p.voices = 2;
+        p.gain = whispersGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     sendScale.fill(dormant ? 1.4f : (guardian ? 0.85f : 1.0f));
     level = { 0.14f * lerp(0.8f, 1.3f, s.magic), 0.14f * (dormant ? 0.8f : 1.0f) * (0.8f + 0.4f * s.machinery), 0.3f * (guardian ? 1.2f : 1.0f),

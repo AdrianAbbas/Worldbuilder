@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-RuinsPlace::RuinsPlace() : EnsemblePlace(2000) { setParts({ &shards, &box, &bells, &wind, &violin, &toms }); }
+RuinsPlace::RuinsPlace() : EnsemblePlace(2000) { setParts({ &shardsRec, &box, &bells, &windLayer, &violin, &tomsRec }); }
 
 void RuinsPlace::prepareFx() {
     lofi.prepare(rate, 2001);
@@ -200,6 +200,26 @@ void RuinsPlace::configure(const PlaceContext& c) {
         p.voices = byQuality(q, 4, 5, 6);
         p.gain = 1.0f;
     }
+    // The recorded piano shards (Milestone 17): the developer's piano, most notes played
+    // backwards (each held note's decay swelling into its strike, as long as the note is
+    // written), the rest fragments (held, then stopped by the damper). Through the ruin's
+    // lo-fi and its reverse echoes.
+    {
+        auto& p = shardsRec.patch;
+        p = pianoPatch();
+        p.shortInstrument = nullptr;     // fragments are held notes stopped short
+        p.reverse = haunted ? 0.85f : (desolate ? 0.5f : 0.65f);
+        p.reverseSeconds = 2.2f;
+        p.reverseShortest = 0.5f;
+        p.damperScale = 0.6f;
+        p.toneHz = lerpExp(2500.0f, 9000.0f, tone);
+        p.velocityTone = 0.5f;
+        p.vibratoHz = 0.7f;
+        p.vibratoDepth = 0.05f;          // a warped, slightly seasick piano
+        p.spread = 0.6f;
+        p.voices = byQuality(q, 5, 6, 8);
+        p.gain = shardsGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
     // Music box: small hard tines, the upper partial a quarter-tone off any note.
     {
         auto& p = box.patch;
@@ -248,6 +268,37 @@ void RuinsPlace::configure(const PlaceContext& c) {
         p.voices = 3;
         p.held = true;
         p.gain = 0.7f + 0.6f * gust * gust;
+    }
+    // Under the wind (Milestone 17): the developer's ghostly falsetto "ooh" on the wind's
+    // notes, and his whispering, both far off and dark; haunted, they come closer.
+    {
+        auto& p = ghostRec.patch;
+        p.single = "voice-ghost";
+        p.singers = 2;
+        p.detune = 12.0f;
+        p.timing = 0.5f;
+        p.spread = 0.8f;
+        p.wobbleCents = 25.0f;
+        p.attack = 1.5f;
+        p.release = 2.0f;
+        p.toneHz = lerpExp(2500.0f, 6000.0f, tone);
+        p.lowCutHz = 200;
+        p.voices = 2;
+        p.gain = ghostGain[std::size_t(std::clamp(s.character, 0, 2))] * (haunted ? 1.0f : (desolate ? 0.55f : 0.35f));
+        auto& w = whisperRec.patch;
+        w.single = "voice-whisper";
+        w.singers = haunted ? 2 : 1;
+        w.startJitter = 1.0f;
+        w.transpose = -3.0f;
+        w.spread = 0.9f;
+        w.attack = 2.0f;
+        w.release = 2.0f;
+        w.toneHz = 3500.0f;
+        w.lowCutHz = 250;
+        w.chatter = 0.3f;
+        w.chatterHz = 0.5f;
+        w.voices = 2;
+        w.gain = whisperGain[std::size_t(std::clamp(s.character, 0, 2))] * (haunted ? 1.0f : 0.4f);
     }
     // The ghost pad: a hollow "oo" choir, far detuned, with a slow uneasy vibrato.
     {
@@ -331,6 +382,16 @@ void RuinsPlace::configure(const PlaceContext& c) {
         p.spread = 0.2f;
         p.voices = 3;
         p.gain = 1.0f;
+    }
+    // The recorded low toms (Milestone 17): the large djembe's tone four semitones down as the
+    // low tom, its bass two down as the floor tom, dark and distant among the walls.
+    {
+        auto& p = tomsRec.patch;
+        p.rows = {};
+        p.rows[0] = { djembe::BigTone, -1, 0.0f, -4.0f, 1.0f, -0.2f, lerpExp(1500.0f, 4000.0f, tone), 0.5f, 40.0f };
+        p.rows[1] = { djembe::BigBass, -1, 0.0f, -2.0f, 1.0f, 0.2f, lerpExp(1200.0f, 3000.0f, tone), 0.5f, 30.0f };
+        p.spread = 0.3f;
+        p.gain = tomsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Tension: the procession comes closer and the ghosts rise; Machinery wears the
     // recording further down; Life lets the moss grow back over the music box.

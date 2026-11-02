@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-HivePlace::HivePlace() : EnsemblePlace(1700) { setParts({ &pulses, &calls, &chitter, &throb, &formants, &swarm }); }
+HivePlace::HivePlace() : EnsemblePlace(1700) { setParts({ &pulses, &calls, &chitter, &throb, &formantsRec, &swarm }); }
 
 void HivePlace::prepareFx() {
     shimmer.prepare(rate);
@@ -287,6 +287,30 @@ void HivePlace::configure(const PlaceContext& c) {
         p.spread = 0.8f;
         p.voices = byQuality(q, 2, 3, 3);
         p.gain = 1.0f;
+    }
+    // The recorded formants (Milestone 17): the developer's vowels yammering (the vowel
+    // racing between "ooh" and "ee"), an octave up and small, fluttering like wings,
+    // ring-modulated a fifth over the note, narrowed in a band.
+    {
+        auto& p = formantsRec.patch;
+        p = voiceFromChoir(formants.patch);
+        p.vowel = 1.5f;
+        p.vowelDrift = 0.9f;
+        p.driftHz = 2.0f + 3.0f * stir;
+        p.transpose = 12.0f;
+        p.singers = 3;
+        p.detune = 25.0f;
+        p.timing = 0.03f;
+        p.tremoloHz = 24.0f + 10.0f * stir;
+        p.tremoloDepth = 0.55f;
+        p.ringRatio = 1.5f;
+        p.ringMix = 0.3f;
+        p.bandHz = 1800.0f;
+        p.bandQ = 1.8f;
+        p.bandMix = 0.6f;
+        p.toneHz = lerpExp(4000.0f, 10000.0f, tone);
+        p.voices = byQuality(q, 2, 3, 3);
+        p.gain = formantsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // The swarm: buzzing feedback FM that flutters.
     {

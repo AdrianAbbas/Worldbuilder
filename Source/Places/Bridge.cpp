@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-BridgePlace::BridgePlace() : EnsemblePlace(2900) { setParts({ &consoles, &coreRec, &tactical, &brass, &chatter, &pings }); }
+BridgePlace::BridgePlace() : EnsemblePlace(2900) { setParts({ &consoles, &coreRec, &tactical, &brass, &chatterRec, &pings }); }
 
 void BridgePlace::prepareFx() {
     hall.prepare(rate);
@@ -306,6 +306,34 @@ void BridgePlace::configure(const PlaceContext& c) {
         p.spread = 0.8f;
         p.voices = byQuality(q, 2, 3, 4);
         p.gain = 1.0f;
+    }
+    // The recorded crew chatter (Milestone 17): the developer's unintelligible whispering,
+    // four murmuring voices through a comm channel (band-passed, a little overdriven, the
+    // channel cutting in and out), distant.
+    {
+        auto& p = chatterRec.patch;
+        p.single = "voice-whisper";
+        p.singers = 4;
+        p.startJitter = 1.0f;
+        p.transpose = battle ? 1.0f : 0.0f;
+        p.detune = 40.0f;
+        p.timing = 0.3f;
+        p.spread = 0.8f;
+        // The channel resonates on the note (its band on the note's third octave): the
+        // murmur keeps the part in the key, as the synthesised chatter's babble did.
+        p.bandFollow = 8.0f;
+        p.bandQ = 10.0f;
+        p.bandMix = 1.0f;
+        p.drive = battle ? 0.45f : 0.3f;
+        p.lowCutHz = 300;
+        p.toneHz = 4500.0f;
+        p.chatter = battle ? 0.7f : 0.55f;
+        p.chatterHz = battle ? 5.0f : 3.5f;
+        p.attack = 0.15f;
+        p.release = 0.4f;
+        p.velocityGain = 0.3f;
+        p.voices = byQuality(q, 2, 3, 3);
+        p.gain = chatterGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Sensor pings: a pure tone with a long ring and a faint fifth above.
     {

@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-MiningPlace::MiningPlace() : EnsemblePlace(3000) { setParts({ &drillRec, &bass, &clanks, &dust, &hymn, &beacon }); }
+MiningPlace::MiningPlace() : EnsemblePlace(3000) { setParts({ &drillRec, &bass, &clanks, &dust, &hymnRec, &beacon }); }
 
 void MiningPlace::prepareFx() {
     room.prepare(rate);
@@ -258,6 +258,24 @@ void MiningPlace::configure(const PlaceContext& c) {
         p.spread = 0.6f;
         p.voices = byQuality(q, 3, 4, 5);
         p.gain = 1.0f;
+    }
+    // The recorded worker hymn (Milestone 17): the developer's voice mostly hummed, a few
+    // tired singers, low and dark, roughed up by the industrial room (more in a cave-in).
+    {
+        auto& p = hymnRec.patch;
+        p = voiceFromChoir(hymn.patch);
+        p.vowel = 0.6f;
+        p.hum = night ? 0.8f : 0.6f;
+        p.singers = 4;
+        p.detune = 11.0f;
+        p.timing = 0.1f;
+        p.spread = 0.55f;
+        p.toneHz = lerpExp(1800.0f, 5000.0f, tone);
+        p.velocityTone = 0.7f;
+        p.drive = cavein ? 0.25f + 0.25f * tension : 0.12f;
+        p.lowCutHz = 70;
+        p.voices = byQuality(q, 3, 4, 5);
+        p.gain = hymnGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // The beacon: a pure, ocarina-like lead with a slow wide vibrato.
     {

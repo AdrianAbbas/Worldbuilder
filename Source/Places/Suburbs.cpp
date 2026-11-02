@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-SuburbsPlace::SuburbsPlace() : EnsemblePlace(2400) { setParts({ &piano, &pulse, &chimes, &sprinkler, &box, &bass }); }
+SuburbsPlace::SuburbsPlace() : EnsemblePlace(2400) { setParts({ &pianoRec, &pulse, &chimes, &sprinkler, &box, &bass }); }
 
 void SuburbsPlace::prepareFx() {
     tape.prepare(rate);
@@ -212,6 +212,19 @@ void SuburbsPlace::configure(const PlaceContext& c) {
         p.model = FmTine;
         p.brightness = clamp01(0.1f + 0.4f * tone + 0.2f * s.era);
         p.gain = 1.0f;
+    }
+    // The acoustic piano (Milestone 17), in the Evening only: long, soft sevenths, a
+    // felt-soft tone (the hammers' brightness rolled off) through the warm tape.
+    {
+        auto& p = pianoRec.patch;
+        p = pianoPatch();
+        p.off = !evening;
+        p.toneHz = lerpExp(2500.0f, 9000.0f, tone);
+        p.velocityTone = 0.6f;
+        p.damperScale = 1.4f;        // dampers let go gently: a soft-pedal evening
+        p.spread = 0.35f;
+        p.voices = byQuality(q, 6, 8, 8);
+        p.gain = pianoGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // The pop pulse: a soft plucky synth.
     {

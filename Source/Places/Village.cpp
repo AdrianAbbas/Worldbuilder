@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-VillagePlace::VillagePlace() : EnsemblePlace(1200) { setParts({ &luteRec, &hurdy, &drums, &marimba, &recorder, &jingles }); }
+VillagePlace::VillagePlace() : EnsemblePlace(1200) { setParts({ &luteRec, &hurdy, &drumsRec, &marimba, &recorder, &jingles }); }
 
 void VillagePlace::prepareFx() {
     room.prepare(rate);
@@ -381,6 +381,18 @@ void VillagePlace::configure(const PlaceContext& c) {
         clack.pan = -0.35f;
         p.voices = 6;
         p.gain = 1.0f;
+    }
+    // The recorded hand drums (Milestone 17): the large djembe's bass as the frame drum (a
+    // tone now and then), the small djembe's tone as the hand drum (a slap on some hits);
+    // a sunny market's open skins, softer at dawn. The shaker stays synthesised.
+    {
+        auto& p = drumsRec.patch;
+        p.rows = {};
+        p.rows[0] = { djembe::BigBass, djembe::BigTone, 0.25f, 0.0f, 1.0f, -0.15f, lerpExp(2500.0f, 9000.0f, tone), 0.6f, 35.0f };
+        p.rows[1] = { djembe::SmallTone, djembe::SmallSlap, 0.3f, 0.0f, 0.8f, 0.25f, lerpExp(4000.0f, 14000.0f, tone), 0.6f, 80.0f };
+        p.rows[0].gain = dawn ? 0.7f : 1.0f;
+        p.spread = 0.15f;
+        p.gain = drumsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // A marimba-like bar: the strong fourth harmonic gives the wooden "tock".
     {

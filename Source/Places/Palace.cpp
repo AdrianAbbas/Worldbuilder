@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-PalacePlace::PalacePlace() : EnsemblePlace(2900) { setParts({ &harpsichord, &strings, &brass, &glock, &timpani, &choir }); }
+PalacePlace::PalacePlace() : EnsemblePlace(2900) { setParts({ &harpsichord, &strings, &brass, &glock, &timpani, &choirRec }); }
 
 void PalacePlace::prepareFx() { hall.prepare(rate); }
 
@@ -318,6 +318,26 @@ void PalacePlace::configure(const PlaceContext& c) {
         p.spread = 0.7f;
         p.voices = byQuality(q, 3, 4, 6);
         p.gain = 1.0f;
+    }
+    // The recorded choir (Milestone 17): a small court choir, bright and close (four
+    // singers, little detune, a touch of vibrato); in the fallen palace a ghost of one:
+    // "ooh", wide detune, a slow seasick drift, darker.
+    {
+        auto& p = choirRec.patch;
+        p = voiceFromChoir(choir.patch);
+        p.singers = fallen ? 5 : 4;
+        p.detune = fallen ? 18.0f : 5.0f;
+        p.timing = fallen ? 0.12f : 0.035f;
+        p.wobbleCents = fallen ? 18.0f : 0.0f;
+        p.wobbleHz = 0.12f;
+        p.vibratoDepth = fallen ? 0.0f : 0.05f + 0.05f * s.life;
+        p.vibratoHz = 5.4f;
+        p.toneHz = lerpExp(5000.0f, 15000.0f, tone) * (fallen ? 0.45f : 1.0f);
+        p.lowCutHz = 90;
+        p.spread = 0.6f;
+        p.attack = 0.7f * choir.patch.attack;
+        p.voices = byQuality(q, 3, 4, 6);
+        p.gain = choirGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Tension: timpani and brass come forward, the strings tremble, the harpsichord and
     // glockenspiel thin out; Life fills the hall's voices; Machinery the court's clockwork glock.

@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-CavernPlace::CavernPlace() : EnsemblePlace(1900) { setParts({ &drips, &drone, &taps, &bass, &crystals, &rumble }); }
+CavernPlace::CavernPlace() : EnsemblePlace(1900) { setParts({ &drips, &droneLayer, &taps, &bass, &crystals, &rumble }); }
 
 void CavernPlace::prepareFx() {
     cave.prepare(rate);
@@ -200,6 +200,23 @@ void CavernPlace::configure(const PlaceContext& c) {
         p.spread = 0.1f;
         p.voices = 2;
         p.gain = 1.0f;
+    }
+    // The hum layer (Milestone 17): the developer's low hummed drone an octave above the sub
+    // drone's note (near where it was sung), quiet, dark, the two takes apart.
+    {
+        auto& p = humRec.patch;
+        p.single = "voice-drone-hum";
+        p.transpose = 12.0f;
+        p.singers = 2;
+        p.detune = 6.0f;
+        p.timing = 0.4f;
+        p.spread = 0.5f;
+        p.attack = 2.5f;
+        p.release = 2.5f;
+        p.glide = 0.8f;
+        p.toneHz = flooded ? 1200.0f : lerpExp(1500.0f, 3500.0f, tone);
+        p.voices = 2;
+        p.gain = humGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Metal taps: small hard strikes, their upper partials a quarter-tone off any note.
     {
