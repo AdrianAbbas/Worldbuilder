@@ -6532,3 +6532,69 @@ Linux (the full suite: 4517 passed, 0 failed) green; the sample preparation's
 "Prepared: N notes" lines are notices in both jobs' logs.
 - The new instruments' renders in the CI artifact contain the recordings (as the plugin
   package always has): the artifact is visible to any signed-in GitHub user while kept.
+
+## Performance pass after Milestone 17 (2026-11-02)
+
+The developer's request: WORLDBUILDER sounds right after Milestone 17 but is noticeably
+laggier in GarageBand on a fanless MacBook Air (Apple Silicon). Find and fix what costs
+performance unnecessarily **without changing the sound**: measure first against the commit
+before Milestone 17 (`ccce3e3`), fix the biggest costs first, report before and after for
+each fix, keep every sound test's fingerprint (the listening renders before and after must
+match). A resumed session continues from the first unticked line.
+
+### Progress checklist
+
+- [x] Bench (`tools/bench/Bench.cpp`, `-DWORLDBUILDER_BUILD_BENCH=ON`): audio CPU per Place, editor per view (on a display), load time, memory, renders for comparison
+- [x] Baseline: `ccce3e3` against Milestone 17, same build settings (below)
+- [x] Release flags checked on every target; LTO measured
+- [x] Audio: the voice sampler per chunk (and `tanh(k)` once), sampler and hand drums per chunk, inlining
+- [x] Sample bank: parallel decoding, 16-bit read straight; checksum of the loaded bank unchanged
+- [x] Editor: the Pattern Editor and KEYS repaint only what changed
+- [ ] Every Place's render and the test suite's listening renders bit for bit as before
+- [ ] Before / after numbers for each fix (below)
+- [ ] Full test suite; push; CI green
+
+### How it was measured
+
+All on this container (4 cores, Linux, GCC, Release `-O3`, the same CMake settings for both
+commits), with the samples the CI prepares. `ccce3e3` was measured with the sample sets it
+used (guitar, kalimba, violin, Minilogue: 83 MB), Milestone 17 with all of them (210 MB):
+each build loads what it plays.
+- **Audio**: `WorldbuilderBench audio`: each Place four times at once (its three Characters
+  and a second seed), Activity 1, World Controls 0.7, Standard quality, 48 kHz / 256: the
+  audio thread's CPU time for 10 s of audio, % of one core (the least of three runs). Time on
+  a shared container swings by about 10 %, so each stage is also counted exactly:
+  **instructions** (callgrind, `WorldbuilderBench count`, 2 s of the same render).
+- **Editor**: `WorldbuilderBench editor` under Xvfb with a window manager: the editor on
+  screen, audio running on its own thread in real time, each view for 6 s: the message
+  thread's CPU (timers, layout and painting: JUCE's software renderer) and a full repaint.
+- **Load and memory**: `WorldbuilderBench load`: constructing an instance and
+  `prepareToPlay` (which waits for the bank), the bank's size, the process's resident memory.
+- **Renders**: `WorldbuilderBench renders` writes every Place's 12 s (four busy copies)
+  as raw floats; the test suite's 26 listening renders (`--only recordings`) as WAVs. Both
+  compared sample for sample against the unchanged Milestone 17 build.
+
+### Baseline: before Milestone 17 against Milestone 17
+
+| | `ccce3e3` | Milestone 17 |
+|---|---|---|
+| Bank in memory | 82.7 MB (530 notes) | 210.5 MB (1,355 notes) |
+| Bank load (one thread) | 0.70 s | 1.54 s |
+| `prepareToPlay` of the first instance (waits for the bank) | 0.77 s | 1.60 s |
+| Resident memory, one instance / four | 190 / 473 MB | 318 / 603 MB |
+| Audio, all 26 Places summed (% of a core, four busy copies each) | 455 % | 519 % (+14 %) |
+| Editor (message thread, % of a core) | unchanged: Milestone 17 changed no editor code | |
+
+Audio per Place (time, % of one core): the Places Milestone 17 changed are the ones that
+grew: the Temple 18.1 to 27.7, the Asteroid Mining Colony 16.6 to 25.4, the Alien Ruins
+18.7 to 26.8, the Nebula 16.6 to 24.3, the Tavern 21.4 to 25.7, the Castle 21.1 to 25.0,
+the Starship Bridge 19.4 to 23.4, the Alien Hive 18.0 to 21.3, the Mall 17.7 to 20.6, the
+Desert 17.5 to 20.6, the Palace 21.3 to 23.6; the rest within the noise.
+
+Where the time went (perf): the voice sampler (`VoicePart`) first: every sung note reads
+about nine recordings at once (the lead's crossfaded layers, the morph's second vowel, the
+hum, up to five ensemble singers: 54 million reader-samples in the Temple's 11 s), and its
+grit evaluated `tanh` twice per sample and side (one of them a constant); then the banjo
+and piano on the sampler's general path (crossfades: its sample reader was not inlined
+there) and the hand drums. No voice ran on silent: voices end with their recordings or
+fades (under 3 % of the readers ran below -60 dB).

@@ -125,3 +125,17 @@ if(WORLDBUILDER_BUILD_TESTS)
         WB_TEST_SAMPLES_DIR="${WORLDBUILDER_SAMPLES_DIR}")
     add_test(NAME worldbuilder_tests COMMAND WorldbuilderTests)
 endif()
+# The performance bench (tools/bench/Bench.cpp, a development aid; never shipped): audio
+# CPU per Place, the editor's cost per view, load time and memory.
+option(WORLDBUILDER_BUILD_BENCH "Build the performance bench" OFF)
+if(WORLDBUILDER_BUILD_TESTS AND WORLDBUILDER_BUILD_BENCH)
+    juce_add_console_app(WorldbuilderBench PRODUCT_NAME "WORLDBUILDER Bench")
+    get_target_property(wb_bench_definitions WorldbuilderBench COMPILE_DEFINITIONS)
+    list(REMOVE_ITEM wb_bench_definitions JUCE_STANDALONE_APPLICATION=1)
+    set_target_properties(WorldbuilderBench PROPERTIES COMPILE_DEFINITIONS "${wb_bench_definitions}")
+    target_sources(WorldbuilderBench PRIVATE tools/bench/Bench.cpp)
+    target_include_directories(WorldbuilderBench PRIVATE Tests)
+    target_link_libraries(WorldbuilderBench PRIVATE WORLDBUILDER juce::juce_audio_utils)
+    target_compile_definitions(WorldbuilderBench PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
+        WB_TEST_SAMPLES_DIR="${WORLDBUILDER_SAMPLES_DIR}")
+endif()
