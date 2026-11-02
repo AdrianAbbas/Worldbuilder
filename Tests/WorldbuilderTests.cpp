@@ -9386,6 +9386,7 @@ void testSamples(Suite& s) {
     }
 }
 
+#include "RecordingsTests.inc"
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -9492,6 +9493,8 @@ int main(int argc, char** argv) {
     if (only.contains("slidetable")) printSlideTable();
     if (only.contains("insttrims")) printInstrumentTrims();
     if (only.contains("instaudit")) auditInstruments();
+    if (only.contains("recaudit")) auditRecordings();
+    if (run("recordings")) testRecordings(s);
     if (run("slide")) testSlide(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);

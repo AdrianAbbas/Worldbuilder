@@ -5,6 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**Milestone 17 is in progress** (the piano, voice, djembe and banjo recordings): its progress
+checklist is at the end, in
+[Milestone 17](#milestone-17-piano-voice-djembe-and-banjo-recordings-2026-11-02); a resumed session
+continues from the first unticked line.
+
 **The hotfixes after Instrument mode are done** (only what is played sounds; the Village lute
 recorded; smoother drawing): checklist and handoff at the end, in
 [Hotfixes after Instrument mode](#hotfixes-after-instrument-mode-2026-11-01).
@@ -6218,3 +6223,50 @@ CI builds and tests once.
 - `WorldbuilderTests --only instaudit` lists every instrument's no-note level, tail and
   key-tied pitch (a development aid); `--only frames` reports the editor CPU table.
 
+
+---
+
+## Milestone 17: piano, voice, djembe and banjo recordings (2026-11-02)
+
+The developer's request: bring the new recordings in the private Samples repository (piano,
+voice, djembe, banjo) into WORLDBUILDER wherever they genuinely fit, each with its
+synthesised fallback kept and level-matched; pitches detected from the audio, not the
+file names; recordings found in subfolders and as WAVs; CI fetches them with
+`SAMPLES_TOKEN`; nothing committed. One line per recording set and per Place changed;
+a resumed session continues from the first unticked line.
+
+### Progress checklist
+
+Recording sets (preparation, `tools/sample-prep/`):
+- [x] Finder: recordings in subfolders, any audio extension (`make_locator`); "Prepared: N notes" per set in the log
+- [x] Piano (`chromatic.py`): 4 sweeps, onsets by key, inharmonic pitch, stretch kept / offset and outliers fixed, bleed, damper point, natural continuation, bad keys, derived held layers
+- [x] Voice (`voice.py`): vowel sweeps (soft / full, falsetto on top), choir stacks, drones, chant, grit, hum, ghost, whispers, breaths
+- [x] Djembe (`hits.py`): 10 strokes x 9 hits, layers by loudness, round-robins
+- [x] Banjo (`prepare.py` pluck + de-clipping + extra round-robin file): sweeps, open fifth string, palm-muted
+
+Engine:
+- [x] Sampler: velocity crossfades, derived layers (gain + shelf), piano damper / pedal / natural decay
+- [x] Voice sampler (`VoicePart`): vowel layers and morph, loops, ensemble from the choir stacks, extension above the top note, per-Place processing, textures
+- [x] Hand-drum sampler (`HitPart`): rows to strokes, velocity layers, round-robins
+
+Places and instruments:
+- [x] Piano: KEYS / Instrument / SINGLE "Piano" (Suburbs Evening, Mall Empty Night and Dead Mall E-Piano become the piano), factory preset
+- [x] Ruins: Piano Shards from the real piano
+- [x] Castle: Choir
+- [x] Palace: Choir
+- [x] Temple: Choir, Chant Drone
+- [x] Alien Ruins: Alien Choir, Whispers, Ritual Drums
+- [x] Asteroid Mining Colony: Worker Hymn
+- [x] Cavern: Sub Drone (a hum layer underneath)
+- [x] Nebula: Deep Hum
+- [x] Alien Hive: Formants
+- [x] Ruins: ghostly falsetto and whispers under Wind; Low Toms
+- [x] Starship Bridge: Crew Chatter
+- [x] Village: Hand Drums
+- [x] Tavern: Frame Drum, Stomps
+- [x] Desert: Frame Drums
+- [x] Banjo: Temple Zither (Desert Oud and Tavern Lute Strum keep the guitar recordings)
+
+Finish:
+- [ ] Tests: tuning (cents), velocity layers, clicks (loops, note-offs, handovers), levels, Place identity; listening renders in test-logs
+- [ ] CI: fetch and prepare (Prepared: N notes per set), README, DEVLOG handoff, final push without `[skip ci]`, CI green

@@ -377,6 +377,51 @@ and KEYS as every other instrument):
 | Spaceport | Data Blips | Minilogue, harsh square (two oscillators) | three octaves down, so the high oscillator sounds the written note and the low one an octave and a fourth under it; shortened to blips |
 | Asteroid Mining Colony | Drill | Minilogue, harsh square | two octaves down: the high oscillator whines an octave over the root; short bites with a fast wobble |
 
+Since Milestone 17 the developer's piano, voice, djembes and banjo play these:
+
+| Place | Instrument | Recording | Fitted to the Place |
+|---|---|---|---|
+| Suburbs | E-Piano (Evening) | acoustic piano, 88 keys (3 velocity layers, held notes) | felt-soft tone, gentle dampers through the warm tape; Sunny Afternoon and Uncanny keep the electric piano |
+| Mall | E-Piano (Empty Night, Dead Mall) | acoustic piano | a lone piano in the atrium; in the dead mall slowed, detuned and wobbling; Busy Weekend keeps the electric piano |
+| Ruins | Piano Shards | acoustic piano | most notes played backwards (the decay swelling into the strike), the rest held fragments the damper stops; lo-fi and reverse echoes |
+| Ruins | Wind | voice: ghostly falsetto "ooh" and whispering (a layer under the wind) | far off and dark, closer when Haunted |
+| Ruins | Low Toms | large djembe (tone and bass, pitched down) | dark and distant |
+| Castle | Choir | voice: vowels, choir stacks | a full male section (six singers), dark hall tone; rougher when Besieged |
+| Palace | Choir | voice | a small, bright court choir (four singers); in the Fallen Palace a ghostly, drifting "ooh" |
+| Temple | Choir | voice | monks: dark, slow, humming voices among the singers |
+| Temple | Chant Drone | voice: the gravelly low chant, the hummed and "ooo" drones under it | nearly still, two takes apart |
+| Temple | Zither | banjo (3 velocity layers, round-robins on the open fifth string; palm-muted for the quickest notes) | a zither's box under it, the open strings ringing in sympathy, a second string a hair off, in the long shimmer |
+| Alien Ruins | Alien Choir | voice | ring-modulated against a sub-octave, every singer drifting, slow swells (an octave down for the Guardian) |
+| Alien Ruins | Whispers | voice: unintelligible whispering (normal, higher, lower) | three murmuring at once, slowed a little and drifting |
+| Alien Ruins | Ritual Drums | djembes | pitched down five and seven semitones, darkened (the rattle stays synthesised) |
+| Asteroid Mining Colony | Worker Hymn | voice, mostly hummed | a few tired singers, dark and gritty |
+| Cavern | Sub Drone | the hummed low drone (a layer under the sub drone) | an octave above the sub, quiet and dark |
+| Nebula | Deep Hum | the "ooo" drone | three takes detuned and spread, drifting, its top rolled off |
+| Alien Hive | Formants | voice: vowels | the vowel racing between "ooh" and "ee", an octave up, wing-flutter tremolo, ring modulation, a band-pass |
+| Starship Bridge | Crew Chatter | voice: unintelligible whispering | four murmurs through a comm channel (band-pass, grit, the channel cutting in and out) |
+| Village | Hand Drums | djembes (3 velocity layers, 3 round-robins) | large djembe's bass (a tone now and then), small djembe's tone (a slap on some hits); the shaker stays synthesised |
+| Tavern | Frame Drum, Stomps | djembes' low strokes | the frame drum the large djembe's bass and muted bass; the stomps its muted bass pitched down and dulled (the clap stays synthesised) |
+| Desert | Frame Drums | djembes | the doum the large djembe's bass, the tek the small one's slap (the riq stays synthesised) |
+
+The **piano** is played like a piano: each key its own recording (88 keys, A0 to C8, at
+the piano's own stretch tuning, the whole instrument on A440), three velocity layers
+crossfaded, held notes that ring with their natural decay (no loop: past what was
+recorded the decay goes on as resynthesis of the note's own partials), each key's damper
+when it is let go (the top octaves have none, as on a piano), and the sustain pedal
+holding everything until it lifts. A note up to an eighth is a short hit, longer is a
+held note; from a keyboard every note starts as the short hit and becomes the held one
+if the key stays down. In Instrument mode the factory preset **Piano** is the Mall's
+E-Piano on an Empty Night (in KEYS and SINGLE: the Mall's or the Suburbs' E-Piano in
+those Characters).
+
+The **voice** is a sampler of the developer's sung vowels ("ooh", "oh", "aah", "ee" and a
+hummed "mm"; soft and full takes crossfaded by velocity, sustained by loops, its own
+release when a note ends), morphing between vowels as a choir's vowel drifts, and an
+ensemble built from his choir stacks (five or six takes of one note): from one voice to
+eight, each a few cents off, a little late, elsewhere in the stereo field. Above the
+highest note he sang it is shifted up a little and the synthesised choir takes over. Each
+Place colours it its own way (see the table), so no two sound alike.
+
 In the Ruins' Violin Textures a note's length in the Pattern Editor chooses how it is
 played: longer than an eighth is bowed, an eighth is pizzicato, a sixteenth is col legno.
 
@@ -387,9 +432,9 @@ let go with its recorded release. Every key was recorded, so every note plays it
 recording at its own pitch; only below the lowest and above the highest recorded key are
 notes stretched (up to a fifth), and further out they fold by octaves.
 
-The recordings are inside the plugin bundle (`Contents/Resources/Samples`, about 32 MB),
+The recordings are inside the plugin bundle (`Contents/Resources/Samples`, about 78 MB),
 where GarageBand's sandbox lets the plugin read them, and load once in the background when
-the first WORLDBUILDER opens (about 83 MB of memory, shared by every instance). The
+the first WORLDBUILDER opens (about 210 MB of memory, shared by every instance). The
 installer reports how many recorded notes each bundle holds. A build without them (see
 [Build](#build)) plays the synthesised models these instruments had before.
 
@@ -590,8 +635,9 @@ can be (up to six or eight voices; a wind or a hurdy-gurdy fewer), and responds 
 - **FACTORY PRESETS** and **PRESET**: instrument presets save the instrument with its
   Character, effects and controls, **separately from world presets** (a preset never
   changes the world; loading a world, a .world file or a scene never changes the
-  instrument). 28 factory presets of the best-sounding instruments (the recorded lute,
-  fiddle, oud, kalimba and violin, the Minilogue pads, basses and leads, choirs, bells,
+  instrument). 34 factory presets of the best-sounding instruments (the recorded lute,
+  fiddle, oud, kalimba and violin, the piano, voice choir, monk chant, alien voices and
+  djembes, the Minilogue pads, basses and leads, choirs, bells,
   bowls, harpsichord, strings, keys, mallets and drums) are one click each. **SAVE**
   writes your own as a .wbinst file (in Documents/WORLDBUILDER/Instrument Presets, where
   the PRESET menu lists them); **LOAD** opens one from anywhere.
