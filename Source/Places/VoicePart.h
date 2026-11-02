@@ -372,6 +372,7 @@ private:
         int delay = 0;
         int role = 0;          // 1: the vowel morph's first vowel, 2: its second, 0: fixed weight
         bool done = false;
+        bool linear = false;   // an ensemble singer: linear interpolation (half the cost; in the background)
     };
     struct Voice {
         bool on = false, releasing = false, morph = false;
@@ -383,6 +384,11 @@ private:
         std::array<dsp::Svf, 2> lp, hp, band;
     };
 
+    static float readLinear(const int16_t* d, double pos) {
+        const auto i = int(pos);
+        const float t = float(pos - double(i));
+        return (float(d[i]) + t * float(d[i + 1] - d[i])) * (1.0f / 32768.0f);
+    }
     static float read(const int16_t* d, double pos) {
         const auto i = int(pos);
         const float t = float(pos - double(i));
@@ -414,9 +420,14 @@ private:
         if (z->loops() && r.pos >= double(z->loopEnd)) r.pos = double(z->loopStart);
     }
 
-    // The layers of one vowel recording around this velocity.
-    void addVowel(Voice& v, const samples::Instrument* inst, int key, float velocity, float pick, float gain, int role, float pan) {
+    // The layers of one vowel recording around this velocity (`pair`: crossfaded; else the
+    // nearest layer alone, for the morph's second vowel and the hum: half the cost).
+    void addVowel(Voice& v, const samples::Instrument* inst, int key, float velocity, float pick, float gain, int role, float pan, bool pair = true) {
         if (inst == nullptr || gain <= 1.0e-4f) return;
+        if (!pair) {
+            addReader(v, *inst, inst->find(key, velocity, pick), gain, role, 0, 0, pan);
+            return;
+        }
         const auto p = inst->findPair(key, velocity, pick);
         if (p.a == nullptr) return;
         if (p.b != nullptr && p.mix > 0.001f) {
@@ -441,19 +452,19 @@ private:
         const float voiced = std::sqrt(1.0f - hum);
         v.vowelT = t;
         v.morph = patch.vowelDrift > 0.0f || (t > 0.001f && t < 0.999f);
-        addVowel(v, main[std::size_t(i)], key, n.velocity, n.random2, voiced, 1, pan);
-        if (v.morph || t > 0.001f) addVowel(v, main[std::size_t(i + 1)], key, n.velocity, n.random2, voiced, 2, pan);
+        addVowel(v, main[std::size_t(i)], key, n.velocity, n.random2, voiced, 1, pan, t <= 0.5f);
+        if (v.morph || t > 0.001f) addVowel(v, main[std::size_t(i + 1)], key, n.velocity, n.random2, voiced, 2, pan, t > 0.5f);
         // The first vowel at (1 - t), the second at t (equal power); update() moves t as
         // the vowel drifts.
         for (int r = 0; r < v.count; ++r) {
             auto& rd = v.reader[std::size_t(r)];
             rd.gain = rd.base * (rd.role == 1 ? std::cos(0.5f * dsp::pi * t) : std::sin(0.5f * dsp::pi * t));
         }
-        if (hum > 0.0f && humInst != nullptr) addVowel(v, humInst, key, n.velocity, n.random2, std::sqrt(hum), 0, pan);
+        if (hum > 0.0f && humInst != nullptr) addVowel(v, humInst, key, n.velocity, n.random2, std::sqrt(hum), 0, pan, false);
         // The ensemble: each extra singer another take (a choir stack's where one lies
         // within a fifth, else another take of the vowel), a few cents off, a little late,
         // elsewhere in the field. The section's level grows with it, about as a choir's does.
-        const int singers = std::clamp(patch.singers, 1, 8);
+        const int singers = std::clamp(patch.singers, 1, 6);   // (a seventh and eighth add cost, not size)
         if (singers > 1) {
             const samples::Instrument* stack = !patch.stacks ? nullptr : (hum > 0.5f ? stackMm : (vw < 1.5f ? stackOoh : stackAah));
             const samples::Instrument* alt = main[std::size_t(t < 0.5f ? i : i + 1)];
@@ -478,6 +489,7 @@ private:
                 }
                 if (z == nullptr) continue;
                 addReader(v, *from, z, voiced * each, 0, cents, patch.timing * jitter, std::clamp(pan + patch.spread * side, -1.0f, 1.0f));
+                if (v.count > 0) v.reader[std::size_t(v.count - 1)].linear = true;
             }
         }
     }
@@ -541,7 +553,10 @@ private:
         v.releaseMul = std::exp(-6.9078f / (std::max(tail ? s * 1.5f : s, 0.02f) * rate));
     }
 
-    void tick(Voice& v, float& outL, float& outR) {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    inline void tick(Voice& v, float& outL, float& outR) {
         float l = 0, r = 0;
         bool any = false;
         for (int i = 0; i < v.count; ++i) {
@@ -553,10 +568,13 @@ private:
                 continue;
             }
             const auto& z = *rd.zone;
-            float y = read(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1)));
+            // A layer the vowel morph has all but faded out moves on unread.
+            const bool heard = std::abs(rd.gain) > 1.0e-3f;
+            float y = 0;
+            if (heard) y = rd.linear ? readLinear(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1))) : read(z.data, std::clamp(rd.pos, 1.0, double(z.length - 1)));
             if (rd.tailPos >= 0.0) {
                 rd.tailMix = std::min(1.0f, rd.tailMix + v.tailStep);
-                y = y * (1.0f - rd.tailMix) + read(z.data, std::min(rd.tailPos, double(z.length - 1))) * rd.tailMix;
+                if (heard) y = y * (1.0f - rd.tailMix) + read(z.data, std::min(rd.tailPos, double(z.length - 1))) * rd.tailMix;
                 rd.tailPos += double(rd.inc);
                 if (rd.tailMix >= 1.0f) rd.pos = rd.tailPos, rd.tailPos = -1;
             }
@@ -573,8 +591,9 @@ private:
         }
         // The Place's colour, per side.
         float side[2] { l, r };
+        const bool lowCut = patch.lowCutHz > 45.0f;   // (below that the part's DC filter is enough)
         for (int c = 0; c < 2; ++c) {
-            float y = v.hp[std::size_t(c)].tick(side[c]).hp;
+            float y = lowCut ? v.hp[std::size_t(c)].tick(side[c]).hp : side[c];
             y = v.lp[std::size_t(c)].tick(y).lp;
             if (patch.bandHz > 0.0f || patch.bandFollow > 0.0f) y = dsp::lerp(y, 1.6f * v.band[std::size_t(c)].bandpass(y), patch.bandMix);
             if (patch.drive > 0.0f) {

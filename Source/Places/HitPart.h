@@ -217,7 +217,10 @@ private:
         return (((c3 * t + c2) * t + c1) * t + x0) * (1.0f / 32768.0f);
     }
 
-    float tick(Voice& v) {
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    inline float tick(Voice& v) {
         if ((v.step++ & 31) == 0) {
             v.bend *= std::pow(v.bendMul, 32.0f);
             v.inc = v.ratio * std::exp2((v.semis + v.bend + this->bend) / 12.0f);

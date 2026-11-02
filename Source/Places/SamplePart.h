@@ -253,6 +253,7 @@ private:
             v.posB = v.zoneB != nullptr ? std::min(v.pos, double(v.zoneB->length - 4)) : v.pos;
         }
         v.limit = patch.fragmentSeconds > 0.0f ? int(patch.fragmentSeconds * rate) : -1;
+        v.plain = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0;
         // Level: velocity (the layers already differ), evened toward the median loudness
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
@@ -382,7 +383,7 @@ public:
             float l = 0, r = 0;
             for (auto& v : voice) {
                 if (!v.on) continue;
-                const float y = tick(v);
+                const float y = (v.plain && v.wait <= 0) ? tickPlain(v, *v.zone) : tick(v);
                 l += y * v.pan.l;
                 r += y * v.pan.r;
             }
@@ -430,7 +431,7 @@ public:
 
 private:
     struct Voice {
-        bool on = false, releasing = false, course = false, backwards = false, shelf = false;
+        bool on = false, releasing = false, course = false, backwards = false, shelf = false, plain = true;
         const samples::Zone* zone = nullptr;
         const samples::Zone* zoneB = nullptr;   // a crossfade's second layer
         double posB = 0, tailPosB = -1;
@@ -477,12 +478,47 @@ private:
         return y;
     }
 
+    // A note with no crossfade, shelf, reverse or fragment limit (most of them): the
+    // straight path, as before Milestone 17.
+#if defined(__GNUC__) || defined(__clang__)
+    [[gnu::always_inline]]
+#endif
+    inline float tickPlain(Voice& v, const samples::Zone& z) {
+        float y = read(z.data, v.pos);
+        if (v.course && v.coursePos >= 0.0) {
+            const auto& c = *v.courseZone;
+            if (v.coursePos < double(c.length - 1)) y += patch.courseLevel * read(c.data, v.coursePos);
+        }
+        if (v.tailPos >= 0.0) {
+            // Crossing into the recorded release tail.
+            y = y * (1.0f - v.tailMix) + read(z.data, v.tailPos) * v.tailMix;
+            v.tailPos += double(v.inc);
+            v.tailMix += v.tailStep;
+            if (v.tailMix >= 1.0f) {
+                v.pos = v.tailPos;
+                v.tailPos = -1;
+            }
+        }
+        v.pos += double(v.inc);
+        v.coursePos += double(v.inc * v.courseRatio);
+        if (v.course && v.courseZone->loops() && !v.releasing && v.coursePos >= double(v.courseZone->loopEnd))
+            v.coursePos -= double(v.courseZone->loopEnd - v.courseZone->loopStart);
+        if (z.loops() && !v.releasing && v.pos >= double(z.loopEnd)) v.pos -= double(z.loopEnd - z.loopStart);
+        if (v.tailPos >= double(z.length - 1)) v.tailPos = -1, v.tailMix = 0, v.pos = double(z.length);
+        if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
+        v.fade *= v.fadeMul * v.releaseMul;
+        const float out = v.filter.tick(y * v.mixA).lp * v.amp * v.fade * v.gain;
+        if (v.pos >= double(z.length - 1) || v.fade < 1.0e-4f) v.on = false;
+        return out;
+    }
+
     float tick(Voice& v) {
         if (v.wait > 0) {
             --v.wait;
             return 0.0f;
         }
         const auto& z = *v.zone;
+        if (v.plain) return tickPlain(v, z);
         float y = 0;
         if (v.backwards) {
             y = read(z.data, std::max(v.pos, 1.0)) * v.mixA;

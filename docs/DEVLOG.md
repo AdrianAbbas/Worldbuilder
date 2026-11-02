@@ -5,10 +5,9 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**Milestone 17 is in progress** (the piano, voice, djembe and banjo recordings): its progress
-checklist is at the end, in
-[Milestone 17](#milestone-17-piano-voice-djembe-and-banjo-recordings-2026-11-02); a resumed session
-continues from the first unticked line.
+**Milestone 17 is done** (the piano, voice, djembe and banjo recordings): checklist,
+decisions, the notes to re-record and the handoff at the end, in
+[Milestone 17](#milestone-17-piano-voice-djembe-and-banjo-recordings-2026-11-02).
 
 **The hotfixes after Instrument mode are done** (only what is played sounds; the Village lute
 recorded; smoother drawing): checklist and handoff at the end, in
@@ -6269,8 +6268,8 @@ Places and instruments:
 
 
 Finish:
-- [ ] Tests: tuning (cents), velocity layers, clicks (loops, note-offs, handovers), levels, Place identity; listening renders in test-logs
-- [ ] CI: fetch and prepare (Prepared: N notes per set), README, DEVLOG handoff, final push without `[skip ci]`, CI green
+- [x] Tests: tuning (cents), velocity layers, clicks (loops, note-offs, handovers), levels, Place identity; listening renders in test-logs
+- [x] CI: fetch and prepare (Prepared: N notes per set), README, DEVLOG handoff, final push without `[skip ci]`, CI green
 
 ### What is in the recordings (checked against the audio)
 
@@ -6474,3 +6473,56 @@ Other groups changed by this work:
 - **Village / Desert Tension and Danger**, **Temple Life and Characters**, **Nebula
   Tension**: the recorded parts answer them (harder hands into the louder layers; a
   brighter, rougher hum; more singers; a denser, darker rite against an airy dawn).
+
+### CPU
+
+Measured against the commit before this milestone, built the same way on this container
+(the whole-plugin figures swing by up to 30 % between identical runs here, so the parts
+were also timed alone):
+- **SamplePart**: the same cost as before for plain notes (a guitar chord stream 1.17 % of
+  a core against 1.14 %; a held violin 0.76 % against 0.73 %). The first version of the
+  new sampler was 25-60 % slower (its larger per-sample function stopped being inlined):
+  plain notes now take a straight path (forced inline), the crossfades, shelves, reversed
+  notes and fragments the general one.
+- **VoicePart**: a held four-note chord, six voices, six singers: 1.3 % of a core (from
+  2.5 % in its first version: the morph's second vowel and the hum read one take, not a
+  crossfaded pair; the ensemble singers interpolate linearly; at most six singers; no
+  low-cut filter where the part's DC filter does it). The synthesised choir: about 0.2 %.
+- **HitPart**: busy djembes (8 hits a second) about 1 % of a core, the synthesised drums 0.5 %.
+- Whole Places (four busy copies, Standard quality, report-only checks): about the same
+  overall; the Temple (three voice parts and the banjo) and the Alien Ruins are the
+  heaviest, a few points over before.
+
+### Milestone 17 handoff
+
+**Done**: the four recording sets prepared (the finder for subfolders and WAVs, "Prepared:
+N notes" per set in the CI log), the sampler extended (velocity crossfades, the piano's
+dampers, pedal and natural decay, reversed notes), the voice sampler and the hand-drum
+sampler, 23 Place parts changed (22 replaced or layered, plus the Temple Zither), every
+one with its synthesised fallback and level-matched per Character, the tests and the
+listening renders, README, MANUAL_TEST. Parts 1-4 and the fixes went up with
+`[skip ci]`; the last push is without it, and CI ran until it was green.
+
+**What to test** ([MANUAL_TEST.md](MANUAL_TEST.md), "Milestone 17 check"); listen to the
+renders first (the Linux job's test-log artifact, `renders/`).
+
+**Known issues / limits**:
+- Nothing has been heard: levels, Character voicings and the per-Place processing were
+  set by measurement (loudness against the parts they replaced, the tests' fingerprints),
+  not by ear. The banjo as the Temple Zither is a judgement call (see Decisions).
+- The bad piano keys, clipped banjo notes and the odd voice takes are listed under
+  "Re-record"; the replacements (a neighbouring key shifted a semitone, a spline over the
+  clipped tops) are audible on close listening.
+- Above E5 the voice hands over to the synthesised choir over a fifth: a sung-to-synthetic
+  seam is possible high up on the keyboard.
+- The voice was recorded only from E2 (the chant) and E3 (the sweeps) up: below that it is
+  shifted down (darker, slower vibrato) up to an octave.
+- The piano's held notes were held 2-3 s: beyond that their decay is resynthesised from
+  the recording's partials (no beating between a key's strings in that continuation).
+- The Tavern's tone test (dark to bright tilt) is report-only within 0.5 dB of its 8 dB
+  (7.97 dB: the recorded djembes have fewer extreme highs); the Castle choir sits up to
+  1.4 LU under its fallback (raising it costs the Split output check its margin).
+- Memory grows from about 83 MB to about 210 MB per host process (the bank is shared by
+  every instance); the download by about 88 MB (both bundles).
+- The new instruments' renders in the CI artifact contain the recordings (as the plugin
+  package always has): the artifact is visible to any signed-in GitHub user while kept.

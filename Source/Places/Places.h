@@ -767,7 +767,7 @@ private:
     // The frame drum and the stomps (Milestone 17): the djembes' low strokes (the clap
     // stays synthesised).
     HitPart drumRec { drum }, stompsRec { stomps };
-    static constexpr std::array<float, 3> stompsGain { 2.595f, 3.377f, 3.28f };   // per Character, level-matched (Tests "recordings")
+    static constexpr std::array<float, 3> stompsGain { 2.359f, 3.003f, 2.995f };   // per Character, level-matched (Tests "recordings")
     static constexpr std::array<float, 3> drumGain { 1.972f, 3.047f, 1.532f };   // per Character, level-matched (Tests "recordings")
     BowedPart fiddle;
     SamplePart luteRec { lute }, fiddleRec { fiddle };

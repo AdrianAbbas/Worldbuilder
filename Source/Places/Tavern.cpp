@@ -288,8 +288,8 @@ void TavernPlace::configure(const PlaceContext& c) {
     {
         auto& p = drumRec.patch;
         p.rows = {};
-        p.rows[0] = { djembe::BigBass, djembe::BigMutedBass, quiet ? 0.5f : 0.2f, 0.0f, 1.0f, 0.0f, lerpExp(3500.0f, 12000.0f, tone), 0.6f, 35.0f };
-        p.rows[1] = { djembe::SmallMutedSlap, -1, 0.0f, 0.0f, 0.7f, 0.2f, lerpExp(6000.0f, 16000.0f, tone), 0.5f, 120.0f };
+        p.rows[0] = { djembe::BigBass, djembe::BigMutedBass, quiet ? 0.5f : 0.2f, 0.0f, 1.0f, 0.0f, lerpExp(6000.0f, 18000.0f, tone), 0.6f, 35.0f };
+        p.rows[1] = { djembe::SmallMutedSlap, -1, 0.0f, 0.0f, 0.7f, 0.2f, lerpExp(9000.0f, 19000.0f, tone), 0.4f, 120.0f };
         p.spread = 0.1f;
         p.gain = drumGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
@@ -420,7 +420,7 @@ void TavernPlace::configure(const PlaceContext& c) {
     {
         auto& p = stompsRec.patch;
         p.rows = {};
-        p.rows[0] = { djembe::BigMutedBass, djembe::BigBass, brawl ? 0.4f : 0.2f, -3.0f, 1.0f, 0.0f, 2600.0f, 0.5f, 30.0f, 0.5f };
+        p.rows[0] = { djembe::BigMutedBass, djembe::BigBass, brawl ? 0.4f : 0.2f, -3.0f, 1.0f, 0.0f, 5000.0f, 0.5f, 30.0f, 0.5f };
         p.spread = 0.3f;
         p.gain = stompsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
