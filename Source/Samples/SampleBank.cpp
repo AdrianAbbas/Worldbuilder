@@ -224,25 +224,52 @@ void Bank::run() {
         status.store(Failed, std::memory_order_release);
         return;
     }
-    std::size_t total = 0;
-    for (const auto& id : *list) {
-        if (cancel) return;
-        auto inst = std::make_unique<Instrument>();
-        std::vector<int16_t> pool;
-        if (!loadInstrument(from.getChildFile(id.toString() + ".json"), *inst, pool)) {
-            status.store(Failed, std::memory_order_release);
-            return;
+    // The instruments decode in parallel (a few background threads, never the audio or
+    // message thread): the bank is ready in a fraction of the time one thread takes, so
+    // prepareToPlay waits less. They are kept in the index's order.
+    const int count = list->size();
+    std::vector<std::unique_ptr<Instrument>> loaded(static_cast<std::size_t>(count));
+    std::vector<std::vector<int16_t>> loadedPools(static_cast<std::size_t>(count));
+    std::vector<juce::String> errors(static_cast<std::size_t>(count));
+    std::atomic<int> next { 0 };
+    std::atomic<bool> failed { false };
+    const auto work = [&] {
+        for (int k = next++; k < count && !failed && !cancel; k = next++) {
+            auto inst = std::make_unique<Instrument>();
+            if (!loadInstrument(from.getChildFile((*list)[k].toString() + ".json"), *inst, loadedPools[std::size_t(k)], errors[std::size_t(k)])) {
+                failed = true;
+                return;
+            }
+            loaded[std::size_t(k)] = std::move(inst);
         }
-        total += pool.size() * sizeof(int16_t) + inst->zones.size() * sizeof(Zone);
-        instruments.push_back(std::move(inst));
-        pools.push_back(std::move(pool));   // moving keeps the buffer (the zones point into it)
+    };
+    const int workers = std::clamp(int(std::thread::hardware_concurrency()) - 1, 1, 4);
+    std::vector<std::thread> helpers;
+    for (int w = 1; w < std::min(workers, count); ++w) helpers.emplace_back(work);
+    work();
+    for (auto& t : helpers) t.join();
+    if (cancel) return;
+    if (failed) {
+        for (const auto& e : errors)
+            if (e.isNotEmpty()) {
+                error = e;
+                break;
+            }
+        status.store(Failed, std::memory_order_release);
+        return;
+    }
+    std::size_t total = 0;
+    for (int k = 0; k < count; ++k) {
+        total += loadedPools[std::size_t(k)].size() * sizeof(int16_t) + loaded[std::size_t(k)]->zones.size() * sizeof(Zone);
+        instruments.push_back(std::move(loaded[std::size_t(k)]));
+        pools.push_back(std::move(loadedPools[std::size_t(k)]));   // moving keeps the buffer (the zones point into it)
     }
     bytes = total;
     seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     status.store(Ready, std::memory_order_release);
 }
 
-bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<int16_t>& pool) {
+bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<int16_t>& pool, juce::String& error) const {
     const auto json = juce::JSON::parse(map);
     const auto* zones = json["zones"].getArray();
     if (zones == nullptr) {
@@ -272,6 +299,7 @@ bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<i
     std::vector<std::pair<int16_t*, int>> loadedData;
     juce::FlacAudioFormat flac;
     juce::AudioBuffer<float> buffer;
+    std::vector<int> ints;
     std::size_t at = 0;
     for (const auto& z : *zones) {
         if (cancel) return false;
@@ -316,12 +344,21 @@ bool Bank::loadInstrument(const juce::File& map, Instrument& into, std::vector<i
             error = "cannot read " + file.getFullPathName();
             return false;
         }
-        buffer.setSize(1, length, false, false, true);
-        reader->read(&buffer, 0, length, 0, true, false);
         Zone zone;
         int16_t* data = pool.data() + at + padBefore;
-        const float* src = buffer.getReadPointer(0);
-        for (int i = 0; i < length; ++i) data[i] = int16_t(std::lrint(std::clamp(src[i], -1.0f, 32767.0f / 32768.0f) * 32768.0f));
+        if (reader->bitsPerSample == 16 && !reader->usesFloatingPointData) {
+            // 16-bit recordings (all of them): read as integers, each sample exactly as stored
+            // (what the float path rounded back to, without converting every sample twice).
+            ints.resize(std::size_t(length));
+            int* channels[] = { ints.data(), nullptr };
+            reader->read(channels, 1, 0, length, false);
+            for (int i = 0; i < length; ++i) data[i] = int16_t(ints[std::size_t(i)] >> 16);
+        } else {
+            buffer.setSize(1, length, false, false, true);
+            reader->read(&buffer, 0, length, 0, true, false);
+            const float* src = buffer.getReadPointer(0);
+            for (int i = 0; i < length; ++i) data[i] = int16_t(std::lrint(std::clamp(src[i], -1.0f, 32767.0f / 32768.0f) * 32768.0f));
+        }
         zone.data = data;
         zone.length = length;
         zone.root = float(double(z["root"]));

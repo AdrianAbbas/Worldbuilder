@@ -6,8 +6,9 @@
 // points). They ship inside the plugin bundle (Contents/Resources/Samples), where
 // GarageBand's sandbox lets the plugin read them.
 //
-// One bank per process, shared by every plugin instance. It loads on a background
-// thread when the first instance is created (never on the audio thread); prepareToPlay
+// One bank per process, shared by every plugin instance. It loads on background threads
+// (the instruments in parallel) when the first instance is created (never on the audio
+// or message thread); prepareToPlay
 // waits for it briefly so the first notes are already sampled. Once Ready, nothing in
 // it changes: the audio thread reads it without locks. Notes are kept as 16-bit
 // integers (the recordings are MP3s, so 16 bits lose nothing) to halve the memory.
@@ -124,7 +125,7 @@ public:
 private:
     Bank() = default;
     void run();
-    bool loadInstrument(const juce::File& map, Instrument& into, std::vector<int16_t>& pool);
+    bool loadInstrument(const juce::File& map, Instrument& into, std::vector<int16_t>& pool, juce::String& error) const;
     static juce::File locate();
 
     std::vector<std::unique_ptr<Instrument>> instruments;
