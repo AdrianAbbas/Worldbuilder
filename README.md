@@ -87,7 +87,9 @@ These work now:
 - **Score Intensity**, the large knob in the header: every active Place at once, from
   a calm bed (0 %) through the Places as set (50 %) to a climax (100 %): busier,
   tenser, brighter and louder, each Place on its own curve. It glides rather than
-  jumps; automate it to shape a cue over time.
+  jumps; automate it to shape a cue over time. With **Drama** (the small knob beside it)
+  the top half changes gear like game music when a fight starts (see *Drama: Calm,
+  Tension, Action, Climax* below); the label shows the tier the world is in.
 - **Capture** (the footer's CAPTURE section): **RENDER** the current world offline to a
   WAV file (the full mix, or stems: one per Place plus the environment), and **MIDI**
   exports the patterns of every active instrument as one multi-track MIDI file. Both
@@ -166,6 +168,7 @@ the first Location and whose climax travels to the last.
 | Sci-fi | Docking at Orbital Station, Neon Rain Chase, First Contact, Into the Nebula, Abandoned Reactor, Alien Jungle, Asteroid Shift Change, Battle Stations, Void Between Stars |
 | Modern | Clockwork Metropolis, Storm at Sea, Dead Mall Nights |
 | Nature | Abandoned Mine, Desert Caravan, Elven Canopy, Summer by the Sea |
+| Dramatic (the Drama tier, arranged in arcs) | Battle at the Castle Gate, Chase Through the Neon City, The Dragon in the Deep, Siege of the Desert Fortress, Space Battle over the Station, Escape from the Hive, The Final Stand, Tragic Loss, Triumphant Return, Pirate Battle in the Storm, Mining Colony Uprising, Ambush in the Dark Woods, Awakening of the Guardian, Factory Breakdown, Last Light of the Temple, Victory Parade, Warp Jump Pursuit |
 
 - Loading a scene switches Play Mode to **Arrangement** (unless it is Free), so pressing
   play in the host plays its sections and travels between its Locations. In Transport
@@ -188,6 +191,56 @@ the right Era, small changes to every instrument's reverb, delay and character a
 two or three Locations that rise in danger, and a template auto-arranged for them. The
 same World Seed always inspires the same world, so a seed you liked can be typed back
 in (INSPIRE uses the seed after the one shown). UNDO takes it back.
+
+**INSPIRE's mood** (the menu beside it): **Any**, **Calm**, **Adventure**, **Mystery**,
+**Tension**, **Battle**, **Epic**, **Tragic**, **Triumphant**. The world it builds is made
+to sound like it: Battle chooses fighting Places in their fiercest Characters, a minor or
+Phrygian key, high Danger and Activity, Score Intensity at Action or Climax with driving
+drums and ostinatos, and a Battle, Chase, Final Stand or Siege arrangement in arcs; Epic
+is big and slow (Scale high, choir and brass, half time); Tragic slow and minor (strings,
+piano, a Lament); Triumphant major with a march and fanfares; Tension a pulse and a
+heartbeat at the Tension tier; Calm, Mystery and Adventure stay at or near the calm
+tiers. **Any** picks the mood from the seed: a dramatic one (Tension, Battle, Epic,
+Tragic or Triumphant) about three times in five.
+
+## Drama: Calm, Tension, Action, Climax
+
+A game score layers up as the action does. With **Drama** above 0 % (100 % for a new
+instance), the top half of Score Intensity moves every Place through four tiers, and at
+each tier the music changes gear on the next bar line:
+
+| Tier | Score Intensity (Tension as set) | What joins the Place |
+|---|---|---|
+| **Calm** | up to 55 % | nothing: the Place exactly as before |
+| **Tension** | about 55-72 % | a pedal-point pulse on the tonic, distant drums (a heartbeat), swells; the harmony holds the tonic |
+| **Action** | about 72-89 % | a driving ostinato (sixteenths with 3-3-2 accents), war drums, snares and toms, stabs on the downbeats; the chords move twice as fast |
+| **Climax** | from about 89 % | double-time drums, tom fills, impacts and crashes every four bars, cymbal swells into each phrase, choir and brass stabs, a brass ostinato, low piano strikes; a gear change lands on the chromatic mediant |
+
+A Place's own **Tension** (with Danger) pushes it further once Score Intensity is above
+the middle; at the very top of Tension the fifths rub a semitone and the stabs cluster.
+
+Each Place has its own dramatic colour, from the developer's recordings: the **Castle**
+war drums (the large djembe pitched down), spiccato strings, a brass ostinato and choir
+stabs (the voice recordings); the **Spaceport** hybrid pulses, braams and synth stabs
+(the Minilogue), hybrid percussion; the **Forest** tribal drums and driving strings; the
+**Factory** metal percussion and pistons as the rhythm, a grinding bass; the **Ruins**
+low piano strikes, dissonant strings and distant drums; and so on for all 26. The first
+Place leads (drums, ostinato, hits), the second adds its ostinato and hits, the others
+their hits only, so a world of four never stacks four drum kits.
+
+- **Drama Style** (footer): Auto (each Place's own), Driving (battle, chase), Epic (big,
+  half time, choir and brass), Tragic (slow strings, piano, almost no drums), Triumphant
+  (a march, fanfare brass), Suspense (a heartbeat, ticking, pulses).
+- **Drama 0 %** is the Classic score: the world exactly as before. Projects and the 24
+  scenes from before the Drama tier open at 0 % and sound bit for bit as they did.
+- **Arrangement**: each section has a **DRAMA** menu in ARRANGE (as its intensity says,
+  or Calm, Tension, Action, Climax). Transitions get their dramatic sounds: a drum roll
+  and a cymbal swell into a Riser or Drum fill, an impact, crash and stab on the
+  downbeat after a Riser, Drum fill, Drop or Reverse swell. With Drama above 0, **Auto**
+  builds arcs: intros and breaks Calm, build-ups at Tension, the first fight at Action and
+  the later ones at Climax, a Riser into a fight, a Drop out of it, a Drum fill back in.
+  New templates: **Chase**, **Siege**, **Final Stand**, **Lament**.
+- The Drama layer costs no CPU while the world is Calm.
 
 ## Separate outputs in Logic Pro
 

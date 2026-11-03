@@ -662,6 +662,7 @@ void Layer::scheduleStep(int64_t step, int offset, int placeType, int style, con
         hit(d.mid, PDrums, 1, 0.9f);
         if (metalKit) hit(d.high, PMetal, 1, 0.55f);
         else if (hybrid) hit(d.high, PMetal, 3, 0.7f);
+        else if (th.kit == KitMarch) hit(d.high, PPerc, 0, 0.5f);   // a march: snare ghost strokes
         else hit(d.high, PHands, 0, 0.8f);
         hit(d.snare, PPerc, 0, th.kit == KitMarch ? 1.0f : 0.8f);
         // Toms: their line, and a fill on the last beat of every fourth bar (every other at a climax).

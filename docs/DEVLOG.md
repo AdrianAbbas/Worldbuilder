@@ -6786,8 +6786,8 @@ CPU only while it plays). A resumed session continues from the first unticked li
 - [x] 2. The arrangement: a section's Drama tier (saved; ARRANGE's DRAMA menu), `arr::dramatize` (arcs and transitions), four dramatic templates (Chase, Siege, Final Stand, Lament); Auto-arrange builds arcs when Drama is above 0
 - [x] 3. Inspire's mood (next to INSPIRE: Any, Calm, Adventure, Mystery, Tension, Battle, Epic, Tragic, Triumphant), Any dramatic about three times in five
 - [x] 4. 17 dramatic factory scenes
-- [ ] Balance and the `drama` tests (every Place Calm / Action / Climax measured, moods measured, level-matched, old sessions unchanged); listening renders
-- [ ] Existing suite: the checks of the Classic score run on it (named), the rest unchanged; bench (CPU at Climax, renders bit for bit at Drama 0 against the commit before)
+- [x] Balance and the `drama` tests (every Place Calm / Action / Climax measured, moods measured, level-matched, old sessions unchanged); listening renders
+- [x] Existing suite: the checks of the Classic score run on it (named), the rest unchanged; bench (CPU at Climax, renders bit for bit at Drama 0 against the commit before)
 - [ ] DEVLOG results, README, handoff; push; CI green
 
 ### The architecture (decision)
@@ -6832,3 +6832,151 @@ How it is used:
   KEYS and the recorder: a follow-up if wanted.
 - **Several Places**: the first active slot leads (drums, ostinato, hits); the second plays
   ostinato and hits; the others hits only, quieter, so four Places never stack four kits.
+
+### What changes gear, tier by tier
+
+| Tier | Drums (the leading slot) | Ostinato | Hits and swells | Harmony |
+|---|---|---|---|---|
+| Tension | a heartbeat on the war drum, a soft slap | eighths on the key's root (a pedal; the Suspense style a semitone rub) | a swell every eight bars; Tragic / Suspense: a low piano or braam every four | a tonic pedal, four bars a chord |
+| Action | the 3-3-2 war-drum groove, mid drums, snare backbeat, a tom fill every fourth bar | sixteenths with 3-3-2 accents on the chord's root, a low thump under the accents | a stab every other bar, the second hit on the phrase lines, a cymbal swell every eight bars | twice as fast, rising into the tonic |
+| Climax | double time (eighth-note war drums, snare every other eighth), hand ghosts in sixteenths, a tom fill every other bar, an impact and crash every four bars | the accents doubled by brass, the thump on every beat | short stabs every bar, the second hit every other bar, a cymbal swell into each phrase; a gear change lands on the chromatic mediant | i VI III VII / I V vi IV, two bars a chord |
+
+Kits: **war** (the large djembe's bass pitched down 7-11 semitones, dark), **tribal**
+(the djembes near their pitch, bright), **metal** (pistons on the eighths, clanks on the
+accents), **hybrid** (a deeper, shorter low drum, gated-noise claps, hats), **march** (a
+bass drum, a snare with ghost strokes). The styles change the bars: Driving (above),
+Epic (half time: drums on 1 and 3, a snare on 3, tom rolls; held choir and brass),
+Tragic (almost no drums: a distant toll; strings in long notes, piano strikes), Triumphant
+(a march: quarter-note bass drum, snare rudiments, fanfare stabs), Suspense (a heartbeat,
+ticking ghosts, semitone pulses).
+
+### Results
+
+Measured by the `drama` group (each Place alone at its card's defaults, 12 s, the last 8
+s measured; Calm is Score Intensity 35 %, Tension 62 %, Action 80 %, Climax 100 %; today's
+maximum is the same Place at 100 % on the Classic score). For every Place: the tiers come
+in order; the Climax is 10-23 dB louder than Calm with 10 dB or more low end, at least
+1.4 times the transient energy (spectral flux on the level-normalised signal) and at
+least 2.5 times the notes per second; louder at every tier; and against today's maximum
+louder (+4.5 to +14 dB), heavier (+3 dB low end or more), at least as transient and with
+1.5 times the notes or more. No Place clips (peaks within the limiter's -1 dBFS), and
+every Place's Climax sits within 5 dB of the others' median (level-matched).
+
+| Place | Climax over Calm (dB) | Climax over today's maximum (dB) |
+|---|---|---|
+| Castle | 10.6 | 4.5 |
+| Village | 19.4 | 10.1 |
+| Spaceport | 13.6 | 8.4 |
+| Factory | 12.5 | 7.3 |
+| City | 12.6 | 5.6 |
+| Forest | 13.6 | 9.7 |
+| Alien Hive | 14.1 | 7.9 |
+| Temple | 12.4 | 6.9 |
+| Cavern | 16.6 | 7.9 |
+| Ruins | 16.4 | 9.9 |
+| Spaceship | 16.7 | 10.4 |
+| Biodome | 14.1 | 10.6 |
+| Sea Ship | 16.7 | 8.7 |
+| Suburbs | 15.8 | 11.0 |
+| Mall | 16.4 | 9.7 |
+| Military Camp | 17.6 | 9.0 |
+| Beach | 18.1 | 14.2 |
+| Desert | 19.9 | 13.6 |
+| Palace | 22.6 | 11.9 |
+| Tavern | 18.0 | 12.0 |
+| Space Station | 12.8 | 8.4 |
+| Cyberpunk Megacity | 13.5 | 8.3 |
+| Starship Bridge | 14.9 | 7.6 |
+| Asteroid Mining Colony | 14.0 | 9.2 |
+| Alien Ruins | 16.1 | 10.0 |
+| Nebula | 14.9 | 8.4 |
+
+Inspire's moods (three scenes each, as they play in Free mode, the mean):
+
+| Mood | Level | Notes / s | Low end | Minor-third share | Tiers (sum of three) |
+|---|---|---|---|---|---|
+| Calm | -29.3 dBFS | 33 | -36.0 dB | 0.01 | 0 |
+| Adventure | -23.5 | 53 | -29.9 | 0.27 | 3 |
+| Mystery | -25.5 | 16 | -31.8 | 0.62 | 0 |
+| Tension | -20.3 | 39 | -25.2 | 0.74 | 3 |
+| Battle | -16.5 | 101 | -21.2 | 0.64 | 9 (Climax) |
+| Epic | -15.9 | 68 | -21.0 | 0.67 | 9 |
+| Tragic | -20.0 | 39 | -24.7 | 0.88 | 6 |
+| Triumphant | -17.7 | 70 | -23.1 | 0.14 | 7 |
+
+Any picks a dramatic mood (Tension, Battle, Epic, Tragic, Triumphant) for 60 % of seeds
+(the test: at least half of 400 seeds, every mood at least 20 times).
+
+**Old sessions and scenes unchanged, bit for bit.** The bench (`renders`: every Place
+four times, busy, 12 s; and the new `scenes` mode: each of the 24 factory scenes from
+before the Drama tier played 40 s in Arrangement mode) compared sample for sample with the
+commit before (`60fce95`): 26 of 26 and 24 of 24 identical. In the tests: a project saved
+without the drama parameters opens at Drama 0, plays bit for bit as one at Drama 0 and
+never starts the layer; at 50 % Score Intensity a world at Drama 100 % is bit for bit the
+Classic one.
+
+**CPU** (`WorldbuilderBench audio`, each Place four times at once, busy, Standard, 48 kHz /
+256, % of one core, the least of two 10 s runs, this container):
+
+| | the commit before | now |
+|---|---|---|
+| All 26, Score Intensity 50 % (no drama playing) | 248.4 | 249.6 (the same, within noise) |
+| All 26, Score Intensity 100 % (before: Classic; now: Climax) | 249.1 | 336.6 (+35 %) |
+| The heaviest world at 100 % | Temple 12.6 | Tavern 17.7, Temple 16.9 |
+
+The layer costs nothing at or below the middle of Score Intensity (it is not even
+called) and nothing while asleep; at Climax the four-Place busy worlds cost 2-5 points of
+a core more, the heaviest 17.7 % of one core here (the heaviest Classic world at 100 % is the Temple's
+12.6 % here). What was done
+for it: parts whose last note has rung out are neither updated nor rendered; the patches
+are set again only when what shapes them changes; only the leading slot's layer has its
+own reverb; voices per part follow Quality (Eco fewer).
+
+**The existing suite**: unchanged except where the Classic score is what a check judges,
+which now says so and runs at Drama 0: the Score Intensity curve's loudness rules (the
+`intensity` group's worlds), a section change gliding without a spike, a journey heard in
+a render, a loop's seam (the `drama` group checks the Drama tier's own versions: no
+overshoot past the Climax's own level, a loop with the downbeats joining without a
+click); the templates' table has the four new ones. Full suite here
+(`scripts/run-tests-parallel.sh`, the drama group in the third shard): see the handoff.
+
+### Drama tier handoff
+
+**Done**: the parameters (Drama, Drama Style; legacy 0), the harmony's gears, the Drama
+layer with 26 Place themes and five styles, section tiers and arcs in ARRANGE and
+Auto-arrange, four templates, Inspire's mood menu (the arrow beside INSPIRE; its button
+then reads the mood), 17 dramatic factory scenes, the `drama` test group (158 checks),
+the bench's Climax and scene modes, README.
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`): 
+`drama-<place>-calm-action-climax.flac` for each of the 26 Places (6 s each of Calm,
+Action and Climax as played, with a short gap; kept at their real levels),
+`drama-inspire-<mood>.flac` (one inspired scene per mood, 10 s), and
+`drama-scene-battle-at-the-castle-gate.flac` (90 s of that scene's arrangement: intro,
+tension, the Riser into the fight, the Drop, the break, the fight again).
+
+**What to listen for on the Mac**:
+- Push Score Intensity from 50 % to 100 % on a single Castle: nothing changes until about
+  55 %, then a heartbeat drum and a pulse on the tonic; at about 72 % the strings start
+  driving sixteenths and the war drums groove; near 90 % the drums go double time,
+  impacts land every four bars, brass and choir stab. Every change lands on a bar line.
+- Turn DRAMA (left, beside Activity) to 0: the Classic score, exactly as before.
+- DRAMA STYLE (above the knob): Epic is broader and slower, Tragic almost drumless,
+  Triumphant a march, Suspense a heartbeat.
+- INSPIRE's arrow: pick Battle, Epic, Tragic or Triumphant; the scene loads in
+  Arrangement mode with arcs (listen for the Riser into the fight and the Drop after it).
+- The new scenes at the end of the scene menu (Battle at the Castle Gate ... Warp Jump
+  Pursuit).
+- An old project: it should sound exactly as before (Drama shows 0).
+
+**Known limits**:
+- The Drama layer's notes are written by the tier, the style and the Place; they are not
+  editable in the Pattern Editor or playable from KEYS (the decision above).
+- Climax costs up to about 35 % more CPU than the Classic 100 % on the busiest four-Place
+  worlds (measured on this container, not on a MacBook Air); below Tension it costs
+  nothing.
+- The test's transient measure is a spectral flux on the level-normalised signal: some
+  Places' Classic maximum is already a snare or shaker groove, so their Climax is checked
+  to be at least as transient (and much louder, heavier and denser in notes), not more.
+- The tiers' balance was tuned by measurement and by looking at the renders' levels and
+  rhythmic energy, not by ear: listen to the renders first.

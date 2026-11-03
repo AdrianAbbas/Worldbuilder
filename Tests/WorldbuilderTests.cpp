@@ -4854,7 +4854,10 @@ void testTransitions(Suite& s) {
     {
         // Templates.
         const std::array<std::vector<int>, arr::TemplateCount> lengths { { { 8, 16, 16, 16, 8 }, { 8, 32, 8 }, { 4, 8, 16, 8, 16, 4 }, { 8, 16, 4, 16, 8 },
-                                                                            { 8, 8, 8, 8 }, { 16, 16, 8, 16 } } };
+                                                                            { 8, 8, 8, 8 }, { 16, 16, 8, 16 },
+                                                                            // The Drama tier's: Chase, Siege, Final Stand, Lament.
+                                                                            { 4, 8, 16, 4, 4, 16, 4 }, { 8, 8, 16, 8, 8, 16, 8 }, { 8, 8, 16, 4, 16, 8, 8 },
+                                                                            { 8, 16, 8, 8, 8, 8 } } };
         bool all = true;
         std::string text;
         for (int t = 0; t < arr::TemplateCount; ++t) {
@@ -4864,7 +4867,7 @@ void testTransitions(Suite& s) {
             if (!ok) text += std::string(arr::templateNames[std::size_t(t)]) + " ";
             all &= ok;
         }
-        s.check(all, "the six templates have their sections and lengths", text);
+        s.check(all, "the ten templates have their sections and lengths", text);
         const auto town = arr::makeTemplate(arr::TownTheme), arc = arr::makeTemplate(arr::ClassicArc);
         s.check(town.end == arr::EndLoop && town.loopTo == 0 && arc.end == arr::EndStop, "Town Theme loops; Classic Arc stops");
         s.check(arr::kindOf(arc, 0) == arr::KindIntro && arr::kindOf(arc, 1) == arr::KindBuild && arr::kindOf(arc, 2) == arr::KindPeak

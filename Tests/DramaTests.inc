@@ -419,7 +419,7 @@ void testDrama(Suite& s) {
                     case scenes::MoodTragic: ok = ok && sc.mood == 0 && sc.dramaStyle == drama::StyleTragic; break;
                     case scenes::MoodTriumphant: ok = ok && music::majorMood(sc.mood) && sc.dramaStyle == drama::StyleTriumphant; break;
                     case scenes::MoodCalm: ok = ok && sc.intensity <= 0.45f && !sc.arcs; break;
-                    case scenes::MoodTension: ok = ok && sc.intensity > 0.6f && sc.intensity < 0.75f; break;
+                    case scenes::MoodTension: ok = ok && sc.intensity >= 0.6f && sc.intensity < 0.7f; break;
                     default: break;
                 }
                 if (!ok) wrong += std::string(scenes::inspireMoodNames[std::size_t(m)]) + "/" + std::to_string(seed) + " ";
@@ -482,7 +482,8 @@ void testDrama(Suite& s) {
         s.check(epic.rms > calm.rms + 8.0 && epic.tierSum >= 6 && epic.events < battle.events, "Epic: big but broader than Battle", text);
         s.check(tragic.rms < battle.rms - 1.0 && tragic.events < 0.8 * battle.events && tragic.minorShare > 0.5, "Tragic: slower, quieter, minor", text);
         s.check(triumph.rms > calm.rms + 8.0 && triumph.tierSum >= 6 && triumph.minorShare < battle.minorShare, "Triumphant: big and major", text);
-        s.check(tension.tierSum >= 3 && tension.rms > calm.rms + 3.0 && tension.events > calm.events, "Tension: the Tension tier, above Calm", text);
+        s.check(tension.tierSum >= 3 && tension.tierSum <= 4 && tension.rms > calm.rms + 3.0 && tension.events > calm.events,
+                "Tension: the Tension tier (in two scenes of three at least), above Calm", text);
         s.check(calm.tierSum == 0 && calm.rms < battle.rms - 8.0 && mystery.tierSum == 0 && mystery.rms < battle.rms - 6.0,
                 "Calm and Mystery stay below the Drama tier", text);
         s.check(adventure.rms > calm.rms && adventure.events > calm.events, "Adventure: livelier than Calm", text);

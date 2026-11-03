@@ -88,9 +88,11 @@ public:
     // Scenes (Milestone 12): the header's scene browser, INSPIRE and UNDO.
     void loadScene(int index);
     void inspire();
+    void showInspireMoods();
+    void refreshInspireMood();
     void undoScene();
     juce::Button& inspireButton() { return inspireToggle; }
-    juce::ComboBox& inspireMoodChoice() { return inspireMood; }
+    juce::Button& inspireMoodButton() { return inspireMood; }
     juce::Button& sceneUndoButton() { return sceneUndo; }
     juce::Button& sceneNameButton() { return sceneMenu; }
     juce::Button& scenePrevButton() { return scenePrev; }
@@ -228,7 +230,8 @@ private:
     std::vector<juce::Component::SafePointer<juce::Component>> hiddenForInstrument;
     void refreshArrangementState();
     juce::TextButton scenePrev { "<" }, sceneNext { ">" }, sceneMenu, inspireToggle { "INSPIRE" }, sceneUndo { "UNDO" };
-    juce::ComboBox inspireMood, dramaStyle;
+    juce::TextButton inspireMood;   // INSPIRE's mood (a menu)
+    juce::ComboBox dramaStyle;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> dramaStyleAttachment;
     // After a scene loads: the strips, the panels and the ARRANGE view show it.
     void sceneChanged();
