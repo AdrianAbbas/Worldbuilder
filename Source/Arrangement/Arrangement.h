@@ -235,7 +235,7 @@ struct State {
     // An evolving section's progress as the Drama instruments play it (0..1: harder as a
     // rising section goes on, softer as a calm one ends; < 0: as the gear says).
     float heat = -1;
-    // An evolving section's swell (dB on every Place: from -2 dB at its start to 0 at its end
+    // An evolving section's swell (dB on every Place: from -2.5 dB at its start to 0 at its end
     // in a rising section; 0 otherwise).
     float swellDb = 0;
 };

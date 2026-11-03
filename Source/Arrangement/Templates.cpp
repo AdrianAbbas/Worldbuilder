@@ -598,7 +598,7 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
     const float through = float(std::clamp(b / bars, 0.0, 1.0));
     if (s.evolve && !falling) st.intensity = dsp::clamp01(dsp::clamp01(st.intensity) - 0.14f * (1.0f - through) + 0.04f * through);
     if (s.evolve) st.heat = falling ? 1.0f - through : through;
-    if (s.evolve && !falling) st.swellDb = -2.0f * (1.0f - through);
+    if (s.evolve && !falling) st.swellDb = -2.5f * (1.0f - through);
 
     for (int slot = 0; slot < placeSlots; ++slot) {
         const int type = sh.types[std::size_t(slot)];

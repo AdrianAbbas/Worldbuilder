@@ -7015,5 +7015,177 @@ the first unticked line.
 - [x] 3. Drama changes the arrangement (the gears per section, the Drama meter as an offset), the sections evolving inside themselves; free play changes gear too
 - [x] 4. Long sections: templates, Auto-arrange, Inspire and the dramatic scenes (the old scenes keep theirs)
 - [x] 5. The interface: Pattern Editor tabs, ARRANGE rows and Evolve, KEYS targets, Instrument mode, the Place panel
-- [ ] 6. Tests (drama changes the arrangement; Drama instruments editable; old sessions and scenes bit for bit; template lengths; a 32-bar section rises), listening renders, bench
+- [x] 6. Tests (drama changes the arrangement; Drama instruments editable; old sessions and scenes bit for bit; template lengths; a 32-bar section rises), listening renders, bench
 - [ ] 7. DEVLOG results and handoff; final push; CI green
+
+### Decisions
+
+**The Drama instruments are elements 6, 7 and 8 of every slot.** The decision recorded
+for the Drama tier (one shared layer, not instruments) is reversed. A Place still has six
+instruments (its engines, generators, `PlaceContext` and effects are untouched); a *slot*
+has nine: `slotElements` in `Place.h`, `pat::elementsPerSlot` for the patterns. What is
+per slot grew to nine: `SlotPatterns` and `Generated` (the patterns and their variants),
+`PlaceSlotControls` (levels, switches, effects, arrangement gains, variants, clips),
+the arrangement's `Grid` and `State`, `InstrumentFx` (nine effect buses), the Pattern
+Editor's tabs, ARRANGE's rows, KEYS' targets and the Instrument mode catalog (234
+instruments). `elementSpec(type, e)` names any of them: the Drama ones are themed by
+the Place (`dramaElementSpec` in `Drama.cpp`: "War Drums", "Spiccato Strings",
+"Brass & Choir Hits"...). The drums are a kit of six rows (seven for a metal kit: low
+drum, mid drum, slap / clank / hat / snare ghost, snare or clap, two toms, pistons), the
+ostinato is melodic, the hits a kit of four rows (the Place's two stabs on the current
+chord, impact and crash, a cymbal swell as long as its note).
+
+`drama::Layer` now plays three `pat::Playback`s instead of writing its notes step by
+step. Their starting patterns come from `drama::generate` (the same drum, ostinato and
+hit tables as before, as patterns: A the tier's own bars, B the next tier's or more at a
+climax, C the one below, the Fill a bar into the next section; Generate makes another
+take); the slot regenerates them when the tier latched on the bar line changes (the
+tier is advanced before the patterns are chosen, so a new tier's pattern starts on its
+first downbeat), and reports them to the editor like the six. An edited pattern plays as
+edited from the Tension tier up. What stays automatic: the doublings as the drama rises
+(the low thump and the brass under the ostinato's accents), the gear-change and landing
+stingers and the drum roll into a Riser: each goes through the instrument it belongs to
+(its level, mute and effects). Each Drama instrument sums its parts into its own bus,
+then its level (switch, mute / solo, arrangement), its effects (the slot's `InstrumentFx`
+elements 6-8: sends to the shared reverbs and delays), then the leading slot's hall as
+before. KEYS and Instrument mode play their live notes on the same parts (kit rows from
+the key; the ostinato at concert pitch); the recorder takes them into the pattern.
+
+**Host parameters** are appended after Drama Style: per slot the three levels, three
+switches and three effect blocks (`p1_e7`, `p1_e7_on`, `p1_e7_rev`... `p4_e9_slidetime`,
+156 in all; `dramaParam`, `elementLevelParam`, `elementOnParam`, `elementFxParam`).
+Nothing older moved, so automation keeps its parameters. Journeys leave them as set
+(like Drama itself).
+
+**Session version 5 and its migration.** A project saved before (version < 5, no Drama
+instrument parameters) opens with the Drama instruments' switches **off**, unless it
+played the Drama tier (Drama above 0), whose drums, ostinato and hits they now are.
+Arrangements keep the six instruments' cells in `cells` and add `dramaCells` (missing:
+On, A) and `evolve` (missing: off). The 24 factory scenes from before the Drama tier
+are built from the short templates and the old Auto-arrange (`makeTemplate(t, true)`,
+`autoArrangeLegacy`), with the Drama instruments off; the dramatic scenes and Inspire use
+the long, evolving ones.
+
+**Drama changes the arrangement** (`arr::shape`, applied after `Arrangement::evaluate`,
+a pure function of the arrangement, the position, the Drama meter, Score Intensity's
+offset and the slot types). A section's gear is its tier (or, without one, its Score
+Intensity: the middle is neutral, Tension) offset by the meter: at 100 % the tier as set,
+every 50 % less one tier lower. How far the gear is from Tension (d, weighted in over the
+first 25 % of the meter) reshapes the Place's own instruments: Calm thins out (accents,
+then rhythm, then the melody leave; the bass turns sparse; the Place keeps its lowest
+instrument); above it the resting instruments enter by role (bass, rhythm, melody,
+texture, accents), the variants change gear (the rhythm section first, then the bass,
+the melody, the rest; a sparse part two gears at a climax), the rhythm section fills on
+the four-bar lines, at a climax the melody doubles an octave up and the bass down
+(`Playback::doubleDegrees`), and Score Intensity is pushed with it. A tiered section's
+Drama instruments and harmony follow its gear; one without a tier keeps them on Score
+Intensity as before. In free play the Place's own instruments change gear with the
+slot's tier too (Action: rhythm and bass to B; Climax: the melody too, doubled). At
+Drama 0 nothing at all changes.
+
+**Long, evolving sections.** Templates for scoring (intros, breaks, endings 8-16;
+build-ups, wind-downs, the rest 16-32; fights, chases, loops, themes, phases 32-64),
+`maxBars` 128 (clips up to 128 bars and 4096 notes). Auto-arrange gives a section shorter
+than its kind wants that length (`scoringBars`), sets Evolve and the Drama instruments'
+cells (on; the drums' Fill before a fight). An evolving section: instruments not playing
+in the section before enter over its first bars in order of their role (a fight quicker
+than a build-up), Score Intensity rises across it (from 0.14 below its ramp to 0.04 above,
+so even a climax at the top has room), a swell on every Place from -2.5 dB to 0, the
+Drama instruments harder as it goes (their heat), the variants change on its phrases
+(8 bars, 16 from 48 bars: the first a gear sparser, the second half a gear busier; calm
+and closing sections the other way, thinning out towards their end), small fills (the
+rhythm instruments' Fill) on the last two beats of each phrase. Auto-arrange's clips
+carry the phrases' variants in their notes. Saved arrangements keep their lengths and
+do not evolve unless ARRANGE's section menu (*Evolve inside the section*) says so.
+
+### Results
+
+Measured by the `dramarework` group (the Battle template Auto-arranged for a Castle and
+a Village with its arcs, 120 bpm, per section; "playing" is the Place instruments playing
+summed over both slots, gear the variants as C 0 / A 1 / B 2):
+
+| Section | Drama 0 % | Drama 50 % | Drama 100 % |
+|---|---|---|---|
+| Intro (Calm) | 3.5 playing, 0.7 notes/s, -29.0 dB | 2.0, 0.5 notes/s, -30.1 dB | 2.0, 0.5 notes/s, -30.1 dB |
+| Tension | 6.0 playing, gear 1.33, 5.3 notes/s, -24.3 dB | 2.8, gear 1.09, 2.3 notes/s, -25.5 dB (now Calm) | 6.0, gear 1.33, 23.6 notes/s, -19.3 dB |
+| Combat (Climax) | 11.3, gear 1.53, 22.9 notes/s, -20.5 dB | 11.3, gear 1.56, 56.7 notes/s, -16.9 dB (Action) | 11.3, gear 1.88, 89.3 notes/s, -16.2 dB, 5.8 parts doubled |
+| Break (Calm) | 5.0 playing, 3.9 notes/s, -26.5 dB | 3.0, 2.4 notes/s, -27.3 dB | 3.0, 2.4 notes/s, -27.3 dB |
+| Combat II | 11.2, gear 1.59, 22.8 notes/s, -20.6 dB | 11.2, gear 1.64, 58.8 notes/s, -17.1 dB | 11.2, gear 1.87, 92.0 notes/s, -16.3 dB |
+
+The fights stand further above the calm sections as Drama rises (and the calm ones are
+thinner); the Combat plays at Climax at 100 % and at Action at 50 % (the offset). A
+32-bar Combat grows: Classic 16.7 -> 26.7 notes/s and about +1.1 dB (first eight bars
+against the last eight, measured with the -2 dB swell; the swell is now -2.5 dB),
+Drama 100 % 69 -> 99.9 notes/s and +2.0 dB, its variants changing on the phrases.
+
+The Drama instruments: the starting patterns get busier with the tier (B busier and C
+sparser than A); an edited Drama drums pattern plays exactly its steps and rows bar
+after bar, the same after a save and reload; switched off or muted it plays nothing; its
+level scales it (6 dB from 0.8 to 0.4); its reverb send reaches the shared reverb; in
+ARRANGE its row decides (off in one section, its edited B in the next); KEYS plays the
+ostinato (even at Drama 0), Instrument mode plays the hits, REC records into the drums.
+The `drama` group (the Drama tier's own: every Place Calm to Climax, styles, moods,
+scenes) passes as before: the Places' Climax-over-Calm and Climax-over-today's-maximum
+figures moved by tenths of a dB (Castle 10.9 / 4.75 dB, Spaceport 14.0 / 8.75 dB...).
+
+**Old sessions and scenes, bit for bit.** The bench against the commit before
+(`2c11d0b`, same build settings): every Place's 12 s (`renders`, four busy copies) 26 of
+26 identical, the 24 factory scenes from before the Drama tier (`scenes`, 40 s each in
+Arrangement mode) 24 of 24 identical; the 17 dramatic scenes differ, as intended. In the
+tests: a version-4 project opens with the Drama instruments off and its arrangement as it
+was, nothing reshapes it at any position, the Drama instruments never wake; a Drama tier
+project opens with them on; the 24 older scenes keep their short arrangements.
+
+**CPU** (`WorldbuilderBench audio`, each Place four times at once, busy, % of one core
+summed over the 26 Places, two runs each on this container, which was busier than at the
+performance pass): Score Intensity 50 %: 553 / 601 before, 579 / 569 now (the same within
+noise: nothing renders at Calm). At 100 % (Climax): 721 before, 821 now (+14 %): the
+Place's own parts doubling and playing their busier variants at a climax (the change
+asked for), and the three Drama instruments' own effect buses.
+
+Full suite (`scripts/run-tests-parallel.sh`): 5028 passed, 0 failed here (before the
+swell went to -2.5 dB; the groups it touches were run again after it).
+
+### Drama tier rework handoff
+
+**Done**: the Drama instruments as real instruments (patterns with variants, Pattern
+Editor tabs, ARRANGE rows, KEYS, Instrument mode, REC, levels, switches, mute / solo,
+effects; host parameters appended; session version 5 with its migration); drama
+reshaping the arrangement per section with the meter as an offset (and free play
+changing gear); long templates, Auto-arrange and Inspire with evolving sections; the
+`dramarework` test group; README; bench.
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`):
+`drama-battle-template-drama-0.flac`, `-50.flac`, `-100.flac` (the Battle template for a
+Castle and a Village, from the end of the Intro through Tension and the 32-bar Combat into
+the Break, at Drama 0, 50 and 100 %) and `drama-edited-pattern-castle.flac` (the Castle
+at Climax with its Drama drums edited to four strokes a bar: the edited rhythm under the
+ostinato and hits).
+
+**What to look at on the Mac**:
+- **Pattern Editor** on a Place: three red tabs after the six (e.g. the Castle's *War
+  Drums*, *Spiccato Strings*, *Brass & Choir Hits*). With Score Intensity high the
+  drums' grid shows the tier's pattern (it changes as the tier does); A / B / C / FILL
+  show the variants. Draw a few notes: from then on it plays as drawn. LEVEL, ON, MUTE,
+  SOLO and the effects row work as for the six; KEYS plays the tab shown, REC records it.
+- **ARRANGE**: under each Place a red line and three rows (the Drama instruments): click
+  a cell to switch them off in a section, shift-click for the variant. Choose the
+  **Battle** template and press **Auto**: the sections are now 8-48 bars; right-click a
+  section for *Evolve inside the section*. Play it at **Drama** 0, 50 and 100 %: at 0 the
+  arrangement as written; at 50 the fights at Action and the calm sections thinner; at
+  100 the fights at Climax with the parts doubled, fills every four bars. Inside the
+  32-bar Combat the parts come in over the first bars and it keeps growing.
+- **Place panel**: the right column, *DRAMA INSTRUMENTS*: their levels and switches.
+- **Instrument mode**: the browser now lists e.g. "Castle -> War Drums".
+- An old project: Drama 0, no Drama instruments, the same sound as before.
+
+**Known limits**:
+- Climax costs about 14 % more CPU than the Drama tier's did on the busiest worlds
+  (measured on this container, not on a MacBook Air); at or below the middle of Score
+  Intensity nothing changed.
+- The Drama instruments' rows are the same in every Place of a kit (the theme picks the
+  sounds); a drama pattern written for one Place plays its rows on another's kit.
+- Auto-arrange lengthens short sections (as asked for scoring); undo brings the lengths
+  back.
+- The balance of the reshaped arrangement was set by measurement (instruments, notes,
+  level per section), not by ear: listen to the three Battle renders first.

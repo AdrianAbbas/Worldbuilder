@@ -284,7 +284,7 @@ The templates, **Auto** and Inspire now write scoring lengths: intros, breaks an
 themes, a boss's phases) 32-64; a section may be up to 128 bars. Each such section
 **evolves** (ARRANGE: right-click a section, *Evolve inside the section*): the instruments
 come in over its first bars in the order of their role, Score Intensity and the level
-rise across it (about 2 dB), the variants change on its 8-bar phrases (16 in sections of
+rise across it (about 2.5 dB), the variants change on its 8-bar phrases (16 in sections of
 48 bars or more), small fills on the phrase lines; calm and closing sections thin out
 towards their end instead. Arrangements you made keep their lengths and do not evolve
 until you ask; **Auto** gives short sections their scoring length.
