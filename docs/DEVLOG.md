@@ -5,10 +5,9 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**The Drama tier rework is in progress** (drama changes the arrangement; the Drama
-instruments editable; long, evolving sections): checklist in
-[The Drama tier rework](#the-drama-tier-rework-2026-11-03). A resumed session continues
-from its first unticked line.
+**The Drama tier rework is done** (drama changes the arrangement; the Drama
+instruments editable; long, evolving sections): checklist, decisions, results and handoff in
+[The Drama tier rework](#the-drama-tier-rework-2026-11-03).
 
 **Milestone 17 is done** (the piano, voice, djembe and banjo recordings): checklist,
 decisions, the notes to re-record and the handoff at the end, in
@@ -7114,9 +7113,9 @@ summed over both slots, gear the variants as C 0 / A 1 / B 2):
 
 The fights stand further above the calm sections as Drama rises (and the calm ones are
 thinner); the Combat plays at Climax at 100 % and at Action at 50 % (the offset). A
-32-bar Combat grows: Classic 16.7 -> 26.7 notes/s and about +1.1 dB (first eight bars
-against the last eight, measured with the -2 dB swell; the swell is now -2.5 dB),
-Drama 100 % 69 -> 99.9 notes/s and +2.0 dB, its variants changing on the phrases.
+32-bar Combat grows (its first eight bars after the landing against its last eight):
+Classic 16.7 -> 26.7 notes/s and +1.4 dB, Drama 100 % 69 -> 99.9 notes/s and +2.2 dB,
+its variants changing on the phrases.
 
 The Drama instruments: the starting patterns get busier with the tier (B busier and C
 sparser than A); an edited Drama drums pattern plays exactly its steps and rows bar
@@ -7143,8 +7142,9 @@ noise: nothing renders at Calm). At 100 % (Climax): 721 before, 821 now (+14 %):
 Place's own parts doubling and playing their busier variants at a climax (the change
 asked for), and the three Drama instruments' own effect buses.
 
-Full suite (`scripts/run-tests-parallel.sh`): 5028 passed, 0 failed here (before the
-swell went to -2.5 dB; the groups it touches were run again after it).
+Full suite (`scripts/run-tests-parallel.sh`): 5028 passed, 0 failed here; after the swell
+went from -2 to -2.5 dB the groups it touches (dramarework, drama, scenes, arrangement,
+clips, transitions, gameaudio) again: 424 passed, 0 failed.
 
 ### Drama tier rework handoff
 
