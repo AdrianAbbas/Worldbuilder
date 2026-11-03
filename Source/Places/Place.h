@@ -49,6 +49,11 @@ inline constexpr std::array<const char*, PlaceTypeCount> placeArrives { "", "", 
                                                                         "7A", "7A", "7A", "7A", "7A", "7A" };
 
 constexpr int placeElements = pat::elementsPerPlace, placeCharacters = 3;
+// The Drama tier rework: each slot also has three Drama instruments, elements 6, 7 and 8
+// (drums, ostinato, hits), themed by the Place, edited, arranged and played like the six.
+constexpr int dramaElements = pat::dramaElements, slotElements = pat::elementsPerSlot;
+enum DramaElement { DramaDrums = placeElements, DramaOstinato, DramaHits };
+inline constexpr bool isDramaElement(int e) { return e >= placeElements && e < slotElements; }
 
 enum PlaceCategory { MedievalFantasy, Modern, SciFi, Nature, PlaceCategoryCount };
 inline constexpr std::array<const char*, PlaceCategoryCount> categoryNames { "MEDIEVAL & FANTASY", "MODERN", "SCI-FI", "NATURE" };
@@ -69,7 +74,7 @@ struct ElementSpec {
     const char* name = "-";
     int icon = IconDrone;
     int kind = NoPattern;
-    std::array<const char*, 4> kit {};   // kit row names
+    std::array<const char*, 8> kit {};   // kit row names (a Place's kits use four; the Drama drums more)
     int rows = 0;
     uint8_t vary = pat::VaryVelocity | pat::VarySkip;   // default randomness switches
     bool sustained = false;   // long held notes (drones, pads)
@@ -94,7 +99,7 @@ inline ElementSpec mel(const char* name, int icon, uint8_t vary = VaryVelocity |
     e.vary = vary;
     return e;
 }
-inline ElementSpec kit(const char* name, int icon, std::array<const char*, 4> rows, uint8_t vary = VaryVelocity | VarySkip | VaryExtra) {
+inline ElementSpec kit(const char* name, int icon, std::array<const char*, 8> rows, uint8_t vary = VaryVelocity | VarySkip | VaryExtra) {
     ElementSpec e;
     e.name = name;
     e.icon = icon;
@@ -366,13 +371,20 @@ inline int stepInBar(int64_t step) { return int(((step % 16) + 16) % 16); }
 struct ElementPatternInfo {
     int kind = NoPattern;
     int rows = 0;
-    std::array<const char*, 4> kit {};
+    std::array<const char*, 8> kit {};
     uint8_t vary = pat::VaryVelocity | pat::VarySkip;
 };
+// The Drama instruments' specs for a Place (Drama.cpp: named and kitted by its theme).
+const ElementSpec& dramaElementSpec(int type, int element);
+// Any instrument of a slot holding `type`: the Place's six, then the three Drama ones.
+inline const ElementSpec& elementSpec(int type, int element) {
+    if (isDramaElement(element)) return dramaElementSpec(type, element);
+    return placeInfo(type).element[std::size_t(std::clamp(element, 0, placeElements - 1))];
+}
 inline ElementPatternInfo patternInfo(int type, int element) {
     ElementPatternInfo i;
-    if (type <= NoPlace || type >= PlaceTypeCount || element < 0 || element >= placeElements || !placeImplemented[std::size_t(type)]) return i;
-    const auto& e = placeInfo(type).element[std::size_t(element)];
+    if (type <= NoPlace || type >= PlaceTypeCount || element < 0 || element >= slotElements || !placeImplemented[std::size_t(type)]) return i;
+    const auto& e = elementSpec(type, element);
     i.kind = e.kind;
     i.rows = e.rows;
     i.kit = e.kit;
@@ -387,6 +399,8 @@ inline bool hasPatterns(int type) {
 inline pat::Controls defaultControls(int type, int element) {
     pat::Controls c;
     c.vary = patternInfo(type, element).vary;
+    // The Drama instruments play their parts tight: a little velocity only.
+    if (isDramaElement(element)) c.randomness = 0.15f;
     return c;
 }
 
@@ -396,9 +410,12 @@ struct GenInputs {
     float activity = 0.5f, density = 0.5f, tension = 0.3f, life = 0.3f;
     uint32_t key = 0;
     uint8_t variant = 0;
+    // The Drama instruments only (the Place's generators never see them): the tier the
+    // pattern is written for, the Drama Style and the slot's rank among the active slots.
+    int tier = 0, style = 0, rank = 0;
     bool operator==(const GenInputs& o) const {
         return character == o.character && mood == o.mood && activity == o.activity && density == o.density && tension == o.tension
-               && life == o.life && key == o.key && variant == o.variant;
+               && life == o.life && key == o.key && variant == o.variant && tier == o.tier && style == o.style && rank == o.rank;
     }
 };
 

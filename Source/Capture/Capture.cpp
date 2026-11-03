@@ -114,7 +114,7 @@ bool renderToWav(const Scene& scene, const Pass& pass, int bars, const juce::Fil
 
 juce::String trackName(int type, int element) {
     if (type <= NoPlace || type >= PlaceTypeCount) return {};
-    return juce::String(placeNames[std::size_t(type)]) + " - " + placeInfo(type).element[std::size_t(std::clamp(element, 0, placeElements - 1))].name;
+    return juce::String(placeNames[std::size_t(type)]) + " - " + elementSpec(type, element).name;
 }
 
 std::vector<Track> sceneTracks(const Scene& scene) {
@@ -141,9 +141,11 @@ std::vector<Track> sceneTracks(const Scene& scene) {
         bool elementSolo = false;
         if (mine)
             for (const auto& el : slotPatterns.element) elementSolo |= el.controls.solo;
-        for (int e = 0; e < placeElements; ++e) {
+        for (int e = 0; e < slotElements; ++e) {
             const auto info = patternInfo(pc.type, e);
             if (info.kind == NoPattern || !pc.elementOn[std::size_t(e)] || pc.element[std::size_t(e)] <= 0.001f) continue;
+            // The Drama instruments play only with Drama above 0.
+            if (isDramaElement(e) && c.drama <= 0.0f) continue;
             if (mine) {
                 const auto& controls = slotPatterns.element[std::size_t(e)].controls;
                 if (controls.mute || (elementSolo && !controls.solo)) continue;

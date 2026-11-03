@@ -72,7 +72,7 @@ struct Controls {
         const double at = length > 0 ? beat - std::floor(beat / length) * length : beat;
         return at >= punchIn - 1.0e-9 && at < punchOut - 1.0e-9;
     }
-    bool valid() const { return slot >= 0 && slot < 4 && element >= 0 && element < pat::elementsPerPlace; }
+    bool valid() const { return slot >= 0 && slot < 4 && element >= 0 && element < pat::elementsPerSlot; }
 };
 
 //==============================================================================

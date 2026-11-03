@@ -103,13 +103,31 @@ enum P {
     PInstAmbience, PInstOctave, PInstDrone,
     // The Drama tier (after the performance pass).
     PDrama, PDramaStyle,
-    PCount
+    // The Drama tier rework: each slot's three Drama instruments (drums, ostinato, hits:
+    // elements 7-9 of the slot), DramaParamCount per slot, as the six instruments have
+    // them. Appended after everything older, so existing automation keeps its parameters.
+    PDramaFirst,
+    PCount = PDramaFirst + 4 * (6 + 3 * FxFieldCount)
 };
+
+// Each slot's Drama instrument parameters, in this order (from PDramaFirst + slot *
+// DramaParamCount): three levels, three switches, then each one's effects.
+enum DramaParam { DrLevel, DrOn = DrLevel + 3, DrFx = DrOn + 3, DramaParamCount = DrFx + 3 * FxFieldCount };
+static_assert(int(PCount) == int(PDramaFirst) + 4 * int(DramaParamCount), "four slots of Drama instrument parameters");
+inline constexpr int dramaParam(int slot, int field) { return PDramaFirst + slot * DramaParamCount + field; }
 
 inline constexpr int layerLevel(int layer) { return PLayerFirst + 3 * layer; }
 inline constexpr int layerMute(int layer) { return PLayerFirst + 3 * layer + 1; }
 inline constexpr int layerSolo(int layer) { return PLayerFirst + 3 * layer + 2; }
 inline constexpr int placeParam(int slot, int field) { return PPlaceFirst + slot * PlaceParamCount + field; }
+// Any instrument of a slot (0-5: the Place's, 6-8: the Drama instruments): its level,
+// switch and effect field.
+inline constexpr int elementLevelParam(int slot, int e) { return e < 6 ? placeParam(slot, PlElement + e) : dramaParam(slot, DrLevel + e - 6); }
+inline constexpr int elementOnParam(int slot, int e) { return e < 6 ? placeParam(slot, PlElementOn + e) : dramaParam(slot, DrOn + e - 6); }
+inline constexpr int elementFxParam(int slot, int e, int field) {
+    return e < 6 ? placeParam(slot, fxField(e, field)) : dramaParam(slot, DrFx + (e - 6) * FxFieldCount + field);
+}
+inline constexpr bool isDramaInstrumentParam(int p) { return p >= PDramaFirst && p < PCount; }
 
 // clang-format off
 inline constexpr std::array<ParamSpec, PCount> specs { {
@@ -181,7 +199,6 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     WB_PLACE("p1", "Place 1", 1, -0.25f, 11), WB_PLACE("p2", "Place 2", 0, 0.35f, 22),
     WB_PLACE("p3", "Place 3", 0, -0.55f, 33), WB_PLACE("p4", "Place 4", 0, 0.55f, 44),
 #undef WB_PLACE
-#undef WB_FX
 #undef WB_ELEMENTS
     // Free: the world plays all the time. Transport: only while the host plays, from
     // silence and locked to the song position (so bounces always contain it).
@@ -248,6 +265,18 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     // feel (Auto: each Place's own).
     { "drama", "Drama", Kind::Float, 0, 1, 1 },
     { "dramastyle", "Drama Style", Kind::Choice, 0, 5, 0, dramaStyleChoices },
+    // The Drama instruments (the Drama tier rework): per slot, the Drama Drums, Ostinato
+    // and Hits (elements 7, 8 and 9) with a level, a switch and the effects of any
+    // instrument. Projects from before them open with them off (PluginProcessor).
+#define WB_DRAMA(id, name) \
+    { id "_e7", name " Drama Drums", Kind::Float, 0, 1, 0.8f }, { id "_e8", name " Drama Ostinato", Kind::Float, 0, 1, 0.8f }, \
+    { id "_e9", name " Drama Hits", Kind::Float, 0, 1, 0.8f }, \
+    { id "_e7_on", name " Drama Drums On", Kind::Bool, 0, 1, 1 }, { id "_e8_on", name " Drama Ostinato On", Kind::Bool, 0, 1, 1 }, \
+    { id "_e9_on", name " Drama Hits On", Kind::Bool, 0, 1, 1 }, \
+    WB_FX(id, name, 0, "_e7", " Drama Drums", 6), WB_FX(id, name, 0, "_e8", " Drama Ostinato", 7), WB_FX(id, name, 0, "_e9", " Drama Hits", 8)
+    WB_DRAMA("p1", "Place 1"), WB_DRAMA("p2", "Place 2"), WB_DRAMA("p3", "Place 3"), WB_DRAMA("p4", "Place 4"),
+#undef WB_DRAMA
+#undef WB_FX
 } };
 // clang-format on
 

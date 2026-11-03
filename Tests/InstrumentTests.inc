@@ -118,7 +118,7 @@ void testInstrumentMode(Suite& s) {
             (patternInfo(id.type, id.element).kind == Kit ? kits : melodic)++;
             ++perGroup[std::size_t(inst::groupOf(id.type, id.element))];
         }
-        s.check(catalog.count == (PlaceTypeCount - 1) * placeElements, "the catalog lists every instrument of every Place", std::to_string(catalog.count) + " instruments");
+        s.check(catalog.count == (PlaceTypeCount - 1) * slotElements, "the catalog lists every instrument of every Place (its six and its three Drama instruments)", std::to_string(catalog.count) + " instruments");
         bool everyGroup = true;
         std::string groups;
         for (int g = 0; g < inst::GroupCount; ++g) {
@@ -624,7 +624,7 @@ void testInstrumentMode(Suite& s) {
         bool bells = iv.listedCount() > 2;
         for (int i = 0; i < iv.listedCount(); ++i) {
             const auto id = iv.listedAt(i);
-            bells &= juce::String(placeInfo(id.type).element[std::size_t(id.element)].name).containsIgnoreCase("bell")
+            bells &= juce::String(elementSpec(id.type, id.element).name).containsIgnoreCase("bell")
                      || juce::String(inst::groupNames[std::size_t(inst::groupOf(id.type, id.element))]).containsIgnoreCase("bell");
         }
         s.check(bells, "search: \"bells\" finds the bells (by name or type)", std::to_string(iv.listedCount()) + " found");

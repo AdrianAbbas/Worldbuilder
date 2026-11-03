@@ -123,7 +123,7 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
         };
         addAndMakeVisible(k);
     };
-    setupSlider(lengthSlider, 1, arr::maxBars, 1, "The section's length in bars (1-64). Or drag its right edge on the timeline.",
+    setupSlider(lengthSlider, 1, arr::maxBars, 1, "The section's length in bars (1-128). Or drag its right edge on the timeline.",
                 [](arr::Section& s, double v) { s.bars = uint8_t(juce::roundToInt(v)); });
     setupSlider(startSlider, 0, 1, 0.01, "Score Intensity at the start of the section (it ramps to the end value). Host automation of Score Intensity adds on top.",
                 [](arr::Section& s, double v) { s.intensityStart = float(v); });
@@ -184,8 +184,10 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
     // The Drama tier: the section's own (a game score's layers), or as its intensity says.
     dramaChoice.addItem("As intensity", 1);
     for (int i = 0; i < drama::TierCount; ++i) dramaChoice.addItem(drama::tierNames[std::size_t(i)], i + 2);
-    dramaChoice.setTooltip("The section's Drama tier (with Drama above 0): Calm, Tension, Action or Climax, each changing gear on its first downbeat; "
-                           "or as the section's Score Intensity says.");
+    dramaChoice.setTooltip("The section's Drama tier (with Drama above 0): Calm, Tension, Action or Climax, or as its Score Intensity says. The tier, "
+                           "offset by the Drama meter (100 %: as set, each 50 % less one tier lower), decides how the arrangement plays here: calm "
+                           "sections thin out, dramatic ones bring in more instruments, busier variants, fills and doubled parts, and the Drama "
+                           "instruments play their tier's patterns.");
     dramaChoice.onChange = [this] {
         if (updating) return;
         setDrama(dramaChoice.getSelectedId() - 2);
@@ -259,7 +261,7 @@ void ArrangeView::deleteSection() {
 
 void ArrangeView::setCell(int section, int slot, int element, const arr::Cell& cell) {
     auto a = processor.arrangement.get();
-    if (section < 0 || section >= a.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return;
+    if (section < 0 || section >= a.count || slot < 0 || slot >= placeSlots || element < 0 || element >= slotElements) return;
     a.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)] = cell;
     processor.arrangement.set(a);
     shown = a;
@@ -299,7 +301,7 @@ bool ArrangeView::pasteClip(int section, int slot, int element) {
 void ArrangeView::copySectionClips(int section) {
     if (section < 0 || section >= shown.count) return;
     for (int slot = 0; slot < placeSlots; ++slot)
-        for (int e = 0; e < placeElements; ++e) clipboardSection[std::size_t(slot)][std::size_t(e)] = processor.sectionClip(section, slot, e);
+        for (int e = 0; e < slotElements; ++e) clipboardSection[std::size_t(slot)][std::size_t(e)] = processor.sectionClip(section, slot, e);
     sectionHeld = true;
 }
 
@@ -308,7 +310,7 @@ bool ArrangeView::pasteSectionClips(int section) {
     auto a = processor.arrangement.get();
     auto& s = a.sections[std::size_t(section)];
     for (int slot = 0; slot < placeSlots; ++slot)
-        for (int e = 0; e < placeElements; ++e)
+        for (int e = 0; e < slotElements; ++e)
             if (const auto& c = clipboardSection[std::size_t(slot)][std::size_t(e)]) s.cells[std::size_t(slot)][std::size_t(e)].clip = ArrangementStore::conform(c, s.bars);
     processor.arrangement.set(a, true);
     return true;
@@ -525,13 +527,13 @@ void ArrangeView::layoutRows() {
     int active = 0;
     for (int t : shownTypes) active += t != NoPlace ? 1 : 0;
     if (active == 0) return;
-    const int rowHeight = std::clamp((gridArea.getHeight() - headerRow * active) / (placeElements * active), 9, 22);
+    const int rowHeight = std::clamp((gridArea.getHeight() - headerRow * active) / (slotElements * active), 9, 22);
     int y = gridArea.getY();
     for (int slot = 0; slot < placeSlots; ++slot) {
         if (shownTypes[std::size_t(slot)] == NoPlace) continue;
         rows.push_back({ slot, -1, { gridArea.getX(), y, gridArea.getWidth(), headerRow } });
         y += headerRow;
-        for (int e = 0; e < placeElements; ++e) {
+        for (int e = 0; e < slotElements; ++e) {
             rows.push_back({ slot, e, { gridArea.getX(), y, gridArea.getWidth(), rowHeight } });
             y += rowHeight;
         }
@@ -819,10 +821,13 @@ void ArrangeView::paint(juce::Graphics& g) {
                 else pixel::drawTinyText(g, heading, h.withTrimmedLeft(6), pal.ink);
                 continue;
             }
-            const auto& spec = placeInfo(type).element[std::size_t(row.element)];
+            const auto& spec = elementSpec(type, row.element);
             auto label = row.bounds.withWidth(labelWidth - 6);
             if (row.element % 2 == 1) pixel::fillArt(g, row.bounds, pal.well.withAlpha(0.3f));
-            const auto ink = accent.interpolatedWith(pal.ink, 0.25f);
+            // The Drama instruments (the Drama tier rework) under a line, in the drama's red.
+            const bool dramaRow = isDramaElement(row.element);
+            if (row.element == DramaDrums) pixel::fillArt(g, row.bounds.withHeight(u), juce::Colour(arr::colours[2]).withAlpha(0.7f));
+            const auto ink = dramaRow ? juce::Colour(arr::colours[2]).interpolatedWith(pal.ink, 0.25f) : accent.interpolatedWith(pal.ink, 0.25f);
             if (row.bounds.getHeight() >= 14)
                 pixel::drawCached(g, "ainst/" + juce::String(spec.icon) + ink.toString(), { label.getX() + 2, label.getCentreY() - 8 },
                                   [&] { return pixel::instrumentIcon(spec.icon, 7, ink, pal.outline); });
@@ -1104,6 +1109,7 @@ void ArrangeView::showSectionMenu(int index) {
     m.addSeparator();
     m.addItem(4, "Every instrument on");
     m.addItem(5, "Every instrument off");
+    m.addItem(10, "Evolve inside the section", true, shown.sections[std::size_t(index)].evolve);
     m.addSeparator();
     m.addItem(6, "Copy its clips");
     m.addItem(7, "Paste clips here", sectionHeld);
@@ -1120,7 +1126,7 @@ void ArrangeView::showSectionMenu(int index) {
             // One undo step for the whole section.
             auto all = processor.arrangement.get();
             for (int slot = 0; slot < placeSlots; ++slot)
-                for (int e = 0; e < placeElements; ++e) {
+                for (int e = 0; e < slotElements; ++e) {
                     auto& cell = all.sections[std::size_t(index)].cells[std::size_t(slot)][std::size_t(e)];
                     if (r == 9) cell.clip = nullptr;
                     else if (cell.clip == nullptr) cell.clip = processor.sectionClip(index, slot, e);
@@ -1132,6 +1138,7 @@ void ArrangeView::showSectionMenu(int index) {
                 for (auto& row : s.cells)
                     for (auto& c : row) c.entry = uint8_t(r == 4 ? arr::EntryOn : arr::EntryOff);
             });
+        else if (r == 10) edit([](arr::Section& s) { s.evolve = !s.evolve; });
         else if (r >= 100 && r < 100 + arr::colourCount) edit([r](arr::Section& s) { s.colour = uint8_t(r - 100); });
         else if (r >= 200 && r < 200 + int(arr::repeatChoices.size())) edit([r](arr::Section& s) { s.repeats = uint8_t(arr::repeatChoices[std::size_t(r - 200)]); });
     });
@@ -1140,7 +1147,7 @@ void ArrangeView::showSectionMenu(int index) {
 void ArrangeView::showCellMenu(int section, int slot, int element) {
     const auto cell = shown.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
     juce::PopupMenu m;
-    m.addSectionHeader(juce::String(placeInfo(shownTypes[std::size_t(slot)]).element[std::size_t(element)].name) + " in "
+    m.addSectionHeader(juce::String(elementSpec(shownTypes[std::size_t(slot)], element).name) + " in "
                        + juce::String::fromUTF8(shown.sections[std::size_t(section)].nameText()));
     for (int i = 0; i < arr::EntryCount; ++i) m.addItem(1 + i, arr::entryNames[std::size_t(i)], true, cell.entry == i);
     m.addSeparator();
@@ -1184,7 +1191,7 @@ void ArrangeView::showCellMenu(int section, int slot, int element) {
 
 void ArrangeView::showRowMenu(int slot, int element) {
     juce::PopupMenu m;
-    m.addSectionHeader(placeInfo(shownTypes[std::size_t(slot)]).element[std::size_t(element)].name);
+    m.addSectionHeader(elementSpec(shownTypes[std::size_t(slot)], element).name);
     m.addItem(1, "On in every section");
     m.addItem(2, "Off in every section");
     for (int v = 0; v < 3; ++v) m.addItem(10 + v, "Pattern " + juce::String(arr::variantNames[std::size_t(v)]) + " everywhere");

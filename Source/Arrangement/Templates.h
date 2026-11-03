@@ -33,12 +33,24 @@ enum Kind { KindIntro, KindBuild, KindPeak, KindCalm, KindBreak, KindOutro, Kind
 inline constexpr std::array<const char*, KindCount> kindNames { "intro", "build", "peak", "wind-down", "break", "outro", "loop", "bridge" };
 int kindOf(const Arrangement& a, int index);
 
-// A template's sections (every instrument on, variant A), ready for Auto-arrange.
+// A template's sections (every instrument on, variant A), ready for Auto-arrange: long
+// scoring sections that evolve (the Drama tier rework), or (`legacy`) the short ones from
+// before it, which the older factory scenes keep.
 Arrangement makeTemplate(int which);
+Arrangement makeTemplate(int which, bool legacy);
+// The bars a kind of section is given at least for scoring (Auto-arrange): intros, breaks
+// and endings 8, fights and loops 32, the rest 16.
+int scoringBars(int kind);
+// An evolving section's variant shift on its phrase k of `phrases` (-1 sparser, +1 busier).
+int phraseShiftOf(const Section& s, int kind, int k, int phrases);
 // Auto-arrange: `a` with its grid, variants, ramps and transitions filled in for the
-// Places in `types` (per slot, NoPlace for none). Names, lengths, plays, colours,
-// Locations, overrides and the End stay as they are.
+// Places in `types` (per slot, NoPlace for none). Names, plays, colours, Locations,
+// overrides and the End stay as they are; sections shorter than their kind wants for
+// scoring are lengthened (scoringBars) and every section evolves (the Drama tier rework).
 Arrangement autoArrange(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed);
+// Auto-arrange as before the rework (lengths kept, no evolution, the Drama instruments'
+// cells left as they are): the older factory scenes.
+Arrangement autoArrangeLegacy(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed);
 
 // Milestone 16: Auto-arrange with clips. Where an instrument plays in an intro,
 // build-up, climax, wind-down, break or outro, it gets a clip of its own, made from the
@@ -62,6 +74,31 @@ Arrangement autoArrange(const Arrangement& a, const std::array<int, placeSlots>&
 // fill from a break back into the fight, a Drop between two climaxes. Applied by
 // Auto-arrange when Drama is above 0, and by the dramatic scenes and Inspire.
 void dramatize(Arrangement& a, uint32_t seed);
+
+// The Drama tier rework: how the Drama meter and a section's own evolution shape what the
+// arrangement plays at a song position (applied after Arrangement::evaluate; a pure
+// function of the arrangement, the position and these inputs).
+struct Shaping {
+    float drama = 0;            // the Drama meter (0: the Classic score, nothing changes)
+    float intensityOffset = 0;  // Score Intensity's offset from its middle (tierless sections)
+    std::array<int, placeSlots> types {};   // the Place in each slot (the instruments' roles)
+};
+// A section's gear (0 Calm .. 3 Climax, continuous) as the Drama meter offsets its tier:
+// at 100 % the section's own tier, every 50 % less one tier lower (Classic at 0: -1).
+float gearOf(const Section& s, float sectionIntensity, const Shaping& shaping);
+// Drama: each section's gear decides which of the Place's instruments play and how hard
+// (calm sections thin out: accents and rhythm leave, the melody turns sparse; dramatic
+// ones fill up: instruments enter in order of their role, busier variants, the rhythm
+// section drives with fills on the four-bar lines, the melody doubles an octave up and
+// the bass down at a climax, Score Intensity pushed with it), and the Drama instruments'
+// tier. Evolve (a section's own, see Section::evolve): instruments entering over its
+// first bars in order of their role, Score Intensity rising across it, the variants
+// changing every 8 bars (16 in sections of 48 bars or more), small fills on the phrase
+// lines; calm and closing sections thin out towards their end instead.
+void shape(State& st, const Arrangement& a, const Shaping& shaping);
+// The variants as gears (C sparse 0, A 1, B busy 2) and back.
+inline int variantGear(int v) { return v == VariantC ? 0 : (v == VariantB ? 2 : 1); }
+inline uint8_t gearVariant(int g) { return uint8_t(g <= 0 ? VariantC : (g >= 2 ? VariantB : VariantA)); }
 
 // One section's clip shaped for its kind (`role`: the instrument's role; `kit`: a drum
 // part; `runOut`: write a run into the next section in the last bar). Public for the tests.

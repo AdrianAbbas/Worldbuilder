@@ -15,22 +15,26 @@ struct PlaceSlotControls {
     bool mute = false, solo = false, sync = true;
     float activity = 0.4f, tension = 0.3f, density = 0.45f, swing = 0.08f, tone = 0.5f, size = 0.5f, variation = 0.35f;
     uint32_t seed = 1;
-    std::array<float, placeElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
-    std::array<bool, placeElements> elementOn { true, true, true, true, true, true };
+    // The six instruments of the Place, then the three Drama instruments (elements 6-8).
+    std::array<float, slotElements> element { 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f, 0.8f };
+    std::array<bool, slotElements> elementOn { true, true, true, true, true, true, true, true, true };
     // Each instrument's effects, and its Scoop / Glide.
-    std::array<dsp::ElementFxControls, placeElements> fx {};
-    std::array<Slide, placeElements> slide {};
+    std::array<dsp::ElementFxControls, slotElements> fx {};
+    std::array<Slide, slotElements> slide {};
     // A journey between Locations sends the Place away (0: where the slot puts it, 1: at
     // the horizon, nearly silent) as it leaves or arrives.
     float travelFar = 0;
     // The Arrangement (Milestone 11): each instrument's gain in the current section (1
     // without an arrangement) and the pattern variant it plays (A, B, C or Fill).
-    std::array<float, placeElements> arrange { 1, 1, 1, 1, 1, 1 };
-    std::array<uint8_t, placeElements> variant {};
+    std::array<float, slotElements> arrange { 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+    std::array<uint8_t, slotElements> variant {};
+    // The Drama tier rework: a part doubled an octave up (+1) or down (-1) as the drama
+    // rises (0: as written).
+    std::array<int8_t, slotElements> doubling {};
     // Milestone 16: the section's own clip for each instrument (nullptr: linked, it plays
     // its variant), laid from `clipOrigin` (song beats: the section's first downbeat)
     // and playing for `clipSpan` beats (<= 0: endlessly).
-    std::array<const pat::Clip*, placeElements> clip {};
+    std::array<const pat::Clip*, slotElements> clip {};
     double clipOrigin = 0, clipSpan = 0;
     // A stinger's ring-out (renders): what rings keeps ringing, no new notes start.
     bool ringOut = false;
@@ -97,13 +101,13 @@ public:
     void cutTo(int type);
     // The pattern element e is playing now (nullptr when none), for the tests.
     // (nullptr too while a clip plays it: playingClip.)
-    const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < placeElements && clipNow[std::size_t(e)] == nullptr ? playing[std::size_t(e)] : nullptr; }
-    const pat::Clip* playingClip(int e) const { return e >= 0 && e < placeElements ? clipNow[std::size_t(e)] : nullptr; }
+    const pat::Pattern* playingPattern(int e) const { return e >= 0 && e < slotElements && clipNow[std::size_t(e)] == nullptr ? playing[std::size_t(e)] : nullptr; }
+    const pat::Clip* playingClip(int e) const { return e >= 0 && e < slotElements ? clipNow[std::size_t(e)] : nullptr; }
     const pat::Pattern& generatedPattern(int e, int variant = 0) const {
-        return generated[std::size_t(pat::Element::clampVariant(variant))][std::size_t(std::clamp(e, 0, placeElements - 1))];
+        return generated[std::size_t(pat::Element::clampVariant(variant))][std::size_t(std::clamp(e, 0, slotElements - 1))];
     }
     // The arrangement's gain on element e now (after its entrance and exit ramps).
-    float arrangeGain(int e) const { return arranged[std::size_t(std::clamp(e, 0, placeElements - 1))]; }
+    float arrangeGain(int e) const { return arranged[std::size_t(std::clamp(e, 0, slotElements - 1))]; }
     // World Space send for the last rendered chunk.
     float spaceSend() const { return send; }
     // The instruments' sends to the shared reverbs and delays for the last rendered
@@ -139,7 +143,7 @@ private:
     bool seeded = false;
     PlaceSettings settings;
     std::array<dsp::Smoother, 8> smooth;   // activity, tension, density, swing, tone, size, variation, fxDepth
-    std::array<dsp::Smoother, placeElements> elementSmooth;
+    std::array<dsp::Smoother, slotElements> elementSmooth;
     dsp::Smoother gain, distance, pan;
     std::array<dsp::OnePole, 4> distanceLp;
     std::array<dsp::OnePole, 2> dcBlock;
@@ -154,21 +158,21 @@ private:
     std::array<std::array<float, dsp::chunk>, 2> sendGain {};
 
     // `paused`: an element whose generated patterns hold as they are (REC armed on it).
-    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants,
+    void updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, slotElements>& variants,
                         int paused = -1);
     // Generated patterns per variant (A, B, C, Fill) and element.
-    using VariantPatterns = std::array<std::array<pat::Pattern, placeElements>, pat::variantCount>;
+    using VariantPatterns = std::array<std::array<pat::Pattern, slotElements>, pat::variantCount>;
     VariantPatterns generated {};
-    std::array<std::array<GenInputs, placeElements>, pat::variantCount> generatedFor {};
-    std::array<std::array<bool, placeElements>, pat::variantCount> generatedValid {};
+    std::array<std::array<GenInputs, slotElements>, pat::variantCount> generatedFor {};
+    std::array<std::array<bool, slotElements>, pat::variantCount> generatedValid {};
     void generateVariant(int variant, int e, GenInputs in);
     // The arrangement's gain per element: an entrance from silence starts at once, a
     // re-entrance while ringing rises over 20 ms, an exit fades over 250 ms.
-    std::array<float, placeElements> arranged {};
+    std::array<float, slotElements> arranged {};
     float arrangeUp = 0.001f, arrangeDown = 0.0001f;
-    std::array<const pat::Pattern*, placeElements> playing {};
-    std::array<const pat::Clip*, placeElements> clipNow {};
-    std::array<pat::Controls, placeElements> controlsNow {};
+    std::array<const pat::Pattern*, slotElements> playing {};
+    std::array<const pat::Clip*, slotElements> clipNow {};
+    std::array<pat::Controls, slotElements> controlsNow {};
     pat::TripleBuffer<pat::Generated>* feedback = nullptr;
     const std::atomic<bool>* allVariants = nullptr;
     const std::atomic<bool>* allVariantsToo = nullptr;
@@ -176,10 +180,20 @@ private:
     double lastBeat = 0, nextBeat = 0;
     dsp::Smoother keysLevel;
     bool snapGain = false;
-    // The Drama tier's layer, themed by the Place playing.
+    // The Drama tier's layer, themed by the Place playing: the slot's three Drama
+    // instruments (elements 6-8), the style and rank their patterns are written for, and
+    // their gains at the last chunk (< 0: none yet).
     drama::Layer dramaLayer;
+    int dramaStyleNow = 0, dramaRankNow = 0;
+    std::array<float, dramaElements> dramaGainNow { -1.0f, -1.0f, -1.0f };
 public:
     const drama::Layer& drama() const { return dramaLayer; }
+    // An instrument's own transposition (a live note sounds as pressed; the recorder takes
+    // it off): the Place's, or a Drama instrument's.
+    float partTranspose(int e) const {
+        if (isDramaElement(e)) return dramaLayer.transposeSemis(e);
+        return current != nullptr && e >= 0 ? current->partTranspose(e) : 0.0f;
+    }
 };
 
 } // namespace wb

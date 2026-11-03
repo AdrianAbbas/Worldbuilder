@@ -194,7 +194,7 @@ void KeysPanel::setTarget(int slot, int element) {
     // A new target while a take is under way ends it first.
     if (slot != processor.keys.slot.load() || element != processor.keys.element.load()) processor.setArmed(false);
     processor.keys.slot.store(slot);
-    processor.keys.element.store(std::clamp(element, 0, placeElements - 1));
+    processor.keys.element.store(std::clamp(element, 0, slotElements - 1));
     refresh();
 }
 
@@ -205,7 +205,7 @@ juce::String KeysPanel::targetText() const {
     if (t == NoPlace || patternInfo(t, element).kind == NoPattern) return "PLAYS NOTHING";
     // A single-instrument instance may play another tab than the one shown: its Place too.
     if (processor.single() && (slot != slotShown || element != elementShown)) return "PLAYS " + processor.singleName().toUpperCase();
-    return "PLAYS " + juce::String(placeInfo(t).element[std::size_t(element)].name).toUpperCase();
+    return "PLAYS " + juce::String(elementSpec(t, element).name).toUpperCase();
 }
 
 void KeysPanel::refresh() {

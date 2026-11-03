@@ -1,4 +1,5 @@
 #include "WorldEngine.h"
+#include "Arrangement/Templates.h"
 
 namespace wb {
 
@@ -114,6 +115,7 @@ void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& c
     // An arrangement starts where the song position is: its intensity and end fade too.
     if (controls.arrangement != nullptr && controls.arrangement->count > 0) {
         arranged = controls.arrangement->evaluate(beat + double(bpm) / 60.0 / rate);
+        shapeArrangement(*controls.arrangement, controls);
         arranging = true;
         intensity.snap(arrangedIntensity(controls));
         world.intensity = intensity.value;
@@ -130,6 +132,7 @@ void WorldEngine::restart(uint64_t position, double ppq, const EngineControls& c
 }
 
 bool WorldEngine::isRhythm(int type, int element) {
+    if (element == DramaDrums) return type > NoPlace && type < PlaceTypeCount;   // the Drama drums
     if (type <= NoPlace || type >= PlaceTypeCount || element < 0 || element >= placeElements) return false;
     const auto& spec = placeInfo(type).element[std::size_t(element)];
     if (spec.kind == Kit) return true;
@@ -137,6 +140,16 @@ bool WorldEngine::isRhythm(int type, int element) {
     bool kit = false;
     for (const auto& e : placeInfo(type).element) kit |= e.kind == Kit;
     return !kit && !spec.sustained && (spec.icon == IconPulse || spec.icon == IconHandDrum || spec.icon == IconShaker || spec.icon == IconSnare);
+}
+
+void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineControls& controls) {
+    // The Drama tier rework: the Drama meter and the sections' own evolution shape what the
+    // arrangement plays (nothing at Drama 0 in an arrangement from before: as it was).
+    arr::Shaping shaping;
+    shaping.drama = controls.instrument.on ? 0.0f : clamp01(finiteOr(controls.drama, 0.0f));
+    shaping.intensityOffset = clamp01(finiteOr(controls.intensity, 0.5f)) - 0.5f;
+    for (int s = 0; s < placeSlots; ++s) shaping.types[std::size_t(s)] = controls.places[std::size_t(s)].type;
+    arr::shape(arranged, a, shaping);
 }
 
 float WorldEngine::arrangedIntensity(const EngineControls& controls) const {
@@ -164,6 +177,7 @@ void WorldEngine::fillChunk(const EngineControls& controls) {
         const double until = (next - beat) / perSample;
         if (until < double(n)) n = std::clamp(int(std::floor(until + 1.0e-9)), 1, n);
         arranged = a->evaluate(beat + perSample);
+        shapeArrangement(*a, controls);
         renderChunk(fifoL.data() + done, fifoR.data() + done, n, clock + uint64_t(done), controls, stream + uint64_t(done));
         renderSlotOuts(done, n, controls);
         done += n;
@@ -298,7 +312,7 @@ void WorldEngine::keysBlock(const keys::Event* events, int count, const EngineCo
 
 float WorldEngine::bendRange(int type, int element) {
     if (patternInfo(type, element).kind != Melodic) return 0.0f;
-    const int icon = placeInfo(type).element[std::size_t(std::clamp(element, 0, placeElements - 1))].icon;
+    const int icon = elementSpec(type, element).icon;
     return icon == IconSiren || icon == IconRiser || icon == IconCrystal ? 12.0f : 2.0f;
 }
 
@@ -329,7 +343,7 @@ void WorldEngine::keysPiece(int n, uint64_t at, const EngineControls& controls) 
     capture.step(k, beatNow, perSample, n, base);
     clickBeat = capture.free() ? capture.freeClock() : beatNow;
     const Place* place = target ? slots[std::size_t(k.slot)].place() : nullptr;
-    const float transpose = place != nullptr && slots[std::size_t(k.slot)].playingType() == type ? place->partTranspose(k.element) : 0.0f;
+    const float transpose = place != nullptr && slots[std::size_t(k.slot)].playingType() == type ? slots[std::size_t(k.slot)].partTranspose(k.element) : 0.0f;
     // A new instrument: the keys still held (or pedalled) start again on it.
     if (instRetrigger) {
         instRetrigger = false;
@@ -539,6 +553,8 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         if (pc.type != NoPlace) ++dramaRank;
         if (arranging) {
             pc.drama.tier = arranged.drama;
+            pc.drama.gear = arranged.gear;
+            pc.drama.heat = arranged.heat;
             pc.drama.transition = arranged.transition;
             pc.drama.transitionT = arranged.transitionT;
             pc.drama.transitionLength = arranged.transitionLength;
@@ -574,10 +590,12 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             arrangedControls.ringOut = arranged.ringOut;
             arrangedControls.clipOrigin = arranged.clipOrigin;
             arrangedControls.clipSpan = arranged.clipSpan;
-            for (int e = 0; e < placeElements; ++e) {
+            arrangedControls.levelDb += arranged.swellDb;   // an evolving section's swell
+            for (int e = 0; e < slotElements; ++e) {
                 arrangedControls.arrange[std::size_t(e)] = arranged.gain[si][std::size_t(e)];
                 arrangedControls.variant[std::size_t(e)] = arranged.variant[si][std::size_t(e)];
                 arrangedControls.clip[std::size_t(e)] = arranged.clip[si][std::size_t(e)];
+                arrangedControls.doubling[std::size_t(e)] = arranged.doubling[si][std::size_t(e)];
                 // A Drum fill transition: the rhythm instruments that play take their Fills.
                 if (arranged.drumFill && arranged.gain[si][std::size_t(e)] > 0.0f && isRhythm(pc.type, e)) {
                     arrangedControls.variant[std::size_t(e)] = uint8_t(pat::VariantFill);
@@ -586,6 +604,20 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             }
             sounding = slots[si].render(world, arrangedControls, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         } else {
+            // Free play (the Drama tier rework): as the slot's tier rises, the Place's own
+            // instruments change gear too: at Action the rhythm and the bass play their
+            // busier variants, at a climax the melody as well, doubled an octave up over the
+            // bass an octave down.
+            const int tier = world.drama > 0.0f && !controls.instrument.on && pc.type != NoPlace ? slots[si].drama().tier() : 0;
+            if (tier >= drama::Action)
+                for (int e = 0; e < placeElements; ++e) {
+                    const int role = arr::roleOf(pc.type, e);
+                    const auto& spec = elementSpec(pc.type, e);
+                    if (role == arr::RoleRhythm || role == arr::RoleBass || (tier == drama::Climax && role == arr::RoleMelody))
+                        pc.variant[std::size_t(e)] = uint8_t(pat::VariantB);
+                    if (tier == drama::Climax && spec.kind == Melodic && !spec.sustained)
+                        pc.doubling[std::size_t(e)] = int8_t(role == arr::RoleBass ? -1 : (role == arr::RoleMelody ? 1 : 0));
+                }
             sounding = slots[si].render(world, pc, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);
         }
         slotBeat[si].store(slots[si].beat(), std::memory_order_relaxed);

@@ -23,7 +23,8 @@
 
 namespace wb::arr {
 
-constexpr int maxSections = 32, minBars = 1, maxBars = 64, beatsPerBar = 4, nameLength = 24;
+// Sections up to 128 bars (the Drama tier rework: scoring cues hold a fight for minutes).
+constexpr int maxSections = 32, minBars = 1, maxBars = 128, beatsPerBar = 4, nameLength = 24;
 
 // How an instrument plays in a section.
 enum Entry : uint8_t { EntryOn, EntryOff, EntryHalfway, EntryFadeIn, EntryFadeOut, EntryCount };
@@ -116,7 +117,8 @@ struct Cell {
     bool operator==(const Cell& o) const { return entry == o.entry && variant == o.variant && fill == o.fill && sameClip(clip, o.clip); }
 };
 
-using Grid = std::array<std::array<Cell, placeElements>, placeSlots>;
+// Every instrument of every slot: the Place's six, then the three Drama instruments.
+using Grid = std::array<std::array<Cell, slotElements>, placeSlots>;
 
 struct Section {
     std::array<char, nameLength> name {};
@@ -136,6 +138,11 @@ struct Section {
     // The Drama tier (after the performance pass): the section's tier (drama::Tier: Calm,
     // Tension, Action, Climax) or -1, as its Score Intensity says.
     int8_t drama = -1;
+    // The Drama tier rework: the section evolves inside itself (the templates, Auto-arrange
+    // and Inspire set it; sections from before keep playing as they were): instruments
+    // entering over its first bars, Score Intensity rising across it, the variants changing
+    // every 8 or 16 bars, small fills on the phrase lines.
+    bool evolve = false;
 
     void setName(const char* text) {
         name.fill(0);
@@ -149,7 +156,7 @@ struct Section {
         return std::strncmp(name.data(), o.name.data(), std::size_t(nameLength)) == 0 && colour == o.colour && bars == o.bars
                && repeats == o.repeats && curve == o.curve && intensityStart == o.intensityStart && intensityEnd == o.intensityEnd
                && cells == o.cells && transition == o.transition && transitionLength == o.transitionLength && location == o.location
-               && planet == o.planet && world == o.world && drama == o.drama;
+               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve;
     }
 };
 
@@ -198,13 +205,15 @@ struct State {
     float intensity = 0.5f;    // the section's Score Intensity
     float endGain = 1;         // the fade after the end (End: stop)
     bool fillBar = false;      // the last bar before a section change
-    std::array<std::array<float, placeElements>, placeSlots> gain {};
-    std::array<std::array<uint8_t, placeElements>, placeSlots> variant {};
+    std::array<std::array<float, slotElements>, placeSlots> gain {};
+    std::array<std::array<uint8_t, slotElements>, placeSlots> variant {};
+    // The Drama tier rework: parts doubled an octave up (+1) or down (-1) as the drama rises.
+    std::array<std::array<int8_t, slotElements>, placeSlots> doubling {};
     // Milestone 16: each instrument's own clip in this section (nullptr: linked, or a
     // Fill plays instead), laid from `clipOrigin` (song beats: where this pass of the
     // section's clip sequence starts, its first downbeat) for `clipSpan` beats (0:
     // endlessly).
-    std::array<std::array<const pat::Clip*, placeElements>, placeSlots> clip {};
+    std::array<std::array<const pat::Clip*, slotElements>, placeSlots> clip {};
     double clipOrigin = 0, clipSpan = 0;
     // Transitions: the one under way into the next section (transitionT 0..1 across its
     // length; -1: none) and the one that led into this section (`arrived`, with
@@ -220,6 +229,15 @@ struct State {
     int planet = -1;
     std::array<float, WorldControlCount> world {};   // < 0: as set
     int drama = -1;   // the section's Drama tier (-1: from Score Intensity)
+    // The Drama tier rework: the section's gear as the Drama meter shapes it (0 Calm .. 3
+    // Climax, continuous; < 0: not shaped, the Classic score), set by arr::shape().
+    float gear = -1;
+    // An evolving section's progress as the Drama instruments play it (0..1: harder as a
+    // rising section goes on, softer as a calm one ends; < 0: as the gear says).
+    float heat = -1;
+    // An evolving section's swell (dB on every Place: from -2 dB at its start to 0 at its end
+    // in a rising section; 0 otherwise).
+    float swellDb = 0;
 };
 
 struct Arrangement {
@@ -402,7 +420,7 @@ struct Arrangement {
         // Enter halfway: on from the middle bar (the middle beat of a one-bar section).
         const double half = s.bars >= 2 ? double(s.bars / 2) : 0.5;
         for (int slot = 0; slot < placeSlots; ++slot)
-            for (int e = 0; e < placeElements; ++e) {
+            for (int e = 0; e < slotElements; ++e) {
                 const auto& cell = s.cells[std::size_t(slot)][std::size_t(e)];
                 float g = 1;
                 switch (cell.entry) {
@@ -447,7 +465,7 @@ private:
             case TransCrossfade: {
                 const float u = 0.5f - 0.5f * std::cos(dsp::pi * t);
                 for (int slot = 0; slot < placeSlots; ++slot)
-                    for (int e = 0; e < placeElements; ++e) {
+                    for (int e = 0; e < slotElements; ++e) {
                         const auto& cell = next.cells[std::size_t(slot)][std::size_t(e)];
                         // How the instrument starts the next section.
                         const float there = cell.entry == EntryOn || cell.entry == EntryFadeOut ? 1.0f : 0.0f;

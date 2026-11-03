@@ -137,7 +137,7 @@ void ArrangementStore::resize(int index, int bars, bool undoable) {
     // growing again gives the notes back.
     const Arrangement& from = !undoable && !undoStack.empty() && undoStack.back().count == model.count ? undoStack.back() : model;
     for (int slot = 0; slot < placeSlots; ++slot)
-        for (int e = 0; e < placeElements; ++e) {
+        for (int e = 0; e < slotElements; ++e) {
             auto& cell = s.cells[std::size_t(slot)][std::size_t(e)];
             if (cell.clip == nullptr) continue;
             const auto& original = from.sections[std::size_t(index)].cells[std::size_t(slot)][std::size_t(e)].clip;
@@ -149,7 +149,7 @@ void ArrangementStore::resize(int index, int bars, bool undoable) {
 
 void ArrangementStore::setClip(int section, int slot, int element, ClipRef clip, bool undoable) {
     const juce::ScopedLock sl(lock);
-    if (section < 0 || section >= model.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return;
+    if (section < 0 || section >= model.count || slot < 0 || slot >= placeSlots || element < 0 || element >= slotElements) return;
     auto a = model;
     auto& cell = a.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
     if (clip != nullptr) clip = conform(clip, a.sections[std::size_t(section)].bars);
@@ -159,7 +159,7 @@ void ArrangementStore::setClip(int section, int slot, int element, ClipRef clip,
 
 ClipRef ArrangementStore::clipOf(int section, int slot, int element) const {
     const juce::ScopedLock sl(lock);
-    if (section < 0 || section >= model.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return {};
+    if (section < 0 || section >= model.count || slot < 0 || slot >= placeSlots || element < 0 || element >= slotElements) return {};
     return model.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)].clip;
 }
 
@@ -191,25 +191,30 @@ ClipRef ArrangementStore::conform(const ClipRef& clip, int bars) {
 // cells="..."/></Arrangement>. Each cell is three characters (entry digit, variant
 // letter A-C, f for Fill or -), separated by spaces, slot by slot.
 
-juce::String ArrangementStore::encodeCells(const Grid& cells) {
+// The Place's six instruments are in "cells" (as before the Drama instruments, so older
+// readers keep reading them); the three Drama instruments in "dramaCells" (the Drama tier
+// rework; missing in older files: On, A, no Fill).
+juce::String ArrangementStore::encodeCells(const Grid& cells, bool drama) {
     juce::String text;
-    text.preallocateBytes(std::size_t(placeSlots * placeElements * 4));
+    const int first = drama ? placeElements : 0, last = drama ? slotElements : placeElements;
+    text.preallocateBytes(std::size_t(placeSlots * (last - first) * 4));
     for (int slot = 0; slot < placeSlots; ++slot)
-        for (int e = 0; e < placeElements; ++e) {
+        for (int e = first; e < last; ++e) {
             const auto& c = cells[std::size_t(slot)][std::size_t(e)];
-            if (slot + e > 0) text << " ";
+            if (slot + e > first) text << " ";
             text << juce::String::charToString(juce::juce_wchar('0' + std::min<int>(c.entry, EntryCount - 1)))
                  << juce::String::charToString(juce::juce_wchar('A' + std::min<int>(c.variant, VariantC))) << (c.fill ? "f" : "-");
         }
     return text;
 }
 
-void ArrangementStore::decodeCells(const juce::String& text, Grid& cells) {
+void ArrangementStore::decodeCells(const juce::String& text, Grid& cells, bool drama) {
     const auto tokens = juce::StringArray::fromTokens(text, " ", "");
-    for (int i = 0; i < tokens.size() && i < placeSlots * placeElements; ++i) {
+    const int first = drama ? placeElements : 0, per = drama ? dramaElements : placeElements;
+    for (int i = 0; i < tokens.size() && i < placeSlots * per; ++i) {
         const auto& t = tokens[i];
         if (t.length() < 3) continue;
-        auto& c = cells[std::size_t(i / placeElements)][std::size_t(i % placeElements)];
+        auto& c = cells[std::size_t(i / per)][std::size_t(first + i % per)];
         c.entry = uint8_t(juce::jlimit(0, EntryCount - 1, int(t[0] - '0')));
         c.variant = uint8_t(juce::jlimit(0, int(VariantC), int(t[1] - 'A')));
         c.fill = t[2] == 'f';
@@ -246,6 +251,8 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
         x.setProperty("start", s.intensityStart, nullptr);
         x.setProperty("end", s.intensityEnd, nullptr);
         x.setProperty("cells", encodeCells(s.cells), nullptr);
+        x.setProperty("dramaCells", encodeCells(s.cells, true), nullptr);
+        if (s.evolve) x.setProperty("evolve", true, nullptr);
         // Milestone 11b: written only when set, so older readers and files stay as they were.
         if (s.transition != TransCut) {
             x.setProperty("transition", int(s.transition), nullptr);
@@ -263,7 +270,7 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
         if (overrides) x.setProperty("world", world.joinIntoString(","), nullptr);
         // Milestone 16: the section's own clips (linked cells have none).
         for (int slot = 0; slot < placeSlots; ++slot)
-            for (int e = 0; e < placeElements; ++e)
+            for (int e = 0; e < slotElements; ++e)
                 if (const auto& clip = s.cells[std::size_t(slot)][std::size_t(e)].clip) {
                     juce::ValueTree cx("Clip");
                     cx.setProperty("slot", slot, nullptr);
@@ -294,6 +301,8 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.intensityStart = number(x, "start", 0.5f, 0, 1);
         s.intensityEnd = number(x, "end", 0.5f, 0, 1);
         decodeCells(x.getProperty("cells").toString(), s.cells);
+        decodeCells(x.getProperty("dramaCells").toString(), s.cells, true);
+        s.evolve = bool(x.getProperty("evolve", false));
         s.transition = uint8_t(int(number(x, "transition", 0, 0, float(TransitionCount - 1))));
         s.transitionLength = uint8_t(int(number(x, "transitionLength", 1, 1, float(maxTransitionLength))));
         s.location = int8_t(int(number(x, "location", -1, -1, 7)));
@@ -305,7 +314,7 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         for (const auto& cx : x) {
             if (!cx.hasType("Clip")) continue;
             const int slot = cx.getProperty("slot", -1), e = cx.getProperty("element", -1);
-            if (slot < 0 || slot >= placeSlots || e < 0 || e >= placeElements) continue;
+            if (slot < 0 || slot >= placeSlots || e < 0 || e >= slotElements) continue;
             s.cells[std::size_t(slot)][std::size_t(e)].clip = readClip(cx, s.bars);
         }
         a.sections[std::size_t(a.count++)] = s;

@@ -155,7 +155,7 @@ using Pattern = BasicPattern<maxNotes, maxBars>;
 // section (one pass), so step 0 is the section's first downbeat. `ownSwing`: the clip
 // swings by its own Swing (it came from an edited pattern, or was edited); else by
 // its Place's, as a generated pattern does.
-constexpr int maxClipNotes = 2048, maxClipBars = 64;
+constexpr int maxClipNotes = 4096, maxClipBars = 128;
 struct Clip : BasicPattern<maxClipNotes, maxClipBars> {
     bool ownSwing = false;
 };
@@ -212,24 +212,26 @@ struct Element {
     bool variantsUntouched() const { return altEdited == 0 && altGenerate == std::array<uint8_t, variantCount - 1> {}; }
 };
 
-// Every Place has up to six instruments, each an element with its own pattern.
-constexpr int elementsPerPlace = 6;
+// Every Place has up to six instruments, each an element with its own pattern. A Place
+// slot adds the three Drama instruments (the Drama tier rework: drums, ostinato, hits),
+// elements 6, 7 and 8, edited and arranged like the others.
+constexpr int elementsPerPlace = 6, dramaElements = 3, elementsPerSlot = elementsPerPlace + dramaElements;
 
 // One slot's patterns, as the editor publishes them to the audio thread.
 struct SlotPatterns {
     int type = 0;           // the Place they belong to (others are ignored)
     uint32_t revision = 0;
-    std::array<Element, elementsPerPlace> element {};
+    std::array<Element, elementsPerSlot> element {};
 };
 
 // Generated patterns, as the audio thread reports them back to the editor.
 struct Generated {
     int type = 0;
     uint32_t serial = 0;
-    std::array<Pattern, elementsPerPlace> pattern {};
-    std::array<std::array<Pattern, elementsPerPlace>, variantCount - 1> alt {};   // B, C, Fill
+    std::array<Pattern, elementsPerSlot> pattern {};
+    std::array<std::array<Pattern, elementsPerSlot>, variantCount - 1> alt {};   // B, C, Fill
     const Pattern& of(int variant, int e) const {
-        const auto k = std::size_t(std::clamp(e, 0, elementsPerPlace - 1));
+        const auto k = std::size_t(std::clamp(e, 0, elementsPerSlot - 1));
         return variant <= 0 ? pattern[k] : alt[std::size_t(std::min(variant, variantCount - 1) - 1)][k];
     }
 };
@@ -303,6 +305,9 @@ struct Playback {
     float swing = 0;
     bool kit = false;
     uint64_t key = 0;
+    // The Drama tier rework: a part doubled (scale steps: an octave up or down) as the
+    // drama rises; each note also plays there, softer (0: no doubling).
+    int doubleDegrees = 0;
 
     bool active() const { return notes != nullptr; }
     template <int N, int B>
@@ -432,8 +437,12 @@ struct Playback {
                 const double swingSteps = (s & 1) != 0 ? 0.45 * double(swing) : 0.0;
                 const double at = (double(s) + swingSteps + double(c.delay)) / perBeat;
                 const float v = float(n.velocity) / 127.0f;
-                if (!c.skip && at >= beat && at < beat + span)
+                if (!c.skip && at >= beat && at < beat + span) {
                     f(Event { at + origin, double(n.length) / perBeat, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(v * c.velocity), i, false });
+                    if (doubleDegrees != 0 && !kit)
+                        f(Event { at + origin, double(n.length) / perBeat, int(n.degree) + c.pitch + doubleDegrees, int(n.alter), dsp::clamp01(0.7f * v * c.velocity), i,
+                                  false });
+                }
                 if (c.extra) {
                     // An extra note one step later: a ghost hit, or a neighbouring note.
                     const double extraAt = at + 1.0 / perBeat;

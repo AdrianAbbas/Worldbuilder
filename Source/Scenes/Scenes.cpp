@@ -571,6 +571,9 @@ WorldValues worldValues(const Scene& scene, const WorldValues& session) {
     // The Drama tier: the scenes from before it play the Classic score, as they always did.
     v[PDrama] = dsp::clamp01(scene.drama);
     v[PDramaStyle] = float(std::clamp(scene.dramaStyle, 0, 5));
+    // The Drama instruments (the Drama tier rework): off in the scenes from before it.
+    for (int slot = 0; slot < placeSlots; ++slot)
+        for (int k = 0; k < 3; ++k) v[std::size_t(dramaParam(slot, DrOn + k))] = scene.drama > 0.0f ? 1.0f : 0.0f;
     for (int w = 0; w < WorldControlCount; ++w)
         if (scene.world[std::size_t(w)] >= 0) v[std::size_t(PTemperature + w)] = float(scene.world[std::size_t(w)]) / 100.0f;
     for (int slot = 0; slot < placeSlots; ++slot) {
@@ -634,7 +637,12 @@ int locationFor(int kind, int locations) {
 arr::Arrangement arrangement(const Scene& scene) {
     std::array<int, placeSlots> types {};
     for (int slot = 0; slot < placeSlots; ++slot) types[std::size_t(slot)] = scene.slots[std::size_t(slot)].type;
-    auto a = arr::autoArrange(arr::makeTemplate(scene.templ), types, scene.seed);
+    // The scenes from before the Drama tier (the Classic score) keep their arrangements as
+    // they were: the short templates, nothing evolving. The dramatic scenes and Inspire's
+    // score with the long, evolving sections (the Drama tier rework).
+    const bool legacy = scene.drama <= 0.0f && scene.inspired < 0;
+    auto a = legacy ? arr::autoArrangeLegacy(arr::makeTemplate(scene.templ, true), types, scene.seed)
+                    : arr::autoArrange(arr::makeTemplate(scene.templ), types, scene.seed);
     for (int i = 0; i < a.count; ++i) {
         auto& s = a.sections[std::size_t(i)];
         const int kind = arr::kindOf(a, i);

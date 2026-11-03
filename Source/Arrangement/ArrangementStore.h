@@ -48,8 +48,8 @@ public:
     void fromValueTree(const juce::ValueTree& tree);
     static juce::ValueTree toTree(const arr::Arrangement& a);
     static arr::Arrangement fromTree(const juce::ValueTree& tree);
-    static juce::String encodeCells(const arr::Grid& cells);
-    static void decodeCells(const juce::String& text, arr::Grid& cells);
+    static juce::String encodeCells(const arr::Grid& cells, bool drama = false);
+    static void decodeCells(const juce::String& text, arr::Grid& cells, bool drama = false);
     static void writeClip(juce::ValueTree& x, const pat::Clip& c);
     static arr::ClipRef readClip(const juce::ValueTree& x, int bars);
 

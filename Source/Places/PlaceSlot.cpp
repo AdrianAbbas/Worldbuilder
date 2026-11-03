@@ -44,6 +44,7 @@ void PlaceSlot::reset() {
     for (auto& f : fullness) f.reset();
     fx.reset();
     dramaLayer.reset();
+    dramaGainNow.fill(-1.0f);
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.reset();
     fresh = true;
@@ -56,6 +57,7 @@ void PlaceSlot::reset() {
 
 void PlaceSlot::wake() {
     if (current != nullptr) current->reset();
+    dramaLayer.reset();
     fx.reset();
     for (auto& s : elementSmooth) s.snap(0);
     arranged.fill(0.0f);
@@ -76,6 +78,7 @@ void PlaceSlot::cutTo(int type) {
     playing.fill(nullptr);
     clipNow.fill(nullptr);
     fx.reset();
+    dramaLayer.reset();
     for (auto& s : elementSmooth) s.snap(0);
     arranged.fill(0.0f);
     for (auto& bus : sendTilt)
@@ -172,12 +175,17 @@ PlaceSettings PlaceSlot::settingsFor(const WorldFrame& world, const PlaceSlotCon
     s.era = world[Era];
     s.sync = c.sync;
     for (int e = 0; e < placeElements; ++e) s.element[std::size_t(e)] = c.elementOn[std::size_t(e)] ? clamp01(c.element[std::size_t(e)]) : 0.0f;
-    s.slide = c.slide;
+    std::copy_n(c.slide.begin(), placeElements, s.slide.begin());
     return s;
 }
 
 void PlaceSlot::generateVariant(int v, int e, GenInputs in) {
     const auto k = std::size_t(e), kv = std::size_t(v);
+    // The Drama instruments: written by their tier, style and Place (Drama.cpp).
+    if (isDramaElement(e)) {
+        drama::generate(currentType, e, v, in, generated[kv][k]);
+        return;
+    }
     // B is busier, C sparser, the Fill busiest (and builds over its bar); each is
     // regenerated as a fresh take if it came out the same as A.
     switch (v) {
@@ -221,7 +229,7 @@ void PlaceSlot::generateVariant(int v, int e, GenInputs in) {
     }
 }
 
-void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, placeElements>& variants,
+void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat::SlotPatterns& patterns, const std::array<uint8_t, slotElements>& variants,
                                int paused) {
     const bool mine = patterns.type == currentType;
     // Generator inputs on a grid of 1/256 (rounded down, so a value exactly on one of
@@ -239,9 +247,18 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
     const bool all = (allVariants != nullptr && allVariants->load(std::memory_order_relaxed))
                      || (allVariantsToo != nullptr && allVariantsToo->load(std::memory_order_relaxed));
     bool changed = false;
-    for (int e = 0; e < placeElements; ++e) {
+    for (int e = 0; e < slotElements; ++e) {
         const auto k = std::size_t(e);
         const auto& info = patternInfo(currentType, e);
+        // The Drama instruments' patterns are written for the tier playing (Tension at
+        // least), the Drama Style and the slot's rank.
+        if (isDramaElement(e)) {
+            in.tier = dramaLayer.patternTier();
+            in.style = dramaStyleNow;
+            in.rank = dramaRankNow;
+        } else {
+            in.tier = in.style = in.rank = 0;
+        }
         if (info.kind == NoPattern) {
             playing[k] = nullptr;
             continue;
@@ -324,16 +341,25 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     // Settings, smoothed at control rate. An element's mute and solo (set in the
     // Pattern Editor) fade it like its switch.
     auto target = settingsFor(world, c);
+    // The Drama instruments' levels (their switches, mutes and solos as the six's).
+    std::array<float, dramaElements> dramaTarget {};
+    for (int d = 0; d < dramaElements; ++d)
+        dramaTarget[std::size_t(d)] = c.elementOn[std::size_t(placeElements + d)] ? clamp01(c.element[std::size_t(placeElements + d)]) : 0.0f;
     if (patterns.type == currentType) {
         bool anySolo = false;
         for (const auto& el : patterns.element) anySolo |= el.controls.solo;
-        for (int e = 0; e < placeElements; ++e) {
+        for (int e = 0; e < slotElements; ++e) {
             const auto& el = patterns.element[std::size_t(e)].controls;
-            if (el.mute || (anySolo && !el.solo)) target.element[std::size_t(e)] = 0.0f;
+            if (!(el.mute || (anySolo && !el.solo))) continue;
+            if (e < placeElements) target.element[std::size_t(e)] = 0.0f;
+            else dramaTarget[std::size_t(e - placeElements)] = 0.0f;
         }
     }
     // The keyboard alone (the host stopped): no patterns, only its live notes.
-    if (c.keysOnly) target.element.fill(0.0f);
+    if (c.keysOnly) {
+        target.element.fill(0.0f);
+        dramaTarget.fill(0.0f);
+    }
     // Instrument mode without Place Ambience: just the instrument, in the Place's
     // smallest space with its effect character at its least (the instrument's own
     // reverb and delay sends are the space).
@@ -341,7 +367,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         target.size = 0.0f;
         target.fxDepth = 0.15f;
     }
-    const int keysElement = c.keys != nullptr && c.keysElement >= 0 && c.keysElement < placeElements ? c.keysElement : -1;
+    const int keysElement = c.keys != nullptr && c.keysElement >= 0 && c.keysElement < slotElements ? c.keysElement : -1;
     auto variants = c.variant;
     if (c.keysArmed && keysElement >= 0) variants[std::size_t(keysElement)] = uint8_t(pat::Element::clampVariant(c.keysVariant));
     const std::array<float, 8> targets { target.activity, target.tension, target.density, target.swing, target.tone, target.size, target.variation, target.fxDepth };
@@ -349,6 +375,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     if (fresh) {
         for (std::size_t i = 0; i < smooth.size(); ++i) smooth[i].snap(targets[i]);
         for (int e = 0; e < placeElements; ++e) elementSmooth[std::size_t(e)].snap(target.element[std::size_t(e)]);
+        for (int d = 0; d < dramaElements; ++d) elementSmooth[std::size_t(placeElements + d)].snap(dramaTarget[std::size_t(d)]);
         distance.snap(travelDistance(effectiveDistance(world, c.distance), c.travelFar));
         pan.snap(std::clamp(c.pan, -1.0f, 1.0f));
         fresh = false;
@@ -363,16 +390,24 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     settings.variation = smooth[6].next(targets[6]);
     settings.fxDepth = smooth[7].next(targets[7]);
     for (int e = 0; e < placeElements; ++e) settings.element[std::size_t(e)] = elementSmooth[std::size_t(e)].next(target.element[std::size_t(e)]);
+    std::array<float, dramaElements> dramaLevel {};
+    std::array<bool, dramaElements> dramaNotes {};
+    for (int d = 0; d < dramaElements; ++d) dramaLevel[std::size_t(d)] = elementSmooth[std::size_t(placeElements + d)].next(dramaTarget[std::size_t(d)]);
     // The Arrangement: an instrument entering from silence starts at once (on the
     // downbeat, at full level), one coming back while it still rings rises over 20 ms,
     // one leaving stops its notes at the boundary and fades what rings over 250 ms.
-    for (int e = 0; e < placeElements; ++e) {
+    for (int e = 0; e < slotElements; ++e) {
         const auto k = std::size_t(e);
         const float want = clamp01(c.arrange[k]);
         float& g = arranged[k];
         if (snapArrange || (want > g && g < 1.0e-4f)) g = want;
         else if (want > g) g = std::min(want, g + arrangeUp * float(n));
         else g = std::max(want, g - arrangeDown * float(n));
+        if (e >= placeElements) {
+            dramaLevel[k - placeElements] *= g;
+            dramaNotes[k - placeElements] = want > 0.0f && !c.ringOut && !c.keysOnly;
+            continue;
+        }
         settings.element[k] *= g;
         settings.notes[k] = want > 0.0f && !c.ringOut && !c.keysOnly;
     }
@@ -395,11 +430,22 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     // Harmony always follows the shared clock, so free and synced Places agree.
     context.chord = music::chordDegree(hostBeat, world[Danger], world.harmony, world.mood);
 
+    // The Drama instruments' tier for this chunk (latched on the bar lines), before their
+    // patterns are chosen. (Drama 0: the layer does not exist, unless the keyboard plays it.)
+    const bool dramaKeys = keysElement >= placeElements;
+    const bool dramaOn = (c.drama.drama > 0.0f || dramaLayer.active() || dramaKeys) && current != nullptr;
+    const float dramaTension = clamp01(c.tension + 0.6f * (world[Danger] - 0.2f));
+    if (dramaOn) dramaLayer.advance(currentType, world, c.drama, dramaTension, context.beat, context.beatsPerSample * double(n));
+    dramaStyleNow = c.drama.style;
+    dramaRankNow = c.drama.rank;
+
     // Patterns: the composer's, or generated from the seed and the settings.
     updatePatterns(target, world.mood, patterns, variants, c.keysArmed ? keysElement : -1);
-    for (int e = 0; e < placeElements; ++e) {
+    const int scaleSize = music::scaleFor(world.mood).size;
+    std::array<pat::Playback, dramaElements> dramaPlay {};
+    for (int e = 0; e < slotElements; ++e) {
         const auto k = std::size_t(e);
-        auto& play = context.play[k];
+        auto& play = e < placeElements ? context.play[k] : dramaPlay[k - placeElements];
         // The section's own clip (Milestone 16), else the pattern (variant) it is linked to.
         const pat::Clip* clip = playing[k] != nullptr ? c.clip[k] : nullptr;
         clipNow[k] = clip;
@@ -418,13 +464,17 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         else play.swing = patterns.type == currentType && patterns.element[k].edited(variants[k]) ? playing[k]->swing : settings.swing;
         play.kit = patternInfo(currentType, e).kind == Kit;
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
+        // The drama rising: a part doubled an octave up or down (the arrangement's gear).
+        play.doubleDegrees = c.doubling[k] * scaleSize;
+        // The Drama instruments play as written, without the Place's swing.
+        if (e >= placeElements && clip == nullptr && !(patterns.type == currentType && patterns.element[k].edited(variants[k]))) play.swing = 0;
         // A clip's randomness is its own section's (the same at every pass of the song).
         if (clip != nullptr) play.key = mix64(play.key ^ (uint64_t(int64_t(std::llround(c.clipOrigin)) + 1) << 20));
     }
     lastBeat = context.beat;
     nextBeat = context.beat + context.beatsPerSample * double(n);
-    context.liveElement = keysElement;
-    context.live = keysElement >= 0 ? c.keys : nullptr;
+    context.liveElement = keysElement < placeElements ? keysElement : -1;
+    context.live = keysElement >= 0 && keysElement < placeElements ? c.keys : nullptr;
     if (c.instrument && keysElement >= 0) keysLevel.snap(clamp01(c.element[std::size_t(keysElement)]));
     context.liveLevel = keysLevel.next(keysElement >= 0 ? clamp01(c.element[std::size_t(keysElement)]) : 0.0f);
     context.instrument = c.instrument;
@@ -434,12 +484,28 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     fx.begin(c.fx, n);
     context.fx = &fx;
     current->render(context, left, right, n);
-    // The Drama layer (only while a tier above Calm plays, or its tails ring; never in
-    // Instrument mode or for the keyboard alone).
-    if ((c.drama.drama > 0.0f || dramaLayer.active()) && !c.instrument) {
-        const float tension = clamp01(c.tension + 0.6f * (world[Danger] - 0.2f));
-        dramaLayer.render(currentType, world, c.drama, tension, context.beat, context.beatsPerSample, c.sync, !c.ringOut && !c.keysOnly, clock, left,
-                          right, n);
+    // The Drama instruments (only while a tier above Calm plays, or their tails ring, or
+    // the keyboard plays one of them), through their own levels and effects.
+    if (dramaOn) {
+        drama::Layer::Elements el;
+        for (int d = 0; d < dramaElements; ++d) {
+            const auto k = std::size_t(d);
+            el.play[k] = &dramaPlay[k];
+            float level = dramaLevel[k];
+            if (keysElement == placeElements + d) level = std::max(level, context.liveLevel > 0.0f ? context.liveLevel : keysLevel.value);
+            el.gainFrom[k] = dramaGainNow[k] < 0.0f ? level / 0.8f : dramaGainNow[k];
+            el.gainTo[k] = level / 0.8f;   // 0.8 (the default level) is the layer as designed
+            dramaGainNow[k] = el.gainTo[k];
+            el.notes[k] = dramaNotes[k];
+        }
+        el.fx = &fx;
+        el.fxDepth = c.instrument ? 1.0f : lerp(0.5f, 1.5f, settings.fxDepth);
+        if (dramaKeys) {
+            el.liveElement = keysElement - placeElements;
+            el.live = c.keys;
+        }
+        el.instrument = c.instrument;
+        dramaLayer.render(currentType, world, c.drama, dramaTension, context.beat, context.beatsPerSample, c.sync, el, clock, left, right, n);
     }
     // The sends darken with distance too (the dry sound has its own distance filter).
     tiltSends(settings.tone, distance.value, n);

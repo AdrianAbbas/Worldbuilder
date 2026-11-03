@@ -501,7 +501,8 @@ struct SendBuses {
 // One slot's instruments: their character effects, tilt, width and sends.
 class InstrumentFx {
 public:
-    static constexpr int elements = 6;
+    // The Place's six instruments and the slot's three Drama instruments.
+    static constexpr int elements = 9;
     void prepare(float sampleRate) {
         rate = sampleRate;
         for (auto& c : character) c.prepare(rate);
@@ -610,7 +611,7 @@ private:
             r[i] = std::tanh(r[i] * pre) * post;
         }
     }
-    std::array<float, 6> driveNow {}, driveFrom {};
+    std::array<float, elements> driveNow {}, driveFrom {};
     static void add(float* outL, float* outR, bool& fed, const float* l, const float* r, int n, float from, float to, float invN) {
         if (!fed) {
             std::fill_n(outL, n, 0.0f);
@@ -624,7 +625,7 @@ private:
         }
     }
     float rate = 48000, coef = 0.02f, scaleFrom = 1, scaleTo = 1;
-    std::array<float, elements> lastScale { 1, 1, 1, 1, 1, 1 };
+    std::array<float, elements> lastScale { 1, 1, 1, 1, 1, 1, 1, 1, 1 };
     bool fresh = true;
     std::array<CharacterFx, elements> character;
     std::array<std::array<float, ReverbTypeCount>, elements> revLevel {}, revFrom {};

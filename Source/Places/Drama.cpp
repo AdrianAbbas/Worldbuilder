@@ -1,5 +1,6 @@
 #include "Drama.h"
 #include "../Arrangement/Arrangement.h"
+#include <string>
 
 namespace wb::drama {
 
@@ -103,11 +104,247 @@ float velocityOf(char c) {
 }
 // Each part's level in the layer (dB), set by measurement (Tests "drama": the balance probe).
 //                                               drums perc metal swell strings pulse bass pluck low brass choir piano braam synth
-constexpr std::array<float, Layer::PartCount> trimDb { 7.0f, -6.0f, 5.0f, 4.0f, 1.0f, 0.0f, 0.0f, 0.0f, -10.0f, -8.0f, 3.0f, 0.0f, 0.0f, 0.0f, 5.0f };
+//                                               ... hands brassOst pianoOst metalHit impact
+constexpr std::array<float, Layer::PartCount> trimDb { 7.0f, -6.0f, 5.0f, 4.0f, 1.0f, 0.0f, 0.0f, 0.0f, -10.0f, -8.0f, 3.0f, 0.0f, 0.0f, 0.0f, 5.0f,
+                                                       -8.0f, 0.0f, 5.0f, -6.0f };
+const char* hitName(int hit) {
+    static constexpr std::array<const char*, 6> names { "Brass", "Choir", "Low Piano", "Braam", "Synth", "Metal" };
+    return names[std::size_t(std::clamp(hit, 0, 5))];
+}
 } // namespace
 
+//==============================================================================
+// The Drama instruments' starting patterns.
+
+void generate(int placeType, int element, int variant, const GenInputs& in, pat::Pattern& out) {
+    const auto& th = theme(placeType);
+    const int style = styleFor(placeType, in.style);
+    const int si = std::clamp(style, 1, StyleCount - 1) - 1;
+    int t = std::clamp(in.tier, int(Tension), int(Climax));
+    // B is busier (the next tier's bars; at a climax, more on top), C sparser (the tier
+    // below; at Tension, barely anything), the Fill drives into the next section.
+    bool extra = false, sparse = false;
+    if (variant == pat::VariantB) {
+        if (t < Climax) ++t;
+        else extra = true;
+    } else if (variant == pat::VariantC) {
+        if (t > Tension) --t;
+        else sparse = true;
+    }
+    const bool fill = variant == pat::VariantFill;
+    const int ti = t - 1;
+    const uint32_t take = in.variant;   // Generate: another take
+    const auto chance = [&](int a, int b) { return dsp::unipolar(dsp::mix64((uint64_t(in.key) << 20) ^ (uint64_t(take) << 44) ^ uint64_t(a * 977 + b * 31 + element))); };
+    out.clear();
+    out.swing = 0;
+    out.base = 0;
+    PatternWriter w { out };
+    if (element == DramaDrums) {
+        out.setGrid(pat::Sixteenth, fill ? 1 : 4);
+        out.followChords = false;
+        if (in.rank > 0) return;   // the leading slot plays the drums
+        const auto& d = drumBars[si][ti];
+        const int kit = th.kit;
+        const float highGain = kit == KitMetal ? 0.55f : (kit == KitHybrid ? 0.7f : (kit == KitMarch ? 0.5f : 0.8f));
+        const int bars = fill ? 1 : 4;
+        for (int bar = 0; bar < bars; ++bar)
+            for (int pos = 0; pos < 16; ++pos) {
+                const int step = bar * 16 + pos;
+                bool high = false;
+                const auto put = [&](int row, char c, float gain) {
+                    const float v = velocityOf(c);
+                    if (v <= 0.0f) return;
+                    w.note(step, row, 1, v * gain, 0, c == 'g' ? 0.8f : 1.0f);
+                    high |= row == RowHigh;
+                };
+                if (sparse) {
+                    // Tension's C: the heartbeat's first stroke, every other bar.
+                    if (pos == 0 && (bar & 1) == 0) put(RowLow, d.low[0], 1.0f);
+                    continue;
+                }
+                if (fill) {
+                    // A bar into the next section: the downbeats, a snare roll swelling over the
+                    // second half, the toms over the last beat.
+                    if (pos == 0 || pos == 8) put(RowLow, 'X', 1.0f);
+                    if (pos >= 8) w.note(step, RowSnare, 1, (0.4f + 0.075f * float(pos - 8)) * 0.8f);
+                    if (pos >= 12) w.note(step, pos < 14 ? RowTomHigh : RowTomLow, 1, 0.6f + 0.1f * float(pos - 12));
+                    continue;
+                }
+                put(RowLow, d.low[pos], 1.0f);
+                put(RowMid, d.mid[pos], 0.9f);
+                // A hybrid kit's hats from Action on, merged with the high line (the louder of the two).
+                const bool hat = kit == KitHybrid && t >= Action && ((pos & 1) == 0 || t == Climax);
+                if (hat) {
+                    const float v = std::max(velocityOf(d.high[pos]) * highGain, (pos & 1) == 0 ? 0.55f : 0.35f);
+                    w.note(step, RowHigh, 1, v);
+                    high = true;
+                } else {
+                    put(RowHigh, d.high[pos], highGain);
+                }
+                put(RowSnare, d.snare[pos], kit == KitMarch ? 1.0f : 0.8f);
+                // Toms: their line, and a fill on the last beat of every fourth bar (every other at a climax).
+                const bool fillBar = (t >= Action && (bar & 3) == 3) || (t == Climax && (bar & 1) == 1) || (extra && pos >= 12);
+                if (fillBar && pos >= 12) w.note(step, pos < 14 ? RowTomHigh : RowTomLow, 1, 0.6f + 0.1f * float(pos - 12));
+                else if (velocityOf(d.tom[pos]) > 0.0f) put((pos & 4) != 0 ? RowTomHigh : RowTomLow, d.tom[pos], 0.85f);
+                // Pistons as rhythm (metal kits), hats (hybrid kits).
+                if (kit == KitMetal && (pos & 1) == 0 && (t >= Action || (pos & 3) == 0)) w.note(step, RowPistons, 1, pos % 4 == 0 ? 0.9f : 0.6f);
+                // B at a climax: ghost strokes on every free sixteenth.
+                if (extra && !high && (pos & 1) == 1) w.note(step, RowHigh, 1, 0.32f * highGain / 0.8f, 0, 0.8f);
+                // Another take: an extra low stroke somewhere in each bar.
+                if (take != 0 && pos == 0) {
+                    static constexpr int spots[4] { 3, 6, 10, 14 };
+                    w.note(bar * 16 + spots[int(chance(bar, 1) * 3.999f)], RowLow, 1, 0.6f);
+                }
+            }
+        out.normalise();
+        return;
+    }
+    if (element == DramaOstinato) {
+        out.setGrid(pat::Sixteenth, fill ? 1 : 2);
+        // At Tension a pedal on the key's root; from Action on the chord's root.
+        out.followChords = t > Tension;
+        if (in.rank > 1) return;   // the two leading slots play the ostinato
+        const int scale = music::scaleFor(in.mood).size;
+        if (fill) {
+            // A run into the next section: sixteenths climbing the chord, louder.
+            static constexpr int climb[16] { 0, 0, 2, 2, 4, 4, 7, 7, 0, 2, 4, 7, 9, 11, 14, 14 };
+            for (int pos = 0; pos < 16; ++pos) {
+                const int d = climb[pos] >= 7 ? climb[pos] - 7 + scale : climb[pos];
+                w.note(pos, d, 1, 0.6f + 0.4f * float(pos) / 15.0f);
+            }
+            return;
+        }
+        const char* line = ostinatos[(si + int(take % 5u)) % 5][ti];
+        for (int bar = 0; bar < 2; ++bar)
+            for (int pos = 0; pos < 16; ++pos) {
+                const char c = line[pos];
+                if (c == '.' || c == '-') continue;
+                if (sparse && (pos & 3) != 0) continue;   // Tension's C: quarter notes
+                int ties = 0;
+                while (pos + 1 + ties < 16 && line[pos + 1 + ties] == '-') ++ties;
+                int degree = 0, alter = 0;
+                switch (c) {
+                    case 'o': degree = scale; break;
+                    case 'f': degree = 4; break;
+                    case 't': degree = 2; break;
+                    case 'b': alter = 1; break;
+                    default: break;
+                }
+                // Tension at the top: the fifths become a semitone's rub.
+                if (c == 'f' && in.tension > 0.72f && bar == 1) {
+                    degree = 0;
+                    alter = 1;
+                }
+                const int step = bar * 16 + pos;
+                w.note(step, degree, ties > 0 ? ties + 1 : 1, c == 'R' ? 1.0f : 0.66f, alter);
+                // B at a climax: the accents doubled an octave up.
+                if (extra && c == 'R') w.note(step, degree + scale, 1, 0.7f, alter);
+            }
+        out.normalise();
+        return;
+    }
+    // The hits: eight bars of thirty-seconds (the stabs' lengths).
+    out.setGrid(pat::ThirtySecond, fill ? 1 : 8);
+    out.followChords = false;
+    if (fill) {
+        // A cymbal swell over the bar, a stab as the pickup.
+        if (in.rank == 0) w.note(0, RowSwell, 32, 0.8f);
+        w.note(28, RowStabA, 2, 0.8f);
+        return;
+    }
+    const auto& h = hitBars[si][ti];
+    const bool broad = style == StyleEpic || style == StyleTragic;
+    for (int bar = 0; bar < 8; ++bar)
+        for (int pos = 0; pos < 16; ++pos) {
+            const int step = bar * 32 + pos * 2;
+            const char c = h.line[pos];
+            const float v = velocityOf(c);
+            // Stabs, short and hard (held longer in the broad styles); a climax keeps them
+            // shortest so the drums come through.
+            const int length = broad ? (t == Climax ? 8 : 16) : (t == Climax ? 3 : (c == 'X' ? 6 : 4));
+            if (sparse) {
+                if (pos == 0 && (bar & 7) == 0 && v > 0.0f) w.note(step, RowStabA, length, 0.7f * v);
+                continue;
+            }
+            if (v > 0.0f && ((bar % h.every) + h.every) % h.every == 0) {
+                w.note(step, RowStabA, length, v);
+                // The second hit joins on the phrase lines, and on every other bar's downbeat at a climax.
+                if ((t == Climax && pos == 0 && (bar & 1) == 0) || ((bar & 3) == 0 && pos == 0 && t >= Action)) w.note(step, RowStabB, length, 0.8f * v);
+            }
+            // B at a climax: off-beat stabs pushing every bar.
+            if (extra && (pos == 6 || pos == 10)) w.note(step, RowStabA, 3, 0.7f);
+            if (in.rank == 0) {
+                // The phrase line at a climax: an impact and a crash every four bars.
+                if (t == Climax && pos == 0 && (bar & 3) == 0) w.note(step, RowImpact, 16, 1.0f);
+                // A cymbal swell into the next phrase.
+                if (pos == 0 && ((t == Climax && (bar & 3) == 3) || (t == Action && (bar & 7) == 7))) w.note(step, RowSwell, 32, 0.75f);
+            }
+            // Another take: a pickup stab before the phrase lines.
+            if (take != 0 && pos == 14 && (bar & 3) == 3 && t >= Action) w.note(step, RowStabA, 2, 0.6f + 0.3f * chance(bar, 2));
+        }
+    out.normalise();
+}
+
+} // namespace wb::drama
+
+//==============================================================================
+// The Drama instruments' names and kit rows, per Place (Place.h).
+namespace wb {
+const ElementSpec& dramaElementSpec(int type, int element) {
+    struct Table {
+        std::array<std::array<ElementSpec, dramaElements>, PlaceTypeCount> spec {};
+        std::array<std::string, PlaceTypeCount> hitNames;
+        std::array<std::array<std::string, 2>, PlaceTypeCount> stabNames;
+    };
+    static const Table table = [] {
+        Table x;
+        static constexpr std::array<const char*, 5> drumNames { "War Drums", "Tribal Drums", "Metal Drums", "Hybrid Drums", "March Drums" };
+        static constexpr std::array<int, 5> drumIcons { IconTimpani, IconHandDrum, IconPiston, IconSnare, IconSnare };
+        static constexpr std::array<const char*, 5> ostinatoNames { "Spiccato Strings", "Synth Pulse", "Pulse Bass", "Plucked Ostinato", "Piano Ostinato" };
+        static constexpr std::array<int, 5> ostinatoIcons { IconStrings, IconPulse, IconBass, IconLute, IconPiano };
+        static constexpr std::array<const char*, 5> highRow { "Slap", "Slap", "Clank", "Hat", "Snare Ghost" };
+        for (int t = 0; t < PlaceTypeCount; ++t) {
+            const auto& th = drama::theme(t);
+            const int kit = std::clamp(th.kit, 0, 4);
+            auto& drums = x.spec[std::size_t(t)][0];
+            drums.name = drumNames[std::size_t(kit)];
+            drums.icon = drumIcons[std::size_t(kit)];
+            drums.kind = Kit;
+            drums.kit = { kit == drama::KitMarch ? "Bass Drum" : (kit == drama::KitHybrid ? "Low Hit" : (kit == drama::KitTribal ? "Low Drum" : "War Drum")),
+                          kit == drama::KitHybrid ? "Mid Hit" : "Mid Drum", highRow[std::size_t(kit)], kit == drama::KitHybrid ? "Clap" : "Snare",
+                          "High Tom", "Low Tom", kit == drama::KitMetal ? "Pistons" : nullptr, nullptr };
+            drums.rows = kit == drama::KitMetal ? 7 : 6;
+            drums.vary = pat::VaryVelocity;
+            auto& ost = x.spec[std::size_t(t)][1];
+            ost.name = ostinatoNames[std::size_t(std::clamp(th.ostinato, 0, 4))];
+            ost.icon = ostinatoIcons[std::size_t(std::clamp(th.ostinato, 0, 4))];
+            ost.kind = Melodic;
+            ost.vary = pat::VaryVelocity;
+            x.hitNames[std::size_t(t)] = std::string(drama::hitName(th.hitA)) + " & " + drama::hitName(th.hitB) + " Hits";
+            x.stabNames[std::size_t(t)][0] = std::string(drama::hitName(th.hitA)) + " Stab";
+            x.stabNames[std::size_t(t)][1] = std::string(drama::hitName(th.hitB)) + " Stab";
+        }
+        // The names' storage is in place: point the specs at it.
+        for (int t = 0; t < PlaceTypeCount; ++t) {
+            auto& hits = x.spec[std::size_t(t)][2];
+            hits.name = x.hitNames[std::size_t(t)].c_str();
+            hits.icon = IconHorn;
+            hits.kind = Kit;
+            hits.kit = { x.stabNames[std::size_t(t)][0].c_str(), x.stabNames[std::size_t(t)][1].c_str(), "Impact", "Swell", nullptr, nullptr, nullptr, nullptr };
+            hits.rows = 4;
+            hits.vary = pat::VaryVelocity;
+        }
+        return x;
+    }();
+    return table.spec[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))][std::size_t(std::clamp(element - placeElements, 0, dramaElements - 1))];
+}
+} // namespace wb
+
+namespace wb::drama {
+
 Layer::Layer() {
-    parts = { &drums, &perc, &metal, &swell, &strings, &pulse, &bass, &pluck, &low, &brass, &choir, &piano, &braam, &synthStab, &hands };
+    parts = { &drums, &perc, &metal, &swell, &strings, &pulse, &bass, &pluck, &low, &brass, &choir, &piano, &braam, &synthStab, &hands,
+              &brassOst, &pianoOst, &metalHit, &impact };
     // The recordings each part plays (resolved once, when the bank is ready).
     strings.patch.instrument = "violin-sustain";
     pulse.patch.instrument = "mlg-pulse-long";
@@ -116,9 +353,18 @@ Layer::Layer() {
     bass.patch.shortInstrument = "mlg-staticbass-short";
     pluck.patch.instrument = "guitar";
     piano.patch = pianoPatch();
+    pianoOst.patch = pianoPatch();
     braam.patch.instrument = "mlg-square-long";
     synthStab.patch.instrument = "mlg-cyberpunk-long";
     synthStab.patch.shortInstrument = "mlg-cyberpunk-short";
+}
+
+int Layer::elementOf(int part) {
+    switch (part) {
+        case PDrums: case PPerc: case PMetal: case PHands: return 0;
+        case PStrings: case PPulse: case PBass: case PPluck: case PLow: case PBrassOst: case PPianoOst: return 1;
+        default: return 2;
+    }
 }
 
 void Layer::prepare(float sampleRate) {
@@ -135,12 +381,12 @@ void Layer::reset() {
     gainNow.fill(-1.0f);
     quiet.fill(1 << 30);
     level.snap(0);
-    latched = previous = Calm;
+    latched = previous = want = Calm;
     x = 0;
     awake = false;
     fresh = true;
     gearChange = false;
-    lastBar = INT64_MIN;
+    lastBar = gearBar = INT64_MIN;
     idleSamples = 1 << 30;
     count = 0;
     lastBeat = -1.0e18;
@@ -155,6 +401,11 @@ void Layer::setSeed(uint32_t key) {
 }
 
 float Layer::rand(int64_t step, uint32_t salt) const { return noise.unit((uint64_t(salt) << 48) ^ uint64_t(step + (int64_t(1) << 40))); }
+
+float Layer::transposeSemis(int element) const {
+    if (element != DramaOstinato) return 0.0f;
+    return ostinatoRegister + parts[std::size_t(ostinatoPart)]->transposeSemis();
+}
 
 void Layer::configure(int placeType, const WorldFrame& world, int style, float tension, float bpm) {
     const auto& t = theme(placeType);
@@ -533,11 +784,25 @@ void Layer::configure(int placeType, const WorldFrame& world, int style, float t
         p.voices = byQuality(q, 3, 4, 6);
         p.gain = 0.9f;
     }
+    // The parts of their own (the Drama tier rework): the ostinato's brass doubling and a
+    // piano ostinato as the stabs' brass and piano; the hits' crash and metal stabs as the
+    // drums' metal (at full level: a metal kit's pistons are what plays quieter there);
+    // the impact as the snare and toms' drum.
+    brassOst.patch = brass.patch;
+    pianoOst.patch = piano.patch;
+    pianoOstSynth.patch = pianoSynth.patch;
+    metalHit.patch = metal.patch;
+    metalHit.patch.gain = 1.0f;
+    impact.patch = perc.patch;
+    kitNow = t.kit;
+    static constexpr int ostinatoParts[] { PStrings, PPulse, PBass, PPluck, PPianoOst };
+    ostinatoPart = ostinatoParts[std::clamp(t.ostinato, 0, 4)];
+    ostinatoRegister = t.ostinato == OstBass ? -12.0f : 0.0f;
     hall.set(t.hall, lerp(1.5f, 4.5f, t.hall), lerpExp(2500.0f, 7000.0f, tone));
     hallWet = 0.35f + 0.4f * t.hall;
 }
 
-void Layer::add(int part, int offset, float semis, float velocity, double beat, double lengthBeats, int row, float pan) {
+void Layer::add(int part, int offset, float semis, float velocity, double beat, double lengthBeats, int row, float pan, int live) {
     if (count >= maxNotes || velocity <= 0.0f) return;
     Note& note = pending[std::size_t(count++)];
     note.offset = offset;
@@ -548,7 +813,8 @@ void Layer::add(int part, int offset, float semis, float velocity, double beat, 
     note.on.velocity = std::clamp(velocity, 0.0f, 1.25f);
     note.on.beat = beat;
     note.on.length = lengthBeats;
-    note.on.seconds = float(lengthBeats / std::max(frame.beatsPerSecond, 0.01));
+    note.on.seconds = live != 0 ? 3600.0f : float(lengthBeats / std::max(frame.beatsPerSecond, 0.01));
+    note.on.live = live;
     const uint64_t h = mix64(noise.key ^ (uint64_t(part + 1) << 52) ^ uint64_t(int64_t(std::floor(beat * 96.0)) + (int64_t(1) << 40)) ^ (uint64_t(row + 7) << 44)
                              ^ uint64_t(int64_t(semis * 4.0f) + 512) << 30);
     note.on.random = unipolar(h);
@@ -572,185 +838,74 @@ void Layer::chord(int part, int offset, int root, int mood, int degree, float ve
         third = 4;
     }
     if (colour == 2) third = 1;   // a cluster: tension at the very top
-    const auto played = [&](int semis, float v) { add(part, offset, float(semis), velocity * v, beat, length); };
+    const auto played = [&](int semis, float v) { add(part, offset, float(semis), velocity * v, beat, length, 0, 2.0f, liveId); };
     played(r - 12, 0.9f);
     played(r - 12 + fifth, 0.75f);
     played(r, 0.8f);
     if (!power) played(r + 12 + third, 0.6f);
 }
 
-void Layer::scheduleStep(int64_t step, int offset, int placeType, int style, const WorldFrame& world, float tension, bool sync, double stepBeat,
-                         const Cue& cue, double beatsPerSample) {
-    (void) beatsPerSample;
-    const auto& th = theme(placeType);
-    const int pos = int(((step % 16) + 16) % 16);
-    const int64_t bar = music::floorDiv(step, int64_t(16));
-    const int mood = world.mood;
-    const int chordNow = sync ? music::chordDegree(stepBeat, world[Danger], world.harmony, mood) : world.chord;
-    const int t = latched;
-    const int si = std::clamp(style, 1, StyleCount - 1) - 1;
-    const bool leads = cue.rank == 0;
-    const float heatV = 0.82f + 0.3f * heat;
-    const double stepLen = 0.25;
-    // The section's start: a stinger lands there after a Riser, Drum fill, Drop or
-    // Reverse swell.
-    const double sectionStart = frame.beat - cue.sinceStart;
-    const bool landing = cue.arrived != arr::TransCut && cue.arrived != arr::TransCrossfade && cue.arrived != arr::TransFilter
-                         && std::abs(stepBeat - sectionStart) < 0.5 * stepLen;
-    // Into a Drop: silence (the world ducks away).
-    if (cue.transition == arr::TransDrop && cue.transitionT >= 0.0f) return;
-
-    // Gear change (the tier rose on this bar) or an arrangement landing: impact, crash,
-    // a big stab (the chromatic mediant into a climax), a braam.
-    if (pos == 0 && ((gearChange && t >= Action) || (landing && t >= Tension))) {
-        const bool big = t == Climax || landing;
-        if (leads) {
-            add(PPerc, offset, 0, big ? 1.1f : 0.85f, stepBeat, 2.0, 3);
-            add(PMetal, offset, 0, big ? 0.9f : 0.6f, stepBeat, 2.0, 0);
-        }
-        const int colour = gearChange && t == Climax && style != StyleTragic && style != StyleSuspense ? 1 : 0;
-        const int hit = th.hitB == HitMetal ? PMetal : th.hitB;
-        (void) hit;
-        const auto stab = [&](int which, float v, double length) {
-            switch (which) {
-                case HitBrass: chord(PBrass, offset, world.root, mood, chordNow, v, stepBeat, length, false, colour); break;
-                case HitChoir: chord(PChoir, offset, world.root, mood, chordNow, v, stepBeat, length * 2.0, false, colour); break;
-                case HitPiano: chord(PPiano, offset, world.root, mood, chordNow, v, stepBeat, length * 3.0, true, colour); break;
-                case HitBraam: add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), v, stepBeat, length * 2.0); break;
-                case HitSynth: chord(PSynth, offset, world.root, mood, chordNow, v, stepBeat, 0.5, true, colour); break;
-                default: add(PMetal, offset, 0, v, stepBeat, 1.0, 1); break;
-            }
-        };
-        stab(th.hitA, 0.95f, 1.0);
-        stab(th.hitB, 0.85f, 1.0);
-        if (th.hitA != HitPiano && th.hitB != HitPiano && big) chord(PPiano, offset, world.root, mood, chordNow, 0.9f, stepBeat, 3.0, true, colour);
-        if (th.hitA != HitBraam && th.hitB != HitBraam && big && (placeType >= SpaceStation || th.kit == KitHybrid || th.kit == KitMetal))
-            add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), 0.8f, stepBeat, 2.0);
-        if (t == Climax) return;   // the climax's own first downbeat is the stab
+void Layer::playDrum(int row, int offset, float velocity, double beat, double length, int kit, int live) {
+    liveId = live;
+    switch (row) {
+        case RowLow: add(PDrums, offset, 0, velocity, beat, length, 0, 2.0f, live); break;
+        case RowMid: add(PDrums, offset, 0, velocity, beat, length, 1, 2.0f, live); break;
+        case RowHigh:
+            if (kit == KitMetal) add(PMetal, offset, 0, velocity, beat, length, 1, 2.0f, live);
+            else if (kit == KitHybrid) add(PMetal, offset, 0, velocity, beat, length, 3, 2.0f, live);
+            else if (kit == KitMarch) add(PPerc, offset, 0, velocity, beat, length, 0, 2.0f, live);   // snare ghost strokes
+            else add(PHands, offset, 0, velocity, beat, length, ghost ? 1 : 0, 2.0f, live);           // slaps (the ghosts muted)
+            break;
+        case RowSnare: add(PPerc, offset, 0, velocity, beat, length, 0, 2.0f, live); break;
+        case RowTomHigh: add(PPerc, offset, 0, velocity, beat, length, 1, 2.0f, live); break;
+        case RowTomLow: add(PPerc, offset, 0, velocity, beat, length, 2, 2.0f, live); break;
+        default: add(PMetal, offset, 0, velocity, beat, length, 2, 2.0f, live); break;   // pistons
     }
-
-    // Into the next section: a drum roll building over the last bar of a Riser or a Drum
-    // fill, and a cymbal swell over the whole transition.
-    if (cue.transitionT >= 0.0f && (cue.transition == arr::TransRiser || cue.transition == arr::TransDrumFill || cue.transition == arr::TransReverse)) {
-        const double remaining = cue.transitionLength * (1.0 - double(cue.transitionT)) - (stepBeat - frame.beat);
-        if (leads && std::abs(remaining - cue.transitionLength) < 0.5 * stepLen) add(PSwell, offset, 0, 0.9f, stepBeat, cue.transitionLength, 0);
-        if (leads && remaining <= 4.0 + 1.0e-6 && remaining > 0.0 && t >= Tension) {
-            const float up = float(1.0 - remaining / 4.0);
-            add(PPerc, offset, 0, 0.35f + 0.65f * up, stepBeat, stepLen, (step & 1) == 0 ? 0 : 1);
-            if (remaining <= 1.0 + 1.0e-6) add(PPerc, offset, 0, 0.8f, stepBeat, stepLen, 2);
-            if ((step & 1) == 0) add(PDrums, offset, 0, 0.4f + 0.6f * up, stepBeat, stepLen, 0);
-            return;
-        }
-    }
-    if (t <= Calm) return;
-    const int ti = t - 1;
-
-    // Drums (the leading slot).
-    const auto& d = drumBars[si][ti];
-    const bool fillBar = (t >= Action && (bar & 3) == 3) || (t == Climax && (bar & 1) == 1);
-    if (leads) {
-        const auto hit = [&](const char* line, int part, int row, float gain) {
-            const char c = line[pos];
-            const float v = velocityOf(c);
-            if (v <= 0.0f) return;
-            if (c == 'g' && rand(step, 31u + uint32_t(row) + uint32_t(part) * 7u) > 0.6f + 0.4f * heat) return;
-            const int played = part == PHands && c == 'g' ? 1 : row;   // the ghost strokes muted
-            add(part, offset, 0, v * gain * heatV * (0.93f + 0.14f * rand(step, 41u + uint32_t(row))), stepBeat, stepLen, played);
-        };
-        const bool metalKit = th.kit == KitMetal, hybrid = th.kit == KitHybrid;
-        hit(d.low, PDrums, 0, 1.0f);
-        hit(d.mid, PDrums, 1, 0.9f);
-        if (metalKit) hit(d.high, PMetal, 1, 0.55f);
-        else if (hybrid) hit(d.high, PMetal, 3, 0.7f);
-        else if (th.kit == KitMarch) hit(d.high, PPerc, 0, 0.5f);   // a march: snare ghost strokes
-        else hit(d.high, PHands, 0, 0.8f);
-        hit(d.snare, PPerc, 0, th.kit == KitMarch ? 1.0f : 0.8f);
-        // Toms: their line, and a fill on the last beat of every fourth bar (every other at a climax).
-        if (fillBar && pos >= 12) add(PPerc, offset, 0, (0.6f + 0.1f * float(pos - 12)) * heatV, stepBeat, stepLen, pos < 14 ? 1 : 2);
-        else {
-            const char c = d.tom[pos];
-            if (velocityOf(c) > 0.0f) add(PPerc, offset, 0, velocityOf(c) * 0.85f * heatV, stepBeat, stepLen, (pos & 4) != 0 ? 1 : 2);
-        }
-        // Pistons as rhythm (metal kits), hats (hybrid kits).
-        if (metalKit && (pos & 1) == 0 && (t >= Action || (pos & 3) == 0)) add(PMetal, offset, 0, (pos % 4 == 0 ? 0.9f : 0.6f) * heatV, stepBeat, stepLen, 2);
-        if (hybrid && t >= Action && ((pos & 1) == 0 || t == Climax)) add(PMetal, offset, 0, ((pos & 1) == 0 ? 0.55f : 0.35f) * heatV, stepBeat, stepLen, 3);
-        // The phrase line at a climax: an impact and a crash every four bars.
-        if (t == Climax && pos == 0 && (bar & 3) == 0) {
-            add(PPerc, offset, 0, 1.0f, stepBeat, 2.0, 3);
-            add(PMetal, offset, 0, 0.75f, stepBeat, 2.0, 0);
-        }
-        // A cymbal swell into the next phrase.
-        if (pos == 0 && ((t == Climax && (bar & 3) == 3) || (t == Action && (bar & 7) == 7))) add(PSwell, offset, 0, 0.75f, stepBeat, 4.0, 0);
-    }
-
-    // The ostinato (the two leading slots): a pedal on the key's root at Tension, on the
-    // chord's root from Action (a rising sequence where the harmony rises).
-    if (cue.rank <= 1) {
-        const char* line = ostinatos[si][ti];
-        const char c = line[pos];
-        if (c != '.' && c != '-') {
-            int ties = 0;
-            while (pos + 1 + ties < 16 && line[pos + 1 + ties] == '-') ++ties;
-            const int degree = t == Tension ? 0 : chordNow;
-            const int root = music::inRange(music::chordTone(mood, degree, 0), 0);
-            int semis = root;
-            switch (c) {
-                case 'o': semis = root + 12; break;
-                case 'f': semis = root + 7; break;
-                case 't': semis = root + (music::chordTone(mood, degree, 1) - music::chordTone(mood, degree, 0)); break;
-                case 'b': semis = root + 1; break;
-                default: break;
-            }
-            // Tension at the top: the fifths become a semitone's rub.
-            if (c == 'f' && tension > 0.72f && (bar & 1) == 1) semis = root + 1;
-            const float v = (c == 'R' ? 1.0f : 0.66f) * heatV * (0.94f + 0.12f * rand(step, 51u));
-            const double length = (ties > 0 ? double(ties + 1) : 0.6) * stepLen;
-            static constexpr int ostinatoPart[] { PStrings, PPulse, PBass, PPluck, PPiano };
-            const int part = ostinatoPart[std::clamp(th.ostinato, 0, 4)];
-            const float register_ = th.ostinato == OstBass ? -12.0f : (th.ostinato == OstPiano ? 0.0f : 0.0f);
-            add(part, offset, float(semis) + register_, v * (cue.rank == 0 ? 1.0f : 0.7f), stepBeat, length);
-            // The low doubling: a thump under the accents (and on every beat at a climax).
-            if (leads && t >= Action && (c == 'R' || (t == Climax && (pos & 3) == 0)))
-                add(PLow, offset, float(root - 12), (c == 'R' ? 0.95f : 0.7f) * heatV, stepBeat, stepLen);
-            // The brass ostinato at a climax: the accents doubled, short.
-            if (t == Climax && c == 'R' && (th.hitA == HitBrass || th.hitB == HitBrass)) add(PBrass, offset, float(semis), 0.6f * heatV, stepBeat, 0.25);
-            // Metal kits ring a clank on the accents.
-            if (leads && th.kit == KitMetal && c == 'R') add(PMetal, offset, 0, 0.6f, stepBeat, stepLen, 1);
-        }
-    }
-
-    // Stabs and hits on the downbeats.
-    {
-        const auto& h = hitBars[si][ti];
-        const char c = h.line[pos];
-        if (velocityOf(c) > 0.0f && ((bar % h.every) + h.every) % h.every == 0) {
-            const float v = velocityOf(c) * heatV * (cue.rank >= 2 ? 0.75f : 1.0f);
-            // Stabs, short and hard (held longer in the broad styles); a climax keeps them
-            // shortest so the drums come through.
-            const double length = style == StyleEpic || style == StyleTragic ? (t == Climax ? 1.0 : 2.0) : (t == Climax ? 0.35 : (c == 'X' ? 0.75 : 0.5));
-            const int colour = tension > 0.85f && t == Climax && (bar & 3) == 2 ? 2 : 0;
-            const auto stab = [&](int which, float gain) {
-                switch (which) {
-                    case HitBrass: chord(PBrass, offset, world.root, mood, chordNow, v * gain, stepBeat, length, false, colour); break;
-                    case HitChoir: chord(PChoir, offset, world.root, mood, chordNow, v * gain, stepBeat, std::max(0.75, length * 1.5), true, colour); break;
-                    case HitPiano: chord(PPiano, offset, world.root, mood, chordNow, v * gain, stepBeat, 1.5, true, colour); break;
-                    case HitBraam: add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), v * gain, stepBeat, 2.0); break;
-                    case HitSynth: chord(PSynth, offset, world.root, mood, chordNow, v * gain, stepBeat, 0.5, true, colour); break;
-                    default: add(PMetal, offset, 0, v * gain, stepBeat, 1.0, 1); break;
-                }
-            };
-            stab(th.hitA, 1.0f);
-            // The second hit joins on the phrase lines, and on every other bar's downbeat at a climax.
-            if ((t == Climax && pos == 0 && (bar & 1) == 0) || ((bar & 3) == 0 && pos == 0 && t >= Action)) stab(th.hitB, 0.8f);
-        }
-    }
+    liveId = 0;
 }
 
-bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float tension, double beat, double beatsPerSample, bool sync, bool notes,
-                   uint64_t clock, float* left, float* right, int n) {
-    (void) clock;
-    // Classic (Drama 0): the layer does not exist.
-    if (cue.drama <= 0.0f && !awake) return false;
+void Layer::playOstinato(int offset, float semis, float velocity, double beat, double length, bool accent, bool onBeat, const Elements& el, int live) {
+    add(ostinatoPart, offset, semis + ostinatoRegister, velocity, beat, length, 0, 2.0f, live);
+    if (live != 0) return;
+    const auto& th = theme(type);
+    const float heatV = 0.82f + 0.3f * heat;
+    // The parts double as the drama rises: a low thump under the accents (and on every
+    // beat at a climax), the brass on the accents at a climax, a clank on a metal kit's.
+    if (rankNow == 0 && latched >= Action && (accent || (latched == Climax && onBeat)))
+        add(PLow, offset, float(rootNow - 12), (accent ? 0.95f : 0.7f) * heatV, beat, 0.25);
+    if (latched == Climax && accent && (th.hitA == HitBrass || th.hitB == HitBrass)) add(PBrassOst, offset, semis, 0.6f * heatV, beat, 0.25);
+    if (rankNow == 0 && th.kit == KitMetal && accent && el.notes[0] && el.gainTo[0] > 0.0f) add(PMetal, offset, 0, 0.6f, beat, 0.25, 1);
+}
+
+void Layer::playHit(int row, int offset, float velocity, double beat, double length, int placeType, const WorldFrame& world, int chordNow, int64_t bar,
+                    float tension, int live) {
+    const auto& th = theme(placeType);
+    const int mood = world.mood;
+    liveId = live;
+    const int colour = live == 0 && tension > 0.85f && latched == Climax && (bar & 3) == 2 ? 2 : 0;
+    const auto stab = [&](int which) {
+        switch (which) {
+            case HitBrass: chord(PBrass, offset, world.root, mood, chordNow, velocity, beat, length, false, colour); break;
+            case HitChoir: chord(PChoir, offset, world.root, mood, chordNow, velocity, beat, std::max(0.75, length * 1.5), true, colour); break;
+            case HitPiano: chord(PPiano, offset, world.root, mood, chordNow, velocity, beat, live != 0 ? length : 1.5, true, colour); break;
+            case HitBraam: add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), velocity, beat, live != 0 ? length : 2.0, 0, 2.0f, live); break;
+            case HitSynth: chord(PSynth, offset, world.root, mood, chordNow, velocity, beat, live != 0 ? length : 0.5, true, colour); break;
+            default: add(PMetalHit, offset, 0, velocity, beat, 1.0, 1, 2.0f, live); break;
+        }
+    };
+    switch (row) {
+        case RowStabA: stab(th.hitA); break;
+        case RowStabB: stab(th.hitB); break;
+        case RowImpact:
+            add(PImpact, offset, 0, velocity, beat, 2.0, 3, 2.0f, live);
+            add(PMetalHit, offset, 0, 0.75f * velocity, beat, 2.0, 0, 2.0f, live);
+            break;
+        default: add(PSwell, offset, 0, velocity, beat, length, 0, 2.0f, live); break;
+    }
+    liveId = 0;
+}
+
+int Layer::advance(int placeType, const WorldFrame& world, const Cue& cue, float tension, double beat, double span) {
     if (placeType != type) {
         // A different Place in the slot: what rang is gone with the old one.
         if (type >= 0) {
@@ -760,23 +915,115 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         type = placeType;
         fresh = true;
     }
-    if (placeType <= NoPlace) return false;
-    const double span = beatsPerSample * double(n);
     x = amountFor(world.intensity, tension, cue.drama);
-    int want = cue.tier >= 0 && cue.drama > 0.0f ? std::clamp(cue.tier, 0, int(Climax)) : tierFor(x);
-    if (cue.drama <= 0.0f) want = Calm;
-    // Heat: how far into its tier the drama is (velocities and brightness grow with it).
     static constexpr float edges[TierCount + 1] { 0.0f, 0.1f, 0.45f, 0.78f, 1.0f };
-    heat = cue.tier >= 0 ? 0.6f : clamp01((x - edges[want]) / std::max(0.05f, edges[want + 1] - edges[want]));
+    if (cue.drama <= 0.0f) {
+        want = Calm;
+        heat = 0;
+    } else if (cue.gear >= 0.0f) {
+        // The arrangement's gear (the Drama tier rework): the nearest tier, its heat how far
+        // through it the section is.
+        want = std::clamp(int(std::floor(cue.gear + 0.5f)), int(Calm), int(Climax));
+        heat = clamp01(cue.gear - (float(want) - 0.5f));
+    } else if (cue.tier >= 0) {
+        want = std::clamp(cue.tier, 0, int(Climax));
+        heat = 0.6f;
+    } else {
+        want = tierFor(x);
+        heat = clamp01((x - edges[want]) / std::max(0.05f, edges[want + 1] - edges[want]));
+    }
+    // An evolving section: the Drama instruments harder as it rises (softer as it ends).
+    if (cue.heat >= 0.0f && cue.drama > 0.0f) heat = clamp01(cue.heat);
     if (fresh) {
         latched = previous = want;
         fresh = false;
     }
-    const bool transitions = cue.drama > 0.0f && (cue.transitionT >= 0.0f || cue.sinceStart < 0.5);
-    if (want <= Calm && latched <= Calm && !transitions && idleSamples > int(6.0f * rate)) {
-        // Asleep, it keeps its place in the song: it wakes on the next bar line, not mid-bar.
-        lastBeat = beat;
+    gearChange = false;
+    // A jump (the transport located): latch again at once.
+    if (beat < lastBeat - 1.0e-6 || beat > lastBeat + span + 1.0) {
+        latched = previous = want;
         lastBar = int64_t(std::floor(beat / 4.0));
+    }
+    lastBeat = beat;
+    // The bar line in this chunk: the tier latches there.
+    const auto bar = int64_t(std::ceil(beat / 4.0 - 1.0e-9));
+    if (double(bar) * 4.0 < beat + span && bar != lastBar) {
+        previous = latched;
+        latched = want;
+        gearChange = latched > previous;
+        gearBar = bar;
+        lastBar = bar;
+    }
+    return latched;
+}
+
+void Layer::stingers(int64_t step, int offset, int placeType, int style, const WorldFrame& world, bool sync, double stepBeat, const Cue& cue,
+                     const Elements& el) {
+    const auto& th = theme(placeType);
+    const int pos = int(((step % 16) + 16) % 16);
+    const int64_t bar = music::floorDiv(step, int64_t(16));
+    const int mood = world.mood;
+    const int chordNow = sync ? music::chordDegree(stepBeat, world[Danger], world.harmony, mood) : world.chord;
+    const int t = latched;
+    const bool leads = cue.rank == 0;
+    const double stepLen = 0.25;
+    const bool drums = el.notes[0] && el.gainTo[0] > 0.0f, hits = el.notes[2] && el.gainTo[2] > 0.0f;
+    // The section's start: a stinger lands there after a Riser, Drum fill, Drop or
+    // Reverse swell.
+    const double sectionStart = frame.beat - cue.sinceStart;
+    const bool landing = cue.arrived != arr::TransCut && cue.arrived != arr::TransCrossfade && cue.arrived != arr::TransFilter
+                         && std::abs(stepBeat - sectionStart) < 0.5 * stepLen;
+    if (cue.transition == arr::TransDrop && cue.transitionT >= 0.0f) return;
+    // Gear change (the tier rose on this bar) or an arrangement landing: impact, crash,
+    // a big stab (the chromatic mediant into a climax), a braam (the hits).
+    if (hits && pos == 0 && ((gearChange && bar == gearBar && t >= Action) || (landing && t >= Tension))) {
+        const bool big = t == Climax || landing;
+        if (leads) {
+            add(PImpact, offset, 0, big ? 1.1f : 0.85f, stepBeat, 2.0, 3);
+            add(PMetalHit, offset, 0, big ? 0.9f : 0.6f, stepBeat, 2.0, 0);
+        }
+        const int colour = gearChange && t == Climax && style != StyleTragic && style != StyleSuspense ? 1 : 0;
+        const auto stab = [&](int which, float v, double length) {
+            switch (which) {
+                case HitBrass: chord(PBrass, offset, world.root, mood, chordNow, v, stepBeat, length, false, colour); break;
+                case HitChoir: chord(PChoir, offset, world.root, mood, chordNow, v, stepBeat, length * 2.0, false, colour); break;
+                case HitPiano: chord(PPiano, offset, world.root, mood, chordNow, v, stepBeat, length * 3.0, true, colour); break;
+                case HitBraam: add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), v, stepBeat, length * 2.0); break;
+                case HitSynth: chord(PSynth, offset, world.root, mood, chordNow, v, stepBeat, 0.5, true, colour); break;
+                default: add(PMetalHit, offset, 0, v, stepBeat, 1.0, 1); break;
+            }
+        };
+        stab(th.hitA, 0.95f, 1.0);
+        stab(th.hitB, 0.85f, 1.0);
+        if (th.hitA != HitPiano && th.hitB != HitPiano && big) chord(PPiano, offset, world.root, mood, chordNow, 0.9f, stepBeat, 3.0, true, colour);
+        if (th.hitA != HitBraam && th.hitB != HitBraam && big && (placeType >= SpaceStation || th.kit == KitHybrid || th.kit == KitMetal))
+            add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), 0.8f, stepBeat, 2.0);
+    }
+    // Into the next section: a cymbal swell over the whole transition and a drum roll
+    // building over the last bar of a Riser or Reverse swell (a Drum fill plays the drums'
+    // Fill).
+    if (cue.transitionT >= 0.0f && (cue.transition == arr::TransRiser || cue.transition == arr::TransDrumFill || cue.transition == arr::TransReverse)) {
+        const double remaining = cue.transitionLength * (1.0 - double(cue.transitionT)) - (stepBeat - frame.beat);
+        if (leads && hits && std::abs(remaining - cue.transitionLength) < 0.5 * stepLen) add(PSwell, offset, 0, 0.9f, stepBeat, cue.transitionLength, 0);
+        if (leads && drums && cue.transition != arr::TransDrumFill && remaining <= 4.0 + 1.0e-6 && remaining > 0.0 && t >= Tension) {
+            const float up = float(1.0 - remaining / 4.0);
+            add(PPerc, offset, 0, 0.35f + 0.65f * up, stepBeat, stepLen, (step & 1) == 0 ? 0 : 1);
+            if (remaining <= 1.0 + 1.0e-6) add(PPerc, offset, 0, 0.8f, stepBeat, stepLen, 2);
+            if ((step & 1) == 0) add(PDrums, offset, 0, 0.4f + 0.6f * up, stepBeat, stepLen, 0);
+        }
+    }
+}
+
+bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float tension, double beat, double beatsPerSample, bool sync,
+                   const Elements& el, uint64_t clock, float* left, float* right, int n) {
+    const bool liveHere = el.live != nullptr && el.liveElement >= 0 && el.liveElement < dramaElements;
+    // Classic (Drama 0): the layer does not exist (unless the keyboard plays it).
+    if (cue.drama <= 0.0f && !awake && !liveHere) return false;
+    if (placeType <= NoPlace) return false;
+    const double span = beatsPerSample * double(n);
+    const bool transitions = cue.drama > 0.0f && (cue.transitionT >= 0.0f || cue.sinceStart < 0.5);
+    if (want <= Calm && latched <= Calm && !transitions && !liveHere && idleSamples > int(6.0f * rate)) {
+        // Asleep: no work; it keeps its place in the song (advance) and wakes on a bar line.
         if (awake) {
             for (auto* p : parts) p->reset();
             hall.clear();
@@ -785,6 +1032,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         return false;
     }
     awake = true;
+    rankNow = cue.rank;
     const int style = styleFor(placeType, cue.style);
     frame.rate = rate;
     frame.root = world.root;
@@ -804,27 +1052,82 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         }
     }
 
-    // This chunk's steps (sixteenths), the tier latched on each bar line.
     count = 0;
-    // A jump back (the transport located): latch again at once.
-    if (beat < lastBeat - 1.0e-6 || beat > lastBeat + span + 1.0) latched = previous = want;
-    lastBeat = beat;
-    forEachStep(beat, span, 4, 0.0f, [&](int64_t step) {
-        const double stepBeat = double(step) / 4.0;
-        const int offset = std::clamp(int(std::ceil((stepBeat - beat) / beatsPerSample - 1.0e-9)), 0, n - 1);
-        gearChange = false;
-        if ((step & 15) == 0) {
-            const int64_t b = step / 16;
-            if (b != lastBar) {
-                previous = latched;
-                latched = want;
-                gearChange = latched > previous;
-                lastBar = b;
+    const int mood = world.mood;
+    const float heatV = 0.82f + 0.3f * heat;
+    // A Drop's silence; the roll into a Riser or Reverse swell takes the leading slot's last bar.
+    const bool dropping = cue.transition == arr::TransDrop && cue.transitionT >= 0.0f;
+    const auto rolling = [&](double at) {
+        if (cue.rank != 0 || cue.transitionT < 0.0f || latched < Tension) return false;
+        if (cue.transition != arr::TransRiser && cue.transition != arr::TransReverse) return false;
+        const double remaining = cue.transitionLength * (1.0 - double(cue.transitionT)) - (at - beat);
+        return remaining <= 4.0 + 1.0e-6 && remaining > 0.0;
+    };
+    // The three Drama instruments' patterns (they rest at Calm).
+    if (latched > Calm && !dropping)
+        for (int k = 0; k < dramaElements; ++k) {
+            const auto* play = el.play[std::size_t(k)];
+            if (play == nullptr || !play->active() || !el.notes[std::size_t(k)] || el.gainTo[std::size_t(k)] <= 0.0f) continue;
+            play->play(beat, span, [&](const pat::Event& ev) {
+                if (rolling(ev.beat)) return;
+                const int offset = std::clamp(int(std::ceil((ev.beat - beat) / beatsPerSample - 1.0e-9)), 0, n - 1);
+                eventLog[std::size_t(logged++ % logSize)] = { clock + uint64_t(offset), placeElements + k, ev.degree, ev.velocity };
+                const auto step = int64_t(std::floor(ev.beat * 4.0 + 1.0e-6));
+                const int64_t bar = music::floorDiv(step, int64_t(16));
+                const int chordAt = sync ? music::chordDegree(ev.beat, world[Danger], world.harmony, mood) : world.chord;
+                if (k == 0) {
+                    ghost = ev.velocity < 0.4f;
+                    playDrum(std::clamp(ev.degree, 0, DrumRowCount - 1), offset, ev.velocity * heatV * (0.93f + 0.14f * rand(step, 41u + uint32_t(ev.degree))), ev.beat,
+                             std::max(0.25, ev.length), kitNow);
+                    ghost = false;
+                } else if (k == 1) {
+                    const float semis = float(pat::semitonesFor(play->followChords, play->base, mood, chordAt, ev.degree, ev.alter));
+                    rootNow = play->followChords ? music::inRange(music::chordTone(mood, chordAt, 0), 0) : 0;
+                    const float rankGain = cue.rank == 0 ? 1.0f : (cue.rank == 1 ? 0.7f : 0.6f);
+                    const double length = ev.length <= 0.25 + 1.0e-6 ? 0.6 * ev.length : ev.length;   // single steps short (spiccato)
+                    const bool onBeat = std::abs(ev.beat - std::round(ev.beat)) < 1.0e-3;
+                    playOstinato(offset, semis, ev.velocity * heatV * rankGain * (0.94f + 0.12f * rand(step, 51u)), ev.beat, length, ev.velocity >= 0.9f, onBeat, el);
+                } else {
+                    playHit(std::clamp(ev.degree, 0, HitRowCount - 1), offset, ev.velocity * heatV * (cue.rank >= 2 ? 0.75f : 1.0f), ev.beat, ev.length, placeType,
+                            world, chordAt, bar, tension);
+                }
+            });
+        }
+    // The arrangement's and the gear changes' own sounds, step by step.
+    if (cue.drama > 0.0f)
+        forEachStep(beat, span, 4, 0.0f, [&](int64_t step) {
+            const double stepBeat = double(step) / 4.0;
+            const int offset = std::clamp(int(std::ceil((stepBeat - beat) / beatsPerSample - 1.0e-9)), 0, n - 1);
+            stingers(step, offset, placeType, style, world, sync, stepBeat, cue, el);
+        });
+    // The keyboard (KEYS, Instrument mode) on one of the Drama instruments.
+    if (liveHere)
+        for (int i = 0; i < el.live->count; ++i) {
+            const auto& x = el.live->notes[std::size_t(i)];
+            const double at = beat + beatsPerSample * double(x.offset);
+            if (!x.on) {
+                for (int k = 0; k < PartCount && count < maxNotes; ++k)
+                    if (elementOf(k) == el.liveElement) {
+                        Note& note = pending[std::size_t(count++)];
+                        note = Note {};
+                        note.offset = x.offset;
+                        note.part = k;
+                        note.stop = x.id;
+                    }
+                continue;
+            }
+            const int64_t step = int64_t(std::floor(at * 4.0));
+            if (el.liveElement == 0) {
+                ghost = false;
+                playDrum(std::clamp(x.row, 0, DrumRowCount - 1), x.offset, x.velocity, at, 0.25, kitNow, x.id);
+            } else if (el.liveElement == 1) {
+                playOstinato(x.offset, x.semis - transposeSemis(DramaOstinato), x.velocity, at, liveLength, false, false, el, x.id);
+            } else {
+                playHit(std::clamp(x.row, 0, HitRowCount - 1), x.offset, x.velocity, at, x.row == RowSwell ? 4.0 : 1.0, placeType, world,
+                        sync ? music::chordDegree(at, world[Danger], world.harmony, mood) : world.chord, music::floorDiv(step, int64_t(16)), tension, x.id);
             }
         }
-        if (notes) scheduleStep(step, offset, placeType, style, world, tension, sync, stepBeat, cue, beatsPerSample);
-    });
-    // Sort by offset (insertion: few notes).
+    // Sort by offset (insertion, stable: a note-off before a new note on the same sample).
     for (int i = 1; i < count; ++i) {
         const Note v = pending[std::size_t(i)];
         int j = i;
@@ -835,13 +1138,13 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         pending[std::size_t(j)] = v;
     }
     idleSamples = count > 0 ? 0 : idleSamples + n;
-    startedCount += uint32_t(count);
+    for (int i = 0; i < count; ++i) startedCount += pending[std::size_t(i)].stop == 0 ? 1u : 0u;
 
     // The parts' levels: what each tier lets play (a part whose last note has rung out
-    // is not rendered at all).
-    std::fill(busL.begin(), busL.begin() + n, 0.0f);
-    std::fill(busR.begin(), busR.begin() + n, 0.0f);
-    const float tierGain = latched == Climax ? 1.0f : (latched == Action ? 0.8f : (latched == Tension ? 0.55f : 0.5f));
+    // is not rendered at all), summed per Drama instrument.
+    std::array<bool, dramaElements> fed {};
+    const float tierGain = el.instrument ? 0.8f
+                                         : std::max(latched == Climax ? 1.0f : (latched == Action ? 0.8f : (latched == Tension ? 0.55f : 0.5f)), liveHere ? 0.8f : 0.0f);
     for (int k = 0; k < PartCount; ++k) {
         auto* part = parts[std::size_t(k)];
         bool any = false;
@@ -850,9 +1153,16 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         if (any) q = 0;
         // A part whose last note has rung out (well below -60 dB) is neither updated nor
         // rendered: an idle part costs nothing.
-        static constexpr std::array<float, PartCount> tails { 5.0f, 7.0f, 5.0f, 24.0f, 3.0f, 4.0f, 4.0f, 4.0f, 2.0f, 3.0f, 5.0f, 10.0f, 6.0f, 4.0f, 3.0f };
-        if (!any && q > int(tails[std::size_t(k)] * rate)) continue;
+        static constexpr std::array<float, PartCount> tails { 5.0f, 7.0f, 5.0f, 24.0f, 3.0f, 4.0f, 4.0f, 4.0f, 2.0f, 3.0f, 5.0f, 10.0f, 6.0f, 4.0f, 3.0f,
+                                                              3.0f, 10.0f, 5.0f, 7.0f };
+        if (!any && q > int(tails[std::size_t(k)] * rate) && !(liveHere && elementOf(k) == el.liveElement && part->sustains())) continue;
         q += n;
+        const int e = elementOf(k);
+        if (!fed[std::size_t(e)]) {
+            std::fill(elemL[std::size_t(e)].begin(), elemL[std::size_t(e)].begin() + n, 0.0f);
+            std::fill(elemR[std::size_t(e)].begin(), elemR[std::size_t(e)].begin() + n, 0.0f);
+            fed[std::size_t(e)] = true;
+        }
         part->update(frame);
         std::fill(partL.begin(), partL.begin() + n, 0.0f);
         std::fill(partR.begin(), partR.begin() + n, 0.0f);
@@ -864,30 +1174,53 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
                 part->render(partL.data() + done, partR.data() + done, note.offset - done);
                 done = note.offset;
             }
-            if ((partMask >> k) & 1u) part->start(frame, note.on);
+            if (note.stop != 0) part->stopLive(note.stop);
+            else if ((partMask >> k) & 1u) part->start(frame, note.on);
         }
         if (done < n) part->render(partL.data() + done, partR.data() + done, n - done);
         // At a climax the drums lead and what sustains steps back, so it stays punchy.
-        const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow;
+        const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow || k == PImpact || k == PMetalHit;
         const float climaxShape = latched == Climax ? (rhythm ? 1.12f : 0.8f) : 1.0f;
         const float g = tierGain * climaxShape * dbToGain(trimDb[std::size_t(k)]);
         float& now = gainNow[std::size_t(k)];
         if (now < 0.0f) now = g;
         const float step = (g - now) / float(n);
+        auto& l = elemL[std::size_t(e)];
+        auto& r = elemR[std::size_t(e)];
         for (int i = 0; i < n; ++i) {
             now += step;
-            busL[std::size_t(i)] += finiteOr(partL[std::size_t(i)]) * now;
-            busR[std::size_t(i)] += finiteOr(partR[std::size_t(i)]) * now;
+            l[std::size_t(i)] += finiteOr(partL[std::size_t(i)]) * now;
+            r[std::size_t(i)] += finiteOr(partR[std::size_t(i)]) * now;
+        }
+    }
+    // Each Drama instrument at its level (switch, mute, arrangement), through its effects.
+    std::fill(busL.begin(), busL.begin() + n, 0.0f);
+    std::fill(busR.begin(), busR.begin() + n, 0.0f);
+    for (int e = 0; e < dramaElements; ++e) {
+        if (!fed[std::size_t(e)]) continue;
+        auto& l = elemL[std::size_t(e)];
+        auto& r = elemR[std::size_t(e)];
+        const float from = el.gainFrom[std::size_t(e)], to = el.gainTo[std::size_t(e)];
+        if (from != 1.0f || to != 1.0f)
+            for (int i = 0; i < n; ++i) {
+                const float g = from + (to - from) * float(i + 1) / float(n);
+                l[std::size_t(i)] *= g;
+                r[std::size_t(i)] *= g;
+            }
+        if (el.fx != nullptr) el.fx->process(placeElements + e, l.data(), r.data(), n, el.fxDepth);
+        for (int i = 0; i < n; ++i) {
+            busL[std::size_t(i)] += l[std::size_t(i)];
+            busR[std::size_t(i)] += r[std::size_t(i)];
         }
     }
     // The layer's space and level (the second and further slots quieter).
     const float rankGain = cue.rank == 0 ? 1.0f : (cue.rank == 1 ? 0.75f : 0.55f);
     const float target = dbToGain(layerTrimDb) * rankGain * (0.75f + 0.25f * clamp01(cue.drama));
     const float from = level.value, to = level.next(target);
-    const float wet = hallWet * (latched == Climax ? 0.65f : 1.0f);
+    const float wet = el.instrument ? 0.0f : hallWet * (latched == Climax ? 0.65f : 1.0f);
     // The leading slot's layer has its own space; the others' reach the World Space with
     // their Place (one reverb, not four).
-    if (cue.rank == 0) {
+    if (cue.rank == 0 && wet > 0.0f) {
         for (int i = 0; i < n; ++i) {
             const auto k = std::size_t(i);
             float wl = 0, wr = 0;

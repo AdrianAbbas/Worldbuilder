@@ -1072,7 +1072,7 @@ void testEffects(Suite& s) {
         std::array<dsp::InstrumentFx, placeSlots> slotFx;
         dsp::SharedFx bank;
         bank.prepare(rate);
-        std::array<dsp::ElementFxControls, placeElements> controls {};
+        std::array<dsp::ElementFxControls, slotElements> controls {};
         for (auto& f : slotFx) f.prepare(rate);
         dsp::Stream noise;
         noise.setKey(3, 4);
@@ -2858,18 +2858,22 @@ void testCapture(Suite& s) {
     // Scene MIDI.
     {
         const auto tracks = capture::sceneTracks(scene);
-        int castle = 0, megacity = 0, forest = 0;
+        int castle = 0, megacity = 0, forest = 0, dramaTracks = 0;
         bool named = true;
         for (const auto& t : tracks) {
             const int type = scene.controls.places[std::size_t(t.slot)].type;
             (type == Castle ? castle : type == Megacity ? megacity : forest) += 1;
-            named = named && t.name == juce::String(placeNames[std::size_t(type)]) + " - " + placeInfo(type).element[std::size_t(t.element)].name;
+            named = named && t.name == juce::String(placeNames[std::size_t(type)]) + " - " + elementSpec(type, t.element).name;
+            dramaTracks += isDramaElement(t.element) ? 1 : 0;
         }
         int expected = 0;
         for (int slot = 0; slot < 3; ++slot)
             for (int e = 0; e < placeElements; ++e) expected += patternInfo(scene.controls.places[std::size_t(slot)].type, e).kind != NoPattern ? 1 : 0;
-        s.check(int(tracks.size()) == expected && castle > 0 && megacity > 0 && forest > 0 && named, "scene MIDI: one named track per patterned instrument of every active Place",
-                std::to_string(tracks.size()) + " of " + std::to_string(expected));
+        // With Drama above 0 the Drama instruments that play have their tracks too (the Drama tier rework).
+        s.check(int(tracks.size()) == expected + dramaTracks && (scene.controls.drama > 0.0f ? dramaTracks > 0 && dramaTracks <= 9 : dramaTracks == 0) && castle > 0
+                    && megacity > 0 && forest > 0 && named,
+                "scene MIDI: one named track per patterned instrument of every active Place (and its Drama instruments that play)",
+                std::to_string(tracks.size()) + " of " + std::to_string(expected) + " + " + std::to_string(dramaTracks));
         bool editedUsed = false;
         for (const auto& t : tracks)
             if (t.slot == 0 && t.element == 1) editedUsed = t.pattern.sameNotes(scene.patterns[0].element[1].pattern);
@@ -4326,8 +4330,8 @@ void testArrangement(Suite& s) {
         const int m = store.move(3, 0);
         s.check(m == 0 && std::string(store.get().sections[0].nameText()) == "Climax" && std::string(store.get().sections[1].nameText()) == "Intro",
                 "reorder");
-        store.resize(1, 100);
-        s.check(store.get().sections[1].bars == arr::maxBars, "a section is 1-64 bars");
+        store.resize(1, 200);
+        s.check(store.get().sections[1].bars == arr::maxBars && arr::maxBars == 128, "a section is 1-128 bars");
         store.remove(0);
         s.check(store.get().count == 3 && std::string(store.get().sections[0].nameText()) == "Intro", "delete");
         int undone = 0;
@@ -4515,6 +4519,9 @@ void testArrangement(Suite& s) {
         a.count = 1;
         a.end = arr::EndLoop;
         h.p->arrangement.set(a);
+        // The section's own ramp (the Classic score: the Drama meter's offset on it is the
+        // "dramarework" group's).
+        h.set("drama", 0.0f);
         play(h);
         std::vector<float> seen;
         for (int i = 0; i < 8; ++i) {
@@ -4852,22 +4859,28 @@ void testTransitions(Suite& s) {
                 "a section's Planet and World Control overrides hold while it plays");
     }
     {
-        // Templates.
-        const std::array<std::vector<int>, arr::TemplateCount> lengths { { { 8, 16, 16, 16, 8 }, { 8, 32, 8 }, { 4, 8, 16, 8, 16, 4 }, { 8, 16, 4, 16, 8 },
-                                                                            { 8, 8, 8, 8 }, { 16, 16, 8, 16 },
+        // Templates: for scoring since the Drama tier rework (long, evolving sections); the
+        // short ones from before stay for the older factory scenes.
+        const std::array<std::vector<int>, arr::TemplateCount> lengths { { { 8, 16, 32, 16, 8 }, { 8, 64, 8 }, { 8, 16, 32, 16, 48, 8 }, { 16, 48, 8, 64, 16 },
+                                                                            { 32, 16, 32, 16 }, { 16, 16, 32, 16 },
                                                                             // The Drama tier's: Chase, Siege, Final Stand, Lament.
-                                                                            { 4, 8, 16, 4, 4, 16, 4 }, { 8, 8, 16, 8, 8, 16, 8 }, { 8, 8, 16, 4, 16, 8, 8 },
-                                                                            { 8, 16, 8, 8, 8, 8 } } };
+                                                                            { 8, 16, 32, 8, 16, 48, 8 }, { 16, 16, 48, 16, 16, 32, 16 }, { 8, 16, 32, 8, 48, 32, 16 },
+                                                                            { 8, 32, 16, 32, 16, 16 } } };
+        const std::array<std::vector<int>, arr::TemplateCount> legacy { { { 8, 16, 16, 16, 8 }, { 8, 32, 8 }, { 4, 8, 16, 8, 16, 4 }, { 8, 16, 4, 16, 8 },
+                                                                           { 8, 8, 8, 8 }, { 16, 16, 8, 16 }, { 4, 8, 16, 4, 4, 16, 4 }, { 8, 8, 16, 8, 8, 16, 8 },
+                                                                           { 8, 8, 16, 4, 16, 8, 8 }, { 8, 16, 8, 8, 8, 8 } } };
         bool all = true;
         std::string text;
-        for (int t = 0; t < arr::TemplateCount; ++t) {
-            const auto a = arr::makeTemplate(t);
-            bool ok = a.count == int(lengths[std::size_t(t)].size());
-            for (int i = 0; ok && i < a.count; ++i) ok = a.sections[std::size_t(i)].bars == lengths[std::size_t(t)][std::size_t(i)];
-            if (!ok) text += std::string(arr::templateNames[std::size_t(t)]) + " ";
-            all &= ok;
-        }
-        s.check(all, "the ten templates have their sections and lengths", text);
+        for (int t = 0; t < arr::TemplateCount; ++t)
+            for (bool old : { false, true }) {
+                const auto a = arr::makeTemplate(t, old);
+                const auto& want = (old ? legacy : lengths)[std::size_t(t)];
+                bool ok = a.count == int(want.size());
+                for (int i = 0; ok && i < a.count; ++i) ok = a.sections[std::size_t(i)].bars == want[std::size_t(i)] && a.sections[std::size_t(i)].evolve == !old;
+                if (!ok) text += std::string(arr::templateNames[std::size_t(t)]) + (old ? " (before) " : " ");
+                all &= ok;
+            }
+        s.check(all, "the ten templates have their sections and lengths (and the short ones from before the rework)", text);
         const auto town = arr::makeTemplate(arr::TownTheme), arc = arr::makeTemplate(arr::ClassicArc);
         s.check(town.end == arr::EndLoop && town.loopTo == 0 && arc.end == arr::EndStop, "Town Theme loops; Classic Arc stops");
         s.check(arr::kindOf(arc, 0) == arr::KindIntro && arr::kindOf(arc, 1) == arr::KindBuild && arr::kindOf(arc, 2) == arr::KindPeak
@@ -9421,6 +9434,7 @@ void testSamples(Suite& s) {
 
 #include "RecordingsTests.inc"
 #include "DramaTests.inc"
+#include "DramaReworkTests.inc"
 
 
 int main(int argc, char** argv) {
@@ -9532,6 +9546,9 @@ int main(int argc, char** argv) {
     if (run("recordings")) testRecordings(s);
     if (run("slide")) testSlide(s);
     if (run("drama")) testDrama(s);
+    if (run("dramarework")) testDramaRework(s);
+    if (only.contains("dramaprobe")) probeDramaInstruments();
+    if (only.contains("dramatrims")) probeDramaTrims();
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

@@ -533,10 +533,11 @@ public:
     void paintButton(juce::Graphics& g, bool highlighted, bool) override {
         // A pixel tab with the instrument's icon, lit in the Place's colour when chosen.
         const auto& pal = pixel::theme().colours;
-        const auto accent = accentFor(owner.type());
+        // The Drama instruments (the Drama tier rework) in the drama's red.
+        const auto accent = isDramaElement(element) ? juce::Colour(arr::colours[2]) : accentFor(owner.type());
         const bool on = getToggleState();
         const auto controls = owner.processor.patterns.element(owner.slotIndex, owner.type(), element).controls;
-        const auto& spec = placeInfo(owner.type()).element[std::size_t(element)];
+        const auto& spec = elementSpec(owner.type(), element);
         const int w = getWidth() / pixel::unit, h = getHeight() / pixel::unit;
         const juce::String name = juce::String(spec.name).toUpperCase();
         pixel::drawCached(g, "etab/" + name + "/" + juce::String(spec.icon) + juce::String(w) + "x" + juce::String(h) + juce::String(int(on)) + juce::String(int(highlighted))
@@ -672,7 +673,7 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
         tab.onClick = [this, v] { selectVariant(v); };
         addAndMakeVisible(tab);
     }
-    for (int e = 0; e < placeElements; ++e) {
+    for (int e = 0; e < slotElements; ++e) {
         tabs[std::size_t(e)] = std::make_unique<ElementTab>(*this, e);
         auto& tab = *tabs[std::size_t(e)];
         tab.setClickingTogglesState(false);
@@ -868,7 +869,7 @@ PatternEditor::PatternEditor(WorldbuilderProcessor& p) : processor(p) {
     });
     setupClipControls();
     button(saveButton, "Save this pattern as a MIDI file", [this] {
-        const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).element[std::size_t(std::max(0, elementIndex))].name + ".mid";
+        const auto name = juce::String(placeNames[std::size_t(type())]) + " " + elementSpec(type(), std::max(0, elementIndex)).name + ".mid";
         chooser = std::make_unique<juce::FileChooser>("Save the pattern as MIDI", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(name),
                                                       "*.mid");
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [this](const juce::FileChooser& c) {
@@ -1107,7 +1108,7 @@ void PatternEditor::open(int slot, int element, bool) {
     for (int k = 0; k < placeSlots; ++k) processor.engine.showVariants[std::size_t(k)].store(k == slot, std::memory_order_relaxed);
     shownType = type();
     int first = -1;
-    for (int e = 0; e < placeElements; ++e)
+    for (int e = 0; e < slotElements; ++e)
         if (patternInfo(shownType, e).kind != NoPattern && first < 0) first = e;
     undoStack.clear();
     redoStack.clear();
@@ -1121,15 +1122,15 @@ void PatternEditor::selectElement(int element) {
     elementIndex = element;
     undoStack.clear();
     redoStack.clear();
-    for (int e = 0; e < placeElements; ++e) tabs[std::size_t(e)]->setToggleState(e == element, juce::dontSendNotification);
+    for (int e = 0; e < slotElements; ++e) tabs[std::size_t(e)]->setToggleState(e == element, juce::dontSendNotification);
     // Attach the instrument's strip to its parameters.
     levelAttachment.reset();
     onAttachment.reset();
     if (slotIndex >= 0) {
         levelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            processor.parameters, specs[std::size_t(placeParam(slotIndex, PlElement + element))].id, elementLevel);
+            processor.parameters, specs[std::size_t(elementLevelParam(slotIndex, element))].id, elementLevel);
         onAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-            processor.parameters, specs[std::size_t(placeParam(slotIndex, PlElementOn + element))].id, elementOn);
+            processor.parameters, specs[std::size_t(elementOnParam(slotIndex, element))].id, elementOn);
     }
     attachEffects(element);
     refreshFromStore();
@@ -1153,7 +1154,7 @@ void PatternEditor::attachEffects(int element) {
     fxCombos.clear();
     fxSliders.clear();
     if (slotIndex < 0 || element < 0) return;
-    const auto id = [&](int field) { return specs[std::size_t(placeParam(slotIndex, fxField(element, field)))].id; };
+    const auto id = [&](int field) { return specs[std::size_t(elementFxParam(slotIndex, element, field))].id; };
     using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     for (auto [box, field] : { std::pair<juce::ComboBox*, int> { &reverbType, FxReverbType }, { &delayType, FxDelayType }, { &characterType, FxCharacter } })
@@ -1174,11 +1175,14 @@ void PatternEditor::attachEffects(int element) {
 }
 
 void PatternEditor::layoutTabs() {
-    for (int e = 0; e < placeElements; ++e) {
+    for (int e = 0; e < slotElements; ++e) {
         auto& tab = *tabs[std::size_t(e)];
         tab.setVisible(patternInfo(shownType, e).kind != NoPattern);
-        tab.setButtonText(placeInfo(shownType).element[std::size_t(e)].name);
-        tab.setTooltip("Edit the " + juce::String(placeInfo(shownType).element[std::size_t(e)].name) + " pattern. Drop a MIDI file here to import it.");
+        tab.setButtonText(elementSpec(shownType, e).name);
+        tab.setTooltip("Edit the " + juce::String(elementSpec(shownType, e).name)
+                       + (isDramaElement(e) ? " pattern (a Drama instrument: it plays from the Tension tier up; its starting pattern follows the tier and the Drama Style until you edit it)."
+                                            : " pattern.")
+                       + " Drop a MIDI file here to import it.");
     }
     resized();
 }
@@ -1743,7 +1747,7 @@ void PatternEditor::addNote(int step, int degree, int noteLength, int velocity) 
 juce::File PatternEditor::tempMidiFile(int element) const {
     const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("WORLDBUILDER");
     dir.createDirectory();
-    const auto name = juce::String(placeNames[std::size_t(type())]) + " " + placeInfo(type()).element[std::size_t(std::clamp(element, 0, placeElements - 1))].name;
+    const auto name = juce::String(placeNames[std::size_t(type())]) + " " + elementSpec(type(), element).name;
     return dir.getChildFile(juce::File::createLegalFileName(name) + ".mid");
 }
 
@@ -1819,7 +1823,7 @@ bool PatternEditor::isInterestedInFileDrag(const juce::StringArray& files) {
 
 void PatternEditor::filesDropped(const juce::StringArray& files, int x, int y) {
     int target = elementIndex;
-    for (int e = 0; e < placeElements; ++e)
+    for (int e = 0; e < slotElements; ++e)
         if (tabs[std::size_t(e)]->isVisible() && tabs[std::size_t(e)]->getBounds().contains(x, y)) target = e;
     for (const auto& f : files)
         if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi")) {
@@ -1970,7 +1974,7 @@ void PatternEditor::resized() {
         int visible = 0;
         for (const auto& tab : tabs) visible += tab->isVisible() ? 1 : 0;
         const int w = std::min(100, t.getWidth() / std::max(visible, 1));
-        for (int e = placeElements - 1; e >= 0; --e) {
+        for (int e = slotElements - 1; e >= 0; --e) {
             auto& tab = *tabs[std::size_t(e)];
             if (!tab.isVisible()) continue;
             tab.setBounds(t.removeFromRight(w).withSizeKeepingCentre(w - 4, 30));
@@ -2187,7 +2191,7 @@ void PatternEditor::paint(juce::Graphics& g) {
     {
         // The instrument strip: its icon and name, then LEVEL.
         auto strip = elementArea;
-        const auto& spec = placeInfo(t).element[std::size_t(std::clamp(elementIndex, 0, placeElements - 1))];
+        const auto& spec = elementSpec(t, elementIndex);
         const auto ink = accent.interpolatedWith(pal.ink, 0.2f);
         pixel::drawCached(g, "pinst/" + juce::String(spec.icon) + ink.toString(), { strip.getX(), strip.getCentreY() - 10 },
                           [&] { return pixel::instrumentIcon(spec.icon, 9, ink, pal.outline); });

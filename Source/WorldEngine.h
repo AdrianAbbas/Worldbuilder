@@ -197,6 +197,7 @@ private:
     float duckGain = 1;
     float endGain = 1;
     float arrangedIntensity(const EngineControls& controls) const;
+    void shapeArrangement(const arr::Arrangement& a, const EngineControls& controls);
     // The world's drama tier for the shared harmony, latched on the four-bar lines.
     int harmony = 0;
     int64_t harmonyLine = INT64_MIN;

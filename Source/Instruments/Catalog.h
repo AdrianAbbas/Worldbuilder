@@ -20,7 +20,7 @@ inline constexpr std::array<const char*, GroupCount> groupNames { "Plucks", "Pad
 
 struct Id {
     int type = NoPlace, element = 0;
-    bool valid() const { return type > NoPlace && type < PlaceTypeCount && element >= 0 && element < placeElements && patternInfo(type, element).kind != NoPattern; }
+    bool valid() const { return type > NoPlace && type < PlaceTypeCount && element >= 0 && element < slotElements && patternInfo(type, element).kind != NoPattern; }
     bool operator==(const Id& o) const { return type == o.type && element == o.element; }
     bool operator!=(const Id& o) const { return !(*this == o); }
 };
@@ -30,8 +30,10 @@ inline bool nameHas(const char* name, const char* part) { return name != nullptr
 // An instrument's type group, from its kind of pattern, its icon and its name.
 inline int groupOf(int type, int element) {
     if (type <= NoPlace || type >= PlaceTypeCount) return Textures;
-    const auto& e = placeInfo(type).element[std::size_t(std::clamp(element, 0, placeElements - 1))];
+    const auto& e = elementSpec(type, element);
     const char* n = e.name;
+    // The Drama instruments: drums, an ostinato (strings, a pulse, a bass, plucks or a piano), hits.
+    if (element == DramaDrums || element == DramaHits) return Percussion;
     // Names first: they say what the part is better than its glyph.
     if (nameHas(n, "Bass")) return Bass;
     if (nameHas(n, "Lead") || nameHas(n, "Beacon")) return Leads;
@@ -67,16 +69,16 @@ inline bool hasDrone(int type, int element) {
     return (type == Village && element == 1) || (type == Castle && element == 0) || (type == Tavern && element == 4);
 }
 
-// Every instrument, in Place order (each Place's six), built once.
+// Every instrument, in Place order (each Place's six, then its three Drama instruments), built once.
 struct Catalog {
-    static constexpr int maxEntries = PlaceTypeCount * placeElements;
+    static constexpr int maxEntries = PlaceTypeCount * slotElements;
     std::array<Id, maxEntries> entry {};
     int count = 0;
     static const Catalog& get() {
         static const Catalog c = [] {
             Catalog x;
             for (int t = NoPlace + 1; t < PlaceTypeCount; ++t)
-                for (int e = 0; e < placeElements; ++e)
+                for (int e = 0; e < slotElements; ++e)
                     if (Id { t, e }.valid()) x.entry[std::size_t(x.count++)] = { t, e };
             return x;
         }();

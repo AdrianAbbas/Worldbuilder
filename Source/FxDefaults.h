@@ -265,7 +265,16 @@ inline constexpr std::array<std::array<InstrumentFxDefaults, 6>, 27> instrumentF
     return t;
 }();
 
+// The Drama instruments (the Drama tier rework: elements 6-8 of every slot, the same for
+// every Place): the drums a little room, the ostinato and the hits a hall (the leading
+// slot's Drama instruments also have their own hall). Slides off.
+inline constexpr std::array<InstrumentFxDefaults, 3> dramaFxTable = [] {
+    using namespace fxdetail;
+    return std::array<InstrumentFxDefaults, 3> { room(0.1f), hall(0.12f), hall(0.18f).wide(1.2f) };
+}();
+
 inline constexpr const InstrumentFxDefaults& instrumentFx(int type, int element) {
+    if (element >= 6 && element <= 8) return dramaFxTable[std::size_t(element - 6)];
     return instrumentFxTable[std::size_t(type < 0 || type > 26 ? 0 : type)][std::size_t(element < 0 || element > 5 ? 0 : element)];
 }
 inline constexpr float instrumentFxDefault(int type, int element, int field) { return instrumentFx(type, element).field(field); }

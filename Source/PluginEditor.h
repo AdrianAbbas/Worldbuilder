@@ -134,8 +134,9 @@ private:
         juce::Slider density { "Density" }, swing { "Swing" }, seed;
         juce::ToggleButton sync { "SYNC TO HOST" };
         juce::TextButton dice { "New seed" }, close { "CLOSE" }, patterns { "PATTERNS" }, mood;
-        std::array<juce::Slider, wb::placeElements> element;
-        std::array<juce::ToggleButton, wb::placeElements> elementOn;
+        std::array<juce::Slider, wb::slotElements> element;
+        std::array<juce::ToggleButton, wb::slotElements> elementOn;
+        juce::Rectangle<int> dramaArea;   // the Drama instruments' heading
         std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
         std::vector<std::unique_ptr<ButtonAttachment>> buttonAttachments;
         juce::Rectangle<int> area, titleArea, characterArea, elementsArea, rhythmArea;

@@ -206,7 +206,7 @@ private:
     std::vector<pat::Note> clipboard;
     std::vector<Row> rows;
 
-    std::array<std::unique_ptr<ElementTab>, placeElements> tabs;
+    std::array<std::unique_ptr<ElementTab>, slotElements> tabs;
     juce::Slider elementLevel;
     juce::ToggleButton elementOn { "ON" }, muteButton { "MUTE" }, soloButton { "SOLO" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> levelAttachment;

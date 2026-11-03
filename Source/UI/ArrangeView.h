@@ -135,7 +135,7 @@ private:
     // The clip clipboard: one clip, or a whole section's (per slot and instrument; a
     // linked cell copies as what it plays).
     arr::ClipRef clipboardClip;
-    std::array<std::array<arr::ClipRef, placeElements>, placeSlots> clipboardSection {};
+    std::array<std::array<arr::ClipRef, slotElements>, placeSlots> clipboardSection {};
     bool clipboardHeld = false, sectionHeld = false;
 };
 

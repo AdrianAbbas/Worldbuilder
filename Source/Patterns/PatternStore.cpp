@@ -5,7 +5,7 @@ namespace wb {
 pat::SlotPatterns PatternStore::defaultsFor(int type) {
     pat::SlotPatterns p;
     p.type = type;
-    for (int e = 0; e < placeElements; ++e) p.element[std::size_t(e)].controls = defaultControls(type, e);
+    for (int e = 0; e < slotElements; ++e) p.element[std::size_t(e)].controls = defaultControls(type, e);
     return p;
 }
 
@@ -25,12 +25,12 @@ void PatternStore::set(int slot, const pat::SlotPatterns& patterns) {
 
 pat::Element PatternStore::element(int slot, int type, int e) const {
     const auto p = get(slot);
-    if (p.type != type) return defaultsFor(type).element[std::size_t(std::clamp(e, 0, placeElements - 1))];
-    return p.element[std::size_t(std::clamp(e, 0, placeElements - 1))];
+    if (p.type != type) return defaultsFor(type).element[std::size_t(std::clamp(e, 0, slotElements - 1))];
+    return p.element[std::size_t(std::clamp(e, 0, slotElements - 1))];
 }
 
 void PatternStore::setElement(int slot, int type, int e, const pat::Element& element) {
-    if (slot < 0 || slot >= placeSlots || e < 0 || e >= placeElements) return;
+    if (slot < 0 || slot >= placeSlots || e < 0 || e >= slotElements) return;
     const juce::ScopedLock sl(lock);
     auto& m = model[std::size_t(slot)];
     if (m.type != type) {
@@ -155,7 +155,7 @@ juce::ValueTree PatternStore::toTree(const std::array<pat::SlotPatterns, placeSl
         juce::ValueTree s("Slot");
         s.setProperty("index", slot, nullptr);
         s.setProperty("type", m.type, nullptr);
-        for (int e = 0; e < placeElements; ++e) {
+        for (int e = 0; e < slotElements; ++e) {
             const auto& el = m.element[std::size_t(e)];
             // Untouched elements are left out: the Place regenerates them from its seed.
             if (!el.controls.edited && el.controls == defaultControls(m.type, e) && el.variantsUntouched()) continue;
@@ -206,7 +206,7 @@ std::array<pat::SlotPatterns, placeSlots> PatternStore::fromTree(const juce::Val
             if (slot < 0 || slot >= placeSlots || int(s.getProperty("type", -1)) != types[std::size_t(slot)]) continue;
             for (const auto& x : s) {
                 const int e = x.getProperty("index", -1);
-                if (!x.hasType("Element") || e < 0 || e >= placeElements) continue;
+                if (!x.hasType("Element") || e < 0 || e >= slotElements) continue;
                 auto& el = loaded[std::size_t(slot)].element[std::size_t(e)];
                 const auto number = [&](const char* id, float fallback, float lo, float hi) {
                     const float v = float(double(x.getProperty(id, fallback)));

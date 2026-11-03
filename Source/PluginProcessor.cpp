@@ -160,7 +160,7 @@ void WorldbuilderProcessor::applyInstrument(EngineControls& c, const WorldValues
     pc.type = in.type;
     pc.character = juce::roundToInt(value(PInstCharacter));
     pc.levelDb = value(PInstLevel);
-    pc.trimDb = levelTrims ? inst::levelTrimDb[std::size_t(juce::jlimit(0, PlaceTypeCount - 1, in.type))][std::size_t(juce::jlimit(0, placeElements - 1, in.element))] : 0.0f;
+    pc.trimDb = levelTrims ? inst::levelTrim(juce::jlimit(0, PlaceTypeCount - 1, in.type), juce::jlimit(0, slotElements - 1, in.element)) : 0.0f;
     pc.distance = 0;
     pc.pan = 0;
     pc.seed = uint32_t(juce::roundToInt(defaults[std::size_t(placeParam(0, PlSeed))].def));
@@ -313,23 +313,25 @@ EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& valu
         pc.size = field(PlSize);
         pc.variation = field(PlVariation);
         pc.seed = uint32_t(juce::roundToInt(field(PlSeed)));
-        for (int e = 0; e < placeElements; ++e) {
-            pc.element[std::size_t(e)] = field(PlElement + e);
-            pc.elementOn[std::size_t(e)] = field(PlElementOn + e) > 0.5f;
+        // The Place's six instruments and the slot's three Drama instruments.
+        for (int e = 0; e < slotElements; ++e) {
+            const auto fxValue = [&](int f) { return value(elementFxParam(slot, e, f)); };
+            pc.element[std::size_t(e)] = value(elementLevelParam(slot, e));
+            pc.elementOn[std::size_t(e)] = value(elementOnParam(slot, e)) > 0.5f;
             auto& fx = pc.fx[std::size_t(e)];
-            fx.reverb = field(fxField(e, FxReverb));
-            fx.reverbType = juce::roundToInt(field(fxField(e, FxReverbType)));
-            fx.delay = field(fxField(e, FxDelay));
-            fx.delayType = juce::roundToInt(field(fxField(e, FxDelayType)));
-            fx.character = juce::roundToInt(field(fxField(e, FxCharacter)));
-            fx.amount = field(fxField(e, FxAmount));
-            fx.tone = field(fxField(e, FxTone));
-            fx.width = field(fxField(e, FxWidth));
+            fx.reverb = fxValue(FxReverb);
+            fx.reverbType = juce::roundToInt(fxValue(FxReverbType));
+            fx.delay = fxValue(FxDelay);
+            fx.delayType = juce::roundToInt(fxValue(FxDelayType));
+            fx.character = juce::roundToInt(fxValue(FxCharacter));
+            fx.amount = fxValue(FxAmount);
+            fx.tone = fxValue(FxTone);
+            fx.width = fxValue(FxWidth);
             auto& slide = pc.slide[std::size_t(e)];
             const auto& own = instrumentFx(pc.type, e);
-            slide.on = field(fxField(e, FxSlide)) > 0.5f;
-            slide.semis = field(fxField(e, FxSlideAmount));
-            slide.seconds = field(fxField(e, FxSlideTime));
+            slide.on = fxValue(FxSlide) > 0.5f;
+            slide.semis = fxValue(FxSlideAmount);
+            slide.seconds = fxValue(FxSlideTime);
             slide.refSemis = own.slideSemis;
             slide.refSeconds = own.slideSeconds;
         }
@@ -955,7 +957,7 @@ void WorldbuilderProcessor::serviceArrangement() {
 
 arr::ClipRef WorldbuilderProcessor::sectionClip(int section, int slot, int element) {
     const auto a = arrangement.get();
-    if (section < 0 || section >= a.count || slot < 0 || slot >= placeSlots || element < 0 || element >= placeElements) return {};
+    if (section < 0 || section >= a.count || slot < 0 || slot >= placeSlots || element < 0 || element >= slotElements) return {};
     const int type = slotTypes()[std::size_t(slot)];
     if (type == NoPlace || patternInfo(type, element).kind == NoPattern) return {};
     const auto& s = a.sections[std::size_t(section)];
@@ -1059,7 +1061,8 @@ juce::AudioProcessorEditor* WorldbuilderProcessor::createEditor() { return new W
 
 void WorldbuilderProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = parameters.copyState();
-    state.setProperty("version", 4, nullptr);
+    // Version 5: the Drama instruments (the Drama tier rework).
+    state.setProperty("version", 5, nullptr);
     // How many recorded notes this instance plays (information for diagnostics and the AU
     // host harness; never read back).
     state.setProperty("samples", samples::Bank::get().zoneCount(), nullptr);
@@ -1143,6 +1146,15 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         if (!child.isValid() && juce::String(s.id) == "planetinfluence") value = 0.0f;
         // Projects from before the Drama tier keep their sound: the Classic score.
         if (!child.isValid() && juce::String(s.id) == "drama") value = 0.0f;
+        // Projects from before the Drama instruments (version < 5): they are off, unless
+        // the project played the Drama tier (Drama above 0), whose drums, ostinato and
+        // hits they now are.
+        if (!child.isValid() && isDramaInstrumentParam(int(&s - specs.data())) && (int(&s - specs.data()) - PDramaFirst) % DramaParamCount >= DrOn
+            && (int(&s - specs.data()) - PDramaFirst) % DramaParamCount < DrFx) {
+            const auto drama = state.getChildWithProperty("id", juce::String("drama"));
+            const float played = drama.isValid() ? float(drama.getProperty("value", 0.0f)) : 0.0f;
+            value = std::isfinite(played) && played > 0.0f ? 1.0f : 0.0f;
+        }
         // Projects from before the instrument effects: each instrument starts from its
         // Place's own effect defaults.
         if (!child.isValid()) value = legacyDefault(state, int(&s - specs.data()), value);
@@ -1175,7 +1187,7 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         const auto k = state.getChildWithName("Keys");
         const auto number = [&](const char* id, int fallback, int lo, int hi) { return juce::jlimit(lo, hi, int(k.getProperty(id, fallback))); };
         keys.slot.store(number("slot", -1, -1, placeSlots - 1));
-        keys.element.store(number("element", 0, 0, placeElements - 1));
+        keys.element.store(number("element", 0, 0, slotElements - 1));
         keys.scale.store(number("scale", keys::Chromatic, 0, keys::ScaleModeCount - 1));
         keys.octave.store(number("octave", 0, keys::octaveMin, keys::octaveMax));
         keys.monitor.store(bool(k.getProperty("monitor", true)));

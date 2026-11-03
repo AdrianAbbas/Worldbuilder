@@ -9,7 +9,7 @@ namespace wb::ui {
 namespace {
 juce::String upper(const char* s) { return juce::String(s).toUpperCase(); }
 juce::String placeName(int type) { return upper(placeNames[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))]); }
-juce::String elementName(inst::Id id) { return upper(placeInfo(id.type).element[std::size_t(std::clamp(id.element, 0, placeElements - 1))].name); }
+juce::String elementName(inst::Id id) { return upper(elementSpec(id.type, id.element).name); }
 // "TAVERN > LUTE STRUM"
 juce::String fullName(inst::Id id) { return placeName(id.type) + " > " + elementName(id); }
 bool struck(inst::Id id) {
@@ -560,7 +560,7 @@ void InstrumentView::rebuildList() {
     const auto words = juce::StringArray::fromTokens(searchText.toLowerCase(), " ,", "");
     const auto matches = [&](inst::Id id) {
         if (words.isEmpty()) return true;
-        const auto hay = (juce::String(placeNames[std::size_t(id.type)]) + " " + placeInfo(id.type).element[std::size_t(id.element)].name + " "
+        const auto hay = (juce::String(placeNames[std::size_t(id.type)]) + " " + elementSpec(id.type, id.element).name + " "
                           + inst::groupNames[std::size_t(inst::groupOf(id.type, id.element))] + " " + placeKeys[std::size_t(id.type)])
                              .toLowerCase();
         for (const auto& w : words)

@@ -41,5 +41,11 @@ inline constexpr std::array<std::array<float, 6>, 27> levelTrimDb { {
     { -1.0f, 12.0f, -2.5f, 3.0f, 0.0f, -2.5f },   // Nebula
 } };
 // clang-format on
+// The Drama instruments (the Drama tier rework: drums, ostinato, hits), the same in every Place.
+inline constexpr std::array<float, 3> dramaTrimDb { -4.0f, 2.0f, -2.0f };
+inline constexpr float levelTrim(int type, int element) {
+    if (element >= 6 && element <= 8) return dramaTrimDb[std::size_t(element - 6)];
+    return levelTrimDb[std::size_t(type < 0 || type > 26 ? 0 : type)][std::size_t(element < 0 || element > 5 ? 0 : element)];
+}
 
 } // namespace wb::inst

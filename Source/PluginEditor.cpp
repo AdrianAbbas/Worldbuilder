@@ -226,7 +226,7 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
         if (detail.slot >= 0) openPatterns(detail.slot);
     };
     addChildComponent(detail.patterns);
-    for (int e = 0; e < placeElements; ++e) {
+    for (int e = 0; e < slotElements; ++e) {
         auto& slider = detail.element[std::size_t(e)];
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -660,9 +660,10 @@ void WorldbuilderEditor::openDetail(int slot) {
         d.sliderAttachments.push_back(std::make_unique<SliderAttachment>(processor.parameters, id(field), *slider));
         slider->setDoubleClickReturnValue(true, specs[std::size_t(placeParam(slot, field))].def);
     }
-    for (int e = 0; e < placeElements; ++e) {
-        d.sliderAttachments.push_back(std::make_unique<SliderAttachment>(processor.parameters, id(PlElement + e), d.element[std::size_t(e)]));
-        d.buttonAttachments.push_back(std::make_unique<ButtonAttachment>(processor.parameters, id(PlElementOn + e), d.elementOn[std::size_t(e)]));
+    for (int e = 0; e < slotElements; ++e) {
+        const auto pid = [&](int p) { return juce::String(specs[std::size_t(p)].id); };
+        d.sliderAttachments.push_back(std::make_unique<SliderAttachment>(processor.parameters, pid(elementLevelParam(slot, e)), d.element[std::size_t(e)]));
+        d.buttonAttachments.push_back(std::make_unique<ButtonAttachment>(processor.parameters, pid(elementOnParam(slot, e)), d.elementOn[std::size_t(e)]));
     }
     d.buttonAttachments.push_back(std::make_unique<ButtonAttachment>(processor.parameters, id(PlSync), d.sync));
     const int character = juce::roundToInt(param(placeParam(slot, PlCharacter)));
@@ -932,14 +933,18 @@ void WorldbuilderEditor::layoutDetail() {
     r.removeFromTop(8);
     d.elementsArea = r.removeFromTop(20 + placeElements * 24);
     {
+        // The Place's six instruments on the left, its three Drama instruments (the Drama
+        // tier rework) on the right.
         auto rows = d.elementsArea.withTrimmedTop(20);
-        for (int e = 0; e < placeElements; ++e) {
-            auto row = rows.removeFromTop(24);
+        auto dramaRows = rows.removeFromRight(rows.getWidth() * 2 / 5).withTrimmedLeft(16).withTrimmedTop(20);
+        for (int e = 0; e < slotElements; ++e) {
+            auto row = (e < placeElements ? rows : dramaRows).removeFromTop(24);
             row.removeFromLeft(24);   // the instrument's glyph
-            d.elementOn[std::size_t(e)].setBounds(row.removeFromLeft(130).reduced(2, 2));
+            d.elementOn[std::size_t(e)].setBounds(row.removeFromLeft(std::min(130, row.getWidth() / 2)).reduced(2, 2));
             row.removeFromLeft(10);
             d.element[std::size_t(e)].setBounds(row.reduced(0, 5));
         }
+        d.dramaArea = d.elementsArea.withTrimmedLeft(d.elementsArea.getWidth() - d.elementsArea.getWidth() * 2 / 5 + 16).withTrimmedTop(20).withHeight(18);
     }
     pixel::snapChildren(*this);
 }
@@ -1265,11 +1270,13 @@ void WorldbuilderEditor::paintDetail(juce::Graphics& g) {
     g.setFont(juce::Font(juce::FontOptions(11.0f)));
     g.drawText(juce::String("Effect: ") + placeInfo(type).effect + " (deeper with Activity and Population)", d.elementsArea.withHeight(14).withTrimmedLeft(110),
                juce::Justification::centredLeft, true);
-    for (int e = 0; e < placeElements; ++e) {
+    pixel::drawText(g, "DRAMA INSTRUMENTS", d.dramaArea, juce::Colour(arr::colours[2]), juce::Justification::centredLeft, pixel::Font::Small);
+    for (int e = 0; e < slotElements; ++e) {
         const auto row = d.elementOn[std::size_t(e)].getBounds();
         const bool on = d.elementOn[std::size_t(e)].getToggleState();
-        const auto ink = on ? accent.interpolatedWith(p.ink, 0.2f) : p.inkDim;
-        const int icon = placeInfo(type).element[std::size_t(e)].icon;
+        const auto tint = isDramaElement(e) ? juce::Colour(arr::colours[2]) : accent;
+        const auto ink = on ? tint.interpolatedWith(p.ink, 0.2f) : p.inkDim;
+        const int icon = elementSpec(type, e).icon;
         pixel::drawCached(g, "inst/" + juce::String(icon) + ink.toString(), { row.getX() - 22, row.getCentreY() - 10 },
                           [&] { return pixel::instrumentIcon(icon, 9, ink, p.outline); });
     }
@@ -1664,9 +1671,10 @@ void WorldbuilderEditor::updateDetailLabels() {
         for (int k = 0; k < 3; ++k) detail.character[std::size_t(k)].setButtonText(info.characters[std::size_t(k)]);
         if (info.mood >= 0)
             detail.mood.setButtonText("USE " + juce::StringArray::fromTokens(moodChoices, "|", "")[info.mood].toUpperCase());
-        for (int e = 0; e < placeElements; ++e) {
-            detail.elementOn[std::size_t(e)].setButtonText(info.element[std::size_t(e)].name);
-            detail.element[std::size_t(e)].setTooltip(juce::String(info.element[std::size_t(e)].name) + " level");
+        for (int e = 0; e < slotElements; ++e) {
+            detail.elementOn[std::size_t(e)].setButtonText(elementSpec(type, e).name);
+            detail.element[std::size_t(e)].setTooltip(juce::String(elementSpec(type, e).name) + " level"
+                                                      + (isDramaElement(e) ? " (a Drama instrument: it plays with Drama above 0, from the Tension tier up)" : ""));
         }
         repaint(detail.area);
     }
