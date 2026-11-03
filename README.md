@@ -433,10 +433,11 @@ recording at its own pitch; only below the lowest and above the highest recorded
 notes stretched (up to a fifth), and further out they fold by octaves.
 
 The recordings are inside the plugin bundle (`Contents/Resources/Samples`, about 78 MB),
-where GarageBand's sandbox lets the plugin read them, and load once in the background when
-the first WORLDBUILDER opens (about 210 MB of memory, shared by every instance). The
-installer reports how many recorded notes each bundle holds. A build without them (see
-[Build](#build)) plays the synthesised models these instruments had before.
+where GarageBand's sandbox lets the plugin read them, and load once in the background
+(decoded on several threads) when the first WORLDBUILDER opens (about 210 MB of memory,
+shared by every instance). The installer reports how many recorded notes each bundle
+holds. A build without them (see [Build](#build)) plays the synthesised models these
+instruments had before.
 
 ## Play and record with a MIDI keyboard (KEYS)
 

@@ -6546,12 +6546,12 @@ match). A resumed session continues from the first unticked line.
 
 - [x] Bench (`tools/bench/Bench.cpp`, `-DWORLDBUILDER_BUILD_BENCH=ON`): audio CPU per Place, editor per view (on a display), load time, memory, renders for comparison
 - [x] Baseline: `ccce3e3` against Milestone 17, same build settings (below)
-- [x] Release flags checked on every target; LTO measured
-- [x] Audio: the voice sampler per chunk (and `tanh(k)` once), sampler and hand drums per chunk, inlining
+- [x] Release flags checked on every target; LTO measured (left off: no gain)
+- [x] Audio: the voice sampler per chunk (and `tanh(k)` once), sampler and hand drums per chunk, inlining, the voice sampler's state in locals
 - [x] Sample bank: parallel decoding, 16-bit read straight; checksum of the loaded bank unchanged
 - [x] Editor: the Pattern Editor and KEYS repaint only what changed
-- [ ] Every Place's render and the test suite's listening renders bit for bit as before
-- [ ] Before / after numbers for each fix (below)
+- [x] Every Place's render and the test suite's listening renders bit for bit as before
+- [x] Before / after numbers for each fix (below)
 - [ ] Full test suite; push; CI green
 
 ### How it was measured
@@ -6598,3 +6598,171 @@ grit evaluated `tanh` twice per sample and side (one of them a constant); then t
 and piano on the sampler's general path (crossfades: its sample reader was not inlined
 there) and the hand drums. No voice ran on silent: voices end with their recordings or
 fades (under 3 % of the readers ran below -60 dB).
+
+### The fixes, biggest first, each measured
+
+Exact counts: billions of instructions for 2 s of each Place (four busy copies), every
+stage built the same way. Stages: **1** the voice sampler per chunk and its grit's
+`tanh(k)` once (part 2); **2** the sampler and the hand drums per chunk, the readers and
+`Svf::tick` inlined, the drums' bend step once per hit (part 2); **3** the voice sampler's
+state in locals per chunk (part 5).
+
+| Place | `ccce3e3` | Milestone 17 | 1 | 2 | 3 (now) | now against Milestone 17 |
+|---|---|---|---|---|---|---|
+| Castle | 2.74 | 3.78 | 3.67 | 3.61 | 3.32 | -12 % |
+| Village | 2.86 | 3.05 | 3.05 | 3.04 | 3.04 | -0 % |
+| Spaceport | 2.25 | 2.27 | 2.27 | 2.22 | 2.22 | -2 % |
+| Factory | 2.03 | 2.03 | 2.03 | 1.98 | 1.98 | -2 % |
+| City | 2.18 | 2.18 | 2.18 | 2.12 | 2.12 | -3 % |
+| Forest | 2.36 | 2.42 | 2.42 | 2.37 | 2.37 | -2 % |
+| Alien Hive | 2.38 | 3.15 | 3.13 | 3.01 | 2.86 | -9 % |
+| Temple | 2.48 | 4.48 | 4.39 | 4.27 | 3.87 | -14 % |
+| Cavern | 2.12 | 2.43 | 2.41 | 2.38 | 2.33 | -4 % |
+| Ruins | 2.45 | 3.05 | 3.00 | 2.95 | 2.87 | -6 % |
+| Spaceship | 2.03 | 2.03 | 2.03 | 2.01 | 2.01 | -1 % |
+| Biodome | 2.72 | 2.78 | 2.78 | 2.73 | 2.73 | -2 % |
+| Sea Ship | 2.20 | 2.20 | 2.20 | 2.13 | 2.13 | -3 % |
+| Suburbs | 2.57 | 2.79 | 2.79 | 2.63 | 2.63 | -6 % |
+| Mall | 2.33 | 2.80 | 2.80 | 2.70 | 2.70 | -4 % |
+| Military Camp | 2.50 | 2.50 | 2.50 | 2.47 | 2.47 | -1 % |
+| Beach | 2.44 | 2.44 | 2.44 | 2.38 | 2.38 | -2 % |
+| Desert | 2.63 | 2.85 | 2.85 | 2.79 | 2.79 | -2 % |
+| Palace | 2.79 | 3.80 | 3.76 | 3.68 | 3.41 | -10 % |
+| Tavern | 3.15 | 3.60 | 3.60 | 3.45 | 3.45 | -4 % |
+| Space Station | 2.07 | 2.08 | 2.08 | 2.05 | 2.05 | -1 % |
+| Cyberpunk Megacity | 2.37 | 2.38 | 2.38 | 2.34 | 2.34 | -2 % |
+| Starship Bridge | 2.64 | 3.18 | 2.95 | 2.92 | 2.85 | -10 % |
+| Asteroid Mining Colony | 2.37 | 3.90 | 3.48 | 3.43 | 3.25 | -17 % |
+| Alien Ruins | 2.56 | 4.47 | 4.40 | 4.37 | 3.94 | -12 % |
+| Nebula | 2.48 | 3.52 | 3.19 | 3.15 | 3.07 | -13 % |
+| **All 26** | **63.7** | **76.2** | **74.8** | **73.2** | **71.2** | **-6.6 %** |
+
+What Milestone 17 added (12.5 billion instructions over the 26 Places, +19.6 %) is 40 %
+smaller (7.5 billion, +11.7 % over `ccce3e3`). The Places that grew most gained most: the
+Asteroid Mining Colony -17 %, the Temple -14 %, the Nebula -13 %, the Castle and the Alien
+Ruins -12 %, the Palace and the Starship Bridge -10 %, the Alien Hive -9 %.
+
+The same in time (% of one core, the least of three 10 s runs, one build after another on
+an otherwise idle machine; individual Places swing by about 2 points between runs):
+
+| Place | `ccce3e3` | Milestone 17 | now |
+|---|---|---|---|
+| Castle | 19.89 | 25.40 | 21.93 |
+| Village | 19.56 | 20.69 | 22.53 |
+| Spaceport | 16.78 | 16.30 | 16.07 |
+| Factory | 13.11 | 13.44 | 12.54 |
+| City | 14.92 | 15.27 | 15.09 |
+| Forest | 15.85 | 17.01 | 16.49 |
+| Alien Hive | 19.28 | 21.54 | 23.47 |
+| Temple | 18.44 | 27.66 | 27.21 |
+| Cavern | 14.17 | 16.17 | 16.56 |
+| Ruins | 17.08 | 19.54 | 20.32 |
+| Spaceship | 14.85 | 14.57 | 16.07 |
+| Biodome | 16.00 | 16.21 | 16.15 |
+| Sea Ship | 14.92 | 16.33 | 14.08 |
+| Suburbs | 16.53 | 18.39 | 16.98 |
+| Mall | 18.92 | 19.52 | 18.57 |
+| Military Camp | 17.02 | 16.70 | 16.57 |
+| Beach | 16.95 | 16.69 | 16.22 |
+| Desert | 17.93 | 20.07 | 19.81 |
+| Palace | 19.33 | 21.86 | 20.95 |
+| Tavern | 21.83 | 25.14 | 22.76 |
+| Space Station | 14.90 | 14.99 | 14.84 |
+| Cyberpunk Megacity | 17.12 | 16.99 | 16.56 |
+| Starship Bridge | 19.26 | 23.09 | 20.22 |
+| Asteroid Mining Colony | 16.72 | 25.84 | 19.00 |
+| Alien Ruins | 18.10 | 25.35 | 21.46 |
+| Nebula | 16.10 | 26.15 | 18.96 |
+| **All 26 (sum)** | 445.57 | 510.93 | 481.39 |
+
+Over all 26 Places: Milestone 17 cost 14.7 % more than `ccce3e3`; now 8.0 %. The Temple
+moves less in time than in instructions (-14 %): its three voice parts and the banjo read
+from about 70 MB of recordings, and waiting for memory is a larger share of its time.
+
+**Every render is bit for bit the same**: after each stage, every Place's 12 s (four busy
+copies, the raw floats) and the test suite's 26 listening renders (`--only recordings`)
+were compared sample for sample with the unchanged Milestone 17 build: identical. The
+changes keep each sum in its order (a voice's readers, then the voices, sample by sample
+as before), so not even the last bit moves.
+
+**Sample bank** (part 3; checksum of every loaded note and its mapping unchanged):
+
+| | `ccce3e3` | Milestone 17 | now |
+|---|---|---|---|
+| Bank decoded and ready | 0.70 s | 1.54 s | 0.72 s |
+| `prepareToPlay` of the first instance | 0.77 s | 1.60 s | 0.77 s |
+| Bank in memory | 82.7 MB | 210.5 MB | 210.5 MB |
+
+On this 4-core container three threads decode; a Mac with more cores uses four. The
+16-bit notes are also read as integers (no conversion to float and rounding back per sample).
+
+**Editor** (part 4; message thread, % of one core, 6 s per view, software renderer):
+
+| View | `ccce3e3` | Milestone 17 | now |
+|---|---|---|---|
+| Pattern Editor and KEYS, stopped | 21-25 | 24-25 | 6.6-6.8 |
+| Pattern Editor, transport playing | 22-25 | 22-25 | 15.2 |
+| World: the map and the Place cards | 21-23 | 22-24 | 20-22 (code unchanged) |
+| Place detail | 9-10 | 10-11 | 8 (code unchanged) |
+| ARRANGE | 7-8 | 7-8 | 5-6 (code unchanged) |
+| Instrument mode | 6-7 | 6-7 | 5-6 (code unchanged) |
+
+The piano roll and its ruler were repainted whole 30 times a second whether anything
+moved or not, and the KEYS keyboard with them. Now a key of what they draw (the notes, the
+view, the loop and punch regions, the look) decides: a change repaints them, a playhead
+moving on repaints its old and new columns only, a lit key the keyboard; once a second
+they repaint regardless. The tests' frame-region and editor groups pass unchanged.
+
+### What was checked and left as it is
+
+- **Release flags** (every target): CMake Release, `-O3` from `juce_recommended_config_flags`,
+  `NDEBUG` (no JUCE assertions: `JUCE_DEBUG` is off); no logging (`DBG`, `Logger`, `printf`)
+  in `Source/`; the only test hooks in the plug-in are a flag check (`RepaintLog`, off) and
+  an atomic (`Bank::bypassForTests`). `juce::ScopedNoDenormals` covers all audio
+  (`processBlock`): flush-to-zero on Apple Silicon and Intel alike.
+- **Link-time optimisation** was built and counted: bit for bit the same output, but 0.9 %
+  *more* instructions with GCC (and no faster in time), so it stays off; it cannot be
+  measured on Apple Silicon here.
+- **The bank** loads on background threads only (never the audio or message thread), once
+  per process for every instance (four instances: 168 ms for the three after the first),
+  and nothing decodes or reloads on a preset or Place change (every Place through slot 1
+  in turn: 89 ms, as before). `prepareToPlay` waits for it (up to 5 s) so the first notes
+  and offline bounces are sampled: now about as long as before Milestone 17.
+- **Loading the piano and voice only when a Place uses them** would save up to 121 MB (the
+  piano 59, the voice 62) but was not done: the voice is in 11 Places and the piano in 3,
+  and a Place chosen while they load (a few hundred ms) would play its first notes on the
+  synthesised fallbacks, so the sound would depend on timing (and on a bounce's start):
+  against "without changing the sound". The memory is once per host process.
+- **Audio thread**: no allocations or locks (the `realtime` group: 8 passed). Voices end
+  with their recordings or their fades: under 3 % of the voice sampler's readers ran below
+  -60 dB. The djembe hits ring to the end of their recordings (more than half of each
+  below -60 dB): ending them earlier would change the sound, so they keep it. The singers
+  (at most six per sung note, eight for textures) and the voices per part are as
+  Milestone 17 set them: fewer would sound thinner.
+- **Editor timers**: the editor, the Pattern Editor, KEYS, ARRANGE and the location bar at
+  30 Hz, the capture panel at 15 Hz while rendering, the processor at 10 Hz; the frame
+  governor still skips frames when painting is slow. The world view's cost is its
+  animation (the tiny planet, the overlays, the meters: drawn only where they move since
+  the hotfixes after Instrument mode) and unchanged since before Milestone 17. Memory per
+  instance (about 107 MB: every slot keeps every built Place prepared) is also unchanged.
+
+### Performance pass handoff
+
+**Done**: the bench, the baseline, five parts (the bench and checklist; the samplers per
+chunk; the parallel bank; the editor's repaints; the voice sampler's locals), every render
+bit for bit as before, the full test suite here (`scripts/run-tests-parallel.sh`: 4517
+passed, 0 failed, as at Milestone 17). Parts 1-5 went up with `[skip ci]`; the last push is
+without it.
+
+**What to test on the Mac**: GarageBand with the same project as before: the Temple, the
+Asteroid Mining Colony, the Nebula, the Alien Ruins and the Castle are where the audio
+thread gained most; opening a project should be quicker (the bank is ready in about half
+the time); the Pattern Editor (with KEYS) should no longer keep the message thread busy
+while nothing moves. The sound should be exactly as it was.
+
+**Known limits**: measured on a 4-core Linux container (GCC, JUCE's software renderer),
+not on the Mac (Apple clang, CoreGraphics): the instruction counts transfer, the times
+roughly. The voice sampler and the banjo are still the costliest parts Milestone 17 added
+(the Temple +56 % in instructions over `ccce3e3`); the rest of their cost is the sound
+itself (each sung note reads up to nine recordings, the banjo's body and sympathetic
+strings).
