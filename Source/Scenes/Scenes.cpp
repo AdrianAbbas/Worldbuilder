@@ -1,4 +1,5 @@
 #include "Scenes.h"
+#include <algorithm>
 #include <initializer_list>
 
 namespace wb::scenes {
@@ -55,6 +56,15 @@ Scene scene(const char* name, const char* description, std::array<SlotSetup, pla
     for (const auto& l : locations)
         if (s.locationCount < maxLocations) s.locations[std::size_t(s.locationCount++)] = l;
     s.peakWorld = world(peak);
+    return s;
+}
+
+// A dramatic scene (the Drama tier, after the performance pass): the full dramatic range,
+// its style, and the arrangement's arcs.
+Scene dramatic(Scene s, int style) {
+    s.drama = 1.0f;
+    s.dramaStyle = style;
+    s.arcs = true;
     return s;
 }
 
@@ -221,6 +231,93 @@ const std::vector<Scene>& table() {
               { location("Drift", 1, { 0, 0, -1, -1 }, { 0, -60, keep, keep }),
                 location("The Void", 4, { 2, 0, -1, -1 }, { 0, -6, keep, keep }),
                 location("Guardian", 2, { 2, 2, -1, -1 }, { -2, 0, keep, keep }, { { Danger, 60 } }) }),
+        // The Drama tier (after the performance pass): dramatic scenes, arranged in arcs
+        // (build, climax, drop, build) on the Drama tiers.
+        dramatic(scene("Battle at the Castle Gate", "The army reaches the gate: war drums, spiccato strings and brass as the walls are stormed.",
+              { place(Castle, 2, 0, 0.28f, 0.0f, 0.55f, 0.65f), place(Military, 1, -4, 0.45f, 0.5f, 0.55f, 0.6f), place(Forest, 1, -7, 0.6f, -0.55f), none },
+              Rocky, 0.3f, D, Minor, { { Era, 22 }, { Danger, 70 }, { Activity, 70 }, { Scale, 70 }, { Weather, 40 } }, Siege, 201,
+              { location("The Approach", 1, { 0, 2, 1, -1 }, { 0, -6, -4, keep }, { { Danger, 45 } }),
+                location("Walls Stormed", 2, { 2, 1, 1, -1 }, { 0, -3, -8, keep }, { { Danger, 80 } }) }, { { Danger, 85 } }), drama::StyleDriving),
+        dramatic(scene("Chase Through the Neon City", "A pursuit through rain-soaked streets: grinding bass, hybrid drums and cyberpunk stabs.",
+              { place(Megacity, 2, 0, 0.28f, 0.1f, 0.6f, 0.65f), place(City, 1, -4, 0.5f, -0.5f, 0.55f, 0.55f), none, none },
+              Ocean, 0.3f, E, Phrygian, { { Era, 92 }, { Wetness, 75 }, { Machinery, 65 }, { Danger, 65 }, { Activity, 75 }, { Population, 70 } }, Chase, 202,
+              { location("Night Market", 1, { 0, 1, -1, -1 }), location("Riot", 2, { 2, 2, -1, -1 }, { 0, -3, keep, keep }, { { Danger, 80 } }) }),
+              drama::StyleDriving),
+        dramatic(scene("The Dragon in the Deep", "A boss in the dark under the temple: deep drums, choir and brass, a chromatic shift into each phase.",
+              { place(Cavern, 1, 0, 0.3f, 0.0f, 0.5f, 0.6f), place(Castle, 2, -3, 0.45f, -0.5f, 0.55f, 0.65f), place(Temple, 2, -6, 0.55f, 0.55f), none },
+              LavaWorld, 0.4f, C, Minor, { { Era, 25 }, { Temperature, 80 }, { Danger, 75 }, { Magic, 55 }, { Scale, 85 } }, BossFight, 203,
+              { location("The Descent", 1, { 1, 2, 2, -1 }, { 0, -8, -6, keep }, { { Danger, 50 } }),
+                location("The Dragon", 2, { 0, 2, 2, -1 }, { 0, -2, -6, keep }, { { Danger, 90 } }) }, { { Danger, 90 } }), drama::StyleEpic),
+        dramatic(scene("Siege of the Desert Fortress", "Sandstorm and siege: racing frame drums, plucked strings, horns over the fallen palace.",
+              { place(Desert, 2, 0, 0.3f, 0.0f, 0.55f, 0.6f), place(Military, 1, -4, 0.45f, 0.5f, 0.55f, 0.6f), place(Palace, 2, -6, 0.55f, -0.5f), none },
+              DesertWorld, 0.45f, A, Phrygian, { { Era, 25 }, { Temperature, 85 }, { Weather, 60 }, { Danger, 70 }, { Activity, 70 } }, Siege, 204,
+              { location("Dunes", 1, { 1, 0, 1, -1 }, { 0, -8, -6, keep }, { { Danger, 40 } }),
+                location("Sandstorm Assault", 2, { 2, 1, 2, -1 }, { 0, -3, -6, keep }, { { Danger, 85 }, { Weather, 80 } }) }), drama::StyleDriving),
+        dramatic(scene("Space Battle over the Station", "Battle stations: hybrid pulses and percussion, braams and brass as the fleet engages.",
+              { place(Bridge, 1, 0, 0.28f, -0.1f, 0.6f, 0.7f), place(SpaceStation, 1, -4, 0.45f, 0.5f, 0.5f, 0.6f), place(Spaceport, 2, -6, 0.55f, -0.55f), none },
+              GasGiant, 0.4f, Fs, Minor, { { Era, 95 }, { Machinery, 70 }, { Danger, 70 }, { Activity, 70 }, { Scale, 80 } }, Battle, 205,
+              { location("Contact", 1, { 0, 0, 0, -1 }, { 0, -6, -6, keep }, { { Danger, 45 } }),
+                location("Engaged", 2, { 1, 1, 2, -1 }, { 0, -3, -6, keep }, { { Danger, 85 } }) }, { { Danger, 85 } }), drama::StyleDriving),
+        dramatic(scene("Escape from the Hive", "Run: the swarm wakes, the ship's alarms sound, the guardian closes in.",
+              { place(Hive, 2, 0, 0.3f, 0.0f, 0.6f, 0.7f), place(Spaceship, 1, -4, 0.45f, 0.5f, 0.55f, 0.65f), place(AlienRuins, 2, -7, 0.6f, -0.55f), none },
+              LavaWorld, 0.4f, B, Phrygian, { { Era, 90 }, { Life, 80 }, { Danger, 75 }, { Activity, 75 }, { Machinery, 40 } }, Chase, 206,
+              { location("Dormant", 1, { 0, 0, 0, -1 }, { 0, -6, -60, keep }, { { Danger, 40 } }),
+                location("Swarm", 2, { 2, 1, 2, -1 }, { 0, -3, -6, keep }, { { Danger, 85 } }) }), drama::StyleDriving),
+        dramatic(scene("The Final Stand", "The last defenders hold the keep: war drums, a great choir and brass, and the climax that turns the battle.",
+              { place(Castle, 0, 0, 0.28f, 0.0f, 0.55f, 0.55f), place(Palace, 1, -4, 0.45f, 0.5f), place(Village, 1, -8, 0.6f, -0.55f), none },
+              Rocky, 0.35f, D, Minor, { { Era, 22 }, { Danger, 60 }, { Scale, 80 }, { Magic, 35 }, { Activity, 60 } }, FinalStand, 207,
+              { location("Before Dawn", 1, { 0, 1, 2, -1 }, { 0, -6, -6, keep }, { { Danger, 40 } }),
+                location("The Last Charge", 2, { 2, 1, 1, -1 }, { 0, -2, -8, keep }, { { Danger, 80 } }) }, { { Danger, 75 } }), drama::StyleEpic),
+        dramatic(scene("Tragic Loss", "After the battle: low piano strikes, slow strings and a distant choir over the ruins.",
+              { place(Ruins, 2, 0, 0.3f, 0.0f, 0.35f, 0.5f), place(Temple, 2, -4, 0.5f, 0.5f), place(Forest, 1, -8, 0.6f, -0.55f), none },
+              Rocky, 0.35f, A, Minor, { { Era, 25 }, { Danger, 35 }, { Weather, 45 }, { Wetness, 55 }, { Life, 15 }, { Activity, 30 } }, Lament, 208,
+              { location("Ashes", 1, { 2, 2, 1, -1 }, { 0, -6, -8, keep }), location("Mourning", 4, { 1, 2, 1, -1 }, { 0, -3, -6, keep }, { { Weather, 60 } }) }),
+              drama::StyleTragic),
+        dramatic(scene("Triumphant Return", "The heroes come home: a march, fanfare brass and choir through the market to the palace.",
+              { place(Palace, 0, 0, 0.3f, 0.0f, 0.55f, 0.25f), place(Village, 0, -4, 0.45f, -0.5f, 0.55f), place(Castle, 1, -6, 0.55f, 0.5f), none },
+              ForestWorld, 0.3f, G, Major, { { Era, 25 }, { Danger, 10 }, { Population, 80 }, { Activity, 65 }, { Temperature, 60 }, { Scale, 75 } },
+              FinalStand, 209,
+              { location("The Road Home", 0, { 1, 2, 1, -1 }, { -3, -2, -8, keep }), location("The Palace", 3, { 0, 0, 1, -1 }, { 0, -6, -3, keep }) }),
+              drama::StyleTriumphant),
+        dramatic(scene("Pirate Battle in the Storm", "Broadsides in a storm: battle drums at sea, strings and brass, a brawl on deck.",
+              { place(SeaShip, 1, 0, 0.28f, 0.0f, 0.6f, 0.65f), place(Tavern, 2, -5, 0.5f, -0.5f, 0.6f, 0.6f), place(Beach, 2, -8, 0.6f, 0.55f), none },
+              Ocean, 0.45f, E, Minor, { { Era, 30 }, { Wetness, 80 }, { Weather, 75 }, { Danger, 70 }, { Activity, 75 }, { Scale, 75 } }, Battle, 210,
+              { location("Sails Ahead", 1, { 0, 0, 0, -1 }, { 0, -6, -6, keep }, { { Weather, 45 } }),
+                location("Boarding", 2, { 1, 2, 2, -1 }, { 0, -2, -6, keep }, { { Weather, 85 }, { Danger, 85 } }) }), drama::StyleDriving),
+        dramatic(scene("Mining Colony Uprising", "The workers rise: drills and pistons as rhythm, metal hits, grinding bass and braams.",
+              { place(Mining, 1, 0, 0.3f, 0.0f, 0.6f, 0.65f), place(Factory, 1, -4, 0.45f, 0.5f, 0.6f, 0.6f), place(Megacity, 2, -7, 0.6f, -0.55f), none },
+              Rocky, 0.35f, Cs, Phrygian, { { Era, 85 }, { Machinery, 85 }, { Danger, 70 }, { Activity, 70 }, { Population, 70 } }, Battle, 211,
+              { location("Shift Change", 1, { 0, 2, 0, -1 }, { 0, -6, -60, keep }, { { Danger, 40 } }),
+                location("Uprising", 2, { 1, 1, 2, -1 }, { 0, -3, -6, keep }, { { Danger, 85 } }) }), drama::StyleDriving),
+        dramatic(scene("Ambush in the Dark Woods", "Something hunts in the trees: a heartbeat, tribal drums and strings, then the ambush.",
+              { place(Forest, 1, 0, 0.3f, 0.0f, 0.5f, 0.65f), place(Military, 2, -5, 0.5f, 0.5f, 0.5f, 0.6f), place(Village, 2, -8, 0.6f, -0.55f), none },
+              ForestWorld, 0.35f, G, Minor, { { Era, 25 }, { Danger, 60 }, { Life, 55 }, { Weather, 35 }, { Activity, 55 } }, Chase, 212,
+              { location("Watched", 1, { 1, 2, 2, -1 }, { 0, -8, -6, keep }, { { Danger, 45 } }),
+                location("Ambush", 2, { 1, 1, 2, -1 }, { 0, -3, -8, keep }, { { Danger, 80 } }) }), drama::StyleSuspense),
+        dramatic(scene("Awakening of the Guardian", "The ancient guardian rises in the nebula: vast hybrid swells, ritual drums pitched down, a great choir.",
+              { place(AlienRuins, 2, 0, 0.3f, 0.0f, 0.5f, 0.6f), place(Nebula, 2, -4, 0.5f, -0.5f), place(Bridge, 1, -6, 0.5f, 0.5f, 0.55f, 0.6f), none },
+              GasGiant, 0.5f, F, Minor, { { Era, 95 }, { Magic, 75 }, { Scale, 95 }, { Danger, 65 } }, BossFight, 213,
+              { location("Signal", 1, { 0, 0, 0, -1 }, { 0, -6, -8, keep }, { { Danger, 40 } }),
+                location("Guardian", 2, { 2, 2, 1, -1 }, { 0, -3, -4, keep }, { { Danger, 85 } }) }, { { Danger, 85 } }), drama::StyleEpic),
+        dramatic(scene("Factory Breakdown", "The line runs out of control: pistons, metal percussion and sirens through the rain-soaked city.",
+              { place(Factory, 2, 0, 0.3f, 0.0f, 0.6f, 0.65f), place(City, 2, -5, 0.5f, -0.5f), place(Mining, 0, -8, 0.6f, 0.55f), none },
+              Rocky, 0.3f, D, Phrygian, { { Era, 70 }, { Machinery, 90 }, { Danger, 65 }, { Activity, 70 }, { Wetness, 60 } }, Chase, 214,
+              { location("Assembly Line", 1, { 2, 1, 0, -1 }, { 0, -6, -8, keep }), location("Breakdown", 2, { 1, 2, 0, -1 }, { 0, -3, -6, keep }, { { Danger, 85 } }) }),
+              drama::StyleDriving),
+        dramatic(scene("Last Light of the Temple", "The rite fails and the temple floods: slow strings, piano strikes and a mourning choir.",
+              { place(Temple, 1, 0, 0.3f, 0.0f, 0.35f, 0.5f), place(Cavern, 2, -4, 0.5f, 0.5f), place(Ruins, 1, -7, 0.55f, -0.5f), none },
+              Ocean, 0.4f, B, Minor, { { Era, 20 }, { Magic, 60 }, { Wetness, 70 }, { Danger, 40 }, { Scale, 80 } }, Lament, 215,
+              { location("The Rite", 1, { 1, 1, 1, -1 }, { 0, -6, -8, keep }), location("The Flood", 4, { 2, 2, 1, -1 }, { 0, -3, -6, keep }, { { Wetness, 85 } }) }),
+              drama::StyleTragic),
+        dramatic(scene("Victory Parade", "Drums and brass down the avenue: the army's march, the crowd, the palace balcony.",
+              { place(Military, 0, 0, 0.3f, 0.0f, 0.6f, 0.25f), place(City, 0, -4, 0.45f, 0.5f), place(Palace, 1, -6, 0.55f, -0.5f), none },
+              Rocky, 0.3f, C, Major, { { Era, 55 }, { Danger, 10 }, { Population, 90 }, { Activity, 70 }, { Scale, 70 } }, ClassicArc, 216,
+              { location("Avenue", 0, { 0, 0, 1, -1 }), location("Balcony", 3, { 0, 0, 1, -1 }, { -3, -6, 0, keep }) }), drama::StyleTriumphant),
+        dramatic(scene("Warp Jump Pursuit", "Hunted between the stars: the bridge's pulses, hybrid drums and braams, one jump ahead.",
+              { place(Bridge, 2, 0, 0.28f, 0.0f, 0.6f, 0.7f), place(Spaceship, 1, -4, 0.45f, -0.5f, 0.55f, 0.65f), place(Nebula, 1, -7, 0.6f, 0.55f), none },
+              IceGiant, 0.4f, A, Minor, { { Era, 95 }, { Machinery, 70 }, { Danger, 70 }, { Activity, 75 }, { Scale, 85 } }, Chase, 217,
+              { location("Pursued", 1, { 0, 1, 1, -1 }, { 0, -6, -6, keep }, { { Danger, 50 } }),
+                location("Warp Jump", 2, { 2, 1, 1, -1 }, { 0, -3, -6, keep }, { { Danger, 85 } }) }), drama::StyleDriving),
     };
     return scenes;
 }
@@ -261,13 +358,72 @@ uint32_t nextSeed(uint32_t seed) {
     return next == seed ? (seed % 9999u) + 1u : next;
 }
 
-Scene inspire(uint32_t seed) {
+int moodFor(uint32_t seed) {
+    // Any: the dramatic moods about three times in five.
+    Dice d { seed ^ 0x5EEDu };
+    const float r = d.unit();
+    static constexpr std::array<std::pair<float, int>, 8> weights { { { 0.14f, MoodCalm }, { 0.27f, MoodAdventure }, { 0.37f, MoodMystery },
+                                                                      { 0.49f, MoodTension }, { 0.66f, MoodBattle }, { 0.79f, MoodEpic },
+                                                                      { 0.88f, MoodTragic }, { 1.01f, MoodTriumphant } } };
+    for (const auto& [edge, mood] : weights)
+        if (r < edge) return mood;
+    return MoodBattle;
+}
+
+namespace {
+// What each mood asks of a scene.
+struct MoodRecipe {
+    std::vector<int> places;                // the Places that suit it (chosen first within the world)
+    int character;                          // -1: any; else preferred Character (0..2)
+    std::vector<int> keys;                  // Moods (scales)
+    float intensityLo, intensityHi;
+    int dangerLo, dangerHi, activityLo, activityHi;
+    float tensionLo, tensionHi;
+    int style;                              // drama::Style
+    std::vector<int> templates;
+    bool arcs;
+};
+const MoodRecipe& recipe(int mood) {
+    using namespace arr;
+    static const std::array<MoodRecipe, InspireMoodCount> table { {
+        { {}, -1, {}, 0.45f, 0.55f, 8, 55, 30, 55, 0.2f, 0.45f, drama::StyleAuto, {}, false },   // any (unused)
+        { { Village, Forest, Beach, Biodome, Suburbs, Mall, Temple, Nebula, Desert }, 0, { Major, Pentatonic, Lydian }, 0.3f, 0.42f, 0, 12, 18, 35,
+          0.1f, 0.2f, drama::StyleAuto, { TownTheme, ExplorationLoop }, false },
+        { { Village, Forest, Desert, Beach, SeaShip, Tavern, Spaceport, Biodome, Bridge }, -1, { Dorian, Mixolydian, Major }, 0.58f, 0.66f, 15, 35,
+          45, 65, 0.3f, 0.45f, drama::StyleDriving, { ExplorationLoop, ClassicArc, Chase }, true },
+        { { Temple, Ruins, AlienRuins, Nebula, Cavern, Forest, Hive, SpaceStation }, 0, { Lydian, WholeTone, Dorian, Phrygian }, 0.45f, 0.55f, 25, 40, 20, 40,
+          0.35f, 0.5f, drama::StyleSuspense, { CinematicReveal, ExplorationLoop }, false },
+        { { Cavern, Hive, Ruins, Spaceship, SpaceStation, Military, Megacity, Mining, Bridge }, 1, { Phrygian, Minor }, 0.64f, 0.72f, 45, 65, 40, 60,
+          0.6f, 0.75f, drama::StyleSuspense, { Chase, BossFight }, true },
+        { { Castle, Military, Tavern, Megacity, Bridge, SeaShip, Palace, Forest, Spaceport, Mining }, 2, { Minor, Phrygian, Dorian }, 0.88f, 0.96f, 60, 82,
+          65, 88, 0.6f, 0.8f, drama::StyleDriving, { Battle, Chase, FinalStand, Siege }, true },
+        { { Castle, Temple, Palace, AlienRuins, Nebula, Desert, Bridge, SeaShip }, 1, { Minor, Dorian }, 0.86f, 0.94f, 35, 55, 40, 60, 0.45f, 0.6f,
+          drama::StyleEpic, { CinematicReveal, FinalStand, Siege }, true },
+        { { Ruins, Temple, Cavern, Forest, SeaShip, Palace, SpaceStation, Suburbs }, 2, { Minor }, 0.7f, 0.8f, 30, 50, 15, 35, 0.45f, 0.6f,
+          drama::StyleTragic, { Lament }, true },
+        { { Palace, Castle, Village, Military, Bridge, SeaShip, Desert, Spaceport }, 1, { Major, Mixolydian, Lydian }, 0.82f, 0.9f, 10, 25, 55, 75,
+          0.2f, 0.35f, drama::StyleTriumphant, { FinalStand, ClassicArc }, true },
+    } };
+    return table[std::size_t(std::clamp(mood, 0, InspireMoodCount - 1))];
+}
+bool listed(const std::vector<int>& list, int value) { return std::find(list.begin(), list.end(), value) != list.end(); }
+} // namespace
+
+Scene inspire(uint32_t seed, int moodIn) {
     Dice d { seed };
     Scene s;
     s.seed = seed;
-    // A world: fantasy, sci-fi, modern or nature-led.
+    const int mood = moodIn > MoodAny && moodIn < InspireMoodCount ? moodIn : moodFor(seed);
+    const auto& want = recipe(mood);
+    // A world: fantasy, sci-fi, modern or nature-led; the mood's own Places lean it.
     const float theme = d.unit();
-    const int category = theme < 0.34f ? MedievalFantasy : theme < 0.64f ? SciFi : theme < 0.84f ? Modern : Nature;
+    int category = theme < 0.34f ? MedievalFantasy : theme < 0.64f ? SciFi : theme < 0.84f ? Modern : Nature;
+    {
+        // A world with none of the mood's Places takes the world of one of them.
+        bool any = false;
+        for (int t : want.places) any |= placeInfo(t).category == category;
+        if (!any && want.places.size() > 0) category = placeInfo(*(want.places.begin() + d.below(int(want.places.size())))).category;
+    }
     std::vector<int> own, nature, other;
     for (int t = 1; t < PlaceTypeCount; ++t) {
         if (!placeImplemented[std::size_t(t)]) continue;
@@ -279,11 +435,25 @@ Scene inspire(uint32_t seed) {
     std::vector<int> chosen;
     const auto take = [&](std::vector<int>& from) {
         if (from.empty()) return;
-        const int i = d.below(int(from.size()));
+        // The mood's Places first (most of the time).
+        std::vector<int> suited;
+        for (std::size_t k = 0; k < from.size(); ++k)
+            if (listed(want.places, from[k])) suited.push_back(int(k));
+        const int i = !suited.empty() && d.unit() < 0.8f ? suited[std::size_t(d.below(int(suited.size())))] : d.below(int(from.size()));
         chosen.push_back(from[std::size_t(i)]);
         from.erase(from.begin() + i);
     };
-    take(own);
+    // The leading Place: one of the mood's from this world where there is one.
+    {
+        std::vector<int> suited;
+        for (std::size_t k = 0; k < own.size(); ++k)
+            if (listed(want.places, own[k])) suited.push_back(int(k));
+        if (!suited.empty()) {
+            const int i = suited[std::size_t(d.below(int(suited.size())))];
+            chosen.push_back(own[std::size_t(i)]);
+            own.erase(own.begin() + i);
+        } else take(own);
+    }
     bool blended = false;
     for (int i = 1; i < count; ++i) {
         const float r = d.unit();
@@ -301,17 +471,19 @@ Scene inspire(uint32_t seed) {
     for (int i = 0; i < int(chosen.size()) && i < placeSlots; ++i) {
         auto& slot = s.slots[std::size_t(i)];
         slot.type = chosen[std::size_t(i)];
-        slot.character = d.below(placeCharacters);
+        slot.character = want.character >= 0 && d.unit() < 0.7f ? want.character : d.below(placeCharacters);
         slot.levelDb = i == 0 ? 0.0f : d.range(-6.0f, -2.5f);
         slot.distance = i == 0 ? d.range(0.25f, 0.4f) : d.range(0.4f, 0.62f);
         slot.pan = pans[std::size_t(i)] * d.range(0.7f, 1.1f);
         slot.activity = d.range(0.3f, 0.55f);
-        slot.tension = d.range(0.2f, 0.45f);
+        slot.tension = d.range(want.tensionLo, want.tensionHi);
     }
-    // Key: the first Place's suggested Mood more often than not, or one that suits the world.
+    // Key: the mood's, else the first Place's suggested Mood more often than not, or one
+    // that suits the world.
     s.root = d.below(12);
     const int suggested = placeInfo(chosen.front()).mood;
-    if (suggested >= 0 && d.unit() < 0.6f) s.mood = suggested;
+    if (want.keys.size() > 0) s.mood = *(want.keys.begin() + d.below(int(want.keys.size())));
+    else if (suggested >= 0 && d.unit() < 0.6f) s.mood = suggested;
     else if (category == MedievalFantasy) s.mood = d.pick({ Minor, Dorian, Phrygian, Lydian, Mixolydian, Pentatonic });
     else if (category == SciFi) s.mood = d.pick({ Minor, Lydian, WholeTone, Phrygian, Dorian });
     else if (category == Modern) s.mood = d.pick({ Major, Dorian, Mixolydian, Pentatonic, Minor });
@@ -327,18 +499,26 @@ Scene inspire(uint32_t seed) {
         if (t == Nebula) s.planet = GasGiant;
     }
     s.influence = d.range(0.2f, 0.5f);
-    // World Controls near their defaults, the Era and Magic of the world.
+    // World Controls near their defaults, the Era and Magic of the world; Danger and
+    // Activity as the mood asks.
     const int era = category == MedievalFantasy ? int(d.range(12, 35)) : category == SciFi ? int(d.range(78, 96)) : category == Modern ? int(d.range(50, 66)) : int(d.range(25, 55));
-    const int danger = int(d.range(8, 55));
+    const int danger = int(d.range(float(want.dangerLo), float(want.dangerHi)));
+    const int activity = int(d.range(float(want.activityLo), float(want.activityHi)));
     s.world = world({ { Era, era }, { Danger, danger }, { Temperature, int(d.range(25, 75)) }, { Weather, int(d.range(15, 55)) },
                       { Wetness, int(d.range(15, 60)) }, { Magic, category == MedievalFantasy ? int(d.range(35, 70)) : int(d.range(10, 45)) },
-                      { Life, int(d.range(20, 70)) }, { Scale, int(d.range(40, 85)) }, { Activity, int(d.range(30, 55)) } });
+                      { Life, int(d.range(20, 70)) }, { Scale, int(d.range(40, 85)) }, { Activity, activity } });
     if (category == SciFi || category == Modern) s.world[Machinery] = int8_t(d.range(30, 70));
-    s.intensity = d.range(0.45f, 0.55f);
-    // A template for the mood of the world.
-    if (danger > 42) s.templ = d.pick({ arr::Battle, arr::BossFight, arr::ClassicArc });
-    else if (category == SciFi) s.templ = d.pick({ arr::CinematicReveal, arr::ExplorationLoop, arr::ClassicArc });
-    else if (category == Modern) s.templ = d.pick({ arr::TownTheme, arr::ExplorationLoop, arr::ClassicArc });
+    if (mood == MoodEpic) s.world[Scale] = int8_t(d.range(75, 95));
+    if (mood == MoodCalm) s.world[Weather] = int8_t(d.range(5, 25));
+    s.intensity = d.range(want.intensityLo, want.intensityHi);
+    // The Drama tier: every inspired scene can change gear; the mood sets its feel.
+    s.drama = 1.0f;
+    s.dramaStyle = want.style;
+    s.arcs = want.arcs;
+    s.inspired = mood;
+    // A template for the mood.
+    if (want.templates.size() > 0) s.templ = *(want.templates.begin() + d.below(int(want.templates.size())));
+    else if (danger > 42) s.templ = d.pick({ arr::Battle, arr::BossFight, arr::ClassicArc });
     else s.templ = d.pick({ arr::TownTheme, arr::ClassicArc, arr::CinematicReveal, arr::ExplorationLoop });
     // Locations: calm, (rising,) climax. The first Place changes Character along the way.
     const int first = s.slots[0].character;
@@ -359,12 +539,18 @@ Scene inspire(uint32_t seed) {
     peak.world[Danger] = int8_t(std::min(100, danger + 25));
     peak.world[Weather] = int8_t(std::min(100, int(s.world[Weather]) + 20));
     peak.world[Activity] = int8_t(std::min(100, int(s.world[Activity]) + 20));
+    // A dramatic mood starts where it is: the first Location keeps the mood's Characters
+    // and Danger (the climb is the arrangement's).
+    if (want.arcs) {
+        calm.world[Danger] = int8_t(danger);
+        calm.character = { -1, -1, -1, -1 };
+    }
     // Small changes to each instrument's effects.
     s.scaledFx = true;
     for (auto& f : s.fxScale) f = { d.range(0.8f, 1.25f), d.range(0.7f, 1.3f), d.range(0.8f, 1.2f) };
     // A name from the Places.
     s.name = std::string(placeInfo(chosen.front()).characters[std::size_t(s.slots[0].character)]) + " " + placeNames[std::size_t(chosen.front())];
-    s.description = "Inspired by World Seed " + std::to_string(seed) + ":";
+    s.description = "Inspired by World Seed " + std::to_string(seed) + " (" + inspireMoodNames[std::size_t(mood)] + "):";
     for (std::size_t i = 0; i < chosen.size() && i < std::size_t(placeSlots); ++i) s.description += std::string(i == 0 ? " " : ", ") + placeNames[std::size_t(chosen[i])];
     return s;
 }
@@ -382,6 +568,9 @@ WorldValues worldValues(const Scene& scene, const WorldValues& session) {
     v[PPlanet] = float(std::clamp(scene.planet, 0, 6));
     v[PPlanetInfluence] = dsp::clamp01(scene.influence);
     v[PIntensity] = dsp::clamp01(scene.intensity);
+    // The Drama tier: the scenes from before it play the Classic score, as they always did.
+    v[PDrama] = dsp::clamp01(scene.drama);
+    v[PDramaStyle] = float(std::clamp(scene.dramaStyle, 0, 5));
     for (int w = 0; w < WorldControlCount; ++w)
         if (scene.world[std::size_t(w)] >= 0) v[std::size_t(PTemperature + w)] = float(scene.world[std::size_t(w)]) / 100.0f;
     for (int slot = 0; slot < placeSlots; ++slot) {
@@ -452,6 +641,8 @@ arr::Arrangement arrangement(const Scene& scene) {
         if (scene.locationCount > 0) s.location = int8_t(locationFor(kind, scene.locationCount));
         if (kind == arr::KindPeak) s.world = scene.peakWorld;
     }
+    // A dramatic scene's arcs (the scenes from before the Drama tier keep theirs).
+    if (scene.drama > 0.0f && scene.arcs) arr::dramatize(a, scene.seed);
     return a;
 }
 
