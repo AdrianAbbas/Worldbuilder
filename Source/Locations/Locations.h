@@ -48,6 +48,8 @@ inline Move moveOf(int p) {
     // in every journey, arrangement and render.
     if (isEnvironmentMix(p)) return Move::Live;
     if (isInstrumentParam(p)) return Move::Live;
+    // The Drama tier is the score's, not a place's: journeys leave it as set.
+    if (p == PDrama || p == PDramaStyle) return Move::Live;
     if (p >= PPlaceFirst && p < PPlayMode) {
         const int field = (p - PPlaceFirst) % PlaceParamCount;
         if (field == PlSolo) return Move::Live;

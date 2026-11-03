@@ -1,6 +1,6 @@
 #pragma once
 #include "Intensity.h"
-#include "Places.h"
+#include "Drama.h"
 #include <atomic>
 #include <memory>
 
@@ -52,6 +52,8 @@ struct PlaceSlotControls {
     float duckFrom = 1, duckTo = 1;
     float attack = 0.5f, release = 0.5f;
     int drone = 1;   // Instrument mode's Drone (Off, Root, Root + Fifth)
+    // The Drama tier: what the slot's Drama layer plays (drama 0: no layer at all).
+    drama::Cue drama;
 };
 
 // Hosts one Place: switches between Place engines with a short fade, folds the
@@ -174,6 +176,10 @@ private:
     double lastBeat = 0, nextBeat = 0;
     dsp::Smoother keysLevel;
     bool snapGain = false;
+    // The Drama tier's layer, themed by the Place playing.
+    drama::Layer dramaLayer;
+public:
+    const drama::Layer& drama() const { return dramaLayer; }
 };
 
 } // namespace wb

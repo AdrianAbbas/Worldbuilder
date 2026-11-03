@@ -76,6 +76,30 @@ inline int chordDegree(double beat, float danger) {
     return danger > 0.55f ? dark[i] : calm[i];
 }
 
+// The Drama tier's harmony (after the performance pass): the world's tier (0 Calm, as
+// above; 1 Tension, 2 Action, 3 Climax) changes the progression's gear. Tension holds a
+// pedal on the tonic (a chord every four bars, back to the tonic); Action moves twice as
+// fast and rises into the tonic (minor: i i VI VII, major: I I IV V); Climax keeps the
+// pace on darker, wider steps (minor: i VI III VII, major: I V vi IV). Moods without
+// diatonic chords (whole-tone, pentatonic, chromatic) keep the calm or dark cycle.
+inline bool diatonicMood(int mood) { return mood >= 0 && mood <= 5; }
+inline bool majorMood(int mood) { return mood == 1 || mood == 4 || mood == 5; }
+inline int chordDegree(double beat, float danger, int harmony, int mood) {
+    if (harmony <= 0 || !diatonicMood(mood)) return chordDegree(beat, danger);
+    static constexpr int tensionMinor[4] { 0, 0, 5, 0 }, tensionMajor[4] { 0, 0, 3, 0 };
+    static constexpr int actionMinor[4] { 0, 0, 5, 6 }, actionMajor[4] { 0, 0, 3, 4 };
+    static constexpr int climaxMinor[4] { 0, 5, 2, 6 }, climaxMajor[4] { 0, 4, 5, 3 };
+    const bool major = majorMood(mood);
+    const int per = harmony == 1 ? beatsPerChord : beatsPerChord / 2;
+    const auto k = int64_t(std::floor(beat / double(per)));
+    const auto i = std::size_t(((k % 4) + 4) % 4);
+    switch (std::min(harmony, 3)) {
+        case 1: return major ? tensionMajor[i] : tensionMinor[i];
+        case 2: return major ? actionMajor[i] : actionMinor[i];
+        default: return major ? climaxMajor[i] : climaxMinor[i];
+    }
+}
+
 // Chord tone `n` (0 root, 1 third, 2 fifth, 3 seventh...) of the chord built on scale
 // degree `chord`, in semitones above the key root. Stacking every other scale note
 // gives triads in the diatonic modes, quartal chords in the pentatonic, augmented

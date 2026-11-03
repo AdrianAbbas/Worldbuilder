@@ -86,6 +86,8 @@ void WorldEngine::reset(const EngineControls& initial) {
     placePeak.fill(0);
     arranged = arr::State {};
     arranging = false;
+    harmony = 0;
+    harmonyLine = INT64_MIN;
     endGain = 1;
     transitionVoice.reset();
     for (auto& f : sweep) f.reset();
@@ -368,7 +370,7 @@ void WorldEngine::keysPiece(int n, uint64_t at, const EngineControls& controls) 
                 c.note = int8_t(note);
                 c.pitch = int16_t(kit ? x.row : int(std::lround(semis - transpose)));
                 c.velocity = uint8_t(std::clamp<long>(std::lround(velocity * 127.0f), 1, 127));
-                c.chord = int8_t(music::chordDegree(there, world[Danger]));
+                c.chord = int8_t(music::chordDegree(there, world[Danger], world.harmony, world.mood));
                 capture.note(c, there, perSample * double(offset));
             },
             [&](int note) {
@@ -452,7 +454,22 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     world.seed = seed;
     world.beat = beat;
     world.bpm = bpm;
-    world.chord = music::chordDegree(beat, world[Danger]);
+    // The Drama tier's harmony: the world's tier (the section's, or from Score Intensity),
+    // latched on the four-bar lines so a chord is never cut short; Classic: as before.
+    world.drama = clamp01(finiteOr(controls.drama, 0.0f));
+    if (world.drama <= 0.0f) {
+        harmony = 0;
+        harmonyLine = INT64_MIN;
+    } else {
+        const int64_t line = int64_t(std::floor(beat / double(music::beatsPerChord)));
+        if (line != harmonyLine) {
+            const int section = arranging ? arranged.drama : -1;
+            harmony = section >= 0 ? section : drama::tierFor(drama::amountFor(world.intensity, 0.5f, world.drama));
+            harmonyLine = line;
+        }
+    }
+    world.harmony = harmony;
+    world.chord = music::chordDegree(beat, world[Danger], world.harmony, world.mood);
 
     // Scale: colossal worlds sound further away, darker and more reverberant.
     const float scale = world[Scale];
@@ -511,8 +528,24 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
     // Places: each slot renders its Place with level, distance and pan applied, and
     // its instruments feed the shared reverbs and delays.
     sharedFx.begin(n);
+    int dramaRank = 0;
     for (std::size_t si = 0; si < slots.size(); ++si) {
         PlaceSlotControls pc = controls.places[si];
+        // The Drama layer's cue: the amount, style, the slot's rank among the Places (the
+        // first leads with the drums), the section's tier and its transitions.
+        pc.drama.drama = controls.instrument.on ? 0.0f : world.drama;
+        pc.drama.style = controls.dramaStyle;
+        pc.drama.rank = dramaRank;
+        if (pc.type != NoPlace) ++dramaRank;
+        if (arranging) {
+            pc.drama.tier = arranged.drama;
+            pc.drama.transition = arranged.transition;
+            pc.drama.transitionT = arranged.transitionT;
+            pc.drama.transitionLength = arranged.transitionLength;
+            pc.drama.arrived = arranged.arrived;
+            pc.drama.sinceStart = arranged.sinceStart;
+            pc.drama.drumFill = arranged.drumFill;
+        }
         const bool keysHere = keysSlot == int(si);
         const bool audible = !pc.mute && (!anySolo || pc.solo) && (!keysOnly || keysHere);
         if (keysHere) {

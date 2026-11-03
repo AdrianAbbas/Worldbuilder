@@ -62,6 +62,7 @@ inline constexpr const char* droneChoices = "Off|Root|Root + Fifth";
 enum Drone { DroneOff, DroneRoot, DroneRootFifth };
 inline constexpr const char* modeChoices = "World|Instrument";
 enum Mode { ModeWorld, ModeInstrument };
+inline constexpr const char* dramaStyleChoices = "Auto|Driving|Epic|Tragic|Triumphant|Suspense";
 inline constexpr const char* planetChoices = "Rocky|Ocean|Ice Giant|Gas Giant|Desert World|Lava World|Forest World";
 enum PlayMode { PlayFree, PlayTransport, PlayArrangement };
 
@@ -100,6 +101,8 @@ enum P {
     PMode, PInstCharacter, PInstLevel, PInstTone, PInstAttack, PInstRelease, PInstDrive,
     PInstReverb, PInstReverbType, PInstDelay, PInstDelayType, PInstFx, PInstFxAmount, PInstWidth,
     PInstAmbience, PInstOctave, PInstDrone,
+    // The Drama tier (after the performance pass).
+    PDrama, PDramaStyle,
     PCount
 };
 
@@ -237,6 +240,14 @@ inline constexpr std::array<ParamSpec, PCount> specs { {
     // the played note's root an octave down, or the root and its fifth. It follows the
     // note held and stops with it.
     { "inst_drone", "Instrument Drone", Kind::Choice, 0, 2, 1, droneChoices },
+    // Drama (after the performance pass): how far the top of Score Intensity (and Tension)
+    // changes gear, as a game score's layers do: Calm, Tension, Action, Climax. 0 is the
+    // Classic score (the world exactly as before: projects and scenes from before it open
+    // at 0); at 100 % a Drama layer of driving rhythm, war drums, stabs and swells, themed
+    // by each Place, joins from the middle of Score Intensity up. Drama Style picks its
+    // feel (Auto: each Place's own).
+    { "drama", "Drama", Kind::Float, 0, 1, 1 },
+    { "dramastyle", "Drama Style", Kind::Choice, 0, 5, 0, dramaStyleChoices },
 } };
 // clang-format on
 

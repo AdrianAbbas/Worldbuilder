@@ -285,6 +285,8 @@ EngineControls WorldbuilderProcessor::controlsFromValues(const WorldValues& valu
     c.width = value(PWidth);
     c.spaceMix = value(PSpaceMix);
     c.intensity = value(PIntensity);
+    c.drama = value(PDrama);
+    c.dramaStyle = juce::roundToInt(value(PDramaStyle));
     c.seed = uint32_t(juce::roundToInt(value(PSeed)));
     c.quality = juce::roundToInt(value(PQuality));
     c.root = juce::roundToInt(value(PRoot));
@@ -871,7 +873,7 @@ void WorldbuilderProcessor::inspire() {
     // The composer's own arrangement stays (UNDO brings the whole world back anyway);
     // with none, Inspire's scene brings one.
     const auto kept = arrangement.get();
-    loadScene(scenes::inspire(seed));
+    loadScene(scenes::inspire(seed, inspireMood()));
     if (kept.count > 0) {
         arrangement.set(kept, false);
         if (juce::roundToInt(raw[PPlayMode]->load()) != PlayFree) setValue(PPlayMode, float(PlayArrangement));
@@ -988,7 +990,10 @@ arr::Arrangement WorldbuilderProcessor::autoArrangeWithClips(const arr::Arrangem
         return &(*heldPtr)[std::size_t(slot)][std::size_t(e)][std::size_t(v)];
     };
     const auto seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
-    return arr::autoArrange(a, types, seed, source);
+    auto out = arr::autoArrange(a, types, seed, source);
+    // With Drama above 0, Auto-arrange builds the cue's arcs on the Drama tiers.
+    if (raw[PDrama]->load() > 0.0f) arr::dramatize(out, seed);
+    return out;
 }
 
 bool WorldbuilderProcessor::makeClipUnique(int section, int slot, int element) {
@@ -1136,6 +1141,8 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
         if (!child.isValid() && juce::String(s.id) == "playmode") value = float(PlayFree);
         // Projects from before the Planet keep their sound: no planet colour.
         if (!child.isValid() && juce::String(s.id) == "planetinfluence") value = 0.0f;
+        // Projects from before the Drama tier keep their sound: the Classic score.
+        if (!child.isValid() && juce::String(s.id) == "drama") value = 0.0f;
         // Projects from before the instrument effects: each instrument starts from its
         // Place's own effect defaults.
         if (!child.isValid()) value = legacyDefault(state, int(&s - specs.data()), value);
@@ -1210,6 +1217,7 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     parameters.state.setProperty("overlays", juce::jlimit(0, ui::OverlayModeCount - 1, overlays), nullptr);
     // The scene loaded last (Milestone 12), for the scene browser.
     parameters.state.setProperty("scene", state.getProperty("scene").toString(), nullptr);
+    parameters.state.setProperty("inspiremood", juce::jlimit(0, int(scenes::InspireMoodCount) - 1, int(state.getProperty("inspiremood", 0))), nullptr);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

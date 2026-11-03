@@ -15,6 +15,10 @@ struct WorldFrame {
     float bpm = 96;
     int chord = 0;      // scale degree of the current chord of the shared progression
     float intensity = 0.5f;   // Score Intensity, smoothed (0 calm, 0.5 as set, 1 climax)
+    // The Drama tier (after the performance pass): the Drama amount (0: Classic, the
+    // world as it always was) and the world's tier for the shared harmony (0: as before).
+    float drama = 0;
+    int harmony = 0;
     float operator[](WorldControl w) const { return c[std::size_t(w)]; }
 };
 

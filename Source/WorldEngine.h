@@ -26,6 +26,10 @@ struct EngineControls {
     float masterDb = 0, width = 1, spaceMix = 0.4f;
     float environmentDb = 0;   // the environment layers' master level
     float intensity = 0.5f;   // Score Intensity
+    // The Drama tier (after the performance pass): 0 Classic (as before), up to 1 the full
+    // dramatic range at the top of Score Intensity; its style (drama::Style).
+    float drama = 0;
+    int dramaStyle = 0;
     bool power = true;
     int root = 2, mood = 0, quality = 1;
     int planet = 0;                 // dsp::PlanetType
@@ -193,6 +197,9 @@ private:
     float duckGain = 1;
     float endGain = 1;
     float arrangedIntensity(const EngineControls& controls) const;
+    // The world's drama tier for the shared harmony, latched on the four-bar lines.
+    int harmony = 0;
+    int64_t harmonyLine = INT64_MIN;
     uint64_t clock = 0;   // absolute position of the next chunk to render
     uint64_t stream = 0;  // samples ever rendered into the FIFO (the keyboard's timeline; never jumps)
     keys::Live live;

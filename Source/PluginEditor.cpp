@@ -22,6 +22,7 @@ constexpr std::array<Group, 4> groups { {
 
 const char* tooltipFor(int p) {
     switch (p) {
+        case PDrama: return "Drama: how far the top of Score Intensity changes gear, as game music does when a fight starts - Calm, Tension, Action, Climax: driving ostinatos, war drums, stabs, swells and impacts themed by each Place. 0% is the Classic score (projects from before it open there).";
         case PIntensity: return "Score Intensity: every active Place at once, from a calm bed (0%) through the Places as set (50%) to a climax (100%): busier, tenser, brighter and louder. Automate it to shape a cue.";
         case PTemperature: return "Frozen to scorching: singing ice and thin high wind, or crackling fire and lava in the key. Cold Places sound brighter.";
         case PWeather: return "Still to storm: wind and howling, drizzle to downpour, thunder (a tuned impact and swell). Storms push Places further away.";
@@ -98,6 +99,12 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     // Score Intensity: the big macro in the header, labelled by the editor.
     {
         auto& knob = addKnob(PIntensity);
+        knob.getProperties().set("compact", true);
+        knob.onValueChange = [this] { repaint(intensityLabel); };
+    }
+    // Drama: how far the top of Score Intensity changes gear (beside it in the header).
+    {
+        auto& knob = addKnob(PDrama);
         knob.getProperties().set("compact", true);
         knob.onValueChange = [this] { repaint(intensityLabel); };
     }
@@ -250,6 +257,9 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     setupCombo(quality, PQuality, qualityAttachment);
     setupCombo(playMode, PPlayMode, playModeAttachment);
     setupCombo(placeOuts, PPlaceOuts, placeOutsAttachment);
+    setupCombo(dramaStyle, PDramaStyle, dramaStyleAttachment);
+    dramaStyle.setTooltip("Drama Style: the feel of the Drama tier - Auto (each Place's own), Driving (battle, chase), Epic (big and slow, choir and "
+                          "brass), Tragic (slow strings and piano), Triumphant (a march, brass), Suspense (pulses and a heartbeat).");
     placeOuts.setTooltip("Place outputs (Logic's multi-output instrument): each Place slot also plays on its own stereo output. "
                          "Copy: the main output keeps the full mix. Split: a Place with its own output leaves the main mix "
                          "(its reverb and delay returns stay on the main). GarageBand has only the main output, which always "
@@ -340,6 +350,13 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
     };
     sceneMenu.onClick = [this] { showSceneMenu(); };
     inspireToggle.onClick = [this] { inspire(); };
+    // INSPIRE's mood: what the scene it builds should feel like.
+    for (int m = 0; m < scenes::InspireMoodCount; ++m) inspireMood.addItem(scenes::inspireMoodNames[std::size_t(m)], m + 1);
+    inspireMood.setSelectedId(processor.inspireMood() + 1, juce::dontSendNotification);
+    inspireMood.setTooltip("INSPIRE's mood: Any (often a dramatic one), Calm, Adventure, Mystery, Tension, Battle (driving drums and ostinatos, "
+                           "minor), Epic (big and slow, choir and brass), Tragic (slow strings and piano), Triumphant (brass, major).");
+    inspireMood.onChange = [this] { processor.setInspireMood(inspireMood.getSelectedId() - 1); };
+    addAndMakeVisible(inspireMood);
     sceneUndo.onClick = [this] { undoScene(); };
     for (auto* b : { &scenePrev, &sceneNext, &sceneMenu, &inspireToggle, &sceneUndo }) addAndMakeVisible(*b);
     // Instrument mode: WORLD (everything) or INSTRUMENT (one instrument played from the
@@ -690,7 +707,9 @@ void WorldbuilderEditor::resized() {
         const auto block = header.withRight(power.getX() - 18).withLeft(power.getX() - 18 - 166);
         knobFor[std::size_t(PIntensity)]->setBounds(block.withLeft(block.getRight() - 46).withSizeKeepingCentre(46, 46));
         intensityLabel = block.withRight(block.getRight() - 50).withSizeKeepingCentre(116, 30);
-        arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 10 - 92, header.getCentreY() - 13, 92, 26));
+        // Drama, left of the intensity's label (its own label under the knob's value).
+        knobFor[std::size_t(PDrama)]->setBounds(juce::Rectangle<int>(intensityLabel.getX() - 40, header.getCentreY() - 17, 34, 34));
+        arrangeToggle.setBounds(juce::Rectangle<int>(intensityLabel.getX() - 44 - 10 - 92, header.getCentreY() - 13, 92, 26));
         arrangementState.setBounds(juce::Rectangle<int>(arrangeToggle.getX() - 4 - 122, header.getCentreY() - 13, 122, 26));
         // WORLD / INSTRUMENT, stacked, right of the title.
         modeArea = juce::Rectangle<int>(headerTitle.getRight() + 8, header.getCentreY() - 21, 80, 42);
@@ -701,6 +720,8 @@ void WorldbuilderEditor::resized() {
         sceneUndo.setBounds(row.removeFromRight(54));
         row.removeFromRight(4);
         inspireToggle.setBounds(row.removeFromRight(74));
+        row.removeFromRight(4);
+        inspireMood.setBounds(row.removeFromRight(100));
         row.removeFromRight(10);
         scenePrev.setBounds(row.removeFromLeft(24));
         sceneNext.setBounds(row.removeFromRight(24));
@@ -839,6 +860,9 @@ void WorldbuilderEditor::resized() {
         overlayChoice.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
         column.removeFromTop(4);
         placeOuts.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
+        f.removeFromLeft(10);
+        auto second = f.removeFromLeft(104);
+        dramaStyle.setBounds(second.removeFromTop(40).withTrimmedTop(16).withHeight(22));
     }
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })
@@ -958,8 +982,14 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
     }
     if (g.clipRegionIntersects(intensityLabel)) {
         pixel::drawText(g, "SCORE INTENSITY", intensityLabel.withHeight(15), p.heading, juce::Justification::centredRight, pixel::Font::Small);
-        pixel::drawText(g, juce::String(juce::roundToInt(param(PIntensity) * 100.0f)) + "%", intensityLabel.withTrimmedTop(15), p.accent,
-                        juce::Justification::centredRight, pixel::Font::Large);
+        // The Drama tier the world is in (with Drama above 0), beside the value.
+        const float dramaAmount = param(PDrama);
+        const int tier = drama::tierFor(drama::amountFor(param(PIntensity), 0.5f, dramaAmount));
+        const juce::String value = juce::String(juce::roundToInt(param(PIntensity) * 100.0f)) + "%";
+        pixel::drawText(g, value, intensityLabel.withTrimmedTop(15), p.accent, juce::Justification::centredRight, pixel::Font::Large);
+        pixel::drawText(g, dramaAmount > 0.0f ? juce::String(drama::tierNames[std::size_t(tier)]).toUpperCase() : juce::String("CLASSIC"),
+                        intensityLabel.withTrimmedTop(15).withTrimmedRight(46), tier >= drama::Action ? p.warn : p.heading,
+                        juce::Justification::centredRight, pixel::Font::Small);
     }
     {
         // A dotted rule under the header.
@@ -1007,7 +1037,8 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
 
     for (auto [component, text] : { std::pair<juce::Component*, const char*> { &root, "ROOT" }, { &mood, "MOOD" },
                                     { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" },
-                                    { &overlayChoice, "OVERLAYS" }, { &placeOuts, "PLACE OUTPUTS" }, { &uiSize, "UI SIZE" } })
+                                    { &overlayChoice, "OVERLAYS" }, { &placeOuts, "PLACE OUTPUTS" }, { &uiSize, "UI SIZE" },
+                                    { &dramaStyle, "DRAMA STYLE" } })
         if (const auto label = component->getBounds().translated(0, -16).withHeight(14); g.clipRegionIntersects(label))
             pixel::drawText(g, text, label, p.heading, juce::Justification::centredLeft, pixel::Font::Small);
     if (const auto tempo = uiSize.getBounds().translated(uiSize.getWidth() + 10, 0).withWidth(80); g.clipRegionIntersects(tempo))

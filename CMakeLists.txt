@@ -48,7 +48,7 @@ target_sources(WORLDBUILDER PRIVATE
     Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/WorldEngine.cpp
     Source/DSP/AirLayer.cpp Source/DSP/WaterLayer.cpp Source/DSP/FireLayer.cpp Source/DSP/EarthLayer.cpp
     Source/DSP/ThunderLayer.cpp Source/DSP/TonalBed.cpp Source/DSP/WorldSpace.cpp
-    Source/Places/PlaceSlot.cpp Source/Places/Ensemble.cpp Source/Places/Castle.cpp Source/Places/Village.cpp Source/Places/Spaceport.cpp
+    Source/Places/PlaceSlot.cpp Source/Places/Ensemble.cpp Source/Places/Drama.cpp Source/Places/Castle.cpp Source/Places/Village.cpp Source/Places/Spaceport.cpp
     Source/Places/Factory.cpp Source/Places/City.cpp Source/Places/Forest.cpp Source/Places/Hive.cpp Source/Places/Temple.cpp Source/Places/Cavern.cpp
     Source/Places/Ruins.cpp Source/Places/Spaceship.cpp Source/Places/Biodome.cpp Source/Places/SeaShip.cpp Source/Places/Suburbs.cpp
     Source/Places/Mall.cpp Source/Places/Military.cpp Source/Places/Beach.cpp Source/Places/Desert.cpp Source/Places/Palace.cpp Source/Places/Tavern.cpp

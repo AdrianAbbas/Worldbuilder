@@ -95,6 +95,9 @@ public:
     bool loadFactoryScene(int index);
     // Inspire: moves the World Seed on and builds a random, musical scene from it.
     void inspire();
+    // INSPIRE's mood (scenes::InspireMood; saved with the project's interface settings).
+    int inspireMood() const { return juce::jlimit(0, int(wb::scenes::InspireMoodCount) - 1, int(parameters.state.getProperty("inspiremood", 0))); }
+    void setInspireMood(int mood) { parameters.state.setProperty("inspiremood", juce::jlimit(0, int(wb::scenes::InspireMoodCount) - 1, mood), nullptr); }
     bool undoScene();
     bool canUndoScene() const { return !sceneUndo.isEmpty(); }
     // The name of the scene loaded last (empty: none, or the world was edited since...

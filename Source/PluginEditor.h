@@ -90,6 +90,7 @@ public:
     void inspire();
     void undoScene();
     juce::Button& inspireButton() { return inspireToggle; }
+    juce::ComboBox& inspireMoodChoice() { return inspireMood; }
     juce::Button& sceneUndoButton() { return sceneUndo; }
     juce::Button& sceneNameButton() { return sceneMenu; }
     juce::Button& scenePrevButton() { return scenePrev; }
@@ -227,6 +228,8 @@ private:
     std::vector<juce::Component::SafePointer<juce::Component>> hiddenForInstrument;
     void refreshArrangementState();
     juce::TextButton scenePrev { "<" }, sceneNext { ">" }, sceneMenu, inspireToggle { "INSPIRE" }, sceneUndo { "UNDO" };
+    juce::ComboBox inspireMood, dramaStyle;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> dramaStyleAttachment;
     // After a scene loads: the strips, the panels and the ARRANGE view show it.
     void sceneChanged();
     void showSceneMenu();

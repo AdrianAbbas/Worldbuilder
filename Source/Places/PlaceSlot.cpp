@@ -25,6 +25,7 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     arrangeDown = 1.0f / (0.25f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
     fx.prepare(rate);
+    dramaLayer.prepare(rate);
     for (auto& f : fullness) f.setCutoff(260.0f, rate);
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.setCutoff(900.0f, rate);
@@ -42,6 +43,7 @@ void PlaceSlot::reset() {
     for (auto& f : dcBlock) f.reset();
     for (auto& f : fullness) f.reset();
     fx.reset();
+    dramaLayer.reset();
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.reset();
     fresh = true;
@@ -316,6 +318,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         seedKey = key;
         seeded = true;
         current->setSeed(key);
+        dramaLayer.setSeed(key);
     }
 
     // Settings, smoothed at control rate. An element's mute and solo (set in the
@@ -390,7 +393,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     context.beatsPerSample = double(context.bpm) / 60.0 / double(rate);
     if (!c.sync) freeBeat += context.beatsPerSample * double(n);
     // Harmony always follows the shared clock, so free and synced Places agree.
-    context.chord = music::chordDegree(hostBeat, world[Danger]);
+    context.chord = music::chordDegree(hostBeat, world[Danger], world.harmony, world.mood);
 
     // Patterns: the composer's, or generated from the seed and the settings.
     updatePatterns(target, world.mood, patterns, variants, c.keysArmed ? keysElement : -1);
@@ -431,6 +434,13 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     fx.begin(c.fx, n);
     context.fx = &fx;
     current->render(context, left, right, n);
+    // The Drama layer (only while a tier above Calm plays, or its tails ring; never in
+    // Instrument mode or for the keyboard alone).
+    if ((c.drama.drama > 0.0f || dramaLayer.active()) && !c.instrument) {
+        const float tension = clamp01(c.tension + 0.6f * (world[Danger] - 0.2f));
+        dramaLayer.render(currentType, world, c.drama, tension, context.beat, context.beatsPerSample, c.sync, !c.ringOut && !c.keysOnly, clock, left,
+                          right, n);
+    }
     // The sends darken with distance too (the dry sound has its own distance filter).
     tiltSends(settings.tone, distance.value, n);
 

@@ -464,7 +464,7 @@ protected:
                 x.element = e;
                 x.event = ev;
                 // Synced Places take the chord at the note itself; free ones the current chord.
-                x.chord = c.s.sync ? music::chordDegree(ev.beat, danger) : c.chord;
+                x.chord = c.s.sync ? music::chordDegree(ev.beat, danger, c.world->harmony, c.world->mood) : c.chord;
                 out[std::size_t(count++)] = x;
             });
         }
