@@ -90,6 +90,10 @@ Host busyPlaces(int type) {
         st.set(slotId(slot, PlSeed), float(1 + slot));
         st.set(slotId(slot, PlActivity), 1.0f);
     }
+    // WB_BENCH_INTENSITY: Score Intensity (the Drama tier: 1 plays every Place at Climax).
+    if (const char* x = std::getenv("WB_BENCH_INTENSITY")) st.set("intensity", float(std::atof(x)));
+    // WB_BENCH_DRAMAMASK: the Drama layer's parts that play (a bit per drama::Layer::PartId).
+    if (const char* m = std::getenv("WB_BENCH_DRAMAMASK")) drama::Layer::partMask = uint32_t(std::strtoul(m, nullptr, 0));
     return st;
 }
 
@@ -367,6 +371,33 @@ int renders(const juce::String& dir) {
     return 0;
 }
 
+// Scenes: each factory scene played in Arrangement mode for 40 s from its start (raw
+// floats), to compare builds sample for sample.
+int sceneRenders(const juce::String& dir) {
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    juce::File out(dir);
+    out.createDirectory();
+    for (int i = 0; i < scenes::factoryCount(); ++i) {
+        Host h(48000, 512);
+        h.p->loadScene(scenes::factory(i));
+        h.set("playmode", float(PlayArrangement));
+        h.playHead.playing = true;
+        h.playHead.position = 0;
+        const auto a = h.render(40.0);
+        juce::FileOutputStream f(out.getChildFile(juce::String(i) + ".f32"));
+        f.setPosition(0);
+        f.truncate();
+        for (std::size_t k = 0; k < a.l.size(); ++k) {
+            f.writeFloat(a.l[k]);
+            f.writeFloat(a.r[k]);
+        }
+        std::printf("scene %d %s\n", i, scenes::factory(i).name.c_str());
+        std::fflush(stdout);
+    }
+    return 0;
+}
+
 } // namespace bench
 
 int main(int argc, char** argv) {
@@ -386,6 +417,7 @@ int main(int argc, char** argv) {
     if (mode == "count") return bench::count();
     if (mode == "editor") return bench::editor(arg.isNotEmpty() ? arg.getDoubleValue() : 4.0);
     if (mode == "renders") return bench::renders(arg.isNotEmpty() ? arg : "renders");
+    if (mode == "scenes") return bench::sceneRenders(arg.isNotEmpty() ? arg : "scenes");
     std::fprintf(stderr, "usage: WorldbuilderBench audio [repeats] | load | editor [seconds] | renders <dir>\n");
     return 2;
 }

@@ -29,6 +29,7 @@
 #include <set>
 #include "UI/RepaintLog.h"
 #include <algorithm>
+#include <cctype>
 #include <string>
 #include <vector>
 
@@ -2706,6 +2707,11 @@ int renderToFile(const juce::String& path, double seconds, const juce::StringArr
     Host h(48000, 512);
     for (const auto& setting : settings) {
         const auto id = setting.upToFirstOccurrenceOf("=", false, false), value = setting.fromFirstOccurrenceOf("=", false, false);
+        // The Drama layer's parts that sound (a balance probe; a bit per drama::Layer::PartId).
+        if (id == "dramamask") {
+            drama::Layer::partMask = uint32_t(value.getLargeIntValue());
+            continue;
+        }
         if (h.p->parameters.getParameter(id) == nullptr) {
             std::cout << "unknown parameter " << id << "\n";
             return 1;
@@ -3416,6 +3422,8 @@ Host intensityWorld(const std::vector<int>& types, float intensity) {
             for (int f = 0; f < FxFieldCount; ++f) h.set(fxId(slot, e, f), instrumentFxDefault(types[k], e, f));
     }
     h.set("intensity", intensity);
+    // The Classic score: these are its rules (the Drama tier's own are in the "drama" group).
+    h.set("drama", 0.0f);
     return h;
 }
 
@@ -4537,6 +4545,9 @@ void testArrangement(Suite& s) {
         b.count = 2;
         j.p->arrangement.set(b);
         j.set("p2_type", float(Megacity));
+        // The glide on the Classic score (into a Climax the Drama tier lands with an
+        // impact on purpose: the "drama" group checks that).
+        j.set("drama", 0.0f);
         play(j);
         const auto audio = j.render(7.0);
         const auto env = envelopeDb(audio, 0.02, 1.0);
@@ -5189,8 +5200,10 @@ void testGameAudio(Suite& s) {
         s.check(measure(rendered, 15.98).rmsDb < -60.0, "and ends faded out (End: stop)", fmt(measure(rendered, 15.98).rmsDb) + " dB in the last 20 ms");
     }
     {
-        // With section Locations: the journeys render as they play.
+        // With section Locations: the journeys render as they play. (On the Classic score: the
+        // Drama tier's drums would cover the journey's change of climate.)
         Host h;
+        h.set("drama", 0.0f);
         h.set("temperature", 0.1f);
         h.p->saveLocation(0);
         h.set("temperature", 0.9f);
@@ -5211,6 +5224,7 @@ void testGameAudio(Suite& s) {
         double worst = 0;
         for (std::size_t i = 0; i < rendered.l.size(); ++i) worst = std::max(worst, double(std::abs(rendered.l[i] - played.l[i])));
         Host plain;
+        plain.set("drama", 0.0f);
         plain.p->arrangement.set(three());
         plain.render(0.05);
         auto plainScene = plain.p->captureScene();
@@ -5236,8 +5250,10 @@ void testGameAudio(Suite& s) {
         s.check(stingers.size() == 4 && stingers[1].name == "Tavern_B_Stinger" && stingers[1].kind == capture::GameFile::Stinger, "and stingers");
     }
     {
-        // Exploration-loop style: Intro 2, Loop 2 bars played twice, Outro 2.
+        // Exploration-loop style: Intro 2, Loop 2 bars played twice, Outro 2. (The seam on the
+        // Classic score; the "drama" group checks a loop with the Drama tier's downbeats.)
         Host h;
+        h.set("drama", 0.0f);
         arr::Arrangement a;
         a.sections[0] = arr::makeSection("Intro", 2, 0, 0.3f);
         a.sections[1] = arr::makeSection("Loop", 2, 1, 0.6f);
@@ -9401,6 +9417,7 @@ void testSamples(Suite& s) {
 }
 
 #include "RecordingsTests.inc"
+#include "DramaTests.inc"
 
 
 int main(int argc, char** argv) {
@@ -9511,6 +9528,7 @@ int main(int argc, char** argv) {
     if (only.contains("recaudit")) auditRecordings();
     if (run("recordings")) testRecordings(s);
     if (run("slide")) testSlide(s);
+    if (run("drama")) testDrama(s);
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

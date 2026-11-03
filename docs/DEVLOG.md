@@ -6766,3 +6766,69 @@ roughly. The voice sampler and the banjo are still the costliest parts Milestone
 (the Temple +56 % in instructions over `ccce3e3`); the rest of their cost is the sound
 itself (each sung note reads up to nine recordings, the banjo's body and sympathetic
 strings).
+
+## The Drama tier (2026-11-03)
+
+The developer's request: WORLDBUILDER is too passive; it should be able to be genuinely
+dramatic on its own (battle, chase, tension, epic, tragic, triumphant) from Inspire, the
+scenes and the arrangement, not only from instruments played. Keep everything that works
+for calm music and add the range on top: (1) drama tiers per Place (Calm, Tension,
+Action, Climax: driving rhythm, big percussion, darker harmony, hits and swells); (2) a
+Drama layer themed per Place (architecture decided and recorded here; existing sessions
+and scenes open and sound exactly as before); (3) Inspire with a mood; (4) at least 15
+dramatic factory scenes; within the performance pass's CPU budget (the drama tier costs
+CPU only while it plays). A resumed session continues from the first unticked line.
+
+### Progress checklist
+
+- [x] 1. Architecture and parameters: `Drama` and `Drama Style` (old projects and the 24 older scenes load at Drama 0), the harmony's gears (`music::chordDegree` with the world's tier, latched on four-bar lines)
+- [x] 1. The Drama layer (`Source/Places/Drama.{h,cpp}`): 26 Place themes, tiers latched on bar lines, drums / ostinato / stabs / swells / impacts, gear changes, arrangement stingers; asleep (no CPU) at Calm
+- [x] 2. The arrangement: a section's Drama tier (saved; ARRANGE's DRAMA menu), `arr::dramatize` (arcs and transitions), four dramatic templates (Chase, Siege, Final Stand, Lament); Auto-arrange builds arcs when Drama is above 0
+- [x] 3. Inspire's mood (next to INSPIRE: Any, Calm, Adventure, Mystery, Tension, Battle, Epic, Tragic, Triumphant), Any dramatic about three times in five
+- [x] 4. 17 dramatic factory scenes
+- [ ] Balance and the `drama` tests (every Place Calm / Action / Climax measured, moods measured, level-matched, old sessions unchanged); listening renders
+- [ ] Existing suite: the checks of the Classic score run on it (named), the rest unchanged; bench (CPU at Climax, renders bit for bit at Drama 0 against the commit before)
+- [ ] DEVLOG results, README, handoff; push; CI green
+
+### The architecture (decision)
+
+**A shared, Place-themed Drama layer per slot, not more instruments per Place.** Each of
+the four Place slots owns one `drama::Layer`, which plays on top of the slot's Place
+(before the slot's level, distance and pan, so it sits where the Place sits). What it
+plays comes from a table, one `drama::Theme` per Place: which kit (war drums: the large
+djembe pitched down; tribal hand drums; metal and pistons; hybrid electronic hits; a
+march), which ostinato (spiccato strings from the violin recordings, the Minilogue's
+pulse or static bass, the guitar, the piano), which two hit instruments (brass, the
+developer's voice as a choir, low piano strikes, braams from the Minilogue's harsh
+square, cyberpunk synth stabs, metal) and its default style.
+
+Why not six (or eight) instruments more per Place: every instrument is a host parameter
+set (level, switch, the effects fields: 4 slots x 2 x 25), a Pattern Editor tab, an
+ARRANGE row and a saved pattern per variant. Growing `placeElements` would change the
+host parameter list, the session format and every Place's code, and an old session
+could only stay identical by special-casing all of it. The shared layer adds two host
+parameters, one saved field per arrangement section, and touches no Place: with Drama 0
+the layer is never built into the sound (it returns before doing anything), the shared
+harmony is the old one, so a session or scene from before plays bit for bit as before.
+
+How it is used:
+- **Score Intensity and Tension** drive it: above the middle of Score Intensity the drama
+  amount x climbs (the Place's Tension with Danger pushes it further near the top); the
+  tier is Tension from x 0.1, Action from 0.45, Climax from 0.78 (Score Intensity about
+  55 %, 72 %, 89 % at the default Tension). At or below the middle nothing changes.
+- **The arrangement**: a section can set its own tier (ARRANGE, DRAMA: as intensity, Calm,
+  Tension, Action, Climax); its transitions get drama sounds (a drum roll and a cymbal
+  swell into a Riser or Drum fill, impact, crash and stabs on the downbeat after a Riser,
+  Drum fill, Drop or Reverse swell; silence through a Drop).
+- **The harmony** changes gear with the world's tier (latched on four-bar lines so no
+  chord is cut short): Tension holds a tonic pedal; Action moves twice as fast and rises
+  into the tonic (minor i i VI VII, major I I IV V); Climax keeps the pace on wider steps
+  (i VI III VII / I V vi IV). A gear change into the Climax lands on the chromatic
+  mediant (a major triad a minor sixth up) as an epic shift.
+- **Pattern Editor and KEYS**: not in this pass. The layer's notes are written by the
+  tier, the style and the Place (deterministic from the song position and seed), not by
+  editable patterns; the Pattern Editor and KEYS keep the six instruments. Making the
+  layer's parts editable or playable would need a seventh "instrument" through the editor,
+  KEYS and the recorder: a follow-up if wanted.
+- **Several Places**: the first active slot leads (drums, ostinato, hits); the second plays
+  ostinato and hits; the others hits only, quieter, so four Places never stack four kits.
