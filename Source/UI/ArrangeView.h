@@ -68,6 +68,7 @@ public:
     void setTransition(int kind, int length);
     void setLocation(int location);
     void setPlanet(int planet);
+    void setDrama(int tier);
     void setWorldOverride(int control, int percent);
     // Previews from a section (the PREVIEW button; also used by the tests).
     void startPreview(int section);
@@ -123,7 +124,7 @@ private:
     juce::TextButton undoButton { "UNDO" }, redoButton { "REDO" }, back { "BACK" };
     juce::ToggleButton previewButton { "PREVIEW" };
     juce::ComboBox endChoice, nameChoice, repeatsChoice, curveChoice;
-    juce::ComboBox templateChoice, transitionChoice, transitionLengthChoice, locationChoice, planetChoice;
+    juce::ComboBox templateChoice, transitionChoice, transitionLengthChoice, locationChoice, planetChoice, dramaChoice;
     juce::TextButton autoButton { "AUTO-ARRANGE" }, worldButton { "WORLD" };
     uint32_t shownLocations = 0;
     juce::Slider lengthSlider, startSlider, endSlider;

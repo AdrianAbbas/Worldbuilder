@@ -133,6 +133,9 @@ struct Section {
     uint8_t transition = TransCut, transitionLength = 1;
     int8_t location = -1, planet = -1;
     std::array<int8_t, WorldControlCount> world { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    // The Drama tier (after the performance pass): the section's tier (drama::Tier: Calm,
+    // Tension, Action, Climax) or -1, as its Score Intensity says.
+    int8_t drama = -1;
 
     void setName(const char* text) {
         name.fill(0);
@@ -146,7 +149,7 @@ struct Section {
         return std::strncmp(name.data(), o.name.data(), std::size_t(nameLength)) == 0 && colour == o.colour && bars == o.bars
                && repeats == o.repeats && curve == o.curve && intensityStart == o.intensityStart && intensityEnd == o.intensityEnd
                && cells == o.cells && transition == o.transition && transitionLength == o.transitionLength && location == o.location
-               && planet == o.planet && world == o.world;
+               && planet == o.planet && world == o.world && drama == o.drama;
     }
 };
 
@@ -216,6 +219,7 @@ struct State {
     // Overrides while the section plays.
     int planet = -1;
     std::array<float, WorldControlCount> world {};   // < 0: as set
+    int drama = -1;   // the section's Drama tier (-1: from Score Intensity)
 };
 
 struct Arrangement {
@@ -359,6 +363,7 @@ struct Arrangement {
         const float t = float(std::clamp(st.at.bar / bars, 0.0, 1.0));
         st.intensity = intensityAt(s, st.at.ended ? 1.0f : t);
         st.planet = s.planet;
+        st.drama = s.drama;
         for (int w = 0; w < WorldControlCount; ++w)
             if (s.world[std::size_t(w)] >= 0) st.world[std::size_t(w)] = float(std::min<int>(s.world[std::size_t(w)], 100)) / 100.0f;
         // The transition that led here: on the first pass, from the section before it.

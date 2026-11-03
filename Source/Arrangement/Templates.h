@@ -17,9 +17,11 @@
 
 namespace wb::arr {
 
-enum Template { ClassicArc, ExplorationLoop, Battle, BossFight, TownTheme, CinematicReveal, TemplateCount };
+enum Template { ClassicArc, ExplorationLoop, Battle, BossFight, TownTheme, CinematicReveal,
+                // The Drama tier (after the performance pass): dramatic cues with arcs.
+                Chase, Siege, FinalStand, Lament, TemplateCount };
 inline constexpr std::array<const char*, TemplateCount> templateNames { "Classic Arc", "Exploration Loop", "Battle", "Boss Fight", "Town Theme",
-                                                                        "Cinematic Reveal" };
+                                                                        "Cinematic Reveal", "Chase", "Siege", "Final Stand", "Lament" };
 
 // An instrument's role in its Place, in the order instruments enter a build-up.
 enum Role { RoleBed, RoleTexture, RoleBass, RoleRhythm, RoleMelody, RoleAccent, RoleCount };
@@ -52,6 +54,15 @@ struct ClipSource {
     int scaleSize = 7;   // notes per octave of the current Mood
 };
 Arrangement autoArrange(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& clips);
+// The Drama tier (after the performance pass): an arrangement's arcs. Each section gets
+// its tier (intros and breaks calm, build-ups at Tension, the first climax at Action and
+// the later ones (or one after a build-up) at Climax, wind-downs back to Tension or
+// Calm), its Score Intensity to match, and the transitions a game score changes gear
+// with: a Riser from a build-up into a climax, a Drop from a climax into a break, a Drum
+// fill from a break back into the fight, a Drop between two climaxes. Applied by
+// Auto-arrange when Drama is above 0, and by the dramatic scenes and Inspire.
+void dramatize(Arrangement& a, uint32_t seed);
+
 // One section's clip shaped for its kind (`role`: the instrument's role; `kit`: a drum
 // part; `runOut`: write a run into the next section in the last bar). Public for the tests.
 void shapeClip(pat::Clip& c, int kind, int role, bool kit, int scaleSize, uint64_t key, bool runOut);

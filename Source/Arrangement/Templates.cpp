@@ -123,6 +123,22 @@ Arrangement makeTemplate(int which) {
         case CinematicReveal:
             list = { templateSection("Mystery", 16), templateSection("Rise", 16), templateSection("Reveal", 8), templateSection("Afterglow", 16) };
             break;
+        case Chase:
+            list = { templateSection("Intro", 4), templateSection("Build", 8), templateSection("Chase", 16), templateSection("Break", 4),
+                     templateSection("Build", 4), templateSection("Chase II", 16), templateSection("Outro", 4) };
+            break;
+        case Siege:
+            list = { templateSection("Approach", 8), templateSection("Tension", 8), templateSection("Battle", 16), templateSection("Break", 8),
+                     templateSection("Rising", 8), templateSection("Climax", 16), templateSection("Aftermath", 8) };
+            break;
+        case FinalStand:
+            list = { templateSection("Intro", 8), templateSection("Build", 8), templateSection("Battle", 16), templateSection("Break", 4),
+                     templateSection("Battle II", 16), templateSection("Climax", 8), templateSection("Victory", 8) };
+            break;
+        case Lament:
+            list = { templateSection("Intro", 8), templateSection("Theme", 16), templateSection("Rise", 8), templateSection("Climax", 8),
+                     templateSection("Wind-down", 8), templateSection("Outro", 8) };
+            break;
         default: break;
     }
     for (const auto& s : list) a.sections[std::size_t(a.count++)] = s;
@@ -316,6 +332,85 @@ Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>
         s.transitionLength = length;
     }
     return a;
+}
+
+//==============================================================================
+// The Drama tier: arcs.
+
+void dramatize(Arrangement& a, uint32_t seed) {
+    const Dice dice { seed ^ 0xD4A3u };
+    std::array<int, maxSections> kinds {};
+    for (int i = 0; i < a.count; ++i) kinds[std::size_t(i)] = kindOf(a, i);
+    int peaks = 0;
+    for (int i = 0; i < a.count; ++i) {
+        auto& s = a.sections[std::size_t(i)];
+        const int kind = kinds[std::size_t(i)];
+        const int prevKind = i > 0 ? kinds[std::size_t(i - 1)] : -1;
+        switch (kind) {
+            case KindIntro: s.drama = int8_t(drama::Calm); break;
+            case KindBuild:
+                // A build-up after a break climbs back from Tension into the fight.
+                s.drama = int8_t(drama::Tension);
+                s.intensityStart = 0.56f;
+                s.intensityEnd = 0.72f;
+                break;
+            case KindPeak: {
+                // The first climax drives (Action), the later ones (and one a build-up
+                // has led into) go all the way.
+                const bool top = peaks > 0 || prevKind == KindBuild;
+                s.drama = int8_t(top ? drama::Climax : drama::Action);
+                s.intensityStart = top ? 0.9f : 0.78f;
+                s.intensityEnd = top ? 1.0f : 0.88f;
+                s.curve = CurveLinear;
+                ++peaks;
+                break;
+            }
+            case KindBreak:
+                s.drama = int8_t(drama::Calm);
+                s.intensityStart = s.intensityEnd = 0.4f;
+                break;
+            case KindCalm: s.drama = int8_t(drama::Tension); break;
+            case KindOutro: s.drama = int8_t(drama::Calm); break;
+            case KindLoop: s.drama = int8_t(drama::Tension); break;
+            case KindBridge: s.drama = int8_t(drama::Tension); break;
+            default: break;
+        }
+    }
+    // The transitions a score changes gear with.
+    for (int i = 0; i < a.count; ++i) {
+        auto& s = a.sections[std::size_t(i)];
+        const int next = a.nextOf(i);
+        if (next < 0 || next == i) continue;
+        const int kind = kinds[std::size_t(i)], nextKind = kinds[std::size_t(next)];
+        const int tier = s.drama, nextTier = a.sections[std::size_t(next)].drama;
+        uint8_t t = s.transition, length = s.transitionLength;
+        if (nextKind == KindPeak && kind != KindPeak) {
+            // Into the fight: a Riser out of a build-up, a Drum fill out of a break or a calm.
+            if (kind == KindBuild || kind == KindIntro) {
+                t = TransRiser;
+                length = 2;
+            } else {
+                t = TransDrumFill;
+                length = 1;
+            }
+        } else if (kind == KindPeak && nextKind == KindPeak) {
+            t = TransDrop;
+            length = 2;
+        } else if (kind == KindPeak && (nextKind == KindBreak || nextKind == KindBuild)) {
+            // The drop: the fight falls away for a beat or two before the next build.
+            t = TransDrop;
+            length = uint8_t(dice.coin(i, 7) ? 2 : 1);
+        } else if (kind == KindBreak && nextKind == KindBuild) {
+            t = TransCrossfade;
+            length = 1;
+        } else if (tier >= drama::Action && nextTier <= drama::Tension && nextKind != KindBreak) {
+            t = TransFilter;
+            length = 1;
+        }
+        length = uint8_t(std::min<int>(length, std::max(1, t == TransDrop ? 4 : int(s.bars))));
+        s.transition = t;
+        s.transitionLength = length;
+    }
 }
 
 //==============================================================================

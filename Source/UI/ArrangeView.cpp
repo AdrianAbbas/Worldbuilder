@@ -181,6 +181,16 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
         setPlanet(planetChoice.getSelectedId() - 2);
     };
     addAndMakeVisible(planetChoice);
+    // The Drama tier: the section's own (a game score's layers), or as its intensity says.
+    dramaChoice.addItem("As intensity", 1);
+    for (int i = 0; i < drama::TierCount; ++i) dramaChoice.addItem(drama::tierNames[std::size_t(i)], i + 2);
+    dramaChoice.setTooltip("The section's Drama tier (with Drama above 0): Calm, Tension, Action or Climax, each changing gear on its first downbeat; "
+                           "or as the section's Score Intensity says.");
+    dramaChoice.onChange = [this] {
+        if (updating) return;
+        setDrama(dramaChoice.getSelectedId() - 2);
+    };
+    addAndMakeVisible(dramaChoice);
     worldButton.setTooltip("World Control overrides for this section only (e.g. Danger up in the Combat).");
     worldButton.onClick = [this] { showWorldMenu(); };
     addAndMakeVisible(worldButton);
@@ -345,6 +355,10 @@ void ArrangeView::setLocation(int location) {
     edit([&](arr::Section& s) { s.location = int8_t(std::clamp(location, -1, locationCount - 1)); });
 }
 
+void ArrangeView::setDrama(int tier) {
+    edit([&](arr::Section& s) { s.drama = int8_t(std::clamp(tier, -1, drama::TierCount - 1)); });
+}
+
 void ArrangeView::setPlanet(int planet) {
     edit([&](arr::Section& s) { s.planet = int8_t(std::clamp(planet, -1, dsp::PlanetTypeCount - 1)); });
 }
@@ -397,7 +411,7 @@ void ArrangeView::refreshInspector() {
     const juce::ScopedValueSetter<bool> guard(updating, true);
     const bool any = selectedIndex >= 0 && selectedIndex < shown.count;
     for (auto* c : std::initializer_list<juce::Component*> { &nameChoice, &repeatsChoice, &curveChoice, &lengthSlider, &startSlider, &endSlider, &duplicateButton,
-                                                             &deleteButton, &transitionChoice, &transitionLengthChoice, &locationChoice, &planetChoice, &worldButton })
+                                                             &deleteButton, &transitionChoice, &transitionLengthChoice, &locationChoice, &planetChoice, &dramaChoice, &worldButton })
         c->setEnabled(any);
     autoButton.setEnabled(shown.count > 0);
     if (any) {
@@ -421,6 +435,7 @@ void ArrangeView::refreshInspector() {
         transitionLengthChoice.setEnabled(handover && s.transition != arr::TransCut);
         locationChoice.setSelectedId(s.location + 2, juce::dontSendNotification);
         planetChoice.setSelectedId(s.planet + 2, juce::dontSendNotification);
+        dramaChoice.setSelectedId(s.drama + 2, juce::dontSendNotification);
         int overrides = 0;
         for (auto w : s.world) overrides += w >= 0 ? 1 : 0;
         worldButton.setButtonText(overrides > 0 ? "WORLD (" + juce::String(overrides) + ")" : juce::String("WORLD"));
@@ -606,8 +621,9 @@ void ArrangeView::resized() {
         put(transitionChoice, 128);
         put(transitionLengthChoice, 84);
         u.removeFromLeft(10);
-        put(locationChoice, 160);
-        put(planetChoice, 116);
+        put(locationChoice, 140);
+        put(planetChoice, 110);
+        put(dramaChoice, 104);
         put(worldButton, std::max(70, std::min(110, u.getWidth() - 4)));
         const auto place = [&t](juce::Component& c, int w) {
             c.setBounds(t.removeFromLeft(w).reduced(2, 1));
@@ -675,6 +691,7 @@ void ArrangeView::paint(juce::Graphics& g) {
     above(transitionLengthChoice, "LENGTH");
     above(locationChoice, "LOCATION");
     above(planetChoice, "PLANET");
+    above(dramaChoice, "DRAMA");
     above(worldButton, "OVERRIDES");
     if (swatches[0].getWidth() > 0) {
         pixel::drawText(g, "COLOUR", swatches[0].translated(0, -13).withHeight(12).withWidth(80), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);

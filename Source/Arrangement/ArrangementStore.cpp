@@ -253,6 +253,7 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
         }
         if (s.location >= 0) x.setProperty("location", int(s.location), nullptr);
         if (s.planet >= 0) x.setProperty("planet", int(s.planet), nullptr);
+        if (s.drama >= 0) x.setProperty("drama", int(s.drama), nullptr);
         juce::StringArray world;
         bool overrides = false;
         for (auto w : s.world) {
@@ -297,6 +298,8 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.transitionLength = uint8_t(int(number(x, "transitionLength", 1, 1, float(maxTransitionLength))));
         s.location = int8_t(int(number(x, "location", -1, -1, 7)));
         s.planet = int8_t(int(number(x, "planet", -1, -1, float(dsp::PlanetTypeCount - 1))));
+        // The Drama tier (after the performance pass); older arrangements follow their intensity.
+        s.drama = int8_t(int(number(x, "drama", -1, -1, float(drama::TierCount - 1))));
         const auto world = juce::StringArray::fromTokens(x.getProperty("world").toString(), ",", "");
         for (int w = 0; w < world.size() && w < WorldControlCount; ++w) s.world[std::size_t(w)] = int8_t(juce::jlimit(-1, 100, world[w].getIntValue()));
         for (const auto& cx : x) {
