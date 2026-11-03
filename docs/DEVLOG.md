@@ -6788,7 +6788,7 @@ CPU only while it plays). A resumed session continues from the first unticked li
 - [x] 4. 17 dramatic factory scenes
 - [x] Balance and the `drama` tests (every Place Calm / Action / Climax measured, moods measured, level-matched, old sessions unchanged); listening renders
 - [x] Existing suite: the checks of the Classic score run on it (named), the rest unchanged; bench (CPU at Climax, renders bit for bit at Drama 0 against the commit before)
-- [ ] DEVLOG results, README, handoff; push; CI green
+- [x] DEVLOG results, README, handoff; push; CI green (run 41572501613)
 
 ### The architecture (decision)
 
@@ -6937,8 +6937,10 @@ which now says so and runs at Drama 0: the Score Intensity curve's loudness rule
 `intensity` group's worlds), a section change gliding without a spike, a journey heard in
 a render, a loop's seam (the `drama` group checks the Drama tier's own versions: no
 overshoot past the Climax's own level, a loop with the downbeats joining without a
-click); the templates' table has the four new ones. Full suite here
-(`scripts/run-tests-parallel.sh`, the drama group in the third shard): see the handoff.
+click); the templates' table has the four new ones. Full suite
+(`scripts/run-tests-parallel.sh`, the drama group in the third shard): 4682 passed, 0
+failed on CI (run 41572501613, the push of `949a9a8`); macOS (universal build, smoke tests
+on arm64 and x86_64, bundle checks, a quarantined install, auval and the AU harness) green.
 
 ### Drama tier handoff
 
