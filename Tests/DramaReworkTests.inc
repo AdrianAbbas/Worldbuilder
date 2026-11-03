@@ -620,52 +620,16 @@ void testDramaRework(Suite& s) {
     }
 }
 
-// Development aid (--only dramaprobe): Instrument mode on the Drama instruments.
-void probeDramaInstruments() {
-    for (int e : { int(DramaDrums), int(DramaOstinato), int(DramaHits) }) {
-        auto quiet = instTest::ihost(inst::Id { Castle, e }, false, false);
-        const auto q = quiet.render(2.0);
-        std::cout << "element " << e << " silent " << measure(q, 0.5).rmsDb << " dB, active " << quiet.p->engine.placeSlot(0).drama().active()
-                  << " started " << quiet.p->engine.placeSlot(0).drama().started() << " slot0 type " << quiet.p->engine.placeSlot(0).playingType() << "\n";
-        std::cout << "  from 0: " << measure(q, 0.0).rmsDb << "\n";
-        for (float root : { 0.0f, 6.0f }) {
-            auto r = instTest::ihost(inst::Id { Castle, e }, false, false);
-            r.set("root", root);
-            r.set("inst_drone", 0.0f);
-            r.render(0.1);
-            keysTest::note(r, 57, 100);
-            const auto heldR = r.render(1.5);
-            const auto pcR = chroma(heldR, 0.05, 40.0, 5000.0, 32768);
-            int bestR = 0;
-            for (int c = 1; c < 12; ++c)
-                if (pcR[std::size_t(c)] > pcR[std::size_t(bestR)]) bestR = c;
-            keysTest::off(r, 57);
-            r.render(5.0);
-            std::cout << "  root " << root << ": strongest " << bestR << ", after " << measure(r.render(1.0), 0.0).rmsDb << "\n";
-        }
-        auto h = instTest::ihost(inst::Id { Castle, e }, false, false);
-        h.render(0.1);
-        keysTest::note(h, 57, 100);
-        const auto held = h.render(1.5);
-        keysTest::off(h, 57);
-        h.render(4.0);
-        const auto after = h.render(1.0);
-        const auto pc = chroma(held, 0.05, 40.0, 5000.0, 32768);
-        int best = 0;
-        for (int c = 1; c < 12; ++c)
-            if (pc[std::size_t(c)] > pc[std::size_t(best)]) best = c;
-        std::cout << "  held " << measure(held, 0.0).rmsDb << " dB, after " << measure(after, 0.0).rmsDb << " dB, strongest class " << best << " started "
-                  << h.p->engine.placeSlot(0).drama().started() << "\n";
-    }
-}
 // Development aid (--only dramatrims): the Drama instruments' held levels (untrimmed).
 void probeDramaTrims() {
-    for (int e : { int(DramaDrums), int(DramaOstinato), int(DramaHits) }) {
-        std::vector<double> levels;
-        for (int t = NoPlace + 1; t < PlaceTypeCount; ++t) levels.push_back(instTest::heldLevel({ t, e }, false));
-        auto sorted = levels;
-        std::sort(sorted.begin(), sorted.end());
-        std::cout << "element " << e << " median " << sorted[sorted.size() / 2] << " min " << sorted.front() << " max " << sorted.back() << " trim "
-                  << std::round((-28.0 - sorted[sorted.size() / 2]) * 2.0) / 2.0 << "\n";
+    std::cout << "inline constexpr std::array<std::array<float, 3>, 27> dramaTrimDb { {\n    { 0, 0, 0 },\n";
+    for (int t = NoPlace + 1; t < PlaceTypeCount; ++t) {
+        std::cout << "    { ";
+        for (int e : { int(DramaDrums), int(DramaOstinato), int(DramaHits) }) {
+            const float trim = float(std::clamp(std::round((-28.0 - instTest::heldLevel({ t, e }, false)) * 2.0) / 2.0, -12.0, 12.0));
+            std::cout << juce::String(trim, 1) << (e < DramaHits ? "f, " : "f");
+        }
+        std::cout << " },   // " << placeNames[std::size_t(t)] << "\n";
     }
+    std::cout << "} };\n";
 }

@@ -222,7 +222,7 @@ the middle; at the very top of Tension the fifths rub a semitone and the stabs c
 Each Place has its own dramatic colour, from the developer's recordings: the **Castle**
 war drums (the large djembe pitched down), spiccato strings, a brass ostinato and choir
 stabs (the voice recordings); the **Spaceport** hybrid pulses, braams and synth stabs
-(the Minilogue), hybrid percussion; the **Forest** tribal drums and driving strings; the
+(the developer's analog synth), hybrid percussion; the **Forest** tribal drums and driving strings; the
 **Factory** metal percussion and pistons as the rhythm, a grinding bass; the **Ruins**
 low piano strikes, dissonant strings and distant drums; and so on for all 26. The first
 Place leads (drums, ostinato, hits), the second adds its ostinato and hits, the others
@@ -240,7 +240,54 @@ their hits only, so a world of four never stacks four drum kits.
   builds arcs: intros and breaks Calm, build-ups at Tension, the first fight at Action and
   the later ones at Climax, a Riser into a fight, a Drop out of it, a Drum fill back in.
   New templates: **Chase**, **Siege**, **Final Stand**, **Lament**.
-- The Drama layer costs no CPU while the world is Calm.
+- The Drama instruments cost no CPU while the world is Calm.
+
+### The Drama instruments
+
+Each Place slot has three **Drama instruments** beside its six: the **drums** (war,
+tribal, metal, hybrid or march, by Place), the **ostinato** (spiccato strings, a synth
+pulse, a pulse bass, plucked strings or a piano) and the **hits** (the Place's two stabs,
+an impact with a crash, a cymbal swell). They are instruments like the others:
+
+- **Pattern Editor**: three red tabs after the six. Their starting patterns are written by
+  the tier playing and the Drama Style (A the tier's own bars, **B** busier, **C** sparser,
+  the **Fill** a bar driving into the next section); edit them, draw, import MIDI, Generate
+  another take. An edited pattern plays as written from the Tension tier up.
+- **ARRANGE**: three rows under a red line in every Place: on or off and the variant per
+  section, a Fill, unique clips.
+- **KEYS**, the recorder and **Instrument mode** play them (e.g. "Castle -> War Drums").
+- Their **level**, switch (Place panel, right column; Pattern Editor), **mute / solo** and
+  **effects** (reverb, delay, character, tone, width) are host parameters, appended after
+  every older one (`p1_e7`..`p4_e9`), so existing automation is untouched.
+
+### Drama changes the arrangement
+
+In Play Mode Arrangement and the ARRANGE preview, each section's **gear** (its DRAMA tier,
+or its Score Intensity: the middle is neutral) offset by the **Drama** meter (100 %: as
+set, every 50 % less one tier lower) decides how the Place's own instruments play there:
+
+- **Calm** sections thin out: the accents and the rhythm leave, then the melody; the bass
+  plays its sparse variant.
+- **Action** and **Climax**: the instruments resting enter in the order of their role, the
+  rhythm section switches to its busier variant first, then the bass and the melody, fills
+  on the four-bar lines, at a climax the melody doubles an octave up and the bass down,
+  and the section is pushed harder (Score Intensity). The harmony and the Drama
+  instruments follow the section's tier.
+- At **Drama 0 %** the arrangement plays exactly as written (the Classic score). In Free
+  play the Place's own instruments change gear too (Action: the rhythm and bass busier;
+  Climax: the melody too, doubled).
+
+### Long, evolving sections
+
+The templates, **Auto** and Inspire now write scoring lengths: intros, breaks and endings
+8-16 bars, build-ups and wind-downs 16-32, the main sections (fights, chases, loops,
+themes, a boss's phases) 32-64; a section may be up to 128 bars. Each such section
+**evolves** (ARRANGE: right-click a section, *Evolve inside the section*): the instruments
+come in over its first bars in the order of their role, Score Intensity and the level
+rise across it (about 2 dB), the variants change on its 8-bar phrases (16 in sections of
+48 bars or more), small fills on the phrase lines; calm and closing sections thin out
+towards their end instead. Arrangements you made keep their lengths and do not evolve
+until you ask; **Auto** gives short sections their scoring length.
 
 ## Separate outputs in Logic Pro
 
