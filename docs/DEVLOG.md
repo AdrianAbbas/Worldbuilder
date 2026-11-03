@@ -7015,7 +7015,7 @@ the first unticked line.
 - [x] 4. Long sections: templates, Auto-arrange, Inspire and the dramatic scenes (the old scenes keep theirs)
 - [x] 5. The interface: Pattern Editor tabs, ARRANGE rows and Evolve, KEYS targets, Instrument mode, the Place panel
 - [x] 6. Tests (drama changes the arrangement; Drama instruments editable; old sessions and scenes bit for bit; template lengths; a 32-bar section rises), listening renders, bench
-- [ ] 7. DEVLOG results and handoff; final push; CI green
+- [x] 7. DEVLOG results and handoff; final push; CI green (run 41619788726: 5028 passed, macOS green)
 
 ### Decisions
 
@@ -7144,7 +7144,9 @@ asked for), and the three Drama instruments' own effect buses.
 
 Full suite (`scripts/run-tests-parallel.sh`): 5028 passed, 0 failed here; after the swell
 went from -2 to -2.5 dB the groups it touches (dramarework, drama, scenes, arrangement,
-clips, transitions, gameaudio) again: 424 passed, 0 failed.
+clips, transitions, gameaudio) again: 424 passed, 0 failed. On CI (run 41619788726, the
+push of `0a2a519`): 5028 passed, 0 failed; macOS (universal build, smoke tests on arm64
+and x86_64, bundle checks, a quarantined install, auval and the AU harness) green.
 
 ### Drama tier rework handoff
 
