@@ -5,10 +5,10 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**The Drama loudness pass is in progress** (drama more intense, not louder: loudness-matched
-tiers, gain staging of the hits, look-ahead safety on the Drama layer and the master):
-checklist in [The Drama loudness pass](#the-drama-loudness-pass-2026-11-04); a resumed
-session continues from the first unticked line.
+**The Drama loudness pass is done** (drama more intense, not louder: loudness-matched
+tiers, gain staging of the hits, look-ahead safety on the Drama layer, the master's true
+peak): checklist, decisions, results and handoff in
+[The Drama loudness pass](#the-drama-loudness-pass-2026-11-04).
 
 **The Drama tier rework is done** (drama changes the arrangement; the Drama
 instruments editable; long, evolving sections): checklist, decisions, results and handoff in
@@ -7218,12 +7218,9 @@ A resumed session continues from the first unticked line.
 - [x] 2. Gain staging: the hits and stingers (stabs, braams, piano strikes, impacts, crashes), their stacking on a downbeat, the Drama layer's headroom
 - [x] 3. Loudness-matched tiers: compensation per Place, style and tier (the Place makes room), the arrangement's gears, the transitions' own sounds
 - [x] 4. Safety: a look-ahead limiter on the Drama layer, the master's true-peak safety, the Place outputs
-- [ ] 5. The arrangement's transitions, Inspire's moods and the dramatic factory scenes measured and fixed
-- [ ] 6. Tests (the `loudness` group; the drama groups' louder-is-more checks replaced), listening renders before / after, bench (Drama 0 bit for bit)
-- [ ] 7. DEVLOG results and handoff; final push; CI green
-
-(Status while this was written: items 1-4 are in the code; the calibration chain is being
-re-run after the Drama layer limiter's ceiling moved to the balanced level; then 5-7.)
+- [x] 5. The arrangement's transitions, Inspire's moods and the dramatic factory scenes measured and fixed
+- [x] 6. Tests (the `loudness` group; the drama groups' louder-is-more checks replaced), listening renders before / after, bench (Drama 0 bit for bit)
+- [x] 7. DEVLOG results and handoff; final push; CI green (pending: see below)
 
 ### Decisions
 
@@ -7282,4 +7279,108 @@ outputs' limiters the same). After the gain staging and the balance they rarely 
 by 2-4 dB (and brought in a storm or a sandstorm); they now keep the calm Location's
 levels (the storms present throughout: Pirate Battle's Weather 70 to 75, Siege's 65 to 70).
 The 24 older scenes are untouched.
+
+### Results
+
+Loudness is BS.1770 (K-weighted; integrated with the -70 / -10 LU gates; short-term over
+3 s), true peak 4x oversampled (Tests `loudness`, `LoudnessTests.inc`). Each Place alone at
+its card's defaults, 12 s, the last 8 s measured; Calm is Score Intensity 35 %, Tension
+62 %, Action 80 %, Climax 100 %.
+
+| | before (`7337fb3`) | now |
+|---|---|---|
+| Climax over Calm, every Place and Drama Style | +9 to +23 dB | at most +1.13 dB |
+| Tension / Action over Calm, every Place and Drama Style | +3 to +22 dB | within 1.24 dB |
+| A Place's Climax true peak | -0.3 to -0.8 dBTP (the master limiting) | -6.5 to -15 dBTP |
+| Four busy Places at Climax (four worlds), true peak | (the master limiting) | -5.4 dBTP at most |
+| Master limiter there (average / largest reduction) | | 0.00 / 0.00 dB |
+| Drama layer limiters there (average / largest) | | 0.006 / 4.6 dB (more than 0.1 dB down on 3.4 % of samples at most) |
+| The Battle template (Castle, Village, Drama 100 %): fight over the calm Intro | +14.3 dB | +0.5 dB |
+| The same, true peak | -0.26 dBTP | -9.8 dBTP |
+| Dramatic factory scenes: the most a section stands above the calm ones | up to +10 dB | +1.8 dB |
+
+Intensity, not loudness: at Climax every Place plays 2.5 times the notes of Calm or more
+and 1.4 times the transients (spectral flux on the level-normalised signal) or more, as
+before the pass (the notes and transients at Climax are the same as before within a few
+per cent). The hits (Tests `hitprobe`) no longer rise above the layer: the low piano,
+braams, synth stabs, crash and impacts were the ones that did.
+
+The arrangement: the Battle and Chase templates for each Place alone, and as a further
+Place beside a Castle, after calibration: Tension, Action and Climax sections within
+-0.1 to +0.5 dB of their calm sections. The 17 dramatic factory scenes (240 s each,
+Arrangement mode): none has a dramatic section louder than its calm sections' window
+(the most: +1.8 dB); two have one up to 1.57 dB under it (Space Battle over the Station's
+Combat, The Final Stand's Build; report only). Landings: after a Riser, a Drum fill and a
+Drop within 2 dB of the sections around them (short-term, checked); after a Crossfade up
+to 2.8 dB and after a Filter 2.0 dB (report only: a Crossfade brings the next section's
+instruments in before its tier). Inspire, three scenes per mood against the same scene at
+Calm: none louder than the window; scenes of several Places up to 3.1 dB quieter at their
+tier (report only).
+
+**Report-only after two attempts** (small misses; the real checks stay strict):
+- The quieter side for several Places (Inspire up to -3.1 dB, two factory scenes -1.57 dB):
+  the second and further Places' balance is estimated (their lighter layers), and the
+  scenes' Locations change Characters the balance does not model.
+- Later windows (12-30 s): the Forest's Action after a jump +2.1 dB and Climax +1.5, the
+  Megacity's Climax +1.9 (the balance is measured on 4-12 s).
+- A Crossfade landing +2.8 dB, a Filter landing +2.0 dB.
+- The Drama layer limiters' share of samples more than 0.1 dB down (3.4 % on four busy
+  Places at Climax; the average reduction, checked, is 0.006 dB).
+
+**Drama 0 unchanged, bit for bit**: the bench against the commit before (`7337fb3`, the
+same build settings): every Place's render (`renders`, four busy copies, 12 s) 26 of 26
+identical, the 24 factory scenes from before the Drama tier (`scenes`, 40 s each) 24 of 24;
+the 17 dramatic scenes differ, as intended. (A world at Calm with Drama on is the Classic
+one too: the master's lower ceiling applies only while a Drama layer plays.)
+
+**CPU** (`WorldbuilderBench audio` at Score Intensity 100 %, each Place four times, busy,
+summed): 547 % of one core now against 547-551 % before (the same within this
+container's noise).
+
+**The existing suite**: the Drama tier's checks that asked for louder tiers now ask for
+denser ones (notes, transients), not louder (`drama`: every Place's Calm against Climax,
+busier at every tier, more intense than today's maximum without being louder; the styles;
+the Castle Gate scene's fights denser than its calm sections, no louder; Inspire's moods;
+`dramarework`: the fights denser against the calm, the level contrast no larger than the
+Classic score's). Full suite (`scripts/run-tests-parallel.sh`, the new `loudness` group as
+a seventh shard, about 30 minutes alone): 5123 passed, 0 failed here.
+
+### Drama loudness pass handoff
+
+**Done**: the balance per Place, Drama Style and tier (the Place making room), its
+calibration chain (`tools/drama-balance/calibrate.sh`, `mkbal.py`; Tests `balancecal`,
+`arrcal`, and the probes `loudprobe`, `hitprobe`, `sceneprobe`); the hits' gain staging
+and the stingers' stacking; the arrangement's shaping balance and section balance; the
+transitions' sounds following the balance; a look-ahead limiter on each Drama layer; the
+master's (and the Place outputs') -1.5 dBFS ceiling while drama plays; the dramatic
+scenes' fight Locations at the calm levels; the `loudness` test group; README.
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`):
+`loudness-battle-template-before.flac` and `loudness-battle-template-after.flac`: the
+Battle template for a Castle and a Village at Drama 100 %, from the end of the calm Intro
+through Tension and the fight into the Break, as it played before this pass (rendered with
+the pass switched off for the test: the old hit levels, no balance, no layer limiter) and
+now. The Drama tier's own renders (`drama-*.flac`) are the after versions of theirs.
+
+**What to listen for on the Mac**:
+- A single Castle, Score Intensity from 35 % to 100 %: the level stays put while the
+  heartbeat, the driving strings, the war drums and at the top double time, impacts and
+  stabs come in; nothing clips, the braams and synth stabs no longer stick out.
+- Battle at the Castle Gate or any dramatic scene: the fights about as loud as the calm
+  parts, denser; the landings after a Riser no longer jump.
+- Drama 0 or an old project: exactly as before.
+
+**Known limits**:
+- The balance is a measured table at each Place's card defaults (one Character, the
+  default levels); other settings keep the ratios, so the window holds roughly, not
+  exactly. Re-run `tools/drama-balance/calibrate.sh` (about an hour on 4 cores) after
+  changing a Place's or the Drama layer's sound.
+- Several Places in an arrangement or an inspired scene come out up to about 3 dB quieter
+  at their tiers than at Calm (never louder than the window).
+- The master has no look-ahead (it would add latency to every session, old ones too): its
+  zero-latency limiter keeps the peaks under -1.5 dBFS while drama plays, which kept the
+  true peak under -1 dBFS in every test; the Drama layers' look-ahead limiters delay the
+  layer 1.5 ms against its Place.
+- The balance was set by measurement, not by ear: listen to the before and after renders
+  first.
 
