@@ -668,6 +668,14 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
     }
 }
 
+int sectionTier(const Arrangement& a, int k, const Shaping& sh) {
+    if (k < 0 || k >= a.count) return drama::Calm;
+    const auto& sec = a.sections[std::size_t(k)];
+    const float intensity = 0.5f * (sec.intensityStart + sec.intensityEnd);
+    if (sec.drama >= 0) return std::clamp(int(std::floor(gearOf(sec, intensity, sh) + 0.5f)), 0, int(drama::Climax));
+    return drama::tierFor(drama::amountFor(dsp::clamp01(intensity + sh.intensityOffset), 0.5f, sh.drama));
+}
+
 //==============================================================================
 // Milestone 16: section clips.
 

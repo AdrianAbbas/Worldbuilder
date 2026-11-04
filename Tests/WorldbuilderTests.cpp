@@ -9435,6 +9435,7 @@ void testSamples(Suite& s) {
 #include "RecordingsTests.inc"
 #include "DramaTests.inc"
 #include "DramaReworkTests.inc"
+#include "LoudnessTests.inc"
 
 
 int main(int argc, char** argv) {
@@ -9548,6 +9549,10 @@ int main(int argc, char** argv) {
     if (run("drama")) testDrama(s);
     if (run("dramarework")) testDramaRework(s);
     if (only.contains("dramatrims")) probeDramaTrims();
+    if (only.contains("loudprobe")) probeLoudness();
+    if (only.contains("hitprobe")) probeHits();
+    if (only.contains("balancecal")) calibrateBalance();
+    if (only.contains("sceneprobe")) probeScenes();
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

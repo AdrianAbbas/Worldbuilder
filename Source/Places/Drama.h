@@ -24,6 +24,7 @@
 //
 // Nothing here allocates after prepare().
 #include "Places.h"
+#include "../DSP/Master.h"
 
 namespace wb::drama {
 
@@ -74,6 +75,31 @@ struct Theme {
 const Theme& theme(int placeType);
 // The style that plays for a Place with the Drama Style parameter at `style`.
 inline int styleFor(int placeType, int style) { return style > StyleAuto && style < StyleCount ? style : theme(placeType).style; }
+
+// The Drama loudness pass: drama makes the music more intense, not louder. At each tier
+// the Place makes room (placeDb, applied to the whole slot) and the Drama layer plays at
+// its share of the Calm level (layerDb, its level in the slot as the tier set it), so
+// Calm, Tension, Action and Climax are about equally loud. Measured per Place, Drama Style
+// and tier at the tier's probe point (Score Intensity 62, 80, 100 %; Tests "balancecal",
+// DramaBalance.inc); between them the Place's own rise with Score Intensity (its Classic
+// loudness curve, measured too) is balanced as well, so a tier stays level whatever
+// Intensity is. Calm: 0, 0.
+struct Balance {
+    float placeDb = 0, layerDb = 0;
+};
+Balance balance(int placeType, int style, int tier, int rank, float intensity = -1.0f);
+// The Place's Classic loudness at Score Intensity `intensity` (dB against 50 %, measured;
+// below 50 % through its Calm level at 35 %), and the level its tiers are balanced to.
+float classicRiseDb(int placeType, float intensity);
+float balancedDb(int placeType);
+// One of the Place's six instruments alone against the whole Place (dB, measured).
+float elementWeightDb(int placeType, int element);
+// In an arrangement, a section above Calm against the engine's estimate of it (dB, measured).
+float arrangedCorrectionDb(int placeType, int tier);
+// The Drama layer's share of a slot's loudness at Tension, Action and Climax (the balance).
+inline constexpr std::array<float, 3> layerShare { 0.35f, 0.5f, 0.55f };
+// Tests only: the balance off (the probe measures the Place and the layer as they were).
+inline bool balanceOff = false;
 
 // The Drama instruments' kit rows (the Drama tier rework). The drums: the low (war) drum,
 // the mid drum, a third voice that depends on the kit (slaps and their muted ghosts; a
@@ -131,6 +157,13 @@ public:
     // Notes started since prepare() (for the tests: rhythmic density).
     uint32_t started() const { return startedCount; }
     bool active() const { return awake; }
+    // The layer's look-ahead limiter (the Drama loudness pass): how much it has turned the
+    // layer down (it should rarely engage), and a clear for the tests.
+    const dsp::Reduction& reduction() const { return limiter.reduction; }
+    void clearReduction() { limiter.reduction.clear(); }
+    // The layer's own peak since the last clear (after its limiter, before its hall).
+    float busPeak() const { return peakOut; }
+    void clearPeak() { peakOut = 0; }
     // The part a Drama instrument's live notes sound on (its own transposition).
     float transposeSemis(int element) const;
     // Every note the three Drama instruments' patterns played, for the tests: the sample,
@@ -198,6 +231,11 @@ private:
     std::array<float, dsp::chunk> busL {}, busR {}, partL {}, partR {};
     std::array<std::array<float, dsp::chunk>, dramaElements> elemL {}, elemR {};
     dsp::SmallSpace hall;
+    // A transparent look-ahead limiter on the layer's sum (1.5 ms): stacked hits on one
+    // downbeat never reach past its ceiling, and it rarely engages (Tests "loudness").
+    dsp::LookaheadLimiter limiter;
+    static constexpr float limiterCeiling = 0.5f;   // -6 dBFS, before the slot's level and pan
+    float peakOut = 0;
     float hallWet = 0.5f;
     dsp::Smoother level;
     int type = -1;

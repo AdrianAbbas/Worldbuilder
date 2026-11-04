@@ -22,6 +22,10 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     fadeStep = 1.0f / (0.3f * rate);
     arrangeUp = 1.0f / (0.02f * rate);
     keysLevel.setTime(0.08f, controlRate);
+    // Down fast (the louder tier's first downbeat is already balanced), back up slowly.
+    placeComp.setTime(0.012f, controlRate);
+    layerComp.setTime(0.012f, controlRate);
+    compRelease = 1.0f - std::exp(-1.0f / (0.15f * controlRate));
     arrangeDown = 1.0f / (0.25f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
     fx.prepare(rate);
@@ -45,6 +49,8 @@ void PlaceSlot::reset() {
     fx.reset();
     dramaLayer.reset();
     dramaGainNow.fill(-1.0f);
+    placeComp.snap(1.0f);
+    layerComp.snap(1.0f);
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.reset();
     fresh = true;
@@ -438,6 +444,30 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     if (dramaOn) dramaLayer.advance(currentType, world, c.drama, dramaTension, context.beat, context.beatsPerSample * double(n));
     dramaStyleNow = c.drama.style;
     dramaRankNow = c.drama.rank;
+    // The Drama loudness pass: as the tier rises the Place makes room and the Drama layer
+    // takes its share, so the slot stays about as loud as at Calm (a table measured per
+    // Place, Drama Style and tier; Drama.cpp). Calm and Drama 0: exactly as before.
+    float placeTo = 1.0f, layerTo = 1.0f;
+    if (dramaOn && !c.instrument && c.drama.drama > 0.0f) {
+        float placeDb = c.dramaShapeDb;
+        if (dramaLayer.tier() > drama::Calm) {
+            const auto b = drama::balance(currentType, drama::styleFor(currentType, c.drama.style), dramaLayer.tier(), c.drama.rank, world.intensity);
+            placeDb += b.placeDb;
+            layerTo = dbToGain(b.layerDb - b.placeDb);
+        }
+        placeTo = dbToGain(placeDb);
+    }
+    const bool compResting = placeComp.value == 1.0f && layerComp.value == 1.0f && placeTo == 1.0f && layerTo == 1.0f;
+    const auto follow = [&](dsp::Smoother& sm, float to) {
+        if (to < sm.value) return sm.next(to);
+        return sm.value += compRelease * (to - sm.value);
+    };
+    const float placeGain = compResting ? 1.0f : follow(placeComp, placeTo);
+    const float layerGain = compResting ? 1.0f : follow(layerComp, layerTo);
+    if (!compResting && std::abs(placeComp.value - placeTo) < 1.0e-5f && std::abs(layerComp.value - layerTo) < 1.0e-5f) {
+        placeComp.snap(placeTo);
+        layerComp.snap(layerTo);
+    }
 
     // Patterns: the composer's, or generated from the seed and the settings.
     updatePatterns(target, world.mood, patterns, variants, c.keysArmed ? keysElement : -1);
@@ -493,8 +523,8 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
             el.play[k] = &dramaPlay[k];
             float level = dramaLevel[k];
             if (keysElement == placeElements + d) level = std::max(level, context.liveLevel > 0.0f ? context.liveLevel : keysLevel.value);
-            el.gainFrom[k] = dramaGainNow[k] < 0.0f ? level / 0.8f : dramaGainNow[k];
-            el.gainTo[k] = level / 0.8f;   // 0.8 (the default level) is the layer as designed
+            el.gainFrom[k] = dramaGainNow[k] < 0.0f ? level / 0.8f * layerGain : dramaGainNow[k];
+            el.gainTo[k] = level / 0.8f * layerGain;   // 0.8 (the default level) is the layer as designed
             dramaGainNow[k] = el.gainTo[k];
             el.notes[k] = dramaNotes[k];
         }
@@ -519,7 +549,8 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
     send = c.instrument && !c.ambience ? 0.0f : current->spaceSend() * lerp(0.4f, 1.6f, d);
-    const float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + c.trimDb + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
+    float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + c.trimDb + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
+    if (placeGain != 1.0f) target_ *= placeGain;
     if (snapGain) {
         gain.snap(target_);
         snapGain = false;

@@ -31,6 +31,9 @@ struct PlaceSlotControls {
     // The Drama tier rework: a part doubled an octave up (+1) or down (-1) as the drama
     // rises (0: as written).
     std::array<int8_t, slotElements> doubling {};
+    // The Drama loudness pass: the arrangement's reshaping as drama plays it (instruments
+    // entering, busier, doubled; or thinned out at Calm), balanced back (dB; 0 at Drama 0).
+    float dramaShapeDb = 0;
     // Milestone 16: the section's own clip for each instrument (nullptr: linked, it plays
     // its variant), laid from `clipOrigin` (song beats: the section's first downbeat)
     // and playing for `clipSpan` beats (<= 0: endlessly).
@@ -186,8 +189,16 @@ private:
     drama::Layer dramaLayer;
     int dramaStyleNow = 0, dramaRankNow = 0;
     std::array<float, dramaElements> dramaGainNow { -1.0f, -1.0f, -1.0f };
+    // The Drama loudness pass: the slot's balance as its tier changes (the Place making
+    // room, the Drama layer at its share of the Calm level): gains, smoothed.
+    dsp::Smoother placeComp, layerComp;
+    float compRelease = 1;
 public:
     const drama::Layer& drama() const { return dramaLayer; }
+    void clearReductions() { dramaLayer.clearReduction(); }
+    // The balance in dB now (the Place, the Drama layer against it): for the tests.
+    float placeCompDb() const { return dsp::gainToDb(placeComp.value); }
+    float placeCompGain() const { return placeComp.value; }
     // An instrument's own transposition (a live note sounds as pressed; the recorder takes
     // it off): the Place's, or a Drama instrument's.
     float partTranspose(int e) const {

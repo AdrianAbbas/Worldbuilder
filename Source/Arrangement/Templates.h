@@ -96,6 +96,9 @@ float gearOf(const Section& s, float sectionIntensity, const Shaping& shaping);
 // changing every 8 bars (16 in sections of 48 bars or more), small fills on the phrase
 // lines; calm and closing sections thin out towards their end instead.
 void shape(State& st, const Arrangement& a, const Shaping& shaping);
+// The Drama loudness pass (the engine's section balance, WorldEngine.cpp).
+// A section's Drama tier as the layer plays it (the gear rounded; or from its intensity).
+int sectionTier(const Arrangement& a, int section, const Shaping& shaping);
 // The variants as gears (C sparse 0, A 1, B busy 2) and back.
 inline int variantGear(int v) { return v == VariantC ? 0 : (v == VariantB ? 2 : 1); }
 inline uint8_t gearVariant(int g) { return uint8_t(g <= 0 ? VariantC : (g >= 2 ? VariantB : VariantA)); }

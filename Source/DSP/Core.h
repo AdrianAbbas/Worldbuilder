@@ -15,6 +15,7 @@ constexpr float twoPi = 6.28318530717959f;
 constexpr int chunk = 32;
 
 inline float dbToGain(float db) { return std::pow(10.0f, db * 0.05f); }
+inline float gainToDb(float g) { return 20.0f * std::log10(std::max(g, 1.0e-9f)); }
 inline float clamp01(float x) { return std::clamp(x, 0.0f, 1.0f); }
 inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
 // Exponential interpolation, for frequencies and times.

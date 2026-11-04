@@ -91,6 +91,10 @@ void WorldEngine::reset(const EngineControls& initial) {
     harmonyLine = INT64_MIN;
     endGain = 1;
     transitionVoice.reset();
+    transitionBalance = 1;
+    shapeDb.fill(0.0f);
+    balanceKey = 0;
+    sectionBalance = 0;
     for (auto& f : sweep) f.reset();
     sweeping = false;
     duckGain = 1;
@@ -149,7 +153,165 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
     shaping.drama = controls.instrument.on ? 0.0f : clamp01(finiteOr(controls.drama, 0.0f));
     shaping.intensityOffset = clamp01(finiteOr(controls.intensity, 0.5f)) - 0.5f;
     for (int s = 0; s < placeSlots; ++s) shaping.types[std::size_t(s)] = controls.places[std::size_t(s)].type;
+    const arr::State plain = arranged;
     arr::shape(arranged, a, shaping);
+    // The Drama loudness pass: what drama's reshaping adds (instruments entering, busier
+    // variants, doublings) or takes away (a calm section thinned), estimated from the
+    // instruments' measured weights and levels and balanced back for 80 %: drama changes
+    // the density, not the loudness. (The section's own evolution is as written.)
+    shapeDb.fill(0.0f);
+    if (shaping.drama <= 0.0f) return;
+    arr::State evolving = plain;
+    arr::Shaping evolveOnly = shaping;
+    evolveOnly.drama = 0.0f;
+    arr::shape(evolving, a, evolveOnly);
+    for (int s = 0; s < placeSlots; ++s) shapeDb[std::size_t(s)] = shapeBalanceDb(arranged, evolving, s, controls);
+    // The section's own balance against the arrangement's calm sections (the same for
+    // every Place; computed when the section, the arrangement or the controls change).
+    uint64_t key = uint64_t(a.count) * 0x9E3779B97F4A7C15ull ^ uint64_t(int64_t(arranged.at.section) + 7);
+    const auto mixIn = [&](float v) { key = dsp::mix64(key ^ uint64_t(int64_t(std::lround(double(v) * 4096.0)))); };
+    mixIn(shaping.drama);
+    mixIn(shaping.intensityOffset);
+    mixIn(float(controls.dramaStyle));
+    for (int k = 0; k < a.count; ++k) {
+        const auto& sec = a.sections[std::size_t(k)];
+        mixIn(float(sec.bars) + 1000.0f * float(sec.drama + 2) + 7.0f * sec.intensityStart + 13.0f * sec.intensityEnd);
+        mixIn(float(sec.repeats));
+    }
+    for (int sl = 0; sl < placeSlots; ++sl) {
+        const auto& pc = controls.places[std::size_t(sl)];
+        mixIn(float(pc.type));
+        mixIn(pc.levelDb);
+        for (int e = 0; e < slotElements; ++e) mixIn(pc.elementOn[std::size_t(e)] ? pc.element[std::size_t(e)] : -1.0f);
+        for (const auto& cell : a.sections[std::size_t(std::max(arranged.at.section, 0))].cells[std::size_t(sl)]) mixIn(float(cell.entry));
+    }
+    if (key != balanceKey) {
+        balanceKey = key;
+        sectionBalance = sectionBalanceDb(a, arranged.at.section, shaping, controls);
+    }
+    for (auto& d : shapeDb) d += sectionBalance;
+}
+
+// The weighted power of a slot's six instruments as a State plays them (relative units):
+// each instrument's measured weight, its level, its arrangement gain, its variant (B
+// busier, C sparser) and a doubling.
+double WorldEngine::placePower(const arr::State& st, int s, const EngineControls& controls, bool full) const {
+    const auto& pc = controls.places[std::size_t(s)];
+    double sum = 0;
+    for (int e = 0; e < placeElements; ++e) {
+        const auto k = std::size_t(e);
+        if (!pc.elementOn[k] || patternInfo(pc.type, e).kind == NoPattern) continue;
+        const double level = double(clamp01(pc.element[k])) / 0.8;
+        const double w = std::pow(10.0, double(drama::elementWeightDb(pc.type, e)) / 10.0);
+        if (full) {
+            sum += w * level * level;
+            continue;
+        }
+        const double g = double(st.gain[std::size_t(s)][k]) * level;
+        static constexpr std::array<double, 4> variantPower { 1.0, 1.4, 0.7, 1.0 };   // A, B (busier), C (sparser), Fill
+        const double doubled = st.doubling[std::size_t(s)][k] != 0 ? 1.6 : 1.0;
+        sum += w * g * g * variantPower[std::size_t(std::min<int>(st.variant[std::size_t(s)][k], 3))] * doubled;
+    }
+    return sum;
+}
+
+float WorldEngine::shapeBalanceDb(const arr::State& shaped, const arr::State& written, int s, const EngineControls& controls) const {
+    if (controls.places[std::size_t(s)].type == NoPlace) return 0.0f;
+    const double a = placePower(shaped, s, controls), b = placePower(written, s, controls);
+    if (a <= 1.0e-9 && b <= 1.0e-9) return 0.0f;
+    const double full = std::max(placePower(shaped, s, controls, true), 1.0e-6);
+    const double db = 10.0 * std::log10((a + 0.02 * full) / (b + 0.02 * full));
+    return std::clamp(float(-0.8 * db), -6.0f, 4.0f);
+}
+
+// The expected level of each section (dB, the Places summed): played at its middle, shaped
+// by drama as the engine shapes it; a calm section at its Score Intensity (the Places'
+// Classic curves) with the instruments it plays, a section above Calm at the level the
+// Drama tier balances it to, its Place part scaled by the instruments it plays against
+// the free play's at that tier. The section's balance brings it to the calm sections'
+// level (Tension and Action up to 0.5 dB above, a Climax 1 dB; at most 12 dB down and
+// 1.5 dB up).
+float WorldEngine::sectionBalanceDb(const arr::Arrangement& a, int section, const arr::Shaping& shaping, const EngineControls& controls) const {
+    if (section < 0 || section >= a.count || shaping.drama <= 0.0f) return 0.0f;
+    arr::Shaping evolveOnly = shaping;
+    evolveOnly.drama = 0.0f;
+    const auto levelOf = [&](int k, int& tier) {
+        const auto& sec = a.sections[std::size_t(k)];
+        const double beat = (double(a.startOf(k)) + 0.5 * double(std::max<int>(sec.bars, 1))) * double(arr::beatsPerBar);
+        arr::State st = a.evaluate(beat);
+        if (st.at.section != k) {
+            tier = -1;
+            return -200.0;
+        }
+        arr::State written = st;
+        arr::shape(st, a, shaping);
+        arr::shape(written, a, evolveOnly);
+        tier = arr::sectionTier(a, k, shaping);
+        const float intensity = clamp01(st.intensity + shaping.intensityOffset);
+        double sum = 0;
+        for (int s = 0; s < placeSlots; ++s) {
+            const auto& pc = controls.places[std::size_t(s)];
+            if (pc.type == NoPlace) continue;
+            const double full = placePower(st, s, controls, true);
+            if (full <= 1.0e-9) continue;
+            const double played = placePower(st, s, controls) * std::pow(10.0, double(shapeBalanceDb(st, written, s, controls)) / 10.0);
+            double slot = 0;
+            if (tier <= drama::Calm) {
+                slot = std::pow(10.0, double(drama::classicRiseDb(pc.type, intensity)) / 10.0) * played / full;
+            } else {
+                // Free play at this tier: every instrument, the rhythm and bass busier from
+                // Action, the melody too (doubled) at a climax.
+                arr::State free = st;
+                for (int e = 0; e < placeElements; ++e) {
+                    const int role = arr::roleOf(pc.type, e);
+                    const auto& spec = elementSpec(pc.type, e);
+                    free.gain[std::size_t(s)][std::size_t(e)] = 1.0f;
+                    free.variant[std::size_t(s)][std::size_t(e)] = pat::VariantA;
+                    free.doubling[std::size_t(s)][std::size_t(e)] = 0;
+                    if (tier >= drama::Action && (role == arr::RoleRhythm || role == arr::RoleBass || (tier == drama::Climax && role == arr::RoleMelody)))
+                        free.variant[std::size_t(s)][std::size_t(e)] = pat::VariantB;
+                    if (tier == drama::Climax && spec.kind == Melodic && !spec.sustained && (role == arr::RoleBass || role == arr::RoleMelody))
+                        free.doubling[std::size_t(s)][std::size_t(e)] = 1;
+                }
+                const double freePower = std::max(placePower(free, s, controls), 1.0e-6);
+                const double share = double(drama::layerShare[std::size_t(std::clamp(tier, 1, 3) - 1)]);
+                // The Drama layer: its instruments playing in the section; lighter on the
+                // second and further Places (no drums; hits only from the third).
+                int rank = 0;
+                for (int o = 0; o < s; ++o) rank += controls.places[std::size_t(o)].type != NoPlace ? 1 : 0;
+                double layer = 0;
+                for (int d = 0; d < dramaElements; ++d)
+                    layer += st.gain[std::size_t(s)][std::size_t(placeElements + d)] > 0.0f && pc.elementOn[std::size_t(placeElements + d)] ? 1.0 / 3.0 : 0.0;
+                layer *= rank == 0 ? 1.0 : (rank == 1 ? 0.5 : 0.25);
+                slot = std::pow(10.0, double(drama::balancedDb(pc.type) + drama::arrangedCorrectionDb(pc.type, tier)) / 10.0)
+                       * ((1.0 - share) * played / freePower + share * layer);
+            }
+            sum += slot * std::pow(10.0, double(pc.levelDb) / 10.0);
+        }
+        return sum > 0.0 ? 10.0 * std::log10(sum) : -200.0;
+    };
+    double calm = 0, lowest = 1.0e9;
+    int calmCount = 0;
+    for (int k = 0; k < a.count; ++k) {
+        int tier = 0;
+        const double l = levelOf(k, tier);
+        if (l < -150.0) continue;
+        lowest = std::min(lowest, l);
+        if (tier == drama::Calm) {
+            calm += std::pow(10.0, l / 10.0);
+            ++calmCount;
+        }
+    }
+    int tier = 0;
+    const double here = levelOf(section, tier);
+    if (tier <= drama::Calm || here < -150.0 || lowest > 1.0e8) return 0.0f;
+    const double reference = calmCount > 0 ? 10.0 * std::log10(calm / double(calmCount)) : lowest;
+    const double allowance = tier == drama::Climax ? 1.0 : 0.5;
+    const float weight = std::min(1.0f, shaping.drama / 0.25f);
+    double db = 0;
+    if (here > reference + allowance) db = -std::min(12.0, here - reference - allowance);
+    else if (here < reference - 1.0) db = std::min(1.5, reference - 1.0 - here);
+    return weight * float(db);
 }
 
 float WorldEngine::arrangedIntensity(const EngineControls& controls) const {
@@ -188,6 +350,12 @@ void WorldEngine::fillChunk(const EngineControls& controls) {
                                 : double(at.startBar) + (s.endless() ? 0.0 : double(at.pass) * double(s.bars)) + at.bar;
     arrangeBar.store(bar, std::memory_order_relaxed);
     arrangeSection.store(at.ended ? -2 : at.section, std::memory_order_relaxed);
+}
+
+void WorldEngine::clearReductions() {
+    limiter.reduction.clear();
+    for (auto& l : slotLimiter) l.reduction.clear();
+    for (auto& s : slots) s.clearReductions();
 }
 
 void WorldEngine::resync(uint64_t position, double ppq) {
@@ -591,6 +759,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             arrangedControls.clipOrigin = arranged.clipOrigin;
             arrangedControls.clipSpan = arranged.clipSpan;
             arrangedControls.levelDb += arranged.swellDb;   // an evolving section's swell
+            arrangedControls.dramaShapeDb = shapeDb[si];
             for (int e = 0; e < slotElements; ++e) {
                 arrangedControls.arrange[std::size_t(e)] = arranged.gain[si][std::size_t(e)];
                 arrangedControls.variant[std::size_t(e)] = arranged.variant[si][std::size_t(e)];
@@ -654,12 +823,29 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         transitionVoice.render(arranging ? arranged.transition : arr::TransCut, arranging ? arranged.transitionT : -1.0f, dt,
                                arranging ? arranged.arrived : arr::TransCut, since, world.root, world.mood, layerL.data(), layerR.data(), n);
         const float send = arranged.transition == arr::TransReverse ? 0.9f : 0.5f;
+        // The Drama loudness pass: with drama playing, the transitions' sounds follow the
+        // Places' balance (they step back as the Places make room) and sit 4 dB lower: the
+        // Drama layer's roll, swell and landing hits play into the same downbeat.
+        float from = transitionBalance, to = 1.0f;
+        if (world.drama > 0.0f && !controls.instrument.on) {
+            float sum = 0;
+            int count = 0;
+            for (int s = 0; s < placeSlots; ++s)
+                if (slotSounding[std::size_t(s)]) {
+                    sum += slots[std::size_t(s)].placeCompGain();
+                    ++count;
+                }
+            to = (count > 0 ? sum / float(count) : 1.0f) * dbToGain(-4.0f);
+        }
+        if (transitionBalance == 1.0f && to == 1.0f) from = 1.0f;
+        transitionBalance = to;
         for (int i = 0; i < n; ++i) {
             const auto k = std::size_t(i);
-            dryL[k] += layerL[k];
-            dryR[k] += layerR[k];
-            sendL[k] += layerL[k] * send;
-            sendR[k] += layerR[k] * send;
+            const float g = from == 1.0f && to == 1.0f ? 1.0f : lerp(from, to, float(i + 1) / float(n));
+            dryL[k] += layerL[k] * g;
+            dryR[k] += layerR[k] * g;
+            sendL[k] += layerL[k] * send * g;
+            sendR[k] += layerR[k] * send * g;
         }
     }
     beat += double(bpm) / 60.0 * double(n) / rate;
@@ -725,7 +911,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
 
         l = finiteOr(l);
         r = finiteOr(r);
-        if (!bare) glue.process(l, r);
+        if (!bare && !probeLinear) glue.process(l, r);
 
         powerRamp = powerRamp < powerTarget ? std::min(powerTarget, powerRamp + powerStep) : std::max(powerTarget, powerRamp - powerStep);
         gateRamp = gateOpen ? std::min(1.0f, gateRamp + gateUp) : std::max(0.0f, gateRamp - gateDown);
@@ -737,7 +923,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         // The slot outputs take the same level, fades and Drop.
         outGain[k] = g * (dropping ? lerp(dropFrom, dropTo, float(i + 1) / float(n)) : 1.0f);
 
-        limiter.process(l, r);
+        if (!probeLinear) limiter.process(l, r);
         l = finiteOr(l);
         r = finiteOr(r);
         masterPeak = std::max(masterPeak, std::max(std::abs(l), std::abs(r)));

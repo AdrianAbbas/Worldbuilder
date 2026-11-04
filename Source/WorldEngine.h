@@ -3,6 +3,7 @@
 // World Space and the master section. The processor feeds it parameter values and
 // the clock; tests can drive it through the processor's processBlock.
 #include "Arrangement/Arrangement.h"
+#include "Arrangement/Templates.h"
 #include "DSP/AirLayer.h"
 #include "DSP/EarthLayer.h"
 #include "DSP/FireLayer.h"
@@ -93,6 +94,17 @@ public:
     // instruments' character effects, level, distance and pan) after the master level
     // and fades, through its own safety limiter.
     void process(float* left, float* right, int n, const EngineControls& controls, float* const* slotOut);
+
+    // The Drama loudness pass: how much the master's and the slot outputs' limiters (and
+    // each slot's Drama layer limiter) have turned the sound down since the last clear
+    // (tests and bench; the sound is never changed by asking).
+    const dsp::Reduction& masterReduction() const { return limiter.reduction; }
+    const dsp::Reduction& slotOutReduction(int slot) const { return slotLimiter[std::size_t(std::clamp(slot, 0, placeSlots - 1))].reduction; }
+    void clearReductions();
+    // The arrangement section's balance now (dB, the Drama loudness pass; for the tests).
+    float sectionBalanceNow() const { return sectionBalance; }
+    // Tests only (the loudness probe): no glue and no limiter, so renders subtract exactly.
+    static inline bool probeLinear = false;
 
     // For the editor: per-layer and master peak meters, the smoothed world, power fade.
     std::array<std::atomic<float>, LayerCount> layerMeter {};
@@ -198,6 +210,15 @@ private:
     float endGain = 1;
     float arrangedIntensity(const EngineControls& controls) const;
     void shapeArrangement(const arr::Arrangement& a, const EngineControls& controls);
+    // The Drama loudness pass: per slot, the arrangement's reshaping by drama balanced back
+    // (dB; 0 at Drama 0), and the transitions' own sounds following the slots' balance.
+    std::array<float, placeSlots> shapeDb {};
+    float transitionBalance = 1;
+    uint64_t balanceKey = 0;
+    float sectionBalance = 0;
+    double placePower(const arr::State& st, int slot, const EngineControls& controls, bool full = false) const;
+    float shapeBalanceDb(const arr::State& shaped, const arr::State& written, int slot, const EngineControls& controls) const;
+    float sectionBalanceDb(const arr::Arrangement& a, int section, const arr::Shaping& shaping, const EngineControls& controls) const;
     // The world's drama tier for the shared harmony, latched on the four-bar lines.
     int harmony = 0;
     int64_t harmonyLine = INT64_MIN;
