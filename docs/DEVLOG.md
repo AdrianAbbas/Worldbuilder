@@ -5,6 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**The Drama loudness pass is in progress** (drama more intense, not louder: loudness-matched
+tiers, gain staging of the hits, look-ahead safety on the Drama layer and the master):
+checklist in [The Drama loudness pass](#the-drama-loudness-pass-2026-11-04); a resumed
+session continues from the first unticked line.
+
 **The Drama tier rework is done** (drama changes the arrangement; the Drama
 instruments editable; long, evolving sections): checklist, decisions, results and handoff in
 [The Drama tier rework](#the-drama-tier-rework-2026-11-03).
@@ -7191,3 +7196,29 @@ ostinato and hits).
   back.
 - The balance of the reshaped arrangement was set by measurement (instruments, notes,
   level per section), not by ear: listen to the three Battle renders first.
+
+## The Drama loudness pass (2026-11-04)
+
+The developer's report: on high Drama the synth hits and braams clip and the instruments
+get far too loud overall. Drama must make the music more intense, not louder. (1)
+Loudness-matched drama: Calm, Tension, Action and Climax about equally loud (within about
+±1.5 dB of Calm, the Climax at most +2 dB); intensity from density, rhythm, register,
+brightness, harmony and more parts, the existing parts making room (gain compensation per
+tier, per Place, per Drama Style). (2) Gain staging of every hit (synth stabs, braams,
+brass and choir stabs, piano strikes, war-drum impacts, crashes) and headroom for their
+stacking. (3) A transparent look-ahead limiter / soft clipper on the Drama layer and on
+the master (true peak below -1 dBFS), rarely engaging; the Place outputs checked. (4) The
+arrangement's transitions, Inspire's dramatic moods and the dramatic factory scenes
+checked for loudness jumps. Keep the sound and the drama otherwise; Drama 0 unchanged.
+A resumed session continues from the first unticked line.
+
+### Progress checklist
+
+- [ ] 1. Measurement: BS.1770 loudness (integrated, short-term), true peak (4x), the limiters' gain reduction; the numbers before
+- [ ] 2. Gain staging: the hits and stingers (stabs, braams, piano strikes, impacts, crashes), their stacking on a downbeat, the Drama layer's headroom
+- [ ] 3. Loudness-matched tiers: compensation per Place, style and tier (the Place makes room), the arrangement's gears, the transitions' own sounds
+- [ ] 4. Safety: a look-ahead limiter on the Drama layer, the master's true-peak safety, the Place outputs
+- [ ] 5. The arrangement's transitions, Inspire's moods and the dramatic factory scenes measured and fixed
+- [ ] 6. Tests (the `loudness` group; the drama groups' louder-is-more checks replaced), listening renders before / after, bench (Drama 0 bit for bit)
+- [ ] 7. DEVLOG results and handoff; final push; CI green
+
