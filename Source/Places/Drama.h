@@ -161,6 +161,9 @@ public:
                 const Elements& elements, uint64_t clock, float* left, float* right, int n);
     // The tier playing now (latched on the bar lines) and the drama amount.
     int tier() const { return latched; }
+    // The tier it will latch on the next bar line (the Drama loudness pass: the Place makes
+    // room for it at once, as Score Intensity's own rise arrives at once).
+    int wanted() const { return want; }
     float amount() const { return x; }
     // Notes started since prepare() (for the tests: rhythmic density).
     uint32_t started() const { return startedCount; }

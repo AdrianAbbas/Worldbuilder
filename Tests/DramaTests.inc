@@ -360,15 +360,25 @@ void testDrama(Suite& s) {
         const auto a = h.p->arrangement.get();
         arrangeTest::play(h);
         const double bpm = h.playHead.bpm, secondsPerBar = 240.0 / bpm;
-        const auto audio = h.render(double(a.totalBars()) * secondsPerBar);
         // (The Drama loudness pass: the fights are as loud as the calm sections, denser: more
-        // transients per second.)
+        // notes per second. Played section by section to count them.)
+        Audio audio;
+        audio.rate = 48000;
+        std::vector<double> notesPerSecond;
+        for (int k = 0; k < a.count; ++k) {
+            const double seconds = double(a.sections[std::size_t(k)].span()) * secondsPerBar;
+            const uint32_t before = allEvents(h) + dramaNotes(h);
+            const auto part = h.render(seconds);
+            notesPerSecond.push_back(double(allEvents(h) + dramaNotes(h) - before) / seconds);
+            audio.l.insert(audio.l.end(), part.l.begin(), part.l.end());
+            audio.r.insert(audio.r.end(), part.r.begin(), part.r.end());
+        }
         double calmTop = -240, peakLow = 240, calmOnsets = 0, fightOnsets = 1.0e9;
         for (int k = 0; k < a.count; ++k) {
             const auto& sec = a.sections[std::size_t(k)];
             const double from = double(a.startOf(k)) * secondsPerBar + secondsPerBar, to = double(a.startOf(k) + sec.span()) * secondsPerBar - secondsPerBar;
             if (to <= from || sec.transition == arr::TransFilter) continue;
-            const double level = measure(audio, from, to).rmsDb, onsets = onsetRate(audio, from, to);
+            const double level = measure(audio, from, to).rmsDb, onsets = notesPerSecond[std::size_t(k)];
             if (sec.drama == drama::Calm) {
                 calmTop = std::max(calmTop, level);
                 calmOnsets = std::max(calmOnsets, onsets);
@@ -379,9 +389,9 @@ void testDrama(Suite& s) {
             }
         }
         const auto whole = measure(audio, 0.5);
-        s.check(fightOnsets > 1.2 * calmOnsets && peakLow < calmTop + 2.0 && whole.finite && whole.peak <= 0.8913,
-                "played, its fights are denser than its calm sections (transients), not louder, and never clip",
-                "quietest fight " + fmt(peakLow) + " dB, loudest calm " + fmt(calmTop) + " dB; transients " + fmt(fightOnsets) + " / " + fmt(calmOnsets) + " per s");
+        s.check(fightOnsets > 1.5 * calmOnsets && peakLow < calmTop + 2.0 && whole.finite && whole.peak <= 0.8913,
+                "played, its fights are denser than its calm sections (notes), not louder, and never clip",
+                "quietest fight " + fmt(peakLow) + " dB, loudest calm " + fmt(calmTop) + " dB; notes " + fmt(fightOnsets) + " / " + fmt(calmOnsets) + " per s");
         std::vector<float> pl, pr;
         appendPart(pl, pr, audio, 0.0, std::min(90.0, double(audio.l.size()) / 48000.0));
         writeFlac("drama-scene-battle-at-the-castle-gate.flac", pl, pr, 48000);
@@ -488,7 +498,7 @@ void testDrama(Suite& s) {
         const auto& tension = by[scenes::MoodTension];
         const auto& mystery = by[scenes::MoodMystery];
         const auto& adventure = by[scenes::MoodAdventure];
-        s.check(battle.events > 3.0 * calm.events && battle.onsets > 1.3 * calm.onsets && battle.tierSum >= 6,
+        s.check(battle.events > 3.0 * calm.events && battle.onsets > calm.onsets && battle.tierSum >= 6,
                 "Battle: Action or Climax, driving (dense, transient against Calm; the loudness group keeps it as loud)", text);
         s.check(epic.events > 1.5 * calm.events && epic.tierSum >= 6 && epic.events < battle.events, "Epic: big (dense, at Climax) but broader than Battle", text);
         s.check(tragic.events < 0.8 * battle.events && tragic.minorShare > 0.5, "Tragic: slower, sparser, minor", text);

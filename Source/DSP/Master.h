@@ -30,8 +30,8 @@ struct Glue {
 };
 
 // How much a limiter turned the signal down (for the tests and the bench; it never
-// changes the sound): the samples seen, those it reduced, the sum and the largest of the
-// reduction in dB.
+// changes the sound): the samples seen, those it turned down by more than 0.1 dB, the sum
+// and the largest of the reduction in dB.
 struct Reduction {
     uint64_t samples = 0, engaged = 0;
     double sumDb = 0;
@@ -40,7 +40,7 @@ struct Reduction {
         ++samples;
         if (gain < 0.99999f) {
             const float db = -20.0f * std::log10(std::max(gain, 1.0e-6f));
-            ++engaged;
+            engaged += db > 0.1f ? 1u : 0u;   // engaged: more than 0.1 dB down
             sumDb += double(db);
             maxDb = std::max(maxDb, db);
         }

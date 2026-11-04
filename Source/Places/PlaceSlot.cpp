@@ -450,10 +450,21 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     float placeTo = 1.0f, layerTo = 1.0f;
     if (dramaOn && !c.instrument && c.drama.drama > 0.0f) {
         float placeDb = c.dramaShapeDb;
+        const int style = drama::styleFor(currentType, c.drama.style);
         if (dramaLayer.tier() > drama::Calm) {
-            const auto b = drama::balance(currentType, drama::styleFor(currentType, c.drama.style), dramaLayer.tier(), c.drama.rank, world.intensity);
+            const auto b = drama::balance(currentType, style, dramaLayer.tier(), c.drama.rank, world.intensity);
             placeDb += b.placeDb;
             layerTo = dbToGain(b.layerDb - b.placeDb);
+        }
+        // Rising, the Place makes room for the tier ahead before its bar line (its own rise
+        // with Score Intensity does not wait for it); the layer keeps the tier it plays.
+        if (dramaLayer.wanted() > dramaLayer.tier()) {
+            const auto ahead = drama::balance(currentType, style, dramaLayer.wanted(), c.drama.rank, world.intensity);
+            const auto now = drama::balance(currentType, style, dramaLayer.tier(), c.drama.rank, world.intensity);
+            if (ahead.placeDb < now.placeDb) {
+                placeDb += ahead.placeDb - now.placeDb;
+                layerTo *= dbToGain(now.placeDb - ahead.placeDb);   // (the layer's own level stays)
+            }
         }
         placeTo = dbToGain(placeDb);
     }
