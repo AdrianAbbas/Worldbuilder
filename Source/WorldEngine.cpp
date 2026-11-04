@@ -94,7 +94,7 @@ void WorldEngine::reset(const EngineControls& initial) {
     transitionBalance = 1;
     shapeDb.fill(0.0f);
     balanceKey = 0;
-    sectionBalance = 0;
+    sectionBalance = nextBalance = 0;
     for (auto& f : sweep) f.reset();
     sweeping = false;
     duckGain = 1;
@@ -188,8 +188,14 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
     if (key != balanceKey) {
         balanceKey = key;
         sectionBalance = probeNoSectionBalance ? 0.0f : sectionBalanceDb(a, arranged.at.section, shaping, controls);
+        // The section after it: a Crossfade brings its instruments in early, so its balance
+        // glides in across the crossfade.
+        const int next = arranged.at.section + 1 < a.count ? arranged.at.section + 1 : (a.end == arr::EndLoop ? int(a.loopTo) : -1);
+        nextBalance = probeNoSectionBalance || next < 0 ? sectionBalance : sectionBalanceDb(a, next, shaping, controls);
     }
-    for (auto& d : shapeDb) d += sectionBalance;
+    float balance = sectionBalance;
+    if (arranged.transition == arr::TransCrossfade && arranged.transitionT >= 0.0f) balance = lerp(sectionBalance, nextBalance, clamp01(arranged.transitionT));
+    for (auto& d : shapeDb) d += balance;
 }
 
 // The weighted power of a slot's six instruments as a State plays them (relative units):

@@ -242,7 +242,7 @@ private:
     // A transparent look-ahead limiter on the layer's sum (1.5 ms): stacked hits on one
     // downbeat never reach past its ceiling, and it rarely engages (Tests "loudness").
     dsp::LookaheadLimiter limiter;
-    static constexpr float limiterCeiling = 0.5f;   // -6 dBFS, before the slot's level and pan
+    static constexpr float limiterCeiling = 0.708f;   // -3 dBFS at the balanced level, before the slot's level and pan
     float peakOut = 0;
     float hallWet = 0.5f;
     dsp::Smoother level;

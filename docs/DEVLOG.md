@@ -7214,11 +7214,72 @@ A resumed session continues from the first unticked line.
 
 ### Progress checklist
 
-- [ ] 1. Measurement: BS.1770 loudness (integrated, short-term), true peak (4x), the limiters' gain reduction; the numbers before
-- [ ] 2. Gain staging: the hits and stingers (stabs, braams, piano strikes, impacts, crashes), their stacking on a downbeat, the Drama layer's headroom
-- [ ] 3. Loudness-matched tiers: compensation per Place, style and tier (the Place makes room), the arrangement's gears, the transitions' own sounds
-- [ ] 4. Safety: a look-ahead limiter on the Drama layer, the master's true-peak safety, the Place outputs
+- [x] 1. Measurement: BS.1770 loudness (integrated, short-term), true peak (4x), the limiters' gain reduction; the numbers before
+- [x] 2. Gain staging: the hits and stingers (stabs, braams, piano strikes, impacts, crashes), their stacking on a downbeat, the Drama layer's headroom
+- [x] 3. Loudness-matched tiers: compensation per Place, style and tier (the Place makes room), the arrangement's gears, the transitions' own sounds
+- [x] 4. Safety: a look-ahead limiter on the Drama layer, the master's true-peak safety, the Place outputs
 - [ ] 5. The arrangement's transitions, Inspire's moods and the dramatic factory scenes measured and fixed
 - [ ] 6. Tests (the `loudness` group; the drama groups' louder-is-more checks replaced), listening renders before / after, bench (Drama 0 bit for bit)
 - [ ] 7. DEVLOG results and handoff; final push; CI green
+
+(Status while this was written: items 1-4 are in the code; the calibration chain is being
+re-run after the Drama layer limiter's ceiling moved to the balanced level; then 5-7.)
+
+### Decisions
+
+**Measured, not guessed: the balance is a table.** Every Place, Drama Style and tier was
+measured (Tests `balancecal`: the Place and its Drama layer apart, the master made linear
+for the measurement so the two subtract exactly), and the table
+(`Source/Places/DramaBalance.inc`, written by `tools/drama-balance/mkbal.py`; the whole
+chain in `tools/drama-balance/calibrate.sh`) gives each tier two gains: the Place's
+(`placeDb`, on the whole slot: the existing parts make room) and the Drama layer's level in
+the slot (`layerDb`). They are solved so the slot sits at its Calm level (Score Intensity
+35 %, a little towards the Place as set: +0.5 to +1 dB) with the layer taking 35 % of the
+loudness at Tension, 50 % at Action and 55 % at Climax, then corrected by measuring again.
+The Place's own Classic rise with Score Intensity (measured at 50, 62, 80, 100 %) is
+balanced too, so a tier stays level as Intensity moves inside it. The gains follow the tier
+latched on the bar line: down within 12 ms (the louder tier's first downbeat already
+balanced), back up over 150 ms. Calm and Drama 0 are exactly as before (the gains are 1 and
+not even multiplied).
+
+**Gain staging of the hits** (Tests `hitprobe`: each Drama part alone at Climax, by
+subtraction): a hit's 400 ms loudness rose up to 2 LU above the whole layer and its true
+peak up to 10.6 dB above the layer's loudness. The low piano strikes -4 dB, braams -3.5,
+synth stabs -2.5, the crash and metal stabs -3, impacts -2.5, choir -1, a metal kit's
+clanks -1; the stingers that land with the pattern's own hits on one downbeat (impact,
+crash, both stabs, the piano and braam at a big landing) are softer (0.9 / 0.7 / 0.85 /
+0.75 / 0.7 / 0.6 against 1.1 / 0.9 / 0.95 / 0.85 / 0.9 / 0.8); the cymbal swell into a
+Riser 0.7 (0.9) and the drum roll builds less far.
+
+**The arrangement.** Drama reshapes a section (instruments entering, busier variants,
+doublings; calm sections thinned): that reshaping is estimated from the instruments'
+measured weights (each of a Place's six alone against the whole Place) and balanced back
+for 80 %. A section above Calm also gets a section balance against the arrangement's calm
+sections: each section is evaluated at its middle through the engine's own shaping and
+estimated (a calm section at its Score Intensity with the instruments it plays; a tiered
+one at the balanced level, its Place part scaled by what it plays against free play), and
+the dramatic sections are brought to the calm sections' level (never more than 6 dB under
+the world at Calm: an intro of one instrument does not set it; at most 12 dB down, 3 dB
+up). The estimate's error per Place and tier was measured on each Place alone through the
+Battle and Chase templates and, as a further Place, beside a Castle (Tests `arrcal`), and
+is part of the table. It is a pure function of the arrangement and the controls (computed
+when they change), so playback stays position-independent (a locate, the ARRANGE preview
+and the game-audio export all play the same). A Crossfade glides into the next section's
+balance. The transitions' own sounds (the Riser, the Reverse swell, the Drop's sub hit)
+follow the Places' balance and sit 7 dB lower while drama plays.
+
+**Safety.** The Drama layer of each slot has a transparent look-ahead limiter
+(`dsp::LookaheadLimiter`: 1.5 ms look-ahead, the gain held over it and smoothed by a moving
+average of the same length, 150 ms release; a pure delay below its ceiling), its ceiling
+-3 dBFS at the level the slot's balance puts the layer. The master keeps its zero-latency
+safety limiter: a look-ahead there would delay every session's output (old ones included)
+and need the host's latency compensation; instead, while a Drama layer plays, its ceiling
+is -1.5 dBFS sample peak so the true peak stays under -1 dBFS (and the separate Place
+outputs' limiters the same). After the gain staging and the balance they rarely engage
+(numbers below).
+
+**The dramatic factory scenes**: their fight Locations raised the second and third Places
+by 2-4 dB (and brought in a storm or a sandstorm); they now keep the calm Location's
+levels (the storms present throughout: Pirate Battle's Weather 70 to 75, Siege's 65 to 70).
+The 24 older scenes are untouched.
 

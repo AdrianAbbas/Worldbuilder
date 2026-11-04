@@ -217,7 +217,7 @@ private:
     std::array<float, placeSlots> shapeDb {};
     float transitionBalance = 1;
     uint64_t balanceKey = 0;
-    float sectionBalance = 0;
+    float sectionBalance = 0, nextBalance = 0;
     double placePower(const arr::State& st, int slot, const EngineControls& controls, bool full = false) const;
     float shapeBalanceDb(const arr::State& shaped, const arr::State& written, int slot, const EngineControls& controls) const;
     float sectionBalanceDb(const arr::Arrangement& a, int section, const arr::Shaping& shaping, const EngineControls& controls) const;
