@@ -7220,7 +7220,7 @@ A resumed session continues from the first unticked line.
 - [x] 4. Safety: a look-ahead limiter on the Drama layer, the master's true-peak safety, the Place outputs
 - [x] 5. The arrangement's transitions, Inspire's moods and the dramatic factory scenes measured and fixed
 - [x] 6. Tests (the `loudness` group; the drama groups' louder-is-more checks replaced), listening renders before / after, bench (Drama 0 bit for bit)
-- [x] 7. DEVLOG results and handoff; final push; CI green (pending: see below)
+- [x] 7. DEVLOG results and handoff; final push; CI green (run 41782818199: 5123 passed, macOS green)
 
 ### Decisions
 
@@ -7343,7 +7343,7 @@ busier at every tier, more intense than today's maximum without being louder; th
 the Castle Gate scene's fights denser than its calm sections, no louder; Inspire's moods;
 `dramarework`: the fights denser against the calm, the level contrast no larger than the
 Classic score's). Full suite (`scripts/run-tests-parallel.sh`, the new `loudness` group as
-a seventh shard, about 30 minutes alone): 5123 passed, 0 failed here.
+a seventh shard, about 30 minutes alone): 5123 passed, 0 failed here. On CI (run 41782818199, the push of `1eaaa7b`): 5123 passed, 0 failed; macOS (universal build, smoke tests on arm64 and x86_64, bundle checks, a quarantined install, auval and the AU harness) green.
 
 ### Drama loudness pass handoff
 
