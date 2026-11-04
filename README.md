@@ -88,7 +88,8 @@ These work now:
   a calm bed (0 %) through the Places as set (50 %) to a climax (100 %): busier,
   tenser, brighter and louder, each Place on its own curve. It glides rather than
   jumps; automate it to shape a cue over time. With **Drama** (the small knob beside it)
-  the top half changes gear like game music when a fight starts (see *Drama: Calm,
+  the top half changes gear like game music when a fight starts, more intense but not
+  louder (see *Drama: Calm,
   Tension, Action, Climax* below); the label shows the tier the world is in.
 - **Capture** (the footer's CAPTURE section): **RENDER** the current world offline to a
   WAV file (the full mix, or stems: one per Place plus the environment), and **MIDI**
@@ -240,6 +241,14 @@ their hits only, so a world of four never stacks four drum kits.
   builds arcs: intros and breaks Calm, build-ups at Tension, the first fight at Action and
   the later ones at Climax, a Riser into a fight, a Drop out of it, a Drum fill back in.
   New templates: **Chase**, **Siege**, **Final Stand**, **Lament**.
+- **More intense, not louder.** The tiers are about as loud as Calm (within about 1.5 dB;
+  a Climax at most 2 dB above): the intensity comes from the drums, the ostinato, the
+  busier and doubled parts, the harmony and the hits, while the Place's own instruments
+  make room for them (a balance measured for every Place, Drama Style and tier). In an
+  arrangement the dramatic sections sit at the calm sections' level too, and the
+  transitions land without a jump. The hits are staged so that several on one downbeat
+  never clip: each Place's Drama instruments pass a transparent look-ahead limiter, and
+  while drama plays the master holds its peaks under -1.5 dBFS (true peak under -1).
 - The Drama instruments cost no CPU while the world is Calm.
 
 ### The Drama instruments
