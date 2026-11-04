@@ -508,7 +508,7 @@ void calibrateArranged() {
                 }
             }
             if (calms == 0) continue;
-            const double ref = std::max(10.0 * std::log10(calm / double(calms)), calmLevel - 4.0);
+            const double ref = std::max(10.0 * std::log10(calm / double(calms)), calmLevel - 6.0);
             for (const auto& [tier, l] : levels)
                 if (tier > drama::Calm) {
                     sum[std::size_t(tier)] += l - ref;

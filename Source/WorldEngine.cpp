@@ -229,7 +229,7 @@ float WorldEngine::shapeBalanceDb(const arr::State& shaped, const arr::State& wr
 // Classic curves) with the instruments it plays, a section above Calm at the level the
 // Drama tier balances it to, its Place part scaled by the instruments it plays against
 // the free play's at that tier. The section's balance brings it to the calm sections'
-// level (Tension and Action up to 0.5 dB above, a Climax 1 dB; at most 12 dB down and
+// level (Tension and Action at it, a Climax 0.25 dB above; at most 12 dB down and
 // 1.5 dB up).
 float WorldEngine::sectionBalanceDb(const arr::Arrangement& a, int section, const arr::Shaping& shaping, const EngineControls& controls) const {
     if (section < 0 || section >= a.count || shaping.drama <= 0.0f) return 0.0f;
@@ -306,15 +306,15 @@ float WorldEngine::sectionBalanceDb(const arr::Arrangement& a, int section, cons
     const double here = levelOf(section, tier);
     if (tier <= drama::Calm || here < -150.0 || lowest > 1.0e8) return 0.0f;
     // (A calm section far quieter than the Places at Calm, an intro of one instrument, does
-    // not set the level: the reference is never more than 4 dB below the world at Calm.)
+    // not set the level: the reference is never more than 6 dB below the world at Calm.)
     double floor = 0;
     for (int s = 0; s < placeSlots; ++s) {
         const auto& pc = controls.places[std::size_t(s)];
         if (pc.type != NoPlace) floor += std::pow(10.0, double(pc.levelDb + drama::classicRiseDb(pc.type, 0.35f)) / 10.0);
     }
     double reference = calmCount > 0 ? 10.0 * std::log10(calm / double(calmCount)) : lowest;
-    if (floor > 0.0) reference = std::max(reference, 10.0 * std::log10(floor) - 4.0);
-    const double allowance = tier == drama::Climax ? 1.0 : 0.5;
+    if (floor > 0.0) reference = std::max(reference, 10.0 * std::log10(floor) - 6.0);
+    const double allowance = tier == drama::Climax ? 0.25 : 0.0;
     const float weight = std::min(1.0f, shaping.drama / 0.25f);
     double db = 0;
     if (here > reference + allowance) db = -std::min(12.0, here - reference - allowance);
