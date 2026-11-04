@@ -9548,6 +9548,7 @@ int main(int argc, char** argv) {
     if (run("slide")) testSlide(s);
     if (run("drama")) testDrama(s);
     if (run("dramarework")) testDramaRework(s);
+    if (run("loudness")) testLoudness(s);
     if (only.contains("dramatrims")) probeDramaTrims();
     if (only.contains("loudprobe")) probeLoudness();
     if (only.contains("hitprobe")) probeHits();

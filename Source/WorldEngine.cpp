@@ -160,7 +160,7 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
     // instruments' measured weights and levels and balanced back for 80 %: drama changes
     // the density, not the loudness. (The section's own evolution is as written.)
     shapeDb.fill(0.0f);
-    if (shaping.drama <= 0.0f) return;
+    if (shaping.drama <= 0.0f || !drama::loudnessPass) return;
     arr::State evolving = plain;
     arr::Shaping evolveOnly = shaping;
     evolveOnly.drama = 0.0f;
@@ -282,9 +282,11 @@ float WorldEngine::sectionBalanceDb(const arr::Arrangement& a, int section, cons
                 double layer = 0;
                 for (int d = 0; d < dramaElements; ++d)
                     layer += st.gain[std::size_t(s)][std::size_t(placeElements + d)] > 0.0f && pc.elementOn[std::size_t(placeElements + d)] ? 1.0 / 3.0 : 0.0;
-                layer *= rank == 0 ? 1.0 : (rank == 1 ? 0.5 : 0.25);
+                const double f = double(drama::rankLayerPower(rank));
+                layer *= f;
+                const double room = (1.0 - share * f) / (1.0 - share);   // the Place makes less room beside a lighter layer
                 slot = std::pow(10.0, double(drama::balancedDb(pc.type) + drama::arrangedCorrectionDb(pc.type, tier, rank)) / 10.0)
-                       * ((1.0 - share) * played / freePower + share * layer);
+                       * ((1.0 - share) * room * played / freePower + share * layer);
             }
             sum += slot * std::pow(10.0, double(pc.levelDb) / 10.0);
         }
@@ -832,10 +834,10 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
                                arranging ? arranged.arrived : arr::TransCut, since, world.root, world.mood, layerL.data(), layerR.data(), n);
         const float send = arranged.transition == arr::TransReverse ? 0.9f : 0.5f;
         // The Drama loudness pass: with drama playing, the transitions' sounds follow the
-        // Places' balance (they step back as the Places make room) and sit 4 dB lower: the
+        // Places' balance (they step back as the Places make room) and sit 7 dB lower: the
         // Drama layer's roll, swell and landing hits play into the same downbeat.
         float from = transitionBalance, to = 1.0f;
-        if (world.drama > 0.0f && !controls.instrument.on) {
+        if (world.drama > 0.0f && !controls.instrument.on && drama::loudnessPass) {
             float sum = 0;
             int count = 0;
             for (int s = 0; s < placeSlots; ++s)
@@ -843,7 +845,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
                     sum += slots[std::size_t(s)].placeCompGain();
                     ++count;
                 }
-            to = (count > 0 ? sum / float(count) : 1.0f) * dbToGain(-4.0f);
+            to = (count > 0 ? sum / float(count) : 1.0f) * dbToGain(-7.0f);
         }
         if (transitionBalance == 1.0f && to == 1.0f) from = 1.0f;
         transitionBalance = to;
@@ -895,6 +897,11 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
         for (auto& f : sweep) f.reset();
         sweeping = false;
     }
+    // (Only while a Drama layer plays: at Calm a world is bit for bit the Classic one.)
+    bool dramaPlaying = false;
+    for (const auto& sl : slots) dramaPlaying |= sl.drama().active();
+    limiter.limit = dramaPlaying && world.drama > 0.0f && !controls.instrument.on && drama::loudnessPass ? dsp::SafetyLimiter::dramaCeiling : dsp::SafetyLimiter::ceiling;
+    for (auto& sl : slotLimiter) sl.limit = limiter.limit;
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         const float mix = spaceMix.next(mixTarget);

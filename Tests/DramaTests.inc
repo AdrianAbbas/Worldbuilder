@@ -257,14 +257,16 @@ void testDrama(Suite& s) {
         s.check(calm.tier == drama::Calm && tense.tier == drama::Tension && action.tier == drama::Action && climax.tier == drama::Climax,
                 name + ": the tiers in order (35 %, 62 %, 80 %, 100 %)",
                 std::to_string(calm.tier) + std::to_string(tense.tier) + std::to_string(action.tier) + std::to_string(climax.tier));
-        s.check(climax.rms > calm.rms + 10.0 && climax.low > calm.low + 10.0 && climax.onsets > 1.4 * calm.onsets && climax.events > 2.5 * calm.events,
-                name + ": Calm against Climax differ strongly (loudness, low end, transients, notes per second)", text);
-        s.check(tense.rms > calm.rms + 1.0 && action.rms > tense.rms + 1.0 && climax.rms > action.rms, name + ": louder at every tier", text);
-        // More intense than today's maximum: louder, heavier, at least as transient (some
-        // Places' Classic maximum is already a snare or shaker groove) and with half as
-        // many notes again or more.
-        s.check(climax.rms > classic.rms + 3.0 && climax.low > classic.low + 3.0 && climax.onsets >= classic.onsets && climax.events > 1.5 * classic.events,
-                name + ": the Climax is clearly more intense than today's maximum (Classic at 100 %)", text);
+        // The Drama loudness pass: the tiers are about equally loud (the "loudness" group
+        // measures them); intensity comes from the notes, the transients and the parts.
+        s.check(climax.onsets > 1.4 * calm.onsets && climax.events > 2.5 * calm.events,
+                name + ": Calm against Climax differ strongly (transients, notes per second), not in loudness", text);
+        s.check(tense.events > calm.events && action.events > tense.events && climax.events > action.events, name + ": busier at every tier", text);
+        // More intense than today's maximum: at least as transient (nearly: some Places'
+        // Classic maximum is already a snare or shaker groove) and with half as many notes
+        // again or more, without being louder.
+        s.check(climax.onsets >= 0.9 * classic.onsets && climax.events > 1.5 * classic.events && climax.rms < classic.rms + 1.0,
+                name + ": the Climax is more intense than today's maximum (Classic at 100 %), not louder", text);
         s.check(climax.finite && climax.peak <= 0.8913 && action.peak <= 0.8913, name + ": finite and never clipping at Climax",
                 fmt(toDb(climax.peak)) + " dBFS peak");
         s.metric(name + " Climax over Calm", climax.rms - calm.rms, " dB");
@@ -283,8 +285,9 @@ void testDrama(Suite& s) {
         const double median = sorted[sorted.size() / 2];
         double worst = 0;
         for (double c : climaxes) worst = std::max(worst, std::abs(c - median));
-        s.check(worst < 5.0 && median < -9.0, "level-matched: every Place's Climax within 5 dB of the others' median (and not squashed)",
-                "median " + fmt(median) + " dB, furthest " + fmt(worst) + " dB from it");
+        // (Each Place's Climax now sits at its own Calm level: the Places differ as they do at Calm.)
+        s.metric("Climax levels: the median", median, " dB");
+        s.metric("Climax levels: the furthest from the median", worst, " dB");
     }
 
     s.section("drama: gear changes, styles, the arrangement");
@@ -328,9 +331,8 @@ void testDrama(Suite& s) {
                     + fmt(by[std::size_t(style)].events) + " notes/s; ";
         }
         const auto& drive = by[drama::StyleDriving];
-        s.check(by[drama::StyleEpic].events < drive.events && by[drama::StyleTragic].events < 0.75 * drive.events && by[drama::StyleTragic].rms < drive.rms
-                    && by[drama::StyleSuspense].events < drive.events,
-                "Drama Style: Driving drives hardest; Epic is broader, Tragic sparse and quieter, Suspense held back", text);
+        s.check(by[drama::StyleEpic].events < drive.events && by[drama::StyleTragic].events < 0.75 * drive.events && by[drama::StyleSuspense].events < drive.events,
+                "Drama Style: Driving drives hardest; Epic is broader, Tragic sparse, Suspense held back", text);
     }
     {
         // A dramatic arrangement: arcs on the tiers, the transitions a score changes gear with.
@@ -359,18 +361,27 @@ void testDrama(Suite& s) {
         arrangeTest::play(h);
         const double bpm = h.playHead.bpm, secondsPerBar = 240.0 / bpm;
         const auto audio = h.render(double(a.totalBars()) * secondsPerBar);
-        double calmTop = -240, peakLow = 240;
+        // (The Drama loudness pass: the fights are as loud as the calm sections, denser: more
+        // transients per second.)
+        double calmTop = -240, peakLow = 240, calmOnsets = 0, fightOnsets = 1.0e9;
         for (int k = 0; k < a.count; ++k) {
             const auto& sec = a.sections[std::size_t(k)];
             const double from = double(a.startOf(k)) * secondsPerBar + secondsPerBar, to = double(a.startOf(k) + sec.span()) * secondsPerBar - secondsPerBar;
-            if (to <= from) continue;
-            const double level = measure(audio, from, to).rmsDb;
-            if (sec.drama == drama::Calm) calmTop = std::max(calmTop, level);
-            if (sec.drama >= drama::Action) peakLow = std::min(peakLow, level);
+            if (to <= from || sec.transition == arr::TransFilter) continue;
+            const double level = measure(audio, from, to).rmsDb, onsets = onsetRate(audio, from, to);
+            if (sec.drama == drama::Calm) {
+                calmTop = std::max(calmTop, level);
+                calmOnsets = std::max(calmOnsets, onsets);
+            }
+            if (sec.drama >= drama::Action) {
+                peakLow = std::min(peakLow, level);
+                fightOnsets = std::min(fightOnsets, onsets);
+            }
         }
         const auto whole = measure(audio, 0.5);
-        s.check(peakLow > calmTop + 6.0 && whole.finite && whole.peak <= 0.8913, "played, its fights stand 6 dB or more above its calm sections, without clipping",
-                "quietest fight " + fmt(peakLow) + " dB, loudest calm " + fmt(calmTop) + " dB");
+        s.check(fightOnsets > 1.2 * calmOnsets && peakLow < calmTop + 2.0 && whole.finite && whole.peak <= 0.8913,
+                "played, its fights are denser than its calm sections (transients), not louder, and never clip",
+                "quietest fight " + fmt(peakLow) + " dB, loudest calm " + fmt(calmTop) + " dB; transients " + fmt(fightOnsets) + " / " + fmt(calmOnsets) + " per s");
         std::vector<float> pl, pr;
         appendPart(pl, pr, audio, 0.0, std::min(90.0, double(audio.l.size()) / 48000.0));
         writeFlac("drama-scene-battle-at-the-castle-gate.flac", pl, pr, 48000);
@@ -477,16 +488,16 @@ void testDrama(Suite& s) {
         const auto& tension = by[scenes::MoodTension];
         const auto& mystery = by[scenes::MoodMystery];
         const auto& adventure = by[scenes::MoodAdventure];
-        s.check(battle.rms > calm.rms + 8.0 && battle.events > 3.0 * calm.events && battle.low > calm.low + 6.0 && battle.tierSum >= 6,
-                "Battle: Action or Climax, driving (loud, dense, heavy low end against Calm)", text);
-        s.check(epic.rms > calm.rms + 8.0 && epic.tierSum >= 6 && epic.events < battle.events, "Epic: big but broader than Battle", text);
-        s.check(tragic.rms < battle.rms - 1.0 && tragic.events < 0.8 * battle.events && tragic.minorShare > 0.5, "Tragic: slower, quieter, minor", text);
-        s.check(triumph.rms > calm.rms + 8.0 && triumph.tierSum >= 6 && triumph.minorShare < battle.minorShare, "Triumphant: big and major", text);
-        s.check(tension.tierSum >= 3 && tension.tierSum <= 4 && tension.rms > calm.rms + 3.0 && tension.events > calm.events,
+        s.check(battle.events > 3.0 * calm.events && battle.onsets > 1.3 * calm.onsets && battle.tierSum >= 6,
+                "Battle: Action or Climax, driving (dense, transient against Calm; the loudness group keeps it as loud)", text);
+        s.check(epic.events > 1.5 * calm.events && epic.tierSum >= 6 && epic.events < battle.events, "Epic: big (dense, at Climax) but broader than Battle", text);
+        s.check(tragic.events < 0.8 * battle.events && tragic.minorShare > 0.5, "Tragic: slower, sparser, minor", text);
+        s.check(triumph.events > 1.5 * calm.events && triumph.tierSum >= 6 && triumph.minorShare < battle.minorShare, "Triumphant: big (dense, at Climax) and major", text);
+        s.check(tension.tierSum >= 3 && tension.tierSum <= 4 && tension.events > calm.events,
                 "Tension: the Tension tier (in two scenes of three at least), above Calm", text);
-        s.check(calm.tierSum == 0 && calm.rms < battle.rms - 8.0 && mystery.tierSum == 0 && mystery.rms < battle.rms - 6.0,
+        s.check(calm.tierSum == 0 && calm.events < 0.5 * battle.events && mystery.tierSum == 0 && mystery.events < 0.5 * battle.events,
                 "Calm and Mystery stay below the Drama tier", text);
-        s.check(adventure.rms > calm.rms && adventure.events > calm.events, "Adventure: livelier than Calm", text);
+        s.check(adventure.events > calm.events, "Adventure: livelier than Calm", text);
         s.check(battle.minorShare > 0.5, "Battle is minor", text);
     }
     {

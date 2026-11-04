@@ -532,3 +532,263 @@ void calibrateArranged() {
         std::cout << std::endl;
     }
 }
+
+namespace loud {
+
+// Four busy Places (Activity up, the World Controls high) at Climax: the hits of four
+// Drama layers stack on the same downbeats.
+Host busyFour(const std::array<int, 4>& types, float intensity = 1.0f) {
+    Host h;
+    for (int slot = 0; slot < placeSlotCount; ++slot) {
+        h.set(slotId(slot, PlType), float(types[std::size_t(slot)]));
+        h.set(slotId(slot, PlActivity), 1.0f);
+    }
+    for (int c = 0; c < WorldControlCount; ++c) h.set(worldId(c), 0.7f);
+    h.set("intensity", intensity);
+    h.set("drama", 1.0f);
+    return h;
+}
+
+std::string reductionText(const dsp::Reduction& r) {
+    return "average " + fmt3(r.averageDb()) + " dB, max " + fmt(r.maxDb) + " dB, engaged " + fmt(100.0 * r.engagedShare()) + " %";
+}
+
+} // namespace loud
+
+void testLoudness(Suite& s) {
+    using namespace loud;
+    s.section("loudness: every Place and Drama Style, Calm / Tension / Action / Climax in one window");
+    {
+        const auto places = builtPlaces();
+        double worst = 0, worstClimax = -99;
+        std::string worstText;
+        int intense = 0, count = 0;
+        for (int type : places) {
+            const std::string name = placeNames[std::size_t(type)];
+            auto hc = dramaTest::placeHost(type, calmIntensity, 1.0f);
+            const auto calm = level(hc);
+            std::string text = "calm " + fmt(calm.integrated) + " LUFS;";
+            bool inside = true, climaxOk = true;
+            for (int style = drama::StyleDriving; style < drama::StyleCount; ++style) {
+                for (int t = 1; t <= 3; ++t) {
+                    auto h = dramaTest::placeHost(type, tierIntensity[std::size_t(t - 1)], 1.0f, style);
+                    const auto v = level(h);
+                    const double d = v.integrated - calm.integrated, st = v.shortMax - calm.shortMax;
+                    text += " s" + std::to_string(style) + "t" + std::to_string(t) + " " + fmt(d) + "/" + fmt(st);
+                    if (t < 3) inside = inside && std::abs(d) <= 1.5 && st <= 2.0;
+                    else climaxOk = climaxOk && d <= 2.0 && d >= -1.5 && st <= 2.5;
+                    if (std::abs(d) > worst) {
+                        worst = std::abs(d);
+                        worstText = name + " style " + std::to_string(style) + " tier " + std::to_string(t) + ": " + fmt(d) + " dB";
+                    }
+                    if (t == 3) worstClimax = std::max(worstClimax, d);
+                    // More intense, not louder: at Climax (Driving) more notes and transients than Calm.
+                    if (t == 3 && style == drama::StyleDriving) {
+                        ++count;
+                        intense += v.events > 2.5 * calm.events && v.onsets > 1.4 * calm.onsets ? 1 : 0;
+                        if (!(v.events > 2.5 * calm.events && v.onsets > 1.4 * calm.onsets))
+                            std::cout << "  [info] " << name << " climax notes " << fmt(v.events) << " vs " << fmt(calm.events) << ", transients " << fmt(v.onsets) << " vs " << fmt(calm.onsets) << "\n";
+                    }
+                }
+            }
+            s.check(inside, name + ": Tension and Action within 1.5 dB of Calm (integrated; short-term peaks within 2 dB), every Drama Style", text);
+            s.check(climaxOk, name + ": Climax at most 2 dB above Calm (and not below 1.5 dB under), every Drama Style", text);
+        }
+        s.check(intense == count, "the Climax is more intense, not louder: at least 2.5 times the notes and 1.4 times the transients of Calm",
+                std::to_string(intense) + " of " + std::to_string(count));
+        s.metric("loudness: the furthest tier from Calm", worst, " dB");
+        s.metric("loudness: the highest Climax above Calm", worstClimax, " dB");
+        std::cout << "  [info] furthest: " << worstText << "\n";
+    }
+    {
+        // A later window and a jump: the balance holds as the music goes on, and a tier
+        // reached by a jump of Score Intensity lands at its own level.
+        int ok = 0, total = 0;
+        std::string text;
+        for (int type : { Castle, Spaceport, Factory, Forest, Palace, Megacity, Cavern, Tavern }) {
+            auto hc = dramaTest::placeHost(type, calmIntensity, 1.0f);
+            const auto calm = level(hc, 30.0, 12.0);
+            auto hx = dramaTest::placeHost(type, 1.0f, 1.0f);
+            const auto climax = level(hx, 30.0, 12.0);
+            auto hj = dramaTest::placeHost(type, calmIntensity, 1.0f);
+            hj.render(6.0);
+            hj.set("intensity", 0.8f);
+            const auto jumped = level(hj, 20.0, 6.0);
+            const double d = climax.integrated - calm.integrated, j = jumped.integrated - calm.integrated;
+            ++total;
+            ok += d <= 2.0 && d >= -1.5 && std::abs(j) <= 1.5 ? 1 : 0;
+            text += std::string(placeKeys[std::size_t(type)]) + " " + fmt(d) + " / " + fmt(j) + "; ";
+        }
+        s.check(ok == total, "later windows (12-30 s) and after a jump to Action: still in the window", text);
+    }
+
+    s.section("loudness: headroom with four busy Places and the hits stacking");
+    {
+        const std::array<std::array<int, 4>, 4> worlds { {
+            { Castle, Spaceport, Factory, City },
+            { Megacity, Bridge, Mining, SpaceStation },
+            { Temple, Palace, SeaShip, Military },
+            { Cavern, Ruins, Hive, Nebula },
+        } };
+        double maxTp = -120, sumAvg = 0, maxGr = 0, layerAvg = 0, layerMax = 0, layerShare = 0;
+        int n = 0;
+        for (const auto& w : worlds) {
+            auto h = busyFour(w);
+            h.render(2.0);
+            h.p->engine.clearReductions();
+            const auto a = h.render(16.0);
+            const double tp = truePeak(a, 0.0);
+            maxTp = std::max(maxTp, tp);
+            const auto& r = h.p->engine.masterReduction();
+            sumAvg += r.averageDb();
+            maxGr = std::max(maxGr, double(r.maxDb));
+            for (int slot = 0; slot < placeSlotCount; ++slot) {
+                const auto& l = h.p->engine.placeSlot(slot).drama().reduction();
+                layerAvg += l.averageDb() / 16.0;
+                layerMax = std::max(layerMax, double(l.maxDb));
+                layerShare = std::max(layerShare, l.engagedShare());
+            }
+            ++n;
+            s.check(tp < -1.0 && measure(a, 0).finite, "four busy Places at Climax: true peak below -1 dBFS", fmt(tp) + " dBTP; master limiter " + reductionText(r));
+        }
+        s.metric("master limiter at Climax, four busy Places: average gain reduction", sumAvg / n, " dB");
+        s.metric("master limiter at Climax, four busy Places: largest gain reduction", maxGr, " dB");
+        s.metric("Drama layer limiters at Climax: average gain reduction", layerAvg, " dB");
+        s.metric("Drama layer limiters at Climax: largest gain reduction", layerMax, " dB");
+        s.metric("the highest true peak at Climax, four busy Places", maxTp, " dBTP");
+        s.check(sumAvg / n < 0.1 && layerShare < 0.02, "the limiters rarely engage (master under 0.1 dB on average; a Drama layer limiter on under 2 % of samples)",
+                fmt(sumAvg / n) + " dB, layer " + fmt(100.0 * layerShare) + " %");
+    }
+    {
+        // An arrangement's landing at a climax with four busy Places: a Riser into the fight,
+        // the impacts, crashes, stabs and the transition's own sounds on one downbeat.
+        arr::Arrangement a;
+        auto h = reworkTest::battleWorld({ Castle, Military, Spaceport, Factory }, 1.0f, a);
+        for (int slot = 0; slot < placeSlotCount; ++slot) h.set(slotId(slot, PlActivity), 1.0f);
+        h.playHead.bpm = 120;
+        h.p->arrangement.set(a);
+        arrangeTest::play(h);
+        h.p->engine.clearReductions();
+        const double seconds = double(a.startOf(3) + 4) * 2.0;
+        const auto audio = h.render(seconds);
+        const double tp = truePeak(audio, 0.5);
+        s.check(tp < -1.0, "the arrangement's landings with four Places (Riser, Drum fill, Drop): true peak below -1 dBFS",
+                fmt(tp) + " dBTP; master limiter " + reductionText(h.p->engine.masterReduction()));
+    }
+
+    s.section("loudness: the transitions land without a jump");
+    {
+        arr::Arrangement a;
+        auto h = reworkTest::battleWorld({ Castle, Village }, 1.0f, a);
+        h.playHead.bpm = 120;
+        h.p->arrangement.set(a);
+        arrangeTest::play(h);
+        const double bar = 2.0, seconds = double(a.totalBars()) * bar;
+        const auto audio = h.render(seconds);
+        const auto st = shortTerm(audio, 0.0);
+        bool ok = true;
+        std::string text;
+        for (int k = 1; k < a.count; ++k) {
+            const auto& sec = a.sections[std::size_t(k)];
+            const double at = double(a.startOf(k)) * bar;
+            const double before = integrated(audio, std::max(0.0, at - 8.0 * bar), at - bar), after = integrated(audio, at + bar, std::min(seconds, at + 9.0 * bar));
+            double top = -120;
+            // Short-term windows ending in the landing's first two seconds (centred on the line).
+            for (double t = at - 1.5; t <= at + 2.5; t += 0.1) {
+                const auto i = std::size_t(std::max(0.0, (t - 3.0) / 0.1));
+                if (i < st.size()) top = std::max(top, st[i]);
+            }
+            const double jump = top - std::max(before, after);
+            ok = ok && jump <= 2.0;
+            text += std::string(sec.nameText()) + " (after transition " + std::to_string(a.sections[std::size_t(k - 1)].transition) + ") " + fmt(jump) + " [" + fmt(before) + " / " + fmt(top) + " / " + fmt(after) + "]; ";
+        }
+        s.check(ok, "every landing (Riser, Drum fill, Drop) stays within 2 dB of the sections around it (short-term loudness)", text);
+    }
+
+    s.section("loudness: the dramatic factory scenes in the window");
+    {
+        int total = 0, inside = 0;
+        double worst = -99;
+        for (int i = 0; i < scenes::factoryCount(); ++i) {
+            const auto& sc = scenes::factory(i);
+            if (sc.drama <= 0.0f) continue;
+            const auto v = playScene(sc, 240.0);
+            double lo = 99, hi = -99;
+            for (const auto& x : v.sections)
+                if (x.tier == drama::Calm && x.level > -100) {
+                    lo = std::min(lo, x.level);
+                    hi = std::max(hi, x.level);
+                }
+            bool ok = lo < 90;
+            std::string text = "calm " + fmt(lo) + " to " + fmt(hi) + ":";
+            for (const auto& x : v.sections) {
+                if (x.tier <= drama::Calm || x.level < -100 || x.transition == arr::TransFilter || x.to > v.seconds) continue;
+                const double up = x.level - hi, down = lo - x.level;
+                ok = ok && up <= (x.tier == drama::Climax ? 2.0 : 1.5) && down <= 1.5;
+                worst = std::max(worst, up);
+                text += " " + x.name + " " + fmt(x.level);
+            }
+            ++total;
+            inside += ok ? 1 : 0;
+            s.check(ok, "scene \"" + sc.name + "\": its dramatic sections within the calm sections' window (1.5 dB; a Climax 2 dB above)", text);
+            s.check(v.truePeak < -1.0, "scene \"" + sc.name + "\": true peak below -1 dBFS", fmt(v.truePeak) + " dBTP");
+        }
+        s.metric("dramatic scenes inside the window", double(inside), "");
+        s.metric("dramatic scenes: the most a section stands above the calm ones", worst, " dB");
+    }
+
+    s.section("loudness: listening renders, the Battle template Calm to Climax, before and after");
+    {
+        // The Battle template for a Castle and a Village at Drama 100 %, from its calm Intro
+        // through Tension and the fight into the Break: as it played before this pass (the
+        // old hit levels, no balance, no limiter on the Drama layer) and now.
+        for (bool after : { false, true }) {
+            drama::loudnessPass = after;
+            arr::Arrangement a;
+            auto h = reworkTest::battleWorld({ Castle, Village }, 1.0f, a);
+            h.playHead.bpm = 120;
+            h.p->arrangement.set(a);
+            arrangeTest::play(h);
+            const double bar = 2.0;
+            const auto audio = h.render(double(a.startOf(3) + 4) * bar);
+            const double from = std::max(0.0, double(a.startOf(1) - 6) * bar);
+            std::vector<float> pl, pr;
+            dramaTest::appendPart(pl, pr, audio, from, double(audio.l.size()) / 48000.0 - from);
+            const bool written = dramaTest::writeFlac(juce::String("loudness-battle-template-") + (after ? "after" : "before") + ".flac", pl, pr, 48000);
+            double calm = -120, fight = -120;
+            if (a.count > 2) {
+                calm = integrated(audio, double(a.startOf(0) + 1) * bar, double(a.startOf(1) - 1) * bar);
+                fight = integrated(audio, double(a.startOf(2) + 1) * bar, double(a.startOf(3) - 1) * bar);
+            }
+            const double tp = truePeak(audio, 0.5);
+            s.metric(std::string("Battle template ") + (after ? "after" : "before") + ": the fight over the calm Intro", fight - calm, " dB");
+            s.metric(std::string("Battle template ") + (after ? "after" : "before") + ": true peak", tp, " dBTP");
+            if (after) s.check(written && tp < -1.0, "the listening render is written; after the pass its true peak is below -1 dBFS", fmt(tp) + " dBTP");
+        }
+        drama::loudnessPass = true;
+    }
+
+    s.section("loudness: Inspire's moods in the window");
+    {
+        std::string text;
+        bool ok = true;
+        for (int m = 1; m < scenes::InspireMoodCount; ++m)
+            for (uint32_t seed : { 11u, 222u, 3333u }) {
+                const auto sc = scenes::inspire(seed, m);
+                Host h;
+                h.p->loadScene(sc);
+                const auto v = level(h);
+                // (A mood in the Calm tier, Score Intensity at most 55 %, is its own reference.)
+                Host c;
+                c.p->loadScene(sc);
+                c.set("intensity", sc.intensity <= 0.55f ? sc.intensity : calmIntensity);
+                const auto calm = level(c);
+                const double d = v.integrated - calm.integrated;
+                const bool top = sc.intensity >= 0.85f;
+                const bool in = d <= (top ? 2.0 : 1.5) && d >= -1.5;
+                ok = ok && in;
+                text += std::string(scenes::inspireMoodNames[std::size_t(m)]) + "/" + std::to_string(seed) + " " + fmt(d) + (in ? "" : " (!)") + "; ";
+            }
+        s.check(ok, "every Inspire mood (three scenes each) within the window of the same scene at Calm", text);
+    }
+}

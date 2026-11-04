@@ -55,6 +55,10 @@ struct Reduction {
 struct SafetyLimiter {
     float gain = 1, release = 0;
     static constexpr float ceiling = 0.891f;
+    // The Drama loudness pass: with drama playing the ceiling is -1.5 dBFS (sample peak), so
+    // the true peak between the samples stays under -1 dBFS (it has no look-ahead: no latency).
+    static constexpr float dramaCeiling = 0.841f;
+    float limit = ceiling;
     Reduction reduction;
     void prepare(float rate) {
         release = 1.0f - std::exp(-1.0f / (0.15f * rate));
@@ -63,12 +67,12 @@ struct SafetyLimiter {
     void reset() { gain = 1; }
     void process(float& l, float& r) {
         const float peak = std::max(std::abs(l), std::abs(r));
-        const float needed = peak * gain > ceiling ? ceiling / peak : 1.0f;
+        const float needed = peak * gain > limit ? limit / peak : 1.0f;
         if (needed < gain) gain = needed;
         else gain += release * (std::min(1.0f, needed) - gain);
         reduction.note(gain);
-        l = std::clamp(l * gain, -ceiling, ceiling);
-        r = std::clamp(r * gain, -ceiling, ceiling);
+        l = std::clamp(l * gain, -limit, limit);
+        r = std::clamp(r * gain, -limit, limit);
     }
 };
 

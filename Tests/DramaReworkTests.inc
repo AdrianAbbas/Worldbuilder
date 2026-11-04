@@ -399,8 +399,22 @@ void testDramaRework(Suite& s) {
             }
             return fight - rest;
         };
-        s.check(contrast(c100) > contrast(c0) + 3.0 && contrast(c50) > contrast(c0), "the arcs are heard in the arrangement's own parts: the fights stand further above the calm",
-                "fight over calm: classic " + fmt(contrast(c0)) + " dB, 50 % " + fmt(contrast(c50)) + " dB, 100 % " + fmt(contrast(c100)) + " dB");
+        // The Drama loudness pass: the arcs are heard in the arrangement's own parts (more of
+        // them, busier, denser), not as loudness: the fights stand no further above the calm
+        // sections than the Classic score has them, and their notes do.
+        const auto density = [&](const std::vector<PerSection>& c) {
+            double fight = 1.0e9, rest = 1.0e-9;
+            for (int i = 0; i < a.count; ++i) {
+                const int kind = arr::kindOf(a, i);
+                if (kind == arr::KindPeak) fight = std::min(fight, c[std::size_t(i)].notes);
+                if (kind == arr::KindBreak || kind == arr::KindIntro) rest = std::max(rest, c[std::size_t(i)].notes);
+            }
+            return fight / rest;
+        };
+        s.check(contrast(c100) <= contrast(c0) + 0.5 && contrast(c50) <= contrast(c0) + 0.5 && density(c100) > 1.3 * density(c0),
+                "the arcs are heard in the arrangement's own parts, not its loudness: the fights denser against the calm, no louder",
+                "fight over calm: classic " + fmt(contrast(c0)) + " dB, 50 % " + fmt(contrast(c50)) + " dB, 100 % " + fmt(contrast(c100)) + " dB; notes: classic "
+                    + fmt(density(c0)) + "x, 100 % " + fmt(density(c100)) + "x");
         for (int i = 0; i < a.count; ++i) {
             const std::string name = std::string("Battle ") + a.sections[std::size_t(i)].nameText();
             for (const auto& [label, c] : { std::pair<const char*, const std::vector<PerSection>*> { " at Drama 0 %", &c0 }, { " at Drama 50 %", &c50 },

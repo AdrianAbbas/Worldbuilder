@@ -535,6 +535,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
             el.live = c.keys;
         }
         el.instrument = c.instrument;
+        el.slotGain = placeGain;
         dramaLayer.render(currentType, world, c.drama, dramaTension, context.beat, context.beatsPerSample, c.sync, el, clock, left, right, n);
     }
     // The sends darken with distance too (the dry sound has its own distance filter).

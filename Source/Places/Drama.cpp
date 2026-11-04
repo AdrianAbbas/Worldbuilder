@@ -97,11 +97,16 @@ float classicRiseDb(int placeType, float intensity) {
 }
 
 Balance balance(int placeType, int style, int tier, int rank, float intensity) {
-    if (balanceOff || tier <= Calm || placeType <= 0 || placeType >= PlaceTypeCount) return {};
+    if (balanceOff || !loudnessPass || tier <= Calm || placeType <= 0 || placeType >= PlaceTypeCount) return {};
     const auto& row = balanceTable[std::size_t(placeType)];
     const int t = std::clamp(tier, 1, 3);
     Balance b = row.style[std::size_t(std::clamp(style, 1, StyleCount - 1) - 1)][std::size_t(t - 1)];
-    (void) rank;
+    // The second and further Places play a lighter layer (no drums; hits only from the
+    // third): their own instruments make less room.
+    if (rank > 0) {
+        const float share = layerShare[std::size_t(t - 1)], f = rankLayerPower(rank);
+        b.placeDb = std::min(0.0f, b.placeDb + 10.0f * std::log10((1.0f - share * f) / (1.0f - share)));
+    }
     // Away from the tier's probe point: the Place's own Classic rise balanced too.
     if (intensity >= 0.0f) {
         const float off = std::clamp(classicRiseDb(placeType, probeIntensity[std::size_t(t)]) - classicRiseDb(placeType, intensity), -4.0f, 4.0f);
@@ -176,6 +181,8 @@ float velocityOf(char c) {
 // -2.5, choir -1, a metal kit's clanks -1.
 //                                               drums perc metal swell strings pulse bass pluck low brass choir piano braam synth
 //                                               ... hands brassOst pianoOst metalHit impact
+constexpr std::array<float, Layer::PartCount> trimBeforeDb { 7.0f, -6.0f, 5.0f, 4.0f, 1.0f, 0.0f, 0.0f, 0.0f, -10.0f, -8.0f, 3.0f, 0.0f, 0.0f, 0.0f, 5.0f,
+                                                             -8.0f, 0.0f, 5.0f, -6.0f };   // (before the loudness pass; tests only)
 constexpr std::array<float, Layer::PartCount> trimDb { 7.0f, -6.0f, 4.0f, 4.0f, 1.0f, 0.0f, 0.0f, 0.0f, -10.0f, -8.0f, 2.0f, -4.0f, -3.5f, -2.5f, 5.0f,
                                                        -8.0f, 0.0f, 2.0f, -8.5f };
 const char* hitName(int hit) {
@@ -1055,8 +1062,8 @@ void Layer::stingers(int64_t step, int offset, int placeType, int style, const W
         // (The Drama loudness pass: these land with the pattern's own hits on the same
         // downbeat, so each is a little softer than it would be alone.)
         if (leads) {
-            add(PImpact, offset, 0, big ? 0.9f : 0.75f, stepBeat, 2.0, 3);
-            add(PMetalHit, offset, 0, big ? 0.7f : 0.5f, stepBeat, 2.0, 0);
+            add(PImpact, offset, 0, loudnessPass ? (big ? 0.9f : 0.75f) : (big ? 1.1f : 0.85f), stepBeat, 2.0, 3);
+            add(PMetalHit, offset, 0, loudnessPass ? (big ? 0.7f : 0.5f) : (big ? 0.9f : 0.6f), stepBeat, 2.0, 0);
         }
         const int colour = gearChange && t == Climax && style != StyleTragic && style != StyleSuspense ? 1 : 0;
         const auto stab = [&](int which, float v, double length) {
@@ -1069,20 +1076,21 @@ void Layer::stingers(int64_t step, int offset, int placeType, int style, const W
                 default: add(PMetalHit, offset, 0, v, stepBeat, 1.0, 1); break;
             }
         };
-        stab(th.hitA, 0.85f, 1.0);
-        stab(th.hitB, 0.75f, 1.0);
-        if (th.hitA != HitPiano && th.hitB != HitPiano && big) chord(PPiano, offset, world.root, mood, chordNow, 0.7f, stepBeat, 3.0, true, colour);
+        const float soft = loudnessPass ? 1.0f : 0.0f;
+        stab(th.hitA, 0.95f - 0.1f * soft, 1.0);
+        stab(th.hitB, 0.85f - 0.1f * soft, 1.0);
+        if (th.hitA != HitPiano && th.hitB != HitPiano && big) chord(PPiano, offset, world.root, mood, chordNow, 0.9f - 0.2f * soft, stepBeat, 3.0, true, colour);
         if (th.hitA != HitBraam && th.hitB != HitBraam && big && (placeType >= SpaceStation || th.kit == KitHybrid || th.kit == KitMetal))
-            add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), 0.6f, stepBeat, 2.0);
+            add(PBraam, offset, float(music::inRange(music::chordTone(mood, chordNow, 0), 0) - 24), 0.8f - 0.2f * soft, stepBeat, 2.0);
     }
     // Into the next section: a cymbal swell over the whole transition and a drum roll
     // building over the last bar of a Riser or Reverse swell (a Drum fill plays the drums'
     // Fill).
     if (cue.transitionT >= 0.0f && (cue.transition == arr::TransRiser || cue.transition == arr::TransDrumFill || cue.transition == arr::TransReverse)) {
         const double remaining = cue.transitionLength * (1.0 - double(cue.transitionT)) - (stepBeat - frame.beat);
-        if (leads && hits && std::abs(remaining - cue.transitionLength) < 0.5 * stepLen) add(PSwell, offset, 0, 0.9f, stepBeat, cue.transitionLength, 0);
+        if (leads && hits && std::abs(remaining - cue.transitionLength) < 0.5 * stepLen) add(PSwell, offset, 0, loudnessPass ? 0.7f : 0.9f, stepBeat, cue.transitionLength, 0);
         if (leads && drums && cue.transition != arr::TransDrumFill && remaining <= 4.0 + 1.0e-6 && remaining > 0.0 && t >= Tension) {
-            const float up = float(1.0 - remaining / 4.0);
+            const float up = float(1.0 - remaining / 4.0) * (loudnessPass ? 0.8f : 1.0f);   // (the loudness pass: the roll builds less far)
             add(PPerc, offset, 0, 0.35f + 0.65f * up, stepBeat, stepLen, (step & 1) == 0 ? 0 : 1);
             if (remaining <= 1.0 + 1.0e-6) add(PPerc, offset, 0, 0.8f, stepBeat, stepLen, 2);
             if ((step & 1) == 0) add(PDrums, offset, 0, 0.4f + 0.6f * up, stepBeat, stepLen, 0);
@@ -1258,7 +1266,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         // At a climax the drums lead and what sustains steps back, so it stays punchy.
         const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow || k == PImpact || k == PMetalHit;
         const float climaxShape = latched == Climax ? (rhythm ? 1.12f : 0.8f) : 1.0f;
-        const float g = tierGain * climaxShape * dbToGain(trimDb[std::size_t(k)]);
+        const float g = tierGain * climaxShape * dbToGain((loudnessPass ? trimDb : trimBeforeDb)[std::size_t(k)]);
         float& now = gainNow[std::size_t(k)];
         if (now < 0.0f) now = g;
         const float step = (g - now) / float(n);
@@ -1290,10 +1298,12 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
             busR[std::size_t(i)] += r[std::size_t(i)];
         }
     }
-    // The look-ahead limiter on the layer's sum (a pure 1.5 ms delay while below its ceiling).
+    // The look-ahead limiter on the layer's sum (a pure 1.5 ms delay while below its ceiling),
+    // its ceiling where the slot's balance puts the layer.
+    limiter.ceiling = limiterCeiling / std::clamp(el.slotGain, 0.05f, 1.0f);
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
-        limiter.process(busL[k], busR[k]);
+        if (loudnessPass) limiter.process(busL[k], busR[k]);
         peakOut = std::max(peakOut, std::max(std::abs(busL[k]), std::abs(busR[k])));
     }
     // The layer's space and level (the second and further slots quieter).

@@ -98,8 +98,13 @@ float elementWeightDb(int placeType, int element);
 float arrangedCorrectionDb(int placeType, int tier, int rank = 0);
 // The Drama layer's share of a slot's loudness at Tension, Action and Climax (the balance).
 inline constexpr std::array<float, 3> layerShare { 0.35f, 0.5f, 0.55f };
+// A Drama layer's power on the second and further Places against the leading one's.
+inline float rankLayerPower(int rank) { return rank <= 0 ? 1.0f : (rank == 1 ? 0.25f : 0.1f); }
 // Tests only: the balance off (the probe measures the Place and the layer as they were).
 inline bool balanceOff = false;
+// Tests only: false plays the Drama tier as it was before the loudness pass (the old hit
+// levels, no balance, no layer limiter): the "before" of the listening renders.
+inline bool loudnessPass = true;
 
 // The Drama instruments' kit rows (the Drama tier rework). The drums: the low (war) drum,
 // the mid drum, a third voice that depends on the kit (slaps and their muted ghosts; a
@@ -146,6 +151,9 @@ public:
         int liveElement = -1;
         const keys::Live* live = nullptr;
         bool instrument = false;
+        // The slot's balance gain after the layer (the Drama loudness pass): the limiter's
+        // ceiling holds at the level the layer is heard at.
+        float slotGain = 1;
     };
     // Adds the layer to left/right (n <= dsp::chunk). Returns false (adding nothing)
     // while it is silent.
