@@ -54,14 +54,17 @@ struct BalanceRow {
     // In an arrangement: what a section at Tension, Action and Climax plays above (or
     // below) the level the engine's section estimate expects (dB, measured).
     std::array<float, 3> arranged {};
+    // The same when it plays in the second or a further slot (a lighter Drama layer).
+    std::array<float, 3> second {};
 };
 #include "DramaBalance.inc"
 constexpr std::array<float, 4> probeIntensity { 0.5f, 0.62f, 0.8f, 1.0f };
 } // namespace
 
-float arrangedCorrectionDb(int placeType, int tier) {
+float arrangedCorrectionDb(int placeType, int tier, int rank) {
     if (placeType <= 0 || placeType >= PlaceTypeCount || tier <= Calm) return 0.0f;
-    return balanceTable[std::size_t(placeType)].arranged[std::size_t(std::clamp(tier, 1, 3) - 1)];
+    const auto& row = balanceTable[std::size_t(placeType)];
+    return (rank > 0 ? row.second : row.arranged)[std::size_t(std::clamp(tier, 1, 3) - 1)];
 }
 
 float elementWeightDb(int placeType, int element) {

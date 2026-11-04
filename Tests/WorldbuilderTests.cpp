@@ -9553,6 +9553,7 @@ int main(int argc, char** argv) {
     if (only.contains("hitprobe")) probeHits();
     if (only.contains("balancecal")) calibrateBalance();
     if (only.contains("sceneprobe")) probeScenes();
+    if (only.contains("arrcal")) calibrateArranged();
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

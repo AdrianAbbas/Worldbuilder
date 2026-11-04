@@ -435,6 +435,7 @@ void probeScenes() {
         const auto& sc = scenes::factory(i);
         if (sc.drama <= 0.0f) continue;
         if (only != nullptr && std::to_string(i) != only) continue;
+        WorldEngine::probeNoSectionBalance = std::getenv("WB_NOSECTION") != nullptr;
         const char* d = std::getenv("WB_DRAMA");
         const auto v = playScene(sc, 240.0, d != nullptr ? float(std::atof(d)) : -1.0f);
         std::cout << "SCENE " << i << " " << sc.name << " int " << fmt(v.integrated) << " calm " << fmt(v.calm) << " tp " << fmt(v.truePeak) << " master GR avg "
@@ -442,5 +443,92 @@ void probeScenes() {
         for (const auto& s : v.sections)
             std::cout << "   " << s.name << " tier " << s.tier << " trans " << s.transition << " at " << fmt(s.from) << " level " << fmt(s.level) << " (" << fmt(s.level - v.calm)
                       << ") landing " << fmt(s.landing) << " balance " << fmt(s.balance) << std::endl;
+    }
+}
+
+// A development aid (--only arrcal [--place keys]): each Place alone through the Battle and
+// Chase templates (Auto-arranged with their arcs, Drama 100 %, no environment), each section
+// against the calm sections; prints "ARR place tension action climax", the arrangement
+// correction updated by what was measured (Tension and Action aimed at the calm level,
+// a Climax 0.5 dB above it).
+void calibrateArranged() {
+    using namespace loud;
+    WorldEngine::probeNoSectionBalance = std::getenv("WB_NOSECTION") != nullptr;
+    for (int type : builtPlaces()) {
+        const std::string name = placeKeys[std::size_t(type)];
+        std::array<double, 4> sum {};
+        std::array<int, 4> count {};
+        double calmLevel = 0;
+        const bool second = std::getenv("WB_SECOND") != nullptr;
+        {
+            const int lead = type == Castle ? Village : Castle;
+            auto c = second ? intensityWorld({ lead, type }, calmIntensity) : dramaTest::placeHost(type, calmIntensity, 1.0f);
+            c.set("drama", 1.0f);
+            if (second) c.set(slotId(1, PlLevel), -4.0f);
+            c.set("environment", -60.0f);
+            calmLevel = integrated(c.render(12.0), 4.0);
+        }
+        for (int which : { int(arr::Battle), int(arr::Chase) }) {
+            arr::Arrangement a;
+            const bool second = std::getenv("WB_SECOND") != nullptr;
+            const int lead = type == Castle ? Village : Castle;
+            auto h = second ? reworkTest::battleWorld({ lead, type }, 1.0f, a, which) : reworkTest::battleWorld({ type }, 1.0f, a, which);
+            if (second) h.set(slotId(1, PlLevel), -4.0f);
+            h.set("environment", -60.0f);
+            h.playHead.bpm = 120;
+            h.p->arrangement.set(a);
+            arrangeTest::play(h);
+            const double bar = 2.0, seconds = std::min(300.0, double(a.totalBars()) * bar);
+            Audio audio;
+            std::vector<float> balanceAt;
+            for (double t = 0; t < seconds; t += 1.0) {
+                const auto part = h.render(std::min(1.0, seconds - t));
+                audio.l.insert(audio.l.end(), part.l.begin(), part.l.end());
+                audio.r.insert(audio.r.end(), part.r.begin(), part.r.end());
+                balanceAt.push_back(h.p->engine.sectionBalanceNow());
+            }
+            std::vector<std::pair<int, double>> levels;
+            double calm = 0;
+            int calms = 0;
+            arr::Shaping sh;
+            sh.drama = 1.0f;
+            sh.types[0] = type;
+            for (int k = 0; k < a.count; ++k) {
+                const double from = double(a.startOf(k)) * bar + bar, to = std::min(seconds, double(a.startOf(k) + a.sections[std::size_t(k)].span()) * bar - bar);
+                if (to - from < 2.0 * bar || a.sections[std::size_t(k)].transition == arr::TransFilter) continue;
+                const double l = integrated(audio, from, to);
+                const int tier = arr::sectionTier(a, k, sh);
+                if (std::getenv("WB_VERBOSE") != nullptr)
+                    std::cout << "  " << a.sections[std::size_t(k)].nameText() << " tier " << tier << " level " << fmt(l) << " balance "
+                              << fmt(balanceAt[std::min(balanceAt.size() - 1, std::size_t(0.5 * (from + to)))]) << std::endl;
+                levels.push_back({ tier, l });
+                if (tier == drama::Calm) {
+                    calm += std::pow(10.0, l / 10.0);
+                    ++calms;
+                }
+            }
+            if (calms == 0) continue;
+            const double ref = std::max(10.0 * std::log10(calm / double(calms)), calmLevel - 4.0);
+            for (const auto& [tier, l] : levels)
+                if (tier > drama::Calm) {
+                    sum[std::size_t(tier)] += l - ref;
+                    ++count[std::size_t(tier)];
+                }
+        }
+        std::array<double, 4> residual {};
+        for (int t = 1; t <= 3; ++t) residual[std::size_t(t)] = count[std::size_t(t)] > 0 ? sum[std::size_t(t)] / count[std::size_t(t)] : 1.0e9;
+        if (residual[2] > 1.0e8) residual[2] = residual[1] < 1.0e8 && residual[3] < 1.0e8 ? 0.5 * (residual[1] + residual[3]) : 0.0;
+        for (int t : { 1, 3 })
+            if (residual[std::size_t(t)] > 1.0e8) residual[std::size_t(t)] = 0.0;
+        std::cout << "ARRM " << name << " tension " << fmt(residual[1]) << " action " << fmt(residual[2]) << " climax " << fmt(residual[3]) << std::endl;
+        std::cout << (second ? "ARR2 " : "ARR ") << name;
+        for (int t = 1; t <= 3; ++t) {
+            const double target = t == 3 ? 0.5 : 0.0;
+            // (In a pair the second Place carries about half of what is measured.)
+            const double step = second ? 1.6 : 1.0;
+            const double corr = std::clamp(double(drama::arrangedCorrectionDb(type, t, second ? 1 : 0)) + step * (residual[std::size_t(t)] - target), -12.0, 6.0);
+            std::cout << " " << juce::String(corr, 2);
+        }
+        std::cout << std::endl;
     }
 }

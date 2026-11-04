@@ -95,7 +95,7 @@ float balancedDb(int placeType);
 // One of the Place's six instruments alone against the whole Place (dB, measured).
 float elementWeightDb(int placeType, int element);
 // In an arrangement, a section above Calm against the engine's estimate of it (dB, measured).
-float arrangedCorrectionDb(int placeType, int tier);
+float arrangedCorrectionDb(int placeType, int tier, int rank = 0);
 // The Drama layer's share of a slot's loudness at Tension, Action and Climax (the balance).
 inline constexpr std::array<float, 3> layerShare { 0.35f, 0.5f, 0.55f };
 // Tests only: the balance off (the probe measures the Place and the layer as they were).

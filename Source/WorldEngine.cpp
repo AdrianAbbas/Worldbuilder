@@ -187,7 +187,7 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
     }
     if (key != balanceKey) {
         balanceKey = key;
-        sectionBalance = sectionBalanceDb(a, arranged.at.section, shaping, controls);
+        sectionBalance = probeNoSectionBalance ? 0.0f : sectionBalanceDb(a, arranged.at.section, shaping, controls);
     }
     for (auto& d : shapeDb) d += sectionBalance;
 }
@@ -283,7 +283,7 @@ float WorldEngine::sectionBalanceDb(const arr::Arrangement& a, int section, cons
                 for (int d = 0; d < dramaElements; ++d)
                     layer += st.gain[std::size_t(s)][std::size_t(placeElements + d)] > 0.0f && pc.elementOn[std::size_t(placeElements + d)] ? 1.0 / 3.0 : 0.0;
                 layer *= rank == 0 ? 1.0 : (rank == 1 ? 0.5 : 0.25);
-                slot = std::pow(10.0, double(drama::balancedDb(pc.type) + drama::arrangedCorrectionDb(pc.type, tier)) / 10.0)
+                slot = std::pow(10.0, double(drama::balancedDb(pc.type) + drama::arrangedCorrectionDb(pc.type, tier, rank)) / 10.0)
                        * ((1.0 - share) * played / freePower + share * layer);
             }
             sum += slot * std::pow(10.0, double(pc.levelDb) / 10.0);
@@ -305,12 +305,20 @@ float WorldEngine::sectionBalanceDb(const arr::Arrangement& a, int section, cons
     int tier = 0;
     const double here = levelOf(section, tier);
     if (tier <= drama::Calm || here < -150.0 || lowest > 1.0e8) return 0.0f;
-    const double reference = calmCount > 0 ? 10.0 * std::log10(calm / double(calmCount)) : lowest;
+    // (A calm section far quieter than the Places at Calm, an intro of one instrument, does
+    // not set the level: the reference is never more than 4 dB below the world at Calm.)
+    double floor = 0;
+    for (int s = 0; s < placeSlots; ++s) {
+        const auto& pc = controls.places[std::size_t(s)];
+        if (pc.type != NoPlace) floor += std::pow(10.0, double(pc.levelDb + drama::classicRiseDb(pc.type, 0.35f)) / 10.0);
+    }
+    double reference = calmCount > 0 ? 10.0 * std::log10(calm / double(calmCount)) : lowest;
+    if (floor > 0.0) reference = std::max(reference, 10.0 * std::log10(floor) - 4.0);
     const double allowance = tier == drama::Climax ? 1.0 : 0.5;
     const float weight = std::min(1.0f, shaping.drama / 0.25f);
     double db = 0;
     if (here > reference + allowance) db = -std::min(12.0, here - reference - allowance);
-    else if (here < reference - 1.0) db = std::min(1.5, reference - 1.0 - here);
+    else if (here < reference - 1.0) db = std::min(3.0, reference - 1.0 - here);
     return weight * float(db);
 }
 

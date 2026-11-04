@@ -105,6 +105,8 @@ public:
     float sectionBalanceNow() const { return sectionBalance; }
     // Tests only (the loudness probe): no glue and no limiter, so renders subtract exactly.
     static inline bool probeLinear = false;
+    // Tests only: the arrangement's section balance off (the probe measures what it corrects).
+    static inline bool probeNoSectionBalance = false;
 
     // For the editor: per-layer and master peak meters, the smoothed world, power fade.
     std::array<std::atomic<float>, LayerCount> layerMeter {};
