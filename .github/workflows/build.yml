@@ -111,7 +111,8 @@ jobs:
           if-no-files-found: warn
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # The full suite (eight shards since the orchestration pass) took 58 minutes before it.
+    timeout-minutes: 120
     env:
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime
