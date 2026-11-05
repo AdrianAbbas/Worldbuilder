@@ -265,8 +265,9 @@ void testDrama(Suite& s) {
         // More intense than today's maximum: at least as transient (nearly: some Places'
         // Classic maximum is already a snare or shaker groove) and with half as many notes
         // again or more, without being louder.
-        s.check(climax.onsets >= 0.9 * classic.onsets && climax.events > 1.5 * classic.events && climax.rms < classic.rms + 1.0,
-                name + ": the Climax is more intense than today's maximum (Classic at 100 %), not louder", text);
+        // (The orchestration pass: no louder than the loudness window over it, +2 dB.)
+        s.check(climax.onsets >= 0.9 * classic.onsets && climax.events > 1.5 * classic.events && climax.rms < classic.rms + 2.0,
+                name + ": the Climax is more intense than today's maximum (Classic at 100 %), not louder (at most the window, 2 dB)", text);
         s.check(climax.finite && climax.peak <= 0.8913 && action.peak <= 0.8913, name + ": finite and never clipping at Climax",
                 fmt(toDb(climax.peak)) + " dBFS peak");
         s.metric(name + " Climax over Calm", climax.rms - calm.rms, " dB");
@@ -373,25 +374,29 @@ void testDrama(Suite& s) {
             audio.l.insert(audio.l.end(), part.l.begin(), part.l.end());
             audio.r.insert(audio.r.end(), part.r.begin(), part.r.end());
         }
-        double calmTop = -240, peakLow = 240, calmOnsets = 0, fightOnsets = 1.0e9;
+        // (The orchestration pass: the fights no louder than the window over the same scene with
+        // Drama 0: the Place keeps its level, the drama parts add under it.)
+        Host z;
+        z.p->loadScene(scenes::factory(scenes::factoryCount() - 17));
+        z.set("drama", 0.0f);
+        arrangeTest::play(z);
+        const auto classic = z.render(double(audio.l.size()) / 48000.0);
+        double calmOnsets = 0, fightOnsets = 1.0e9, louder = -240;
         for (int k = 0; k < a.count; ++k) {
             const auto& sec = a.sections[std::size_t(k)];
             const double from = double(a.startOf(k)) * secondsPerBar + secondsPerBar, to = double(a.startOf(k) + sec.span()) * secondsPerBar - secondsPerBar;
             if (to <= from || sec.transition == arr::TransFilter) continue;
             const double level = measure(audio, from, to).rmsDb, onsets = notesPerSecond[std::size_t(k)];
-            if (sec.drama == drama::Calm) {
-                calmTop = std::max(calmTop, level);
-                calmOnsets = std::max(calmOnsets, onsets);
-            }
+            if (sec.drama == drama::Calm) calmOnsets = std::max(calmOnsets, onsets);
             if (sec.drama >= drama::Action) {
-                peakLow = std::min(peakLow, level);
+                louder = std::max(louder, level - measure(classic, from, to).rmsDb);
                 fightOnsets = std::min(fightOnsets, onsets);
             }
         }
         const auto whole = measure(audio, 0.5);
-        s.check(fightOnsets > 1.5 * calmOnsets && peakLow < calmTop + 2.0 && whole.finite && whole.peak <= 0.8913,
-                "played, its fights are denser than its calm sections (notes), not louder, and never clip",
-                "quietest fight " + fmt(peakLow) + " dB, loudest calm " + fmt(calmTop) + " dB; notes " + fmt(fightOnsets) + " / " + fmt(calmOnsets) + " per s");
+        s.check(fightOnsets > 1.5 * calmOnsets && louder < 2.5 && whole.finite && whole.peak <= 0.8913,
+                "played, its fights are denser than its calm sections (notes), at most the window louder than with Drama 0, and never clip",
+                "the fights over Drama 0: at most " + fmt(louder) + " dB; notes " + fmt(fightOnsets) + " / " + fmt(calmOnsets) + " per s");
         std::vector<float> pl, pr;
         appendPart(pl, pr, audio, 0.0, std::min(90.0, double(audio.l.size()) / 48000.0));
         writeFlac("drama-scene-battle-at-the-castle-gate.flac", pl, pr, 48000);

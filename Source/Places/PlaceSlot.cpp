@@ -544,8 +544,8 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         play.kit = patternInfo(currentType, e).kind == Kit;
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
         // The drama rising: a part doubled an octave up or down (the arrangement's gear).
-        play.doubleDegrees = c.doubling[k] * scaleSize;
-        play.doubleVelocity = drama::Layer::mixPass && drama::loudnessPass ? 0.5f : 0.7f;
+        play.doubleDegrees = noDoubling ? 0 : c.doubling[k] * scaleSize;
+        play.doubleVelocity = drama::Layer::mixPass && drama::loudnessPass ? 0.6f : 0.7f;
         // The Drama instruments play as written, without the Place's swing.
         if (e >= placeElements && clip == nullptr && !(patterns.type == currentType && patterns.element[k].edited(variants[k]))) play.swing = 0;
         // A clip's randomness is its own section's (the same at every pass of the song).
@@ -559,7 +559,12 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
             const auto k = std::size_t(e);
             float want = 1.0f;
             // (Measured per Place and instrument: B in a higher register can sound softer.)
-            if (gearB[k] && clipNow[k] == nullptr) want = dbToGain(std::clamp(-drama::busierDb(currentType, e), 0.0f, 3.0f));
+            // (Both ways: a busier B never makes the part quieter, nor louder than A by more than
+            // it gets denser.)
+            if (gearB[k] && clipNow[k] == nullptr) want = dbToGain(std::clamp(-drama::busierDb(currentType, e, dramaLayer.tier()), -6.0f, 3.0f));
+            // A part doubled an octave plays denser, not louder: what the double adds is taken
+            // from the part (measured per instrument), so the drama parts keep their room.
+            if (c.doubling[k] != 0 && !noDoubling && !drama::forceDoubling) want *= dbToGain(-std::clamp(drama::doublingDb(currentType, e), 0.0f, 6.0f));
             const float g = gearMakeUp[k].value == 1.0f && want == 1.0f ? 1.0f : gearMakeUp[k].next(want);
             context.s.element[k] *= g;
         }

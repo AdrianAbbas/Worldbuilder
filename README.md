@@ -241,14 +241,16 @@ their hits only, so a world of four never stacks four drum kits.
   builds arcs: intros and breaks Calm, build-ups at Tension, the first fight at Action and
   the later ones at Climax, a Riser into a fight, a Drop out of it, a Drum fill back in.
   New templates: **Chase**, **Siege**, **Final Stand**, **Lament**.
-- **More intense, not louder.** The tiers are about as loud as Calm (within about 1.5 dB;
-  a Climax at most 2 dB above): the intensity comes from the drums, the ostinato, the
-  busier and doubled parts, the harmony and the hits, while the Place's own instruments
-  make room for them (a balance measured for every Place, Drama Style and tier). In an
-  arrangement the dramatic sections sit at the calm sections' level too, and the
-  transitions land without a jump. The hits are staged so that several on one downbeat
-  never clip: each Place's Drama instruments pass a transparent look-ahead limiter, and
-  while drama plays the master holds its peaks under -1.5 dBFS (true peak under -1).
+- **More intense, not louder; the music stays.** Raising Drama never turns the Place's own
+  instruments down (they stay within about 1 dB of Drama 0; they play busier, never
+  quieter): the Drama instruments are mixed under and around them, so a tier is at most
+  about 1.5 dB (a Climax 2 dB) louder than the same music with Drama 0 (a balance measured
+  for every Place, Drama Style and tier). The Drama percussion is tight and dry (its own
+  short room, low-cut sends, no World Space reverb, its low end held) and sits about 5 dB
+  under the melodic parts at a Climax: it drives without dominating. The hits are staged
+  so that several on one downbeat never clip: each Place's Drama instruments pass a
+  transparent look-ahead limiter, and while drama plays the master holds its peaks under
+  -1.5 dBFS (true peak under -1).
 - The Drama instruments cost no CPU while the world is Calm.
 
 ### The Drama instruments
@@ -277,26 +279,48 @@ set, every 50 % less one tier lower) decides how the Place's own instruments pla
 
 - **Calm** sections thin out: the accents and the rhythm leave, then the melody; the bass
   plays its sparse variant.
-- **Action** and **Climax**: the instruments resting enter in the order of their role, the
-  rhythm section switches to its busier variant first, then the bass and the melody, fills
-  on the four-bar lines, at a climax the melody doubles an octave up and the bass down,
-  and the section is pushed harder (Score Intensity). The harmony and the Drama
-  instruments follow the section's tier.
+- **Action** and **Climax**: the instruments resting enter in the order of their role (in
+  an orchestrated section only into a free voice and within its part budget), the rhythm
+  section switches to its busier variant first, then the bass and the melody, fills on the
+  four-bar lines, at a climax the melody doubles an octave up and the bass down (where a
+  double adds to the instrument), and the section is pushed harder (Score Intensity). The
+  harmony and the Drama instruments follow the section's tier; in an orchestrated section
+  the Drama drums take over from the Place's kit (one kit at a time).
 - At **Drama 0 %** the arrangement plays exactly as written (the Classic score). In Free
   play the Place's own instruments change gear too (Action: the rhythm and bass busier;
   Climax: the melody too, doubled).
 
-### Long, evolving sections
+### Long, evolving sections, by time
 
-The templates, **Auto** and Inspire now write scoring lengths: intros, breaks and endings
-8-16 bars, build-ups and wind-downs 16-32, the main sections (fights, chases, loops,
-themes, a boss's phases) 32-64; a section may be up to 128 bars. Each such section
-**evolves** (ARRANGE: right-click a section, *Evolve inside the section*): the instruments
-come in over its first bars in the order of their role, Score Intensity and the level
-rise across it (about 2.5 dB), the variants change on its 8-bar phrases (16 in sections of
-48 bars or more), small fills on the phrase lines; calm and closing sections thin out
-towards their end instead. Arrangements you made keep their lengths and do not evolve
-until you ask; **Auto** gives short sections their scoring length.
+A cue's length is a time, not a number of bars. The **LENGTH** control (ARRANGE's toolbar,
+and in INSPIRE's menu) runs from **Short** (about 1 minute) through **Medium** (3:30, the
+default) and **Long** (5 minutes) to **Epic** (8 minutes), continuous in between, at the
+host's tempo; the readout beside it shows the total time and bars. Moving it scales every
+section of the arrangement at once, keeping their proportions (each rounded to a phrase of
+4, 8 or 16 bars) and their ramps and transitions, as one undoable step; you can still
+resize any section by hand. The templates, **Auto**, INSPIRE and **+ SECTION** use it: at
+Medium and 180 BPM the Classic Arc is 16 Intro / 32 Build / 64 Climax / 24 Wind-down / 16
+Outro (about 3:20). A section may be up to 240 bars. It is saved with the session.
+
+Each such section **evolves** (ARRANGE: right-click a section, *Evolve inside the
+section*): a build-up brings its parts in one by one across 80 % of its length (an intro
+or a climax across half of it), Score Intensity and the level rise across it (about 2.5
+dB), the variants change on its 8-bar phrases (16 in sections of 48 bars or more), small
+fills on the phrase lines; calm and closing sections thin out towards their end instead.
+Arrangements you made keep their lengths and do not evolve until you ask.
+
+### Orchestration: several Places in one cue
+
+With several Places, a template, **Auto** or INSPIRE no longer plays every instrument of
+every Place at once: each section has a **part budget** across all Places (Intro 2-4,
+Build 4-7, Climax 7-10, Wind-down 3-5, Outro 2-3) and its parts are chosen by their role:
+one lead melody, one bass, one kit (a Place's drum kit, or the Drama drums while the drama
+plays: never two kits), one ostinato, up to two pads, one environment bed, and colour
+(accents, the Drama hits). The lead passes from Place to Place across the sections; the
+other Places fill the other roles or rest, and keep only half of their space (World Space
+and reverb sends), so several Places do not stack into mud. **ORCHESTRATE** (ARRANGE's
+toolbar) does the same for an arrangement you made: one click, your lengths and clips
+kept, one undo.
 
 ## Separate outputs in Logic Pro
 
@@ -439,14 +463,15 @@ of Wind-down and 8 of Outro, in any order, lengths and number.
   nothing is written into your knobs: leaving Arrangement mode returns to them.
 - **PLANET** and **WORLD** (overrides): a section can have its own Planet and its own
   values for any World Control (e.g. Danger 100 % in the Combat), only while it plays.
-- **TEMPLATE** starts from a ready-made cue and arranges it for your Places: Classic Arc
-  (8 Intro / 16 Build / 16 Climax / 16 Wind-down / 8 Outro), Exploration Loop (8 / 32
-  Loop, played twice / 8; set the Loop to Loop (endless) for a game), Battle, Boss Fight,
-  Town Theme (8 A / 8 B / 8 A / 8 C, looping) and Cinematic Reveal.
-- **AUTO-ARRANGE** fills the grid, pattern variants, intensity ramps and transitions for
-  the sections you have and the active Places: sparse beds in an intro, instruments
-  entering by role in a build-up (drones and pads, then bass, rhythm, melody, accents),
-  everything at a climax, thinning out in a wind-down. It reads what each section is
+- **TEMPLATE** starts from a ready-made cue, as long as the LENGTH control says at the
+  host's tempo, and arranges and orchestrates it for your Places: Classic Arc (Intro,
+  Build, Climax, Wind-down, Outro), Exploration Loop (Intro, Loop, Bridge, Loop, Outro; set
+  a Loop to Loop (endless) for a game), Battle, Boss Fight, Town Theme (A B A C, looping),
+  Cinematic Reveal, Chase, Siege, Final Stand and Lament.
+- **AUTO-ARRANGE** fits the sections to the LENGTH, then fills the grid, pattern variants,
+  intensity ramps and transitions for them and the active Places, orchestrated (see
+  *Orchestration*): sparse pads and an environment in an intro, parts entering one by one
+  across a build-up, the fullest scoring at a climax, thinning out in a wind-down. It reads what each section is
   from its name (Intro, Build, Climax, Break, Outro, Loop, Bridge, and words like
   Tension, Combat, Phase, Reveal, Victory). It uses the World Seed and undoes in one step.
   **AUTO-ARRANGE and TEMPLATE also write section clips** from each instrument's variant:

@@ -7414,11 +7414,100 @@ from the first unticked line.
 
 ### Progress checklist
 
-- [ ] 1. Baseline: the measurements and the before renders on the commit before (`90273b1`)
-- [ ] 2. Drama percussion: its own dry bus (short room, low-cut sends, no World Space, no fullness), the low end, levels
-- [ ] 3. Balance: the Place untouched as Drama rises, the Drama layer restrained (recalibrated), the arrangement's shaping balance on the drama parts only
-- [ ] 4. Orchestration: roles, the part budget, one kit / bass / lead, the lead passing, the environments of the other Places, Drama shaping inside the budget; Orchestrate in ARRANGE
-- [ ] 5. Lengths by time: templates, Auto-arrange, Inspire and new sections at the host tempo, gradual build-ups, `maxBars`; the Length control (ARRANGE and beside Auto / Inspire), saved with the session
+- [x] 1. Baseline: the measurements and the before renders on the commit before (`90273b1`)
+- [x] 2. Drama percussion: its own dry bus (short room, low-cut sends, no World Space, no fullness), the low end, levels
+- [x] 3. Balance: the Place untouched as Drama rises, the Drama layer restrained (recalibrated), the arrangement's shaping balance on the drama parts only
+- [x] 4. Orchestration: roles, the part budget, one kit / bass / lead, the lead passing, the environments of the other Places, Drama shaping inside the budget; Orchestrate in ARRANGE
+- [x] 5. Lengths by time: templates, Auto-arrange, Inspire and new sections at the host tempo, gradual build-ups, `maxBars`; the Length control (ARRANGE and beside Auto / Inspire), saved with the session
 - [ ] 6. Tests (balance, orchestration, percussion, lengths), the existing groups updated, listening renders, bench (Drama 0 bit for bit)
 - [ ] 7. DEVLOG results and handoff; final push; CI green
+
+### Decisions
+
+**The balance the other way round: the Place never makes room.** The loudness pass solved
+each tier with two gains, the Place's (`placeDb`, down to -15 dB at a Climax) and the Drama
+layer's, so the slot stayed at its Calm level; measured on the commit before (the probe
+`mixprobe`, `Tests/MixProbe.inc`, built on both commits), raising Drama from 0 to 100 % at
+Score Intensity 100 % took the Palace's own instruments down 19.2 dB, the Desert's 12.8,
+the Beach's 10.3 (and the whole slot 10 dB under the Classic score). Now `placeDb` is 0 and
+the table (`DramaBalance.inc`, measured again by `tools/drama-balance/calibrate.sh`: a
+solve and two corrections, the Place untouched) sets the Drama layer under the Place so that
+each tier is only `layerAddDb` (Tension 0.9, Action 1.3, Climax 1.7 dB) louder than the same
+Place with Drama 0 at that Score Intensity; away from the probe points the layer follows the
+Place's own Classic rise. The rule "no louder at Climax" is therefore measured against Drama 0
+(Tension and Action within 1.5 dB, a Climax at most 2 dB above): with the Place at its own
+level a Climax at Score Intensity 100 % cannot also sit within 2 dB of Calm at 35 % (the
+Classic score's own rise between them is 3-11 dB), and the Place's level wins, as asked. The
+`loudness` group's windows now compare against Drama 0 the same way (every Place and style,
+the later windows, the dramatic scenes section by section, Inspire's moods); the loudness
+pass's table stays in `DramaBalanceV1.inc` for the "before" renders (`Layer::mixPass` false).
+
+What drama changes in the Place itself is level-matched, so the Place stays at its Drama-0
+level and the drama layer keeps its share of the window: (1) some busier B variants are
+sparser or softer (the Palace's fanfare B is the same phrase a third higher, 4 dB softer, and
+draws its second fanfare differently), others louder (the Cavern's pulse B +2.2 dB at Action):
+a part drama moves from A to B keeps A where B carries less note energy, and is level-matched
+otherwise by its measured B-against-A level at that tier (at 80 % for Action, 100 % for a
+Climax; -6 to +3 dB; `busierDb`); a composer's edited B plays as written. (2) The doubling at a
+Climax: on a monophonic instrument the double an octave away takes the note's voice (the
+Castle's, Factory's and Mining's lose 1-5 dB): the calibration measures each instrument
+doubled against not (`doublingDb`); drama doubles only where it adds, and takes what the
+double adds from the part (denser, not louder); the double plays at 60 % velocity. The
+balance is measured over 16 s (4-20 s; the loudness pass used 8 s, and later windows ran
+up to 0.6 dB hotter).
+
+In an arrangement, what drama's reshaping adds (instruments entering, busier, doubled) is
+taken from the Drama layer (1.25 times the estimate, `layerShapeDb`), not from the Place; the
+section balance against the arrangement's calm sections is gone (the composer's dynamics are
+the composer's); a calm section thinned out is not turned up either.
+
+**The Drama percussion on its own dry bus.** The drums (all of the drums instrument), and the
+hits instrument's impacts, swells and metal and the ostinato's low thump, now sum apart from
+the melodic parts and leave on a dry bus of their own: no hall (the layer's hall now takes
+only the melodic parts, 25 % drier, its input low-cut at 220 Hz), a quarter of the drums'
+instrument sends through a 300 Hz low-cut (the stabs' 60 % through 150 Hz), not into the
+World Space and not through the slot's low-mid "fullness" (+2.5 dB under 260 Hz), the low end
+held (a 40 Hz high-pass and 3 dB less under about 110 Hz), a short room for the leading slot
+(0.35 s, 10 %, its input high-passed at 300 Hz), its own look-ahead limiter. Inside the layer
+the percussion has its own gain (`percRelDb`, calibrated with the layer) so that it sits
+`percUnderDb` (Tension 8, Action 6, Climax 5 dB) under the melodic parts (the Place, the
+ostinato and the stabs): measured before, it stood 3.5-6 dB above them. That is a larger drop
+than the 3-6 dB asked for (9-11 dB): with the Place back at its level and the whole slot held
+to the window, the percussion cannot also stay level with the melodic parts; 5 dB under is
+where the drums still drive and the ostinato still has room (about 10 dB under the Place).
+
+**Orchestration** (`Source/Arrangement/Orchestra.h`). Each part has a voice (lead, bass,
+kit, ostinato, pad, environment, colour, hits: from its role and kind), at most one of each
+sounds at once (two pads, two colours). A section's kind gives its budget (Intro 2-4, Build
+4-7, Climax 7-10, Wind-down 3-5, Outro 2-3, Break 2-4, Loop 5-8, Bridge 4-7, across all
+Places) and its plan (the voices it asks for in order); the lead passes from Place to Place
+section by section, the other voices prefer the other Places (the bass and colour the next,
+the kit and pads the one after). Where the drama may play (build-ups, climaxes, loops,
+bridges, wind-downs) the Drama drums of the leading slot are scored beside the Place's kit
+and the Drama ostinato beside a Place's ostinato: the shaping lets the Drama one take over
+while a tier above Calm plays (one kit, one ostinato; at Drama 0 the Place's plays). The
+Drama shaping keeps to it in an orchestrated section: instruments enter only into a free
+voice within the budget, the calm thinning stops at the budget's low end. A build-up's parts
+come in one by one across 80 % of it (pads and environment first, then bass, ostinato, kit,
+colour, lead, hits), an intro's and a climax's across half. The Places other than the lead
+keep half of their space (`State::focus`: the World Space send and the reverb / delay sends,
+smoothed over 0.4 s). Sections carry `orchestrated` and `lead` (saved only when set), so an
+arrangement from before is shaped exactly as it was; ORCHESTRATE (ARRANGE) applies the same
+to the composer's own arrangement as one undo step (cells only: lengths, names, clips kept).
+Templates, Auto-arrange (after its grid) and Inspire's and the dramatic scenes' arrangements
+are orchestrated; the 24 older factory scenes keep theirs (`autoArrangeLegacy`).
+
+**Lengths by time.** The templates are written in proportions (bars at 120 BPM for about
+five minutes: Classic Arc 16 / 32 / 56 / 24 / 16; the Exploration Loop became Intro, Loop,
+Bridge, Loop, Outro) and fitted (`fitLength`) to the Length control at the host's tempo
+(`arrangeTempo`: the host's, else 120): every section scaled by the same factor, rounded to a
+phrase (4 bars under 12, 8 under 64, 16 above), then the phrase changes that bring the total
+nearest the target until it is within 5 %. Length: 0 Short 60 s, 1 Medium 210 s, 2 Long
+300 s, 3 Epic 480 s, log-interpolated in between; Medium (3:30) is the default so a default
+cue lands in the asked-for 3-5 minutes with room for the phrase rounding. ARRANGE's LENGTH
+slider scales the arrangement as it was when the gesture began (no drift) as one undoable
+step; Auto-arrange fits first (Auto-arrange itself no longer lengthens short sections); "+"
+gives a new section its kind's share at the Length and tempo; templates, Inspire and the
+dramatic scenes are fitted when loaded. `maxBars` 240 (an Epic climax at 180 BPM), clips up
+to 240 bars and 8192 notes; a fitted unique clip is cut or repeated to its new length.
 

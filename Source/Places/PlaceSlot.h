@@ -170,6 +170,9 @@ private:
     dsp::Smoother focus;   // the orchestration pass: the environment's share (spaceFocus), over 0.4 s
     std::array<dsp::Smoother, placeElements> gearMakeUp {};   // the orchestration pass: a busier variant's level made up
     static float patternEnergy(const pat::Pattern& p);
+public:
+    static inline bool noDoubling = false;   // Tests only (the calibration measures the doubling)
+private:
     std::array<dsp::OnePole, 2> dcBlock;
     std::array<dsp::OnePole, 2> fullness;   // a gentle low shelf: weight in the low mids and bass
     float send = 0;

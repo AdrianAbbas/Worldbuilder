@@ -818,7 +818,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
                     const auto& spec = elementSpec(pc.type, e);
                     if (role == arr::RoleRhythm || role == arr::RoleBass || (tier == drama::Climax && role == arr::RoleMelody))
                         pc.variant[std::size_t(e)] = uint8_t(pat::VariantB);
-                    if (tier == drama::Climax && spec.kind == Melodic && !spec.sustained)
+                    if (tier == drama::Climax && spec.kind == Melodic && !spec.sustained && drama::doubles(pc.type, e))
                         pc.doubling[std::size_t(e)] = int8_t(role == arr::RoleBass ? -1 : (role == arr::RoleMelody ? 1 : 0));
                 }
             sounding = slots[si].render(world, pc, slotPatterns, audible, clock, beat, bpm, layerL.data(), layerR.data(), n);

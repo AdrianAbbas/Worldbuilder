@@ -57,8 +57,10 @@ struct BalanceRow {
     // The same when it plays in the second or a further slot (a lighter Drama layer).
     std::array<float, 3> second {};
     // The orchestration pass: each of the six's busier variant B against A (dB, measured at
-    // Score Intensity 100 %).
+    // Score Intensity 100 %), and doubled at a climax against not doubled.
     std::array<float, placeElements> busier {};
+    std::array<float, placeElements> doubled {};
+    std::array<float, placeElements> busierAction {};   // B against A at 80 % (Action)
 };
 #include "DramaBalance.inc"
 #include "DramaBalanceV1.inc"
@@ -79,10 +81,18 @@ float elementWeightDb(int placeType, int element) {
     return rowOf(placeType).element[std::size_t(element)];
 }
 
-float busierDb(int placeType, int element) {
+float busierDb(int placeType, int element, int tier) {
     if (placeType <= 0 || placeType >= PlaceTypeCount || element < 0 || element >= placeElements) return 0.0f;
-    return balanceTable[std::size_t(placeType)].busier[std::size_t(element)];
+    const auto& row = balanceTable[std::size_t(placeType)];
+    return (tier <= Action ? row.busierAction : row.busier)[std::size_t(element)];
 }
+
+float doublingDb(int placeType, int element) {
+    if (placeType <= 0 || placeType >= PlaceTypeCount || element < 0 || element >= placeElements) return 0.0f;
+    return balanceTable[std::size_t(placeType)].doubled[std::size_t(element)];
+}
+
+bool doubles(int placeType, int element) { return !Layer::mixPass || !loudnessPass || forceDoubling || doublingDb(placeType, element) > -0.5f; }
 
 float balancedDb(int placeType) {
     if (placeType <= 0 || placeType >= PlaceTypeCount) return 0.0f;

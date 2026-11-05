@@ -105,7 +105,13 @@ float balancedDb(int placeType);
 float elementWeightDb(int placeType, int element);
 // The orchestration pass: one of the six's busier variant B against its A (dB, measured; a
 // part drama moves to B is made up by what B is quieter).
-float busierDb(int placeType, int element);
+float busierDb(int placeType, int element, int tier = Climax);
+// The orchestration pass: what doubling one of the six an octave (up a melody, down a bass) at
+// a climax does to it (dB, measured): a monophonic instrument's double takes the note's voice
+// (quieter), so drama doubles only the instruments a double adds to.
+float doublingDb(int placeType, int element);
+bool doubles(int placeType, int element);
+inline bool forceDoubling = false;   // Tests only (the calibration measures the doubling)
 // In an arrangement, a section above Calm against the engine's estimate of it (dB, measured).
 float arrangedCorrectionDb(int placeType, int tier, int rank = 0);
 // The Drama layer's share of a slot's loudness at Tension, Action and Climax (the balance).

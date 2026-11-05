@@ -382,7 +382,9 @@ void testDramaRework(Suite& s) {
             const auto& x1 = c100[std::size_t(i)];
             text += std::string(a.sections[std::size_t(i)].nameText()) + ": classic " + describe(x0) + " | 50 % " + describe(x5) + " | 100 % " + describe(x1) + "; ";
             if (kind == arr::KindPeak) {
-                fights = fights && x1.playing >= x0.playing && x1.gear > x0.gear + 0.25 && x1.notes > 1.3 * x0.notes && x1.doubled > 0.0;
+                // (The orchestration pass: one kit, so the Drama drums take over from the Place's
+                // kit while the drama plays: one Place instrument fewer, the Drama drums instead.)
+                fights = fights && x1.playing >= x0.playing - 1.0 && x1.gear > x0.gear + 0.25 && x1.notes > 1.3 * x0.notes && x1.doubled > 0.0;
                 fights = fights && x1.playing >= x5.playing && x1.gear > x5.gear + 0.1 && x1.notes > 1.1 * x5.notes;
             }
             if (kind == arr::KindIntro || kind == arr::KindBreak) calm = calm && x1.playing < x0.playing - 0.5;
@@ -411,8 +413,11 @@ void testDramaRework(Suite& s) {
             }
             return fight / rest;
         };
-        s.check(contrast(c100) <= contrast(c0) + 0.5 && contrast(c50) <= contrast(c0) + 0.5 && density(c100) > 1.3 * density(c0),
-                "the arcs are heard in the arrangement's own parts, not its loudness: the fights denser against the calm, no louder",
+        // (The orchestration pass: the Place keeps its level as Drama rises and the drama parts
+        // add at most the loudness window over it, +2 dB at a Climax; a calm section thins out
+        // a little. So the fights may stand up to 2.5 dB further above the calm.)
+        s.check(contrast(c100) <= contrast(c0) + 2.5 && contrast(c50) <= contrast(c0) + 2.5 && density(c100) > 1.3 * density(c0),
+                "the arcs are heard in the arrangement's own parts, not its loudness: the fights denser against the calm, louder by at most the window",
                 "fight over calm: classic " + fmt(contrast(c0)) + " dB, 50 % " + fmt(contrast(c50)) + " dB, 100 % " + fmt(contrast(c100)) + " dB; notes: classic "
                     + fmt(density(c0)) + "x, 100 % " + fmt(density(c100)) + "x");
         for (int i = 0; i < a.count; ++i) {
@@ -456,6 +461,9 @@ void testDramaRework(Suite& s) {
 
     s.section("drama rework: long sections that evolve");
     {
+        // (The orchestration pass: the templates by time, fitted to the Length; here at Medium and
+        // 120 BPM, about 3.5 minutes: the main sections 24-48 bars, the edges 4-24, the rest
+        // 8-32. The "orchestra" group measures every Length and tempo.)
         bool lengths = true, evolving = true;
         std::string wrong;
         for (int t = 0; t < arr::TemplateCount; ++t) {
@@ -466,9 +474,10 @@ void testDramaRework(Suite& s) {
                 for (auto& ch : name) ch = char(std::tolower(static_cast<unsigned char>(ch)));
                 const int kind = arr::kindOf(a, i);
                 const bool main = name.find("combat") != std::string::npos || name.find("battle") != std::string::npos || name.find("chase") != std::string::npos
-                                  || name.find("loop") != std::string::npos || name.find("theme") != std::string::npos || name.find("phase") != std::string::npos;
+                                  || name.find("loop") != std::string::npos || name.find("theme") != std::string::npos || name.find("phase") != std::string::npos
+                                  || name.find("climax") != std::string::npos || name.find("reveal") != std::string::npos;
                 const bool edge = !main && (kind == arr::KindIntro || kind == arr::KindBreak || kind == arr::KindOutro);
-                const int lo = main ? 32 : (edge ? 8 : 16), hi = main ? 64 : (edge ? 16 : 32);
+                const int lo = main ? 24 : (edge ? 4 : 8), hi = main ? 48 : (edge ? 24 : 32);
                 if (sec.bars < lo || sec.bars > hi) {
                     lengths = false;
                     wrong += std::string(arr::templateNames[std::size_t(t)]) + "/" + sec.nameText() + " " + std::to_string(sec.bars) + " ";
@@ -476,8 +485,8 @@ void testDramaRework(Suite& s) {
                 evolving = evolving && sec.evolve;
             }
         }
-        s.check(lengths, "every template's sections are scoring lengths (main 32-64 bars, intros and transitions 8-16, the rest 16-32)", wrong);
-        s.check(evolving && arr::maxBars >= 128, "every template section evolves; sections may be up to 128 bars");
+        s.check(lengths, "every template's sections are scoring lengths at Medium and 120 BPM (main 24-48 bars, intros and transitions 4-24, the rest 8-32)", wrong);
+        s.check(evolving && arr::maxBars >= 240, "every template section evolves; sections may be up to 240 bars");
         // Auto-arrange lengthens short sections; an arrangement as saved keeps its lengths.
         arr::Arrangement mine;
         mine.sections[0] = arr::makeSection("Intro", 4, 0, 0.3f);
@@ -487,17 +496,22 @@ void testDramaRework(Suite& s) {
         std::array<int, placeSlots> types { Castle, NoPlace, NoPlace, NoPlace };
         const auto auto_ = arr::autoArrange(mine, types, 3);
         const auto kept = ArrangementStore::fromTree(ArrangementStore::toTree(mine));
-        s.check(auto_.sections[0].bars == 8 && auto_.sections[1].bars == 32 && auto_.sections[2].bars == 96 && kept.sections[1].bars == 8 && !kept.sections[1].evolve,
-                "Auto-arrange gives short sections their scoring length (longer ones stay); a saved arrangement keeps its lengths");
+        // (The orchestration pass: Auto-arrange itself keeps the lengths; ARRANGE's Auto fits them
+        // to the Length control first, by time.)
+        Host ph;
+        ph.set("seed", 3.0f);
+        const auto fitted = ph.p->autoArrangeWithClips(mine);
+        s.check(auto_.sections[0].bars == 4 && auto_.sections[1].bars == 8 && auto_.sections[2].bars == 96 && kept.sections[1].bars == 8 && !kept.sections[1].evolve
+                    && std::abs(arr::secondsOf(fitted, 120.0) / arr::lengthSeconds(arr::lengthDefault) - 1.0) <= 0.1 && fitted.sections[2].bars > fitted.sections[1].bars,
+                "Auto-arrange keeps the lengths; ARRANGE's Auto fits them to the Length (Medium, proportions kept); a saved arrangement keeps its lengths",
+                std::to_string(fitted.sections[0].bars) + " / " + std::to_string(fitted.sections[1].bars) + " / " + std::to_string(fitted.sections[2].bars) + " bars");
         bool inspired = true;
         for (uint32_t seed : { 5u, 50u, 500u }) {
             const auto sc = scenes::inspire(seed, scenes::MoodBattle);
             const auto a = scenes::arrangement(sc);
-            int longest = 0;
-            for (int i = 0; i < a.count; ++i) longest = std::max<int>(longest, a.sections[std::size_t(i)].bars);
-            inspired = inspired && longest >= 32;
+            inspired = inspired && arr::secondsOf(a, 120.0) >= 180.0;
         }
-        s.check(inspired, "Inspire's arrangements are long too");
+        s.check(inspired, "Inspire's arrangements are long too (at least three minutes at 120 BPM)");
     }
     {
         // A 32-bar section rises: its last eight bars denser and louder than its first eight
@@ -507,7 +521,11 @@ void testDramaRework(Suite& s) {
             arr::Arrangement a;
             auto h = battleWorld(types, amount, a);
             const int combat = 2;
-            s.check(a.sections[combat].bars == 32 && a.sections[combat].evolve, "the Battle template's Combat is 32 bars and evolves");
+            // (The orchestration pass: the Combat as the Length makes it: 24-32 bars at Medium; set
+            // to 32 here, as this test plays it.)
+            s.check(a.sections[combat].bars >= 24 && a.sections[combat].evolve, "the Battle template's Combat is a long section and evolves",
+                    std::to_string(a.sections[combat].bars) + " bars");
+            a.sections[combat].bars = 32;
             h.playHead.bpm = 120;
             h.p->arrangement.set(a);
             arrangeTest::play(h);
@@ -538,6 +556,8 @@ void testDramaRework(Suite& s) {
                 std::sort(part.begin(), part.end());
                 return part[part.size() / 2];
             };
+            if (std::getenv("WB_VERBOSE") != nullptr)
+                for (int bar = 0; bar < 32; ++bar) std::cout << "  bar " << bar << " notes " << fmt(notes[std::size_t(bar)]) << " level " << fmt(levels[std::size_t(bar)]) << std::endl;
             const double firstNotes = mean(notes, 1, 9), lastNotes = mean(notes, 24, 32);
             const double firstLevel = median(levels, 1, 9), lastLevel = median(levels, 24, 32);
             (void) powerMean;

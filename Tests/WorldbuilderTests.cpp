@@ -5854,7 +5854,7 @@ void testScenes(Suite& s) {
         int used = 0;
         for (int l = 0; l < locationCount; ++l) used += h.p->locations.used(l) ? 1 : 0;
         const auto a = h.p->arrangement.get();
-        ok &= used == sc.locationCount && a.count == arr::makeTemplate(sc.templ).count && h.p->sceneName() == juce::String(sc.name);
+        ok &= used == sc.locationCount && a.count == arr::makeTemplate(sc.templ, sc.drama <= 0.0f && sc.inspired < 0).count && h.p->sceneName() == juce::String(sc.name);
         int peak = -1;
         bool located = true;
         for (int k = 0; k < a.count; ++k) {

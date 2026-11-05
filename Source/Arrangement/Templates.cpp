@@ -700,7 +700,7 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
                     if (d >= busierAt[std::size_t(role)]) shift = 1;
                     if (d >= 1.75f && variant[ke] == VariantC) shift = 2;
                     const auto& spec = elementSpec(type, e);
-                    if (d >= 1.5f && spec.kind == Melodic && !spec.sustained) doubling[ke] = int8_t(role == RoleBass ? -1 : (role == RoleMelody ? 1 : 0));
+                    if (d >= 1.5f && spec.kind == Melodic && !spec.sustained && drama::doubles(type, e)) doubling[ke] = int8_t(role == RoleBass ? -1 : (role == RoleMelody ? 1 : 0));
                 }
             }
             // Evolve: entrances over the first bars (first pass), exits towards a calm end.
@@ -709,11 +709,11 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
                     double entry = bars * double(entryFraction[std::size_t(role)] * entrySpeed[std::size_t(std::clamp(kind, 0, KindCount - 1))]);
                     entry = s.bars >= 16 ? std::floor(entry / 2.0) * 2.0 : std::floor(entry);
                     // Orchestrated: one by one across the section (a build-up over 80 % of its
-                    // length, an intro half of it, a loop or a bridge 40 %, a climax a quarter),
-                    // on four-bar lines.
+                    // length, an intro or a climax half of it, a loop or a bridge 40 %), on
+                    // four-bar lines.
                     const int j = order[std::size_t(slot)][ke];
                     if (orchestra && entering > 0) {
-                        const double span = kind == KindBuild ? 0.8 : (kind == KindIntro ? 0.5 : (kind == KindPeak ? 0.25 : 0.4));
+                        const double span = kind == KindBuild ? 0.8 : (kind == KindIntro || kind == KindPeak ? 0.5 : 0.4);
                         const double at = bars * span * double(j > 0 ? j - 1 : entering) / double(entering);
                         const double grid = s.bars >= 16 ? 4.0 : 1.0;
                         entry = std::floor(at / grid) * grid;

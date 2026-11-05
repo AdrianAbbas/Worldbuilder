@@ -113,9 +113,10 @@ void testOrchestra(Suite& s) {
             std::string line = name + ":";
             for (int t = 0; t < 3; ++t) {
                 const float i = loud::tierIntensity[std::size_t(t)];
-                const double d0 = integrated(renderWith(type, i, 0.0f, 0xffffffffu), 4.0);
-                const double main = integrated(renderWith(type, i, 1.0f, 0u), 4.0);
-                const double all = integrated(renderWith(type, i, 1.0f, 0xffffffffu), 4.0);
+                // (16 s: the Drama tier's own chord progression averaged over.)
+                const double d0 = integrated(renderWith(type, i, 0.0f, 0xffffffffu, 20.0), 4.0);
+                const double main = integrated(renderWith(type, i, 1.0f, 0u, 20.0), 4.0);
+                const double all = integrated(renderWith(type, i, 1.0f, 0xffffffffu, 20.0), 4.0);
                 const double dm = main - d0, da = all - d0;
                 worstMain = std::min(worstMain, dm);
                 worstUp = std::max(worstUp, da);
