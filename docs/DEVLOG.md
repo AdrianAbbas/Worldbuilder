@@ -7420,7 +7420,7 @@ from the first unticked line.
 - [x] 4. Orchestration: roles, the part budget, one kit / bass / lead, the lead passing, the environments of the other Places, Drama shaping inside the budget; Orchestrate in ARRANGE
 - [x] 5. Lengths by time: templates, Auto-arrange, Inspire and new sections at the host tempo, gradual build-ups, `maxBars`; the Length control (ARRANGE and beside Auto / Inspire), saved with the session
 - [x] 6. Tests (balance, orchestration, percussion, lengths), the existing groups updated, listening renders, bench (Drama 0 bit for bit)
-- [ ] 7. DEVLOG results and handoff; final push; CI green
+- [x] 7. DEVLOG results and handoff; final push; CI green (run 42018165150: 5202 passed, macOS green)
 
 ### Decisions
 
@@ -7568,7 +7568,10 @@ small room on its percussion, only while it plays.
 
 Full suite (`scripts/run-tests-parallel.sh`, eight shards, the `orchestra` group the eighth):
 5201 passed, 1 failed here: the 60-second stress test's wall-clock check (the slowest audio
-block 43.6 ms while this container ran calibration; it runs alone on CI).
+block 43.6 ms while this container ran calibration; it runs alone on CI). On CI (run
+42018165150, the push of `cba4e88`; the Linux job's limit raised from 60 to 120 minutes, it
+took 55): 5202 passed, 0 failed; macOS (universal build, smoke tests on arm64 and x86_64,
+bundle checks, a quarantined install, auval and the AU harness) green.
 
 The 41 raw bench renders that an earlier session committed by mistake (`s/`, 615 MB) are
 removed from the tree.
