@@ -5,6 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**The orchestration pass is in progress** (the Place's own instruments stay level as Drama rises;
+arrangements orchestrated by part budget and roles; dry, tight drama percussion; long, time-based
+cues and a Length control): checklist, decisions, results and handoff in
+[The orchestration pass](#the-orchestration-pass-2026-11-05).
+
 **The Drama loudness pass is done** (drama more intense, not louder: loudness-matched
 tiers, gain staging of the hits, look-ahead safety on the Drama layer, the master's true
 peak): checklist, decisions, results and handoff in
@@ -7383,4 +7388,37 @@ now. The Drama tier's own renders (`drama-*.flac`) are the after versions of the
   layer 1.5 ms against its Place.
 - The balance was set by measurement, not by ear: listen to the before and after renders
   first.
+
+## The orchestration pass (2026-11-05)
+
+The developer's report after testing the Drama patches in GarageBand (one arrangement with a
+Palace, a Desert and a Beach at 180 BPM): (1) raising Drama lowers the Place's own instruments
+(the loudness compensation ducks them to make room for the drama parts): the Place's own
+instruments must stay at their level (within about -1 dB; denser, never quieter) and the drama
+parts sit under and around them, the overall loudness still roughly level and no louder at
+Climax. (2) Arrangements of several Places are an overlapped mess (every instrument of every
+Place in every section): orchestration with a part budget per section (Intro 2-4, Build 4-7,
+Climax 7-10, Wind-down 3-5, Outro 2-3 across all Places), parts chosen by role (one lead, one
+bass, one kit: only one drama drum kit at a time; pads; colour), no masking (two of a role and
+register at once), the lead passing between Places, the non-leading Places' environments and
+big reverbs thinned; a one-click, undoable Orchestrate in ARRANGE for existing arrangements.
+(3) The high-drama percussion is roomy, reverb-washed and too loud: tight, punchy, dry-ish,
+low end controlled, 3-6 dB lower against the melodic instruments; the same for impacts,
+swells and hits. (4) Arrangements far longer, by time: a template, Auto-arrange, Inspire or a
+new arrangement runs 3-5 minutes at the host tempo, build-ups layering over their whole
+length, climaxes that last; `maxBars` raised. (5) A Length control (Short ~1 min, Medium,
+Long ~5 min, Epic ~8 min, continuous, with the total time and bars) that scales every section
+in phrase lengths as one undoable step, used by Auto-arrange and Inspire and saved with the
+session. Existing user arrangements keep their cells and lengths. A resumed session continues
+from the first unticked line.
+
+### Progress checklist
+
+- [ ] 1. Baseline: the measurements and the before renders on the commit before (`90273b1`)
+- [ ] 2. Drama percussion: its own dry bus (short room, low-cut sends, no World Space, no fullness), the low end, levels
+- [ ] 3. Balance: the Place untouched as Drama rises, the Drama layer restrained (recalibrated), the arrangement's shaping balance on the drama parts only
+- [ ] 4. Orchestration: roles, the part budget, one kit / bass / lead, the lead passing, the environments of the other Places, Drama shaping inside the budget; Orchestrate in ARRANGE
+- [ ] 5. Lengths by time: templates, Auto-arrange, Inspire and new sections at the host tempo, gradual build-ups, `maxBars`; the Length control (ARRANGE and beside Auto / Inspire), saved with the session
+- [ ] 6. Tests (balance, orchestration, percussion, lengths), the existing groups updated, listening renders, bench (Drama 0 bit for bit)
+- [ ] 7. DEVLOG results and handoff; final push; CI green
 
