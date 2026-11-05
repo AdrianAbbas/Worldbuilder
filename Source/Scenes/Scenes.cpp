@@ -1,4 +1,5 @@
 #include "Scenes.h"
+#include "../Arrangement/Orchestra.h"
 #include <algorithm>
 #include <initializer_list>
 
@@ -634,7 +635,7 @@ int locationFor(int kind, int locations) {
     }
 }
 
-arr::Arrangement arrangement(const Scene& scene) {
+arr::Arrangement arrangement(const Scene& scene, double seconds, double bpm) {
     std::array<int, placeSlots> types {};
     for (int slot = 0; slot < placeSlots; ++slot) types[std::size_t(slot)] = scene.slots[std::size_t(slot)].type;
     // The scenes from before the Drama tier (the Classic score) keep their arrangements as
@@ -642,7 +643,7 @@ arr::Arrangement arrangement(const Scene& scene) {
     // score with the long, evolving sections (the Drama tier rework).
     const bool legacy = scene.drama <= 0.0f && scene.inspired < 0;
     auto a = legacy ? arr::autoArrangeLegacy(arr::makeTemplate(scene.templ, true), types, scene.seed)
-                    : arr::autoArrange(arr::makeTemplate(scene.templ), types, scene.seed);
+                    : arr::autoArrange(seconds > 0.0 && bpm > 0.0 ? arr::makeTemplate(scene.templ, seconds, bpm) : arr::makeTemplate(scene.templ), types, scene.seed);
     for (int i = 0; i < a.count; ++i) {
         auto& s = a.sections[std::size_t(i)];
         const int kind = arr::kindOf(a, i);

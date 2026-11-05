@@ -21,6 +21,9 @@ rest="instrument,frameregions,smoke,samples,recordings,balance,slide,arrangement
 # The Drama loudness pass: every Place and style at each tier, the dramatic scenes played
 # through, Inspire's moods (about half an hour of audio measured).
 "$tests" --only loudness > "$logs/7-loudness.txt" 2>&1 &
+# The orchestration pass: every Place at Drama 0 and 100 %, the developer's three Places
+# through their arrangements, the listening renders.
+"$tests" --only orchestra > "$logs/8-orchestra.txt" 2>&1 &
 wait
 "$tests" --only effects,realtime > "$logs/5-cpu.txt" 2>&1
 # The 60-second editor stress test (the GarageBand freeze), alone so it is not starved.
@@ -28,7 +31,7 @@ wait
 
 passed=0
 failed=0
-for log in "$logs"/[1-7]-*.txt; do
+for log in "$logs"/[1-8]-*.txt; do
     line=$(grep -E '^[0-9]+ passed, [0-9]+ failed' "$log" | tail -1)
     if [[ -z "$line" ]]; then
         echo "$log: did not finish"

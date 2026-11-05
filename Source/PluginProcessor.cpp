@@ -859,7 +859,7 @@ void WorldbuilderProcessor::loadScene(const scenes::Scene& scene) {
         locations.rename(i, l.name);
         locations.setColour(i, l.colour);
     }
-    arrangement.set(scenes::arrangement(scene), true);
+    arrangement.set(scenes::arrangement(scene, arrangeSeconds(), arrangeTempo()), true);
     arrangementSeen = arrangement.get().count;
     parameters.state.setProperty("scene", juce::String(scene.name), nullptr);
 }
@@ -992,10 +992,19 @@ arr::Arrangement WorldbuilderProcessor::autoArrangeWithClips(const arr::Arrangem
         return &(*heldPtr)[std::size_t(slot)][std::size_t(e)][std::size_t(v)];
     };
     const auto seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
-    auto out = arr::autoArrange(a, types, seed, source);
+    // The orchestration pass: by the Length control, at the host's tempo.
+    auto out = arr::autoArrange(arr::fitLength(a, arrangeSeconds(), arrangeTempo()), types, seed, source);
     // With Drama above 0, Auto-arrange builds the cue's arcs on the Drama tiers.
     if (raw[PDrama]->load() > 0.0f) arr::dramatize(out, seed);
     return out;
+}
+
+void WorldbuilderProcessor::orchestrateArrangement() {
+    const auto a = arrangement.get();
+    if (a.count <= 0) return;
+    const auto types = slotTypes();
+    const auto seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
+    arrangement.set(arr::orchestrate(a, types, seed), true);
 }
 
 bool WorldbuilderProcessor::makeClipUnique(int section, int slot, int element) {
@@ -1230,6 +1239,9 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     // The scene loaded last (Milestone 12), for the scene browser.
     parameters.state.setProperty("scene", state.getProperty("scene").toString(), nullptr);
     parameters.state.setProperty("inspiremood", juce::jlimit(0, int(scenes::InspireMoodCount) - 1, int(state.getProperty("inspiremood", 0))), nullptr);
+    // The orchestration pass: the Length control (older projects: Medium).
+    if (state.hasProperty("arrangelength")) setArrangeLength(float(double(state.getProperty("arrangelength"))));
+    else parameters.state.removeProperty("arrangelength", nullptr);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

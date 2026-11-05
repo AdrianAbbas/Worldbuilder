@@ -35,7 +35,9 @@ int kindOf(const Arrangement& a, int index);
 
 // A template's sections (every instrument on, variant A), ready for Auto-arrange: long
 // scoring sections that evolve (the Drama tier rework), or (`legacy`) the short ones from
-// before it, which the older factory scenes keep.
+// before it, which the older factory scenes keep. makeTemplate(which) is fitted to the
+// default Length (Medium) at 120 BPM (Orchestra.h: makeTemplate(which, seconds, bpm));
+// makeTemplate(which, false) gives the scoring proportions as written.
 Arrangement makeTemplate(int which);
 Arrangement makeTemplate(int which, bool legacy);
 // The bars a kind of section is given at least for scoring (Auto-arrange): intros, breaks
@@ -44,9 +46,9 @@ int scoringBars(int kind);
 // An evolving section's variant shift on its phrase k of `phrases` (-1 sparser, +1 busier).
 int phraseShiftOf(const Section& s, int kind, int k, int phrases);
 // Auto-arrange: `a` with its grid, variants, ramps and transitions filled in for the
-// Places in `types` (per slot, NoPlace for none). Names, plays, colours, Locations,
-// overrides and the End stay as they are; sections shorter than their kind wants for
-// scoring are lengthened (scoringBars) and every section evolves (the Drama tier rework).
+// Places in `types` (per slot, NoPlace for none), then orchestrated (Orchestra.h: the part
+// budget and the voices). Names, lengths, plays, colours, Locations, overrides and the End
+// stay as they are (the Length control fits the lengths first); every section evolves.
 Arrangement autoArrange(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed);
 // Auto-arrange as before the rework (lengths kept, no evolution, the Drama instruments'
 // cells left as they are): the older factory scenes.

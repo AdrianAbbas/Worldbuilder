@@ -4330,8 +4330,8 @@ void testArrangement(Suite& s) {
         const int m = store.move(3, 0);
         s.check(m == 0 && std::string(store.get().sections[0].nameText()) == "Climax" && std::string(store.get().sections[1].nameText()) == "Intro",
                 "reorder");
-        store.resize(1, 200);
-        s.check(store.get().sections[1].bars == arr::maxBars && arr::maxBars == 128, "a section is 1-128 bars");
+        store.resize(1, 300);
+        s.check(store.get().sections[1].bars == arr::maxBars && arr::maxBars == 240, "a section is 1-240 bars (the orchestration pass: an Epic cue's climax)");
         store.remove(0);
         s.check(store.get().count == 3 && std::string(store.get().sections[0].nameText()) == "Intro", "delete");
         int undone = 0;
@@ -4667,8 +4667,13 @@ void testArrangement(Suite& s) {
         s.check(a.sections[1].intensityEnd > a.sections[1].intensityStart && a.sections[2].intensityStart > a.sections[0].intensityStart,
                 "new sections start from a musical intensity arc");
         const auto b0 = arrange.sectionBounds(0), b1 = arrange.sectionBounds(1);
-        s.check(b0.getWidth() > 20 && std::abs(b0.getWidth() - b1.getWidth()) <= 2 && b1.getX() >= b0.getRight() - 1 && arrange.timelineBounds().contains(b0),
-                "sections lie on the timeline, as wide as their bars");
+        // (The orchestration pass: a new section is its kind's share of a Medium cue, an Intro
+        // half a Build.)
+        const double ratio = double(a.sections[1].bars) / double(a.sections[0].bars);
+        s.check(b0.getWidth() > 10 && std::abs(double(b1.getWidth()) - ratio * double(b0.getWidth())) <= 3.0 && b1.getX() >= b0.getRight() - 1
+                    && arrange.timelineBounds().contains(b0) && a.sections[1].bars > a.sections[0].bars,
+                "sections lie on the timeline, as wide as their bars (a Build longer than its Intro)",
+                std::to_string(a.sections[0].bars) + " and " + std::to_string(a.sections[1].bars) + " bars");
         const auto cell = arrange.cellBounds(1, 1, 2);
         s.check(!cell.isEmpty() && std::abs(cell.getCentreX() - b1.getCentreX()) <= 2 && arrange.cellBounds(0, 2, 0).isEmpty(),
                 "the grid has a row per instrument of each active Place, a cell under each section");
@@ -4685,7 +4690,7 @@ void testArrangement(Suite& s) {
         arrange.deleteSection();
         s.check(h.p->arrangement.get().count == 3, "DELETE");
         // Paint with a playhead (the preview).
-        h.p->previewFrom(8);
+        h.p->previewFrom(h.p->arrangement.get().startOf(1));
         h.render(0.3);
         view->settle(0.1f);
         editor->createComponentSnapshot(editor->getLocalBounds());
@@ -4861,11 +4866,13 @@ void testTransitions(Suite& s) {
     {
         // Templates: for scoring since the Drama tier rework (long, evolving sections); the
         // short ones from before stay for the older factory scenes.
-        const std::array<std::vector<int>, arr::TemplateCount> lengths { { { 8, 16, 32, 16, 8 }, { 8, 64, 8 }, { 8, 16, 32, 16, 48, 8 }, { 16, 48, 8, 64, 16 },
-                                                                            { 32, 16, 32, 16 }, { 16, 16, 32, 16 },
+        // The orchestration pass: the proportions as written (bars at 120 BPM for about five
+        // minutes); makeTemplate(t) fits them to the Length (the "orchestra" group).
+        const std::array<std::vector<int>, arr::TemplateCount> lengths { { { 16, 32, 56, 24, 16 }, { 16, 48, 24, 48, 16 }, { 12, 24, 40, 16, 48, 12 }, { 16, 40, 12, 56, 16 },
+                                                                            { 32, 24, 32, 24 }, { 24, 32, 48, 24 },
                                                                             // The Drama tier's: Chase, Siege, Final Stand, Lament.
-                                                                            { 8, 16, 32, 8, 16, 48, 8 }, { 16, 16, 48, 16, 16, 32, 16 }, { 8, 16, 32, 8, 48, 32, 16 },
-                                                                            { 8, 32, 16, 32, 16, 16 } } };
+                                                                            { 8, 24, 40, 12, 16, 40, 12 }, { 16, 24, 40, 16, 24, 40, 16 }, { 12, 24, 32, 12, 40, 32, 16 },
+                                                                            { 16, 32, 24, 40, 24, 16 } } };
         const std::array<std::vector<int>, arr::TemplateCount> legacy { { { 8, 16, 16, 16, 8 }, { 8, 32, 8 }, { 4, 8, 16, 8, 16, 4 }, { 8, 16, 4, 16, 8 },
                                                                            { 8, 8, 8, 8 }, { 16, 16, 8, 16 }, { 4, 8, 16, 4, 4, 16, 4 }, { 8, 8, 16, 8, 8, 16, 8 },
                                                                            { 8, 8, 16, 4, 16, 8, 8 }, { 8, 16, 8, 8, 8, 8 } } };
@@ -4873,7 +4880,7 @@ void testTransitions(Suite& s) {
         std::string text;
         for (int t = 0; t < arr::TemplateCount; ++t)
             for (bool old : { false, true }) {
-                const auto a = arr::makeTemplate(t, old);
+                const auto a = arr::makeTemplate(t, old);   // (false: the proportions as written)
                 const auto& want = (old ? legacy : lengths)[std::size_t(t)];
                 bool ok = a.count == int(want.size());
                 for (int i = 0; ok && i < a.count; ++i) ok = a.sections[std::size_t(i)].bars == want[std::size_t(i)] && a.sections[std::size_t(i)].evolve == !old;
@@ -4907,25 +4914,25 @@ void testTransitions(Suite& s) {
         const std::array<int, 5> counts { playing(0), playing(1), playing(2), playing(3), playing(4) };
         std::string text;
         for (int c : counts) text += std::to_string(c) + " ";
-        s.check(counts[0] < counts[1] && counts[1] < counts[2] && counts[2] == 12 && counts[3] < counts[2] && counts[4] < counts[3] && counts[0] > 0,
-                "Auto-arrange: a sparse intro, a build, everything at the climax, thinning out", "instruments playing: " + text);
+        // (The orchestration pass: orchestrated, within each section's part budget, the Drama
+        // instruments counted where they may play; the "orchestra" group measures it all.)
+        s.check(counts[0] < counts[1] && counts[1] <= counts[2] && counts[2] <= 10 && counts[2] >= 6 && counts[3] < counts[2] && counts[4] <= counts[3] && counts[0] > 0,
+                "Auto-arrange: a sparse intro, a build, the fullest at the climax (within its budget), thinning out", "instruments playing: " + text);
         bool intro = true;
-        for (int e = 0; e < placeElements; ++e) {
-            const auto& c = a.sections[0].cells[0][std::size_t(e)];
-            const int role = arr::roleOf(Castle, e);
-            if ((role == arr::RoleBed || role == arr::RoleTexture) != (c.entry == arr::EntryOn) && !(role == arr::RoleMelody && c.entry == arr::EntryFadeIn)) intro = false;
-            if (a.sections[0].cells[1][std::size_t(e)].entry != arr::EntryOff) intro = false;
-        }
-        s.check(intro, "the intro is the first Place's beds; the second Place joins later");
-        // The build: drones and bass from the start, rhythm halfway, melody fading in or halfway.
-        bool order = true;
-        for (int e = 0; e < placeElements; ++e) {
-            const int role = arr::roleOf(Castle, e), entry = a.sections[1].cells[0][std::size_t(e)].entry;
-            if (role <= arr::RoleBass && entry != arr::EntryOn) order = false;
-            if (role == arr::RoleRhythm && entry != arr::EntryHalfway) order = false;
-            if (role == arr::RoleMelody && entry != arr::EntryFadeIn && entry != arr::EntryHalfway) order = false;
-        }
-        s.check(order, "instruments enter by role during the build (drone, bass, then rhythm, then melody)");
+        int introParts = 0;
+        for (int slot = 0; slot < 2; ++slot)
+            for (int e = 0; e < slotElements; ++e) {
+                const auto& c = a.sections[0].cells[std::size_t(slot)][std::size_t(e)];
+                if (c.entry == arr::EntryOff) continue;
+                ++introParts;
+                const int voice = arr::voiceOf(types[std::size_t(slot)], e);
+                if (voice == arr::VoiceKit || voice == arr::VoiceBass || voice == arr::VoiceHits || isDramaElement(e)) intro = false;
+            }
+        s.check(intro && introParts >= 2 && introParts <= 4, "the intro: two to four parts in all (pads, environment, a melody fading in), no kit or bass",
+                std::to_string(introParts) + " parts");
+        // The build: its parts come in one by one across it (the shaping; Evolve).
+        bool order = a.sections[1].evolve && a.sections[1].orchestrated;
+        s.check(order, "the build is orchestrated and evolves (its parts enter one by one across it)");
         s.check(a.sections[1].transition == arr::TransRiser || a.sections[1].transition == arr::TransDrumFill, "into the climax: a riser or a drum fill",
                 arr::transitionNames[a.sections[1].transition]);
         s.check(a.sections[4].transition == arr::TransCut && a.sections[2].cells[0][3].variant == pat::VariantB, "no transition at the end; busier variants at the climax");
@@ -5371,7 +5378,7 @@ void testGameAudio(Suite& s) {
     {
         Host h;
         h.set("p1_type", float(Tavern));
-        auto a = arr::makeTemplate(arr::ExplorationLoop);
+        auto a = arr::makeTemplate(arr::ExplorationLoop, true);   // (three sections: Intro, Loop, Outro)
         for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].bars = 1;
         h.p->arrangement.set(arr::autoArrange(a, h.p->slotTypes(), 1));
         h.render(0.3);
@@ -9436,6 +9443,8 @@ void testSamples(Suite& s) {
 #include "DramaTests.inc"
 #include "DramaReworkTests.inc"
 #include "LoudnessTests.inc"
+#include "MixProbe.inc"
+#include "OrchestraTests.inc"
 
 
 int main(int argc, char** argv) {
@@ -9549,12 +9558,14 @@ int main(int argc, char** argv) {
     if (run("drama")) testDrama(s);
     if (run("dramarework")) testDramaRework(s);
     if (run("loudness")) testLoudness(s);
+    if (run("orchestra")) testOrchestra(s);
     if (only.contains("dramatrims")) probeDramaTrims();
     if (only.contains("loudprobe")) probeLoudness();
     if (only.contains("hitprobe")) probeHits();
     if (only.contains("balancecal")) calibrateBalance();
     if (only.contains("sceneprobe")) probeScenes();
     if (only.contains("arrcal")) calibrateArranged();
+    if (only.contains("mixprobe")) probeMix();
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;

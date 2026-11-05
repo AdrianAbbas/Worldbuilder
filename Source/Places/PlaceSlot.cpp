@@ -22,9 +22,12 @@ void PlaceSlot::prepare(double sampleRate, int slotIndex) {
     fadeStep = 1.0f / (0.3f * rate);
     arrangeUp = 1.0f / (0.02f * rate);
     keysLevel.setTime(0.08f, controlRate);
+    focus.setTime(0.4f, controlRate);
+    for (auto& g : gearMakeUp) g.setTime(0.03f, controlRate);
     // Down fast (the louder tier's first downbeat is already balanced), back up slowly.
     placeComp.setTime(0.012f, controlRate);
     layerComp.setTime(0.012f, controlRate);
+    percComp.setTime(0.012f, controlRate);
     compRelease = 1.0f - std::exp(-1.0f / (0.15f * controlRate));
     arrangeDown = 1.0f / (0.25f * rate);
     for (auto& f : dcBlock) f.setCutoff(12.0f, rate);   // a Place fades out and in over 0.3 s when the slot changes type
@@ -43,12 +46,16 @@ void PlaceSlot::reset() {
     freeBeat = 0;
     seeded = false;
     gain.snap(0);
+    focus.snap(1.0f);
+    for (auto& g : gearMakeUp) g.snap(1.0f);
     for (auto& f : distanceLp) f.reset();
+    for (auto& f : percLp) f.reset();
     for (auto& f : dcBlock) f.reset();
     for (auto& f : fullness) f.reset();
     fx.reset();
     dramaLayer.reset();
     dramaGainNow.fill(-1.0f);
+    percComp.snap(1.0f);
     placeComp.snap(1.0f);
     layerComp.snap(1.0f);
     for (auto& bus : sendTilt)
@@ -300,6 +307,18 @@ void PlaceSlot::updatePatterns(const PlaceSettings& target, int mood, const pat:
     }
 }
 
+float PlaceSlot::patternEnergy(const pat::Pattern& p) {
+    // The notes' power per beat (velocity squared, a note's length counted up to a beat).
+    const double perBeat = pat::stepsPerBeat(p.resolution), beats = std::max(p.lengthBeats(), 0.25);
+    double sum = 0;
+    for (int i = 0; i < p.count; ++i) {
+        const auto& n = p.notes[std::size_t(i)];
+        const double v = double(n.velocity) / 127.0 * double(n.probability) / 100.0;
+        sum += v * v * std::clamp(double(n.length) / perBeat, 0.25, 1.0);
+    }
+    return float(sum / beats);
+}
+
 namespace {
 // Instrument mode: the world as the defaults set it (the World Controls and Score
 // Intensity at their defaults), so one instrument sounds the same in every project.
@@ -330,6 +349,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         fx.reset();
     }
     const bool switching = wanted != currentType;
+    percussionNow = false;
     if (current == nullptr || (!audible && gain.value < 1.0e-5f && !switching)) {
         if (current == nullptr) fade = 0;
         gain.snap(audible ? gain.value : 0.0f);
@@ -447,14 +467,15 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     // The Drama loudness pass: as the tier rises the Place makes room and the Drama layer
     // takes its share, so the slot stays about as loud as at Calm (a table measured per
     // Place, Drama Style and tier; Drama.cpp). Calm and Drama 0: exactly as before.
-    float placeTo = 1.0f, layerTo = 1.0f;
+    float placeTo = 1.0f, layerTo = 1.0f, percTo = 1.0f;
     if (dramaOn && !c.instrument && c.drama.drama > 0.0f) {
         float placeDb = c.dramaShapeDb;
         const int style = drama::styleFor(currentType, c.drama.style);
         if (dramaLayer.tier() > drama::Calm) {
             const auto b = drama::balance(currentType, style, dramaLayer.tier(), c.drama.rank, world.intensity);
             placeDb += b.placeDb;
-            layerTo = dbToGain(b.layerDb - b.placeDb);
+            layerTo = dbToGain(b.layerDb - b.placeDb + std::min(0.0f, c.dramaLayerDb));
+            percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 12.0f));
         }
         // Rising, the Place makes room for the tier ahead before its bar line (its own rise
         // with Score Intensity does not wait for it); the layer keeps the tier it plays.
@@ -475,13 +496,30 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     };
     const float placeGain = compResting ? 1.0f : follow(placeComp, placeTo);
     const float layerGain = compResting ? 1.0f : follow(layerComp, layerTo);
+    const float percGain = percComp.value == 1.0f && percTo == 1.0f ? 1.0f : follow(percComp, percTo);
     if (!compResting && std::abs(placeComp.value - placeTo) < 1.0e-5f && std::abs(layerComp.value - layerTo) < 1.0e-5f) {
         placeComp.snap(placeTo);
         layerComp.snap(layerTo);
     }
+    if (std::abs(percComp.value - percTo) < 1.0e-5f) percComp.snap(percTo);
 
     // Patterns: the composer's, or generated from the seed and the settings.
     updatePatterns(target, world.mood, patterns, variants, c.keysArmed ? keysElement : -1);
+    // The orchestration pass: a part drama moves from A to its busier B keeps A where B came
+    // out sparser (some generators draw B's optional phrases differently): the Place's own
+    // instruments never thin out, or get quieter, as Drama rises.
+    std::array<bool, placeElements> gearB {};
+    if (drama::Layer::mixPass && drama::loudnessPass && c.drama.drama > 0.0f && !c.instrument)
+        for (int e = 0; e < placeElements; ++e) {
+            const auto k = std::size_t(e);
+            if (c.writtenVariant[k] != pat::VariantA || variants[k] != pat::VariantB || playing[k] == nullptr) continue;
+            if (c.clip[k] != nullptr && c.variant[k] != pat::VariantFill) continue;
+            const bool mine = patterns.type == currentType;
+            if (mine && patterns.element[k].edited(pat::VariantB)) continue;   // the composer's B plays as written
+            const pat::Pattern& a = mine && patterns.element[k].edited(0) ? patterns.element[k].pattern : generated[0][k];
+            if (patternEnergy(*playing[k]) < 0.9f * patternEnergy(a)) playing[k] = &a;
+            else gearB[k] = true;
+        }
     const int scaleSize = music::scaleFor(world.mood).size;
     std::array<pat::Playback, dramaElements> dramaPlay {};
     for (int e = 0; e < slotElements; ++e) {
@@ -507,11 +545,24 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         play.key = mix64((uint64_t(seedKey) << 8) ^ uint64_t(e + 1));
         // The drama rising: a part doubled an octave up or down (the arrangement's gear).
         play.doubleDegrees = c.doubling[k] * scaleSize;
+        play.doubleVelocity = drama::Layer::mixPass && drama::loudnessPass ? 0.5f : 0.7f;
         // The Drama instruments play as written, without the Place's swing.
         if (e >= placeElements && clip == nullptr && !(patterns.type == currentType && patterns.element[k].edited(variants[k]))) play.swing = 0;
         // A clip's randomness is its own section's (the same at every pass of the song).
         if (clip != nullptr) play.key = mix64(play.key ^ (uint64_t(int64_t(std::llround(c.clipOrigin)) + 1) << 20));
     }
+    // The orchestration pass: a part drama moved to a busier (or sparser) variant than written
+    // plays at least as loud as its A (some Places' busier takes are softer: the Palace's
+    // melody 4 dB): the Place's own instruments never get quieter as Drama rises.
+    if (drama::Layer::mixPass && drama::loudnessPass && c.drama.drama > 0.0f && !c.instrument)
+        for (int e = 0; e < placeElements; ++e) {
+            const auto k = std::size_t(e);
+            float want = 1.0f;
+            // (Measured per Place and instrument: B in a higher register can sound softer.)
+            if (gearB[k] && clipNow[k] == nullptr) want = dbToGain(std::clamp(-drama::busierDb(currentType, e), 0.0f, 3.0f));
+            const float g = gearMakeUp[k].value == 1.0f && want == 1.0f ? 1.0f : gearMakeUp[k].next(want);
+            context.s.element[k] *= g;
+        }
     lastBeat = context.beat;
     nextBeat = context.beat + context.beatsPerSample * double(n);
     context.liveElement = keysElement < placeElements ? keysElement : -1;
@@ -547,6 +598,15 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         }
         el.instrument = c.instrument;
         el.slotGain = placeGain;
+        el.percGain = percGain;
+        // The orchestration pass: the Drama percussion on the slot's dry bus (below).
+        if (drama::Layer::mixPass && drama::loudnessPass) {
+            std::fill_n(percL.begin(), n, 0.0f);
+            std::fill_n(percR.begin(), n, 0.0f);
+            el.percL = percL.data();
+            el.percR = percR.data();
+            percussionNow = true;
+        }
         dramaLayer.render(currentType, world, c.drama, dramaTension, context.beat, context.beatsPerSample, c.sync, el, clock, left, right, n);
     }
     // The sends darken with distance too (the dry sound has its own distance filter).
@@ -558,9 +618,13 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     const float d = c.instrument ? distance.value : distance.next(travelDistance(effectiveDistance(world, c.distance), c.travelFar));
     const float p = pan.next(std::clamp(c.pan, -1.0f, 1.0f));
     for (auto& f : distanceLp) f.setCutoff(lerpExp(20000.0f, 1100.0f, std::pow(d, 1.6f)), rate);
+    for (auto& f : percLp) f.setCutoff(lerpExp(20000.0f, 1100.0f, std::pow(d, 1.6f)), rate);
     const float near = lerp(1.0f, 0.3f, std::pow(d, 0.8f)), width = lerp(1.0f, 0.45f, d);
     const float right_ = std::max(p, 0.0f), left_ = std::max(-p, 0.0f);
-    send = c.instrument && !c.ambience ? 0.0f : current->spaceSend() * lerp(0.4f, 1.6f, d);
+    // The orchestration pass: a Place that does not lead an orchestrated section keeps less of
+    // its space (World Space and reverb / delay sends), so several Places do not stack into mud.
+    const float focusNow = focus.next(std::clamp(c.spaceFocus, 0.0f, 1.0f));
+    send = c.instrument && !c.ambience ? 0.0f : current->spaceSend() * lerp(0.4f, 1.6f, d) * focusNow;
     float target_ = audible ? dbToGain(std::clamp(c.levelDb, -60.0f, 6.0f) + c.trimDb + intensityDb(currentType, world.intensity)) * near * travelGain(c.travelFar) : 0.0f;
     if (placeGain != 1.0f) target_ *= placeGain;
     if (snapGain) {
@@ -570,7 +634,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     const bool ducking = c.duckFrom < 1.0f || c.duckTo < 1.0f;
     // The sends follow the slot's gain and pan; far away, more of each instrument
     // reaches its reverb and delay.
-    const float sendDistance = 1.0f + 0.5f * d;
+    const float sendDistance = (1.0f + 0.5f * d) * focusNow;
     for (int i = 0; i < n; ++i) {
         fade = switching ? std::max(0.0f, fade - fadeStep) : std::min(1.0f, fade + fadeStep);
         const float g = gain.next(target_) * fade * fade * (ducking ? lerp(c.duckFrom, c.duckTo, float(i + 1) / float(n)) : 1.0f);
@@ -586,6 +650,15 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         r = distanceLp[3].lp(distanceLp[1].lp(dcBlock[1].hp(mid - side)));
         left[i] = (l * (1.0f - right_) + r * left_ * 0.7f) * g;
         right[i] = (r * (1.0f - left_) + l * right_ * 0.7f) * g;
+        if (percussionNow) {
+            // The Drama percussion: the same level, distance and pan, without the fullness
+            // (its low end is its own) and without the World Space (the engine adds it dry).
+            const float pm = 0.5f * (finiteOr(percL[std::size_t(i)]) + finiteOr(percR[std::size_t(i)])),
+                        ps = 0.5f * (finiteOr(percL[std::size_t(i)]) - finiteOr(percR[std::size_t(i)])) * width;
+            const float pl = percLp[2].lp(percLp[0].lp(pm + ps)), pr = percLp[3].lp(percLp[1].lp(pm - ps));
+            percL[std::size_t(i)] = (pl * (1.0f - right_) + pr * left_ * 0.7f) * g;
+            percR[std::size_t(i)] = (pr * (1.0f - left_) + pl * right_ * 0.7f) * g;
+        }
     }
     return true;
 }

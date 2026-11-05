@@ -1,5 +1,6 @@
 #include "ArrangeView.h"
 #include "../Arrangement/Templates.h"
+#include "../Arrangement/Orchestra.h"
 #include "PlaceArt.h"
 #include "Pixel.h"
 #include "Style.h"
@@ -123,7 +124,7 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
         };
         addAndMakeVisible(k);
     };
-    setupSlider(lengthSlider, 1, arr::maxBars, 1, "The section's length in bars (1-128). Or drag its right edge on the timeline.",
+    setupSlider(lengthSlider, 1, arr::maxBars, 1, "The section's length in bars (1-240). Or drag its right edge on the timeline.",
                 [](arr::Section& s, double v) { s.bars = uint8_t(juce::roundToInt(v)); });
     setupSlider(startSlider, 0, 1, 0.01, "Score Intensity at the start of the section (it ramps to the end value). Host automation of Score Intensity adds on top.",
                 [](arr::Section& s, double v) { s.intensityStart = float(v); });
@@ -150,6 +151,36 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
                           "after). Section names say what each one is. Uses the World Seed; undoable.");
     autoButton.onClick = [this] { autoArrange(); };
     addAndMakeVisible(autoButton);
+    // The orchestration pass: Orchestrate and the Length control.
+    orchestrateButton.setTooltip("Orchestrate: keeps each section to a part budget across all Places (Intro 2-4, Build 4-7, Climax 7-10, "
+                                 "Wind-down 3-5, Outro 2-3) and chooses the parts by role: one lead (passing from Place to Place), one bass, "
+                                 "one kit (the Drama drums take over while the drama plays), pads and colour; the other Places' space thinned. "
+                                 "Your lengths and clips stay. Undoable.");
+    orchestrateButton.onClick = [this] { orchestrate(); };
+    addAndMakeVisible(orchestrateButton);
+    cueLength.setSliderStyle(juce::Slider::LinearHorizontal);
+    cueLength.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
+    cueLength.setRange(double(arr::lengthMin), double(arr::lengthMax), 0.0);
+    cueLength.setDoubleClickReturnValue(true, double(arr::lengthDefault));
+    cueLength.setTooltip("LENGTH of the whole cue: Short (about 1 minute), Medium (3.5), Long (5), Epic (8) at the host's tempo. Scales every "
+                         "section, keeping their proportions (in phrases of 4, 8 or 16 bars); Auto-arrange, the templates and INSPIRE use it. "
+                         "One undoable step; sections can still be resized by hand.");
+    cueLength.setValue(double(processor.arrangeLength()), juce::dontSendNotification);
+    cueLength.onDragStart = [this] {
+        lengthBase = processor.arrangement.get();
+        lengthGesture = lengthFirst = true;
+    };
+    cueLength.onDragEnd = [this] { lengthGesture = false; };
+    cueLength.onValueChange = [this] {
+        if (updating) return;
+        setCueLength(float(cueLength.getValue()), !lengthGesture || lengthFirst);
+        lengthFirst = false;
+    };
+    addAndMakeVisible(cueLength);
+    cueLengthText.setJustificationType(juce::Justification::centredLeft);
+    cueLengthText.setFont(juce::FontOptions(12.0f));
+    cueLengthText.setTooltip(cueLength.getTooltip());
+    addAndMakeVisible(cueLengthText);
 
     for (int t = 0; t < arr::TransitionCount; ++t) transitionChoice.addItem(arr::transitionNames[std::size_t(t)], t + 1);
     transitionChoice.setTooltip("How this section hands over to the next one: Cut; Crossfade (instruments leaving fade out, those entering fade in); "
@@ -232,7 +263,10 @@ void ArrangeView::edit(const std::function<void(arr::Section&)>& change, bool un
 
 void ArrangeView::addSection() {
     const int preset = shown.count % int(arr::presetNames.size());
-    auto s = arr::makeSection(arr::presetNames[std::size_t(preset)], 8, shown.count);
+    // The orchestration pass: a new section's length is its kind's share of a cue at the
+    // Length control and the host's tempo (an Intro of 16 bars at Medium and 180 BPM).
+    static constexpr std::array<int, 8> presetKinds { arr::KindIntro, arr::KindBuild, arr::KindPeak, arr::KindCalm, arr::KindOutro, arr::KindLoop, arr::KindBridge, arr::KindBreak };
+    auto s = arr::makeSection(arr::presetNames[std::size_t(preset)], arr::newSectionBars(presetKinds[std::size_t(preset)], processor.arrangeSeconds(), processor.arrangeTempo()), shown.count);
     presetFor(s, preset);
     const int index = processor.arrangement.add(s, selectedIndex < 0 ? -1 : selectedIndex + 1);
     shown = processor.arrangement.get();
@@ -324,7 +358,8 @@ void ArrangeView::startPreview(int section) {
 }
 
 void ArrangeView::applyTemplate(int which) {
-    const auto tree = arr::makeTemplate(which);
+    // The orchestration pass: as long as the Length control says, at the host's tempo.
+    const auto tree = arr::makeTemplate(which, processor.arrangeSeconds(), processor.arrangeTempo());
     const auto seed = uint32_t(juce::roundToInt(processor.parameters.getRawParameterValue(specs[PSeed].id)->load()));
     (void)seed;
     processor.arrangement.set(processor.autoArrangeWithClips(tree));
@@ -343,6 +378,44 @@ void ArrangeView::autoArrange() {
     shownRevision = processor.arrangement.revision();
     refreshInspector();
     repaint();
+}
+
+void ArrangeView::orchestrate() {
+    if (shown.count <= 0) return;
+    processor.orchestrateArrangement();
+    shown = processor.arrangement.get();
+    shownRevision = processor.arrangement.revision();
+    refreshInspector();
+    repaint();
+}
+
+void ArrangeView::setCueLength(float position, bool newGesture) {
+    processor.setArrangeLength(position);
+    // A gesture scales the arrangement as it was when it began (the proportions never drift).
+    if ((newGesture && !lengthGesture) || lengthBase.count <= 0) lengthBase = processor.arrangement.get();
+    if (lengthBase.count > 0) {
+        processor.arrangement.set(arr::fitLength(lengthBase, processor.arrangeSeconds(), processor.arrangeTempo()), newGesture);
+        shown = processor.arrangement.get();
+        shownRevision = processor.arrangement.revision();
+        layoutTimeline();
+    }
+    const juce::ScopedValueSetter<bool> guard(updating, true);
+    if (std::abs(cueLength.getValue() - double(position)) > 1.0e-6) cueLength.setValue(double(position), juce::dontSendNotification);
+    cueLengthText.setText(cueLengthLabel(), juce::dontSendNotification);
+    refreshInspector();
+    repaint();
+}
+
+juce::String ArrangeView::cueLengthLabel() const {
+    const double bpm = processor.arrangeTempo();
+    const double seconds = shown.count > 0 ? arr::secondsOf(shown, bpm) : processor.arrangeSeconds();
+    const int s = juce::roundToInt(seconds);
+    const float p = processor.arrangeLength();
+    const int name = juce::jlimit(0, 3, juce::roundToInt(p));
+    juce::String text = juce::String(s / 60) + ":" + juce::String(s % 60).paddedLeft('0', 2);
+    if (shown.count > 0) text << " · " << shown.totalBars() << " bars";
+    if (std::abs(p - float(name)) < 0.08f) text << " (" << arr::lengthNames[std::size_t(name)] << ")";
+    return text;
 }
 
 void ArrangeView::setTransition(int kind, int length) {
@@ -416,6 +489,8 @@ void ArrangeView::refreshInspector() {
                                                              &deleteButton, &transitionChoice, &transitionLengthChoice, &locationChoice, &planetChoice, &dramaChoice, &worldButton })
         c->setEnabled(any);
     autoButton.setEnabled(shown.count > 0);
+    orchestrateButton.setEnabled(shown.count > 0);
+    cueLengthText.setText(cueLengthLabel(), juce::dontSendNotification);
     if (any) {
         const auto& s = shown.sections[std::size_t(selectedIndex)];
         nameChoice.setText(juce::String::fromUTF8(s.nameText()), juce::dontSendNotification);
@@ -465,6 +540,10 @@ void ArrangeView::refresh() {
     shownRevision = processor.arrangement.revision();
     shownTypes = processor.slotTypes();
     if (selectedIndex >= shown.count || (selectedIndex < 0 && shown.count > 0)) selectedIndex = shown.count > 0 ? 0 : -1;
+    {
+        const juce::ScopedValueSetter<bool> guard(updating, true);
+        cueLength.setValue(double(processor.arrangeLength()), juce::dontSendNotification);
+    }
     refreshInspector();
     layoutTimeline();
     layoutRows();
@@ -608,7 +687,11 @@ void ArrangeView::resized() {
         t.removeFromLeft(14);
         templateChoice.setBounds(t.removeFromLeft(150).reduced(2, 1));
         autoButton.setBounds(t.removeFromLeft(118).reduced(2, 1));
+        orchestrateButton.setBounds(t.removeFromLeft(112).reduced(2, 1));
         endChoice.setBounds(t.removeFromRight(210).reduced(2, 1));
+        t.removeFromLeft(10);
+        cueLengthText.setBounds(t.removeFromRight(std::min(150, std::max(0, t.getWidth() / 2))));
+        cueLength.setBounds(t.reduced(2, 1));
     }
     r.removeFromTop(6);
     inspectorArea = r.removeFromTop(78);

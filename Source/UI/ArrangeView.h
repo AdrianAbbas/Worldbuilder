@@ -65,6 +65,11 @@ public:
     // Milestone 11b (the buttons; also used by the tests).
     void applyTemplate(int which);
     void autoArrange();
+    // The orchestration pass (the buttons; also used by the tests): Orchestrate, and the
+    // Length control (every section scaled, one undoable step per gesture).
+    void orchestrate();
+    void setCueLength(float position, bool newGesture = true);
+    juce::String cueLengthLabel() const;
     void setTransition(int kind, int length);
     void setLocation(int location);
     void setPlanet(int planet);
@@ -126,6 +131,12 @@ private:
     juce::ComboBox endChoice, nameChoice, repeatsChoice, curveChoice;
     juce::ComboBox templateChoice, transitionChoice, transitionLengthChoice, locationChoice, planetChoice, dramaChoice;
     juce::TextButton autoButton { "AUTO-ARRANGE" }, worldButton { "WORLD" };
+    // The orchestration pass.
+    juce::TextButton orchestrateButton { "ORCHESTRATE" };
+    juce::Slider cueLength;
+    juce::Label cueLengthText;
+    arr::Arrangement lengthBase {};   // the arrangement when the Length gesture began
+    bool lengthGesture = false, lengthFirst = false;
     uint32_t shownLocations = 0;
     juce::Slider lengthSlider, startSlider, endSlider;
     std::array<juce::Rectangle<int>, arr::colourCount> swatches;

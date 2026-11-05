@@ -86,8 +86,10 @@ uint32_t nextSeed(uint32_t seed);
 WorldValues worldValues(const Scene& scene, const WorldValues& session);
 // Location i's values (the world with the Location's changes).
 WorldValues locationValues(const Scene& scene, int index, const WorldValues& world);
-// The scene's arrangement: the template, Auto-arranged, sections at their Locations.
-arr::Arrangement arrangement(const Scene& scene);
+// The scene's arrangement: the template, Auto-arranged, sections at their Locations. The
+// orchestration pass: a dramatic or inspired scene's cue is fitted to `seconds` at `bpm` (the
+// Length control at the host's tempo; 0: Medium at 120 BPM); the older scenes keep theirs.
+arr::Arrangement arrangement(const Scene& scene, double seconds = 0.0, double bpm = 0.0);
 // Which Location a section of the arrangement is at (by what the section does).
 int locationFor(int kind, int locations);
 

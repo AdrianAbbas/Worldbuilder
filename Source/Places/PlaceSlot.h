@@ -34,6 +34,17 @@ struct PlaceSlotControls {
     // The Drama loudness pass: the arrangement's reshaping as drama plays it (instruments
     // entering, busier, doubled; or thinned out at Calm), balanced back (dB; 0 at Drama 0).
     float dramaShapeDb = 0;
+    // The orchestration pass: the same, taken from the Drama layer instead (dB, never above 0):
+    // the Place's own instruments keep their level.
+    float dramaLayerDb = 0;
+    // The orchestration pass: the variants as written (before drama changed their gear;
+    // 0xff: as `variant`). A part drama moved to a busier variant never plays quieter than
+    // its A (its level made up, at most 4 dB).
+    std::array<uint8_t, slotElements> writtenVariant { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+    // The orchestration pass: how much of the slot's environment (its World Space send and
+    // its instruments' reverb and delay sends) plays: 1, or less for a Place that does not
+    // lead an orchestrated section (several Places do not stack their spaces into mud).
+    float spaceFocus = 1;
     // Milestone 16: the section's own clip for each instrument (nullptr: linked, it plays
     // its variant), laid from `clipOrigin` (song beats: the section's first downbeat)
     // and playing for `clipSpan` beats (<= 0: endlessly).
@@ -113,6 +124,10 @@ public:
     float arrangeGain(int e) const { return arranged[std::size_t(std::clamp(e, 0, slotElements - 1))]; }
     // World Space send for the last rendered chunk.
     float spaceSend() const { return send; }
+    // The Drama percussion of the last render (the orchestration pass), for the dry mix
+    // only (no World Space): nullptr when there was none.
+    const float* percussionLeft() const { return percussionNow ? percL.data() : nullptr; }
+    const float* percussionRight() const { return percussionNow ? percR.data() : nullptr; }
     // The instruments' sends to the shared reverbs and delays for the last rendered
     // chunk, before the slot's gain; sendGainL/R are that gain per sample (level, fade,
     // distance and pan).
@@ -148,7 +163,13 @@ private:
     std::array<dsp::Smoother, 8> smooth;   // activity, tension, density, swing, tone, size, variation, fxDepth
     std::array<dsp::Smoother, slotElements> elementSmooth;
     dsp::Smoother gain, distance, pan;
-    std::array<dsp::OnePole, 4> distanceLp;
+    std::array<dsp::OnePole, 4> distanceLp, percLp;
+    // The orchestration pass: the Drama percussion's dry bus (after level, distance and pan).
+    std::array<float, dsp::chunk> percL {}, percR {};
+    bool percussionNow = false;
+    dsp::Smoother focus;   // the orchestration pass: the environment's share (spaceFocus), over 0.4 s
+    std::array<dsp::Smoother, placeElements> gearMakeUp {};   // the orchestration pass: a busier variant's level made up
+    static float patternEnergy(const pat::Pattern& p);
     std::array<dsp::OnePole, 2> dcBlock;
     std::array<dsp::OnePole, 2> fullness;   // a gentle low shelf: weight in the low mids and bass
     float send = 0;
@@ -191,7 +212,7 @@ private:
     std::array<float, dramaElements> dramaGainNow { -1.0f, -1.0f, -1.0f };
     // The Drama loudness pass: the slot's balance as its tier changes (the Place making
     // room, the Drama layer at its share of the Calm level): gains, smoothed.
-    dsp::Smoother placeComp, layerComp;
+    dsp::Smoother placeComp, layerComp, percComp;
     float compRelease = 1;
 public:
     const drama::Layer& drama() const { return dramaLayer; }

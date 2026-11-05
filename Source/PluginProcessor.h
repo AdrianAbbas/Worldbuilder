@@ -1,6 +1,7 @@
 #pragma once
 #include "Parameters.h"
 #include "Arrangement/ArrangementStore.h"
+#include "Arrangement/Orchestra.h"
 #include "Capture/Capture.h"
 #include "Instruments/Presets.h"
 #include "Keys/Recorder.h"
@@ -126,6 +127,22 @@ public:
     // Auto-arrange (and templates) with section clips made from each instrument's
     // variants as they play now (the World Seed), Milestone 16.
     wb::arr::Arrangement autoArrangeWithClips(const wb::arr::Arrangement& a);
+    // The orchestration pass: the Length control (0 Short .. 3 Epic, saved with the session;
+    // Auto-arrange, the templates and Inspire use it) and the tempo it is counted at (the
+    // host's, else 120 BPM).
+    float arrangeLength() const {
+        const float v = float(double(parameters.state.getProperty("arrangelength", double(wb::arr::lengthDefault))));
+        return std::isfinite(v) ? juce::jlimit(wb::arr::lengthMin, wb::arr::lengthMax, v) : wb::arr::lengthDefault;
+    }
+    void setArrangeLength(float position) { parameters.state.setProperty("arrangelength", double(juce::jlimit(wb::arr::lengthMin, wb::arr::lengthMax, position)), nullptr); }
+    double arrangeSeconds() const { return wb::arr::lengthSeconds(arrangeLength()); }
+    double arrangeTempo() const {
+        const float bpm = hostBpm.load(std::memory_order_relaxed);
+        return bpm >= 20.0f && bpm <= 999.0f ? double(bpm) : 120.0;
+    }
+    // ARRANGE's Orchestrate: the current arrangement within each section's part budget, by
+    // voice (Orchestra.h), as one undoable step.
+    void orchestrateArrangement();
 
     // KEYS (Milestone 14): the Play target and REC. Set on the message thread, read by
     // the audio thread each block; saved with the project (REC's arm is not).

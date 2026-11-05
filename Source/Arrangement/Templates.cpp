@@ -1,4 +1,5 @@
 #include "Templates.h"
+#include "Orchestra.h"
 #include <cctype>
 #include <string>
 #include <vector>
@@ -149,51 +150,53 @@ std::vector<Section> legacySections(int which, Arrangement& a) {
     return list;
 }
 
-// The templates for scoring (the Drama tier rework): intros, breaks, transitions and
-// endings 8-16 bars, build-ups, wind-downs and the rest 16-32, the main sections (fights,
-// chases, loops, themes, a boss's phases) 32-64; every section evolves inside itself.
+// The templates for scoring, in proportions (the orchestration pass: bars at 120 BPM for a
+// cue of about five minutes; makeTemplate fits them to the Length at the host's tempo):
+// intros and endings about a tenth, build-ups that take their time, climaxes that last
+// (a third or more); every section evolves inside itself.
 std::vector<Section> scoringSections(int which, Arrangement& a) {
     std::vector<Section> list;
     switch (std::clamp(which, 0, TemplateCount - 1)) {
         case ClassicArc:
-            list = { templateSection("Intro", 8), templateSection("Build", 16), templateSection("Climax", 32), templateSection("Wind-down", 16),
-                     templateSection("Outro", 8) };
+            list = { templateSection("Intro", 16), templateSection("Build", 32), templateSection("Climax", 56), templateSection("Wind-down", 24),
+                     templateSection("Outro", 16) };
             break;
         case ExplorationLoop:
-            // Set the loop to Loop (endless) for a game's looping cue.
-            list = { templateSection("Intro", 8), templateSection("Loop", 64), templateSection("Outro", 8) };
+            // Set a loop to Loop (endless) for a game's looping cue.
+            list = { templateSection("Intro", 16), templateSection("Loop", 48), templateSection("Bridge", 24), templateSection("Loop", 48),
+                     templateSection("Outro", 16) };
             break;
         case Battle:
-            list = { templateSection("Intro", 8), templateSection("Tension", 16), templateSection("Combat", 32), templateSection("Break", 16),
-                     templateSection("Combat II", 48), templateSection("Victory", 8) };
+            list = { templateSection("Intro", 12), templateSection("Tension", 24), templateSection("Combat", 40), templateSection("Break", 16),
+                     templateSection("Combat II", 48), templateSection("Victory", 12) };
             break;
         case BossFight:
-            list = { templateSection("Approach", 16), templateSection("Phase 1", 48), templateSection("Transition", 8), templateSection("Phase 2", 64),
+            list = { templateSection("Approach", 16), templateSection("Phase 1", 40), templateSection("Transition", 12), templateSection("Phase 2", 56),
                      templateSection("Defeat", 16) };
             break;
         case TownTheme:
-            list = { templateSection("A", 32), templateSection("B", 16), templateSection("A", 32), templateSection("C", 16) };
+            list = { templateSection("A", 32), templateSection("B", 24), templateSection("A", 32), templateSection("C", 24) };
             a.end = EndLoop;
             a.loopTo = 0;
             break;
         case CinematicReveal:
-            list = { templateSection("Mystery", 16), templateSection("Rise", 16), templateSection("Reveal", 32), templateSection("Afterglow", 16) };
+            list = { templateSection("Mystery", 24), templateSection("Rise", 32), templateSection("Reveal", 48), templateSection("Afterglow", 24) };
             break;
         case Chase:
-            list = { templateSection("Intro", 8), templateSection("Build", 16), templateSection("Chase", 32), templateSection("Break", 8),
-                     templateSection("Build", 16), templateSection("Chase II", 48), templateSection("Outro", 8) };
+            list = { templateSection("Intro", 8), templateSection("Build", 24), templateSection("Chase", 40), templateSection("Break", 12),
+                     templateSection("Build", 16), templateSection("Chase II", 40), templateSection("Outro", 12) };
             break;
         case Siege:
-            list = { templateSection("Approach", 16), templateSection("Tension", 16), templateSection("Battle", 48), templateSection("Break", 16),
-                     templateSection("Rising", 16), templateSection("Climax", 32), templateSection("Aftermath", 16) };
+            list = { templateSection("Approach", 16), templateSection("Tension", 24), templateSection("Battle", 40), templateSection("Break", 16),
+                     templateSection("Rising", 24), templateSection("Climax", 40), templateSection("Aftermath", 16) };
             break;
         case FinalStand:
-            list = { templateSection("Intro", 8), templateSection("Build", 16), templateSection("Battle", 32), templateSection("Break", 8),
-                     templateSection("Battle II", 48), templateSection("Climax", 32), templateSection("Victory", 16) };
+            list = { templateSection("Intro", 12), templateSection("Build", 24), templateSection("Battle", 32), templateSection("Break", 12),
+                     templateSection("Battle II", 40), templateSection("Climax", 32), templateSection("Victory", 16) };
             break;
         case Lament:
-            list = { templateSection("Intro", 8), templateSection("Theme", 32), templateSection("Rise", 16), templateSection("Climax", 32),
-                     templateSection("Wind-down", 16), templateSection("Outro", 16) };
+            list = { templateSection("Intro", 16), templateSection("Theme", 32), templateSection("Rise", 24), templateSection("Climax", 40),
+                     templateSection("Wind-down", 24), templateSection("Outro", 16) };
             break;
         default: break;
     }
@@ -209,8 +212,6 @@ int scoringBars(int kind) {
         default: return 16;
     }
 }
-
-Arrangement makeTemplate(int which) { return makeTemplate(which, false); }
 
 Arrangement makeTemplate(int which, bool legacy) {
     Arrangement a;
@@ -228,20 +229,10 @@ Arrangement makeTemplate(int which, bool legacy) {
 }
 
 Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
-    // For scoring (the Drama tier rework): every section at least as long as its kind wants
-    // (a fight 32 bars, a build-up 16, an intro 8), evolving inside itself.
+    // For scoring: every section evolving inside itself, its lengths as they are (the
+    // orchestration pass: the Length control fits them before, by time).
     Arrangement a = in;
-    for (int i = 0; i < a.count; ++i) {
-        auto& s = a.sections[std::size_t(i)];
-        const int want = scoringBars(kindOf(a, i));
-        if (s.bars < want) {
-            s.bars = uint8_t(want);
-            for (auto& row : s.cells)
-                for (auto& cell : row)
-                    if (cell.clip != nullptr) cell.clip.reset();   // a clip is one pass of its section: made again below
-        }
-        s.evolve = true;
-    }
+    for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].evolve = true;
     a = autoArrangeLegacy(a, types, seed);
     // The Drama instruments: in every section (their tier decides whether they play), the
     // drums' Fill before a fight.
@@ -256,7 +247,8 @@ Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>
                 c.fill = e == DramaDrums && intoFight;
             }
     }
-    return a;
+    // The orchestration pass: scored, not every instrument of every Place at once.
+    return orchestrate(a, types, seed);
 }
 
 Arrangement autoArrangeLegacy(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
@@ -557,7 +549,7 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
     const int index = st.at.section;
     const auto& s = a.sections[std::size_t(index)];
     const bool dramatic = sh.drama > 0.0f;
-    if (!dramatic && !s.evolve) return;
+    if (!dramatic && !s.evolve && !s.orchestrated) return;
     const int kind = kindOf(a, index);
     const double bars = double(std::max<int>(s.bars, 1));
     const double b = st.at.bar;   // bars into this pass
@@ -600,6 +592,61 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
     if (s.evolve) st.heat = falling ? 1.0f - through : through;
     if (s.evolve && !falling) st.swellDb = -2.5f * (1.0f - through);
 
+    // The orchestration pass: an orchestrated section keeps to its voices and its budget.
+    const bool orchestra = s.orchestrated;
+    std::array<int, placeSlots> rankOf {};
+    int places = 0;
+    for (int slot = 0; slot < placeSlots; ++slot) rankOf[std::size_t(slot)] = sh.types[std::size_t(slot)] != NoPlace ? places++ : -1;
+    std::array<int, VoiceCount> used {};
+    int parts = 0;
+    const Budget budget = budgetOf(kind);
+    // The build-up's parts, in the order they come in across the section (pads and the
+    // environment first, then the bass, the ostinato, the kit, colour, the lead, the hits).
+    std::array<std::array<int8_t, slotElements>, placeSlots> order {};
+    int entering = 0;
+    if (orchestra) {
+        for (int slot = 0; slot < placeSlots; ++slot) st.focus[std::size_t(slot)] = s.lead >= 0 && places > 1 && slot != s.lead ? 0.5f : 1.0f;
+        const int tierNow = st.drama >= 0 ? st.drama : sectionTier(a, index, sh);
+        const bool dramaNow = dramatic && tierNow > drama::Calm;
+        // While the drama plays, the Drama drums take over from a Place's kit and the Drama
+        // ostinato from a Place's ostinato: one kit, one ostinato.
+        bool drums = false, ostinato = false;
+        for (int slot = 0; slot < placeSlots && dramaNow; ++slot) {
+            const int type = sh.types[std::size_t(slot)];
+            if (type == NoPlace) continue;
+            drums |= rankOf[std::size_t(slot)] == 0 && st.gain[std::size_t(slot)][std::size_t(DramaDrums)] > 0.0f && patternInfo(type, DramaDrums).kind != NoPattern;
+            ostinato |= rankOf[std::size_t(slot)] <= 1 && st.gain[std::size_t(slot)][std::size_t(DramaOstinato)] > 0.0f && patternInfo(type, DramaOstinato).kind != NoPattern;
+        }
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            const int type = sh.types[std::size_t(slot)];
+            if (type == NoPlace) continue;
+            for (int e = 0; e < slotElements; ++e) {
+                auto& g = st.gain[std::size_t(slot)][std::size_t(e)];
+                if (g <= 0.0f || patternInfo(type, e).kind == NoPattern) continue;
+                const int voice = voiceOf(type, e);
+                if (!isDramaElement(e) && ((drums && voice == VoiceKit) || (ostinato && voice == VoiceOstinato))) {
+                    g = 0.0f;
+                    continue;
+                }
+                if (isDramaElement(e) && (!dramaNow || (e == DramaDrums && rankOf[std::size_t(slot)] > 0) || (e == DramaOstinato && rankOf[std::size_t(slot)] > 1))) continue;
+                ++used[std::size_t(voice)];
+                ++parts;
+            }
+        }
+        if (s.evolve && !falling && st.at.pass == 0) {
+            static constexpr std::array<int, VoiceCount> priority { 6, 2, 4, 3, 0, 1, 5, 7 };
+            for (int p = 0; p < VoiceCount; ++p)
+                for (int slot = 0; slot < placeSlots; ++slot) {
+                    const int type = sh.types[std::size_t(slot)];
+                    if (type == NoPlace) continue;
+                    for (int e = 0; e < slotElements; ++e)
+                        if (priority[std::size_t(voiceOf(type, e))] == p && s.cells[std::size_t(slot)][std::size_t(e)].entry != EntryOff && !playedBefore(slot, e)
+                            && patternInfo(type, e).kind != NoPattern)
+                            order[std::size_t(slot)][std::size_t(e)] = int8_t(1 + entering++);
+                }
+        }
+    }
+
     for (int slot = 0; slot < placeSlots; ++slot) {
         const int type = sh.types[std::size_t(slot)];
         if (type == NoPlace) continue;
@@ -622,15 +669,31 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
             if (dramatic && !drama) {
                 if (d < 0.0f) {
                     // Calm: the accents and the rhythm leave, then the melody; the bass turns sparse.
-                    if (e != keep && ((role == RoleAccent && d <= -0.25f) || (rhythm && d <= -0.5f) || (role == RoleMelody && d <= -0.75f))) gain[ke] = 0.0f;
+                    if (e != keep && ((role == RoleAccent && d <= -0.25f) || (rhythm && d <= -0.5f) || (role == RoleMelody && d <= -0.75f)) && gain[ke] > 0.0f) {
+                        // (Orchestrated: never below the section's budget.)
+                        if (!orchestra) gain[ke] = 0.0f;
+                        else if (parts > budget.low) {
+                            gain[ke] = 0.0f;
+                            --parts;
+                            --used[std::size_t(voiceOf(type, e))];
+                        }
+                    }
                     if ((role == RoleMelody && d <= -0.5f) || (role == RoleBass && d <= -0.75f)) shift = -1;
                 } else {
                     // Dramatic: the instruments resting enter in order of their role, the
                     // busier variants, the rhythm section driving, the parts doubling.
                     static constexpr std::array<float, RoleCount> enterAt { 0.25f, 1.0f, 0.25f, 0.5f, 0.75f, 1.25f };
                     if (!dropping && !crossfading && cell.entry != EntryOn && cell.entry != EntryFadeOut && d >= enterAt[std::size_t(role)]
-                        && (cell.entry == EntryOff || d >= 1.0f))
-                        gain[ke] = 1.0f;
+                        && (cell.entry == EntryOff || d >= 1.0f)) {
+                        // (Orchestrated: only into a free voice, within the section's budget.)
+                        const int voice = voiceOf(type, e);
+                        if (!orchestra) gain[ke] = 1.0f;
+                        else if (gain[ke] <= 0.0f && used[std::size_t(voice)] < voiceLimit[std::size_t(voice)] && parts < budget.high) {
+                            gain[ke] = 1.0f;
+                            ++used[std::size_t(voice)];
+                            ++parts;
+                        }
+                    }
                     // One gear busier: the rhythm section first, then the bass, the melody and the
                     // rest (a sparse part two at a climax); the phrases move on top.
                     static constexpr std::array<float, RoleCount> busierAt { 1.5f, 1.5f, 1.0f, 0.5f, 1.25f, 1.5f };
@@ -645,6 +708,16 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
                 if (!falling && st.at.pass == 0 && !playedBefore(slot, e)) {
                     double entry = bars * double(entryFraction[std::size_t(role)] * entrySpeed[std::size_t(std::clamp(kind, 0, KindCount - 1))]);
                     entry = s.bars >= 16 ? std::floor(entry / 2.0) * 2.0 : std::floor(entry);
+                    // Orchestrated: one by one across the section (a build-up over 80 % of its
+                    // length, an intro half of it, a loop or a bridge 40 %, a climax a quarter),
+                    // on four-bar lines.
+                    const int j = order[std::size_t(slot)][ke];
+                    if (orchestra && entering > 0) {
+                        const double span = kind == KindBuild ? 0.8 : (kind == KindIntro ? 0.5 : (kind == KindPeak ? 0.25 : 0.4));
+                        const double at = bars * span * double(j > 0 ? j - 1 : entering) / double(entering);
+                        const double grid = s.bars >= 16 ? 4.0 : 1.0;
+                        entry = std::floor(at / grid) * grid;
+                    }
                     if (b < entry) gain[ke] = 0.0f;
                 }
                 if (falling && st.at.lastPass && e != keep && !drama) {

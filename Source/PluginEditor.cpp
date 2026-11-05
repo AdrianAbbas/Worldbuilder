@@ -503,9 +503,22 @@ void WorldbuilderEditor::showInspireMoods() {
     juce::PopupMenu menu;
     menu.addSectionHeader("INSPIRE'S MOOD");
     for (int m = 0; m < scenes::InspireMoodCount; ++m) menu.addItem(m + 1, scenes::inspireMoodNames[std::size_t(m)], true, processor.inspireMood() == m);
+    // The orchestration pass: the cue's Length (as ARRANGE's LENGTH control; INSPIRE,
+    // Auto-arrange and the templates use it).
+    menu.addSectionHeader("LENGTH OF THE CUE");
+    const float length = processor.arrangeLength();
+    for (int k = 0; k < int(arr::lengthNames.size()); ++k) {
+        const int seconds = juce::roundToInt(arr::lengthSeconds(float(k)));
+        menu.addItem(101 + k, juce::String(arr::lengthNames[std::size_t(k)]) + " (" + juce::String(seconds / 60) + ":" + juce::String(seconds % 60).paddedLeft('0', 2) + ")",
+                     true, std::abs(length - float(k)) < 0.08f);
+    }
     juce::Component::SafePointer<WorldbuilderEditor> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&inspireMood), [safe](int result) {
         if (safe == nullptr || result <= 0) return;
+        if (result > 100) {
+            safe->processor.setArrangeLength(float(result - 101));
+            return;
+        }
         safe->processor.setInspireMood(result - 1);
         safe->refreshInspireMood();
     });

@@ -56,31 +56,43 @@ struct BalanceRow {
     std::array<float, 3> arranged {};
     // The same when it plays in the second or a further slot (a lighter Drama layer).
     std::array<float, 3> second {};
+    // The orchestration pass: each of the six's busier variant B against A (dB, measured at
+    // Score Intensity 100 %).
+    std::array<float, placeElements> busier {};
 };
 #include "DramaBalance.inc"
+#include "DramaBalanceV1.inc"
 constexpr std::array<float, 4> probeIntensity { 0.5f, 0.62f, 0.8f, 1.0f };
+// The table in use: the orchestration pass's (the Place untouched, the layer under it), or
+// (Layer::mixPass false, the listening renders' "before") the loudness pass's.
+const BalanceRow& rowOf(int placeType) { return (Layer::mixPass ? balanceTable : balanceTableV1)[std::size_t(placeType)]; }
 } // namespace
 
 float arrangedCorrectionDb(int placeType, int tier, int rank) {
     if (placeType <= 0 || placeType >= PlaceTypeCount || tier <= Calm) return 0.0f;
-    const auto& row = balanceTable[std::size_t(placeType)];
+    const auto& row = rowOf(placeType);
     return (rank > 0 ? row.second : row.arranged)[std::size_t(std::clamp(tier, 1, 3) - 1)];
 }
 
 float elementWeightDb(int placeType, int element) {
     if (placeType <= 0 || placeType >= PlaceTypeCount || element < 0 || element >= placeElements) return 0.0f;
-    return balanceTable[std::size_t(placeType)].element[std::size_t(element)];
+    return rowOf(placeType).element[std::size_t(element)];
+}
+
+float busierDb(int placeType, int element) {
+    if (placeType <= 0 || placeType >= PlaceTypeCount || element < 0 || element >= placeElements) return 0.0f;
+    return balanceTable[std::size_t(placeType)].busier[std::size_t(element)];
 }
 
 float balancedDb(int placeType) {
     if (placeType <= 0 || placeType >= PlaceTypeCount) return 0.0f;
-    const float calm = balanceTable[std::size_t(placeType)].calm;   // 35 % against 50 %
+    const float calm = rowOf(placeType).calm;   // 35 % against 50 %
     return calm + std::clamp(-0.5f * calm, 0.5f, 1.0f);
 }
 
 float classicRiseDb(int placeType, float intensity) {
     if (placeType <= 0 || placeType >= PlaceTypeCount) return 0.0f;
-    const auto& row = balanceTable[std::size_t(placeType)];
+    const auto& row = rowOf(placeType);
     if (intensity < 0.5f) {
         // Calm: 35 % measured, the slope carried on below it (at most 12 dB down).
         return std::max(-12.0f, row.calm * (0.5f - std::max(intensity, 0.0f)) / 0.15f);
@@ -98,9 +110,18 @@ float classicRiseDb(int placeType, float intensity) {
 
 Balance balance(int placeType, int style, int tier, int rank, float intensity) {
     if (balanceOff || !loudnessPass || tier <= Calm || placeType <= 0 || placeType >= PlaceTypeCount) return {};
-    const auto& row = balanceTable[std::size_t(placeType)];
+    const auto& row = rowOf(placeType);
     const int t = std::clamp(tier, 1, 3);
     Balance b = row.style[std::size_t(std::clamp(style, 1, StyleCount - 1) - 1)][std::size_t(t - 1)];
+    if (Layer::mixPass) {
+        // The orchestration pass: the Place plays at its own level (it never makes room); the
+        // Drama layer sits under it, at the level measured at the tier's probe point, and
+        // follows the Place's own rise with Score Intensity away from it.
+        b.placeDb = 0.0f;
+        if (intensity >= 0.0f)
+            b.layerDb += std::clamp(classicRiseDb(placeType, intensity) - classicRiseDb(placeType, probeIntensity[std::size_t(t)]), -4.0f, 4.0f);
+        return b;
+    }
     // The second and further Places play a lighter layer (no drums; hits only from the
     // third): their own instruments make less room.
     if (rank > 0) {
@@ -437,6 +458,23 @@ Layer::Layer() {
     synthStab.patch.shortInstrument = "mlg-cyberpunk-short";
 }
 
+void Layer::clearPercussion() {
+    room.clear();
+    for (auto& f : hallCut) f.reset();
+    for (auto& f : roomCut) f.reset();
+    for (auto& f : percHp) f.reset();
+    for (auto& f : percShelf) f.reset();
+    percLimiter.reset();
+    percTail = 0;
+}
+
+bool Layer::isPercussion(int part) {
+    switch (part) {
+        case PDrums: case PPerc: case PMetal: case PHands: case PMetalHit: case PImpact: case PSwell: case PLow: return true;
+        default: return false;
+    }
+}
+
 int Layer::elementOf(int part) {
     switch (part) {
         case PDrums: case PPerc: case PMetal: case PHands: return 0;
@@ -449,7 +487,14 @@ void Layer::prepare(float sampleRate) {
     rate = sampleRate;
     for (auto* p : parts) p->prepare(rate);
     hall.prepare(rate);
+    room.prepare(rate);
+    room.set(0.12f, 0.35f, 6500.0f);
+    for (auto& f : hallCut) f.setCutoff(220.0f, rate);
+    for (auto& f : roomCut) f.setCutoff(300.0f, rate);
+    for (auto& f : percHp) f.set(40.0f, 0.7f, rate);
+    for (auto& f : percShelf) f.setCutoff(110.0f, rate);
     limiter.prepare(rate);
+    percLimiter.prepare(rate);
     limiter.ceiling = limiterCeiling;
     level.setTime(0.08f, rate / float(chunk));
     reset();
@@ -458,6 +503,7 @@ void Layer::prepare(float sampleRate) {
 void Layer::reset() {
     for (auto* p : parts) p->reset();
     hall.clear();
+    clearPercussion();
     limiter.reset();
     gainNow.fill(-1.0f);
     quiet.fill(1 << 30);
@@ -992,6 +1038,7 @@ int Layer::advance(int placeType, const WorldFrame& world, const Cue& cue, float
         if (type >= 0) {
             for (auto* p : parts) p->reset();
             hall.clear();
+            clearPercussion();
         }
         type = placeType;
         fresh = true;
@@ -1111,6 +1158,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         if (awake) {
             for (auto* p : parts) p->reset();
             hall.clear();
+            clearPercussion();
             limiter.reset();
             awake = false;
         }
@@ -1226,8 +1274,11 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
     for (int i = 0; i < count; ++i) startedCount += pending[std::size_t(i)].stop == 0 ? 1u : 0u;
 
     // The parts' levels: what each tier lets play (a part whose last note has rung out
-    // is not rendered at all), summed per Drama instrument.
-    std::array<bool, dramaElements> fed {};
+    // is not rendered at all), summed per Drama instrument. The orchestration pass: the
+    // percussion (the drums, impacts, swells, the low thump) is summed apart from the
+    // melodic parts (the ostinato, the stabs) and leaves on a dry bus of its own.
+    const bool split = mixPass && loudnessPass;
+    std::array<bool, dramaElements> fed {}, fedPerc {};
     const float tierGain = el.instrument ? 0.8f
                                          : std::max(latched == Climax ? 1.0f : (latched == Action ? 0.8f : (latched == Tension ? 0.55f : 0.5f)), liveHere ? 0.8f : 0.0f);
     for (int k = 0; k < PartCount; ++k) {
@@ -1243,10 +1294,15 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         if (!any && q > int(tails[std::size_t(k)] * rate) && !(liveHere && elementOf(k) == el.liveElement && part->sustains())) continue;
         q += n;
         const int e = elementOf(k);
-        if (!fed[std::size_t(e)]) {
-            std::fill(elemL[std::size_t(e)].begin(), elemL[std::size_t(e)].begin() + n, 0.0f);
-            std::fill(elemR[std::size_t(e)].begin(), elemR[std::size_t(e)].begin() + n, 0.0f);
-            fed[std::size_t(e)] = true;
+        // The drums' instrument is all percussion: its own bus is the percussion's.
+        const bool apart = split && isPercussion(k) && e != 0;
+        auto& feedFlag = apart ? fedPerc[std::size_t(e)] : fed[std::size_t(e)];
+        auto& l = apart ? percElemL[std::size_t(e)] : elemL[std::size_t(e)];
+        auto& r = apart ? percElemR[std::size_t(e)] : elemR[std::size_t(e)];
+        if (!feedFlag) {
+            std::fill(l.begin(), l.begin() + n, 0.0f);
+            std::fill(r.begin(), r.begin() + n, 0.0f);
+            feedFlag = true;
         }
         part->update(frame);
         std::fill(partL.begin(), partL.begin() + n, 0.0f);
@@ -1263,15 +1319,15 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
             else if ((partMask >> k) & 1u) part->start(frame, note.on);
         }
         if (done < n) part->render(partL.data() + done, partR.data() + done, n - done);
-        // At a climax the drums lead and what sustains steps back, so it stays punchy.
+        // At a climax the drums lead and what sustains steps back, so it stays punchy (the
+        // orchestration pass: the drums drive without leading, the melodic parts a little back).
         const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow || k == PImpact || k == PMetalHit;
-        const float climaxShape = latched == Climax ? (rhythm ? 1.12f : 0.8f) : 1.0f;
-        const float g = tierGain * climaxShape * dbToGain((loudnessPass ? trimDb : trimBeforeDb)[std::size_t(k)]);
+        const float climaxShape = latched == Climax ? (split ? (rhythm ? 1.0f : 0.9f) : (rhythm ? 1.12f : 0.8f)) : 1.0f;
+        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain : melodicTrim) : 1.0f;
+        const float g = tierGain * climaxShape * trim * dbToGain((loudnessPass ? trimDb : trimBeforeDb)[std::size_t(k)]);
         float& now = gainNow[std::size_t(k)];
         if (now < 0.0f) now = g;
         const float step = (g - now) / float(n);
-        auto& l = elemL[std::size_t(e)];
-        auto& r = elemR[std::size_t(e)];
         for (int i = 0; i < n; ++i) {
             now += step;
             l[std::size_t(i)] += finiteOr(partL[std::size_t(i)]) * now;
@@ -1281,10 +1337,12 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
     // Each Drama instrument at its level (switch, mute, arrangement), through its effects.
     std::fill(busL.begin(), busL.begin() + n, 0.0f);
     std::fill(busR.begin(), busR.begin() + n, 0.0f);
-    for (int e = 0; e < dramaElements; ++e) {
-        if (!fed[std::size_t(e)]) continue;
-        auto& l = elemL[std::size_t(e)];
-        auto& r = elemR[std::size_t(e)];
+    bool percussion = false;
+    if (split) {
+        std::fill(percL.begin(), percL.begin() + n, 0.0f);
+        std::fill(percR.begin(), percR.begin() + n, 0.0f);
+    }
+    const auto applyLevel = [&](int e, std::array<float, dsp::chunk>& l, std::array<float, dsp::chunk>& r) {
         const float from = el.gainFrom[std::size_t(e)], to = el.gainTo[std::size_t(e)];
         if (from != 1.0f || to != 1.0f)
             for (int i = 0; i < n; ++i) {
@@ -1292,32 +1350,67 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
                 l[std::size_t(i)] *= g;
                 r[std::size_t(i)] *= g;
             }
-        if (el.fx != nullptr) el.fx->process(placeElements + e, l.data(), r.data(), n, el.fxDepth);
-        for (int i = 0; i < n; ++i) {
-            busL[std::size_t(i)] += l[std::size_t(i)];
-            busR[std::size_t(i)] += r[std::size_t(i)];
+    };
+    for (int e = 0; e < dramaElements; ++e) {
+        if (fedPerc[std::size_t(e)]) {
+            // The impacts, swells and the low thump: the instrument's level, no sends.
+            auto& l = percElemL[std::size_t(e)];
+            auto& r = percElemR[std::size_t(e)];
+            applyLevel(e, l, r);
+            for (int i = 0; i < n; ++i) {
+                percL[std::size_t(i)] += l[std::size_t(i)];
+                percR[std::size_t(i)] += r[std::size_t(i)];
+            }
+            percussion = true;
         }
+        if (!fed[std::size_t(e)]) continue;
+        auto& l = elemL[std::size_t(e)];
+        auto& r = elemR[std::size_t(e)];
+        applyLevel(e, l, r);
+        const bool drumsBus = split && e == 0;
+        // The orchestration pass: the drums send a quarter of their reverb (and delay), the
+        // hits' stabs 60 %, both through a low-cut, so the shared reverbs get the attack.
+        const float sendScale = split ? el.fxDepth * (drumsBus ? 0.25f : (e == 2 ? 0.6f : 1.0f)) : el.fxDepth;
+        if (el.fx != nullptr) el.fx->process(placeElements + e, l.data(), r.data(), n, sendScale, split ? (drumsBus ? 300.0f : 150.0f) : 0.0f);
+        auto& toL = drumsBus ? percL : busL;
+        auto& toR = drumsBus ? percR : busR;
+        for (int i = 0; i < n; ++i) {
+            toL[std::size_t(i)] += l[std::size_t(i)];
+            toR[std::size_t(i)] += r[std::size_t(i)];
+        }
+        percussion |= drumsBus;
     }
-    // The look-ahead limiter on the layer's sum (a pure 1.5 ms delay while below its ceiling),
-    // its ceiling where the slot's balance puts the layer.
+    // The look-ahead limiters on the layer's sums (a pure 1.5 ms delay while below their
+    // ceiling), their ceiling where the slot's balance puts the layer.
     limiter.ceiling = limiterCeiling / std::clamp(el.slotGain, 0.05f, 1.0f);
     for (int i = 0; i < n; ++i) {
         const auto k = std::size_t(i);
         if (loudnessPass) limiter.process(busL[k], busR[k]);
         peakOut = std::max(peakOut, std::max(std::abs(busL[k]), std::abs(busR[k])));
     }
+    if (split) {
+        percLimiter.ceiling = limiter.ceiling;
+        if (percussion || percTail > 0)
+            for (int i = 0; i < n; ++i) {
+                const auto k = std::size_t(i);
+                percLimiter.process(percL[k], percR[k]);
+                peakOut = std::max(peakOut, std::max(std::abs(percL[k]), std::abs(percR[k])));
+            }
+    }
     // The layer's space and level (the second and further slots quieter).
     const float rankGain = cue.rank == 0 ? 1.0f : (cue.rank == 1 ? 0.75f : 0.55f);
     const float target = dbToGain(layerTrimDb) * rankGain * (0.75f + 0.25f * clamp01(cue.drama));
     const float from = level.value, to = level.next(target);
-    const float wet = el.instrument ? 0.0f : hallWet * (latched == Climax ? 0.65f : 1.0f);
+    // The orchestration pass: the melodic parts' hall a little drier, its input low-cut.
+    const float wet = el.instrument ? 0.0f : hallWet * (latched == Climax ? 0.65f : 1.0f) * (split ? 0.75f : 1.0f);
     // The leading slot's layer has its own space; the others' reach the World Space with
     // their Place (one reverb, not four).
     if (cue.rank == 0 && wet > 0.0f) {
         for (int i = 0; i < n; ++i) {
             const auto k = std::size_t(i);
             float wl = 0, wr = 0;
-            hall.process(busL[k] * 0.6f, busR[k] * 0.6f, wl, wr);
+            if (split) hall.process(hallCut[1].hp(hallCut[0].hp(busL[k] * 0.6f)), hallCut[3].hp(hallCut[2].hp(busR[k] * 0.6f)), wl, wr);
+            else hall.process(busL[k] * 0.6f, busR[k] * 0.6f, wl, wr);
             const float g = lerp(from, to, float(i + 1) / float(n));
             left[i] += (busL[k] + wl * wet) * g;
             right[i] += (busR[k] + wr * wet) * g;
@@ -1327,6 +1420,31 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
             const float g = lerp(from, to, float(i + 1) / float(n)) * (1.0f + 0.5f * wet);
             left[i] += busL[std::size_t(i)] * g;
             right[i] += busR[std::size_t(i)] * g;
+        }
+    }
+    // The percussion: tight and dry. The low end held (a high-pass at 40 Hz, 3 dB less below
+    // about 110 Hz), a short room (0.35 s, its input high-passed at 300 Hz) at 10 % for the
+    // leading slot, nothing for the others; out on the slot's dry bus (no World Space, no
+    // fullness) when the slot gives one.
+    if (split && (percussion || percTail > 0)) {
+        percTail = percussion ? int(0.6f * rate) : std::max(0, percTail - n);
+        const float roomWet = el.instrument ? 0.0f : (cue.rank == 0 ? 0.1f : 0.0f);
+        float* outL = el.percL != nullptr ? el.percL : left;
+        float* outR = el.percR != nullptr ? el.percR : right;
+        for (int i = 0; i < n; ++i) {
+            const auto k = std::size_t(i);
+            float l = percHp[0].tick(percL[k]).hp, r = percHp[1].tick(percR[k]).hp;
+            l -= 0.29f * percShelf[0].lp(l);
+            r -= 0.29f * percShelf[1].lp(r);
+            if (roomWet > 0.0f) {
+                float wl = 0, wr = 0;
+                room.process(roomCut[1].hp(roomCut[0].hp(l)), roomCut[3].hp(roomCut[2].hp(r)), wl, wr);
+                l += wl * roomWet;
+                r += wr * roomWet;
+            }
+            const float g = lerp(from, to, float(i + 1) / float(n));
+            outL[i] += l * g;
+            outR[i] += r * g;
         }
     }
     return true;

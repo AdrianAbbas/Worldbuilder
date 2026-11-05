@@ -84,8 +84,17 @@ inline int styleFor(int placeType, int style) { return style > StyleAuto && styl
 // DramaBalance.inc); between them the Place's own rise with Score Intensity (its Classic
 // loudness curve, measured too) is balanced as well, so a tier stays level whatever
 // Intensity is. Calm: 0, 0.
+// The orchestration pass reverses it: the Place's own instruments never make room (placeDb
+// 0); the Drama layer sits under them, measured so that the slot at Tension, Action and
+// Climax is only layerAddDb louder than the same Place with Drama 0 at that Score Intensity
+// (Layer::mixPass false: the loudness pass's table, for the listening renders' "before").
+// Inside the layer the percussion is balanced on its own (percRelDb, against the layer's
+// level), measured so that at Tension, Action and Climax it sits percUnderDb under the
+// melodic parts (the Place and the Drama ostinato and stabs): it drives without dominating.
+inline constexpr std::array<float, 3> layerAddDb { 0.9f, 1.3f, 1.7f };
+inline constexpr std::array<float, 3> percUnderDb { 8.0f, 6.0f, 5.0f };
 struct Balance {
-    float placeDb = 0, layerDb = 0;
+    float placeDb = 0, layerDb = 0, percRelDb = 0;
 };
 Balance balance(int placeType, int style, int tier, int rank, float intensity = -1.0f);
 // The Place's Classic loudness at Score Intensity `intensity` (dB against 50 %, measured;
@@ -94,6 +103,9 @@ float classicRiseDb(int placeType, float intensity);
 float balancedDb(int placeType);
 // One of the Place's six instruments alone against the whole Place (dB, measured).
 float elementWeightDb(int placeType, int element);
+// The orchestration pass: one of the six's busier variant B against its A (dB, measured; a
+// part drama moves to B is made up by what B is quieter).
+float busierDb(int placeType, int element);
 // In an arrangement, a section above Calm against the engine's estimate of it (dB, measured).
 float arrangedCorrectionDb(int placeType, int tier, int rank = 0);
 // The Drama layer's share of a slot's loudness at Tension, Action and Climax (the balance).
@@ -154,6 +166,12 @@ public:
         // The slot's balance gain after the layer (the Drama loudness pass): the limiter's
         // ceiling holds at the level the layer is heard at.
         float slotGain = 1;
+        // The orchestration pass: where the percussion goes (the slot's dry bus: no World
+        // Space, no fullness; nullptr: with the rest into left / right), and its balance
+        // against the rest of the layer (Balance::percRelDb, smoothed by the slot).
+        float* percL = nullptr;
+        float* percR = nullptr;
+        float percGain = 1;
     };
     // Adds the layer to left/right (n <= dsp::chunk). Returns false (adding nothing)
     // while it is silent.
@@ -196,6 +214,16 @@ public:
     };
     // Which Drama instrument (0 drums, 1 ostinato, 2 hits) a part belongs to.
     static int elementOf(int part);
+    // The percussion (the orchestration pass: its own dry bus): the drums, hand drums and
+    // metal, the impacts, the swells, the low thump under the ostinato.
+    static bool isPercussion(int part);
+    // Tests only: false plays the Drama layer as it was before the orchestration pass (the
+    // percussion with the rest through the hall, the balance that made the Place room):
+    // the "before" of the listening renders.
+    static inline bool mixPass = true;
+    // The orchestration pass: inside the layer (which now sits under the Place) the rhythm
+    // drives and the ostinato and stabs stay 2 dB back; the layer's level is the balance's.
+    static constexpr float percussionTrim = 1.0f, melodicTrim = 0.794f;
 
 private:
     struct Note {
@@ -242,6 +270,17 @@ private:
     std::array<float, dsp::chunk> busL {}, busR {}, partL {}, partR {};
     std::array<std::array<float, dsp::chunk>, dramaElements> elemL {}, elemR {};
     dsp::SmallSpace hall;
+    // The orchestration pass: the percussion's own sums, its short room, the low end held,
+    // the hall's input low-cut, a limiter of its own.
+    std::array<float, dsp::chunk> percL {}, percR {};
+    std::array<std::array<float, dsp::chunk>, dramaElements> percElemL {}, percElemR {};
+    dsp::SmallSpace room;
+    std::array<dsp::OnePole, 4> hallCut {}, roomCut {};
+    std::array<dsp::Svf, 2> percHp {};
+    std::array<dsp::OnePole, 2> percShelf {};
+    dsp::LookaheadLimiter percLimiter;
+    int percTail = 0;
+    void clearPercussion();
     // A transparent look-ahead limiter on the layer's sum (1.5 ms): stacked hits on one
     // downbeat never reach past its ceiling, and it rarely engages (Tests "loudness").
     dsp::LookaheadLimiter limiter;

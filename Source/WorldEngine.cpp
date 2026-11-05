@@ -93,6 +93,7 @@ void WorldEngine::reset(const EngineControls& initial) {
     transitionVoice.reset();
     transitionBalance = 1;
     shapeDb.fill(0.0f);
+    layerShapeDb.fill(0.0f);
     balanceKey = 0;
     sectionBalance = nextBalance = 0;
     for (auto& f : sweep) f.reset();
@@ -154,17 +155,29 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
     shaping.intensityOffset = clamp01(finiteOr(controls.intensity, 0.5f)) - 0.5f;
     for (int s = 0; s < placeSlots; ++s) shaping.types[std::size_t(s)] = controls.places[std::size_t(s)].type;
     const arr::State plain = arranged;
+    writtenVariant = plain.variant;
     arr::shape(arranged, a, shaping);
     // The Drama loudness pass: what drama's reshaping adds (instruments entering, busier
     // variants, doublings) or takes away (a calm section thinned), estimated from the
     // instruments' measured weights and levels and balanced back for 80 %: drama changes
     // the density, not the loudness. (The section's own evolution is as written.)
     shapeDb.fill(0.0f);
+    layerShapeDb.fill(0.0f);
     if (shaping.drama <= 0.0f || !drama::loudnessPass) return;
     arr::State evolving = plain;
     arr::Shaping evolveOnly = shaping;
     evolveOnly.drama = 0.0f;
     arr::shape(evolving, a, evolveOnly);
+    if (drama::Layer::mixPass) {
+        // The orchestration pass: the Place's own instruments keep their level whatever drama
+        // reshapes (entering, busier, doubled). What the reshaping adds is taken from the
+        // Drama layer instead, so the section stays about as loud as it plays at Drama 0; a
+        // calm section thinned out is not turned up either. No section balance against the
+        // calm sections: the arrangement's own dynamics are the composer's.
+        for (int s = 0; s < placeSlots; ++s) layerShapeDb[std::size_t(s)] = std::min(0.0f, 1.25f * shapeBalanceDb(arranged, evolving, s, controls) / 0.8f);
+        sectionBalance = nextBalance = 0.0f;
+        return;
+    }
     for (int s = 0; s < placeSlots; ++s) shapeDb[std::size_t(s)] = shapeBalanceDb(arranged, evolving, s, controls);
     // The section's own balance against the arrangement's calm sections (the same for
     // every Place; computed when the section, the arrangement or the controls change).
@@ -776,6 +789,10 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             arrangedControls.clipSpan = arranged.clipSpan;
             arrangedControls.levelDb += arranged.swellDb;   // an evolving section's swell
             arrangedControls.dramaShapeDb = shapeDb[si];
+            arrangedControls.dramaLayerDb = layerShapeDb[si];
+            if (world.drama > 0.0f)
+                for (int e = 0; e < slotElements; ++e) arrangedControls.writtenVariant[std::size_t(e)] = writtenVariant[si][std::size_t(e)];
+            arrangedControls.spaceFocus = arranged.focus[si];
             for (int e = 0; e < slotElements; ++e) {
                 arrangedControls.arrange[std::size_t(e)] = arranged.gain[si][std::size_t(e)];
                 arrangedControls.variant[std::size_t(e)] = arranged.variant[si][std::size_t(e)];
@@ -794,6 +811,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             // busier variants, at a climax the melody as well, doubled an octave up over the
             // bass an octave down.
             const int tier = world.drama > 0.0f && !controls.instrument.on && pc.type != NoPlace ? slots[si].drama().tier() : 0;
+            if (tier >= drama::Action) pc.writtenVariant = pc.variant;
             if (tier >= drama::Action)
                 for (int e = 0; e < placeElements; ++e) {
                     const int role = arr::roleOf(pc.type, e);
@@ -818,12 +836,21 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             std::copy_n(layerL.data(), n, slotDry[2 * si].data());
             std::copy_n(layerR.data(), n, slotDry[2 * si + 1].data());
         }
+        // The orchestration pass: the Drama percussion dry (into the slot's sound, not the World Space).
+        const float* percL = slots[si].percussionLeft();
+        const float* percR = slots[si].percussionRight();
+        if (percL != nullptr && own)
+            for (int i = 0; i < n; ++i) {
+                slotDry[2 * si][std::size_t(i)] += percL[i];
+                slotDry[2 * si + 1][std::size_t(i)] += percR[i];
+            }
         float peak = placePeak[si];
         for (int i = 0; i < n; ++i) {
             const float l = layerL[std::size_t(i)], r = layerR[std::size_t(i)];
-            peak = std::max(peak, std::max(std::abs(l), std::abs(r)));
-            dryL[std::size_t(i)] += l * toMain;
-            dryR[std::size_t(i)] += r * toMain;
+            const float pl = percL != nullptr ? percL[i] : 0.0f, pr = percR != nullptr ? percR[i] : 0.0f;
+            peak = std::max(peak, std::max(std::abs(l + pl), std::abs(r + pr)));
+            dryL[std::size_t(i)] += (l + pl) * toMain;
+            dryR[std::size_t(i)] += (r + pr) * toMain;
             sendL[std::size_t(i)] += l * send;
             sendR[std::size_t(i)] += r * send;
         }

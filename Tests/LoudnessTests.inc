@@ -309,6 +309,33 @@ void calibrateBalance() {
             }
             std::cout << std::endl;
         }
+        if (std::getenv("WB_NOVAR") == nullptr) {
+            // The orchestration pass: each of the six alone, its busier variant B against A at
+            // Score Intensity 100 % (an arrangement section of one variant, Drama 0): what drama's
+            // gear change to B must make up so the Place never gets quieter.
+            std::cout << "VAR " << name;
+            for (int e = 0; e < placeElements; ++e) {
+                double db = 0;
+                if (patternInfo(type, e).kind != NoPattern) {
+                    std::array<double, 2> lv {};
+                    for (int v = 0; v < 2; ++v) {
+                        auto h = dramaTest::placeHost(type, 1.0f, 0.0f);
+                        for (int o = 0; o < placeElements; ++o) h.set(specs[std::size_t(elementOnParam(0, o))].id, o == e ? 1.0f : 0.0f);
+                        if (h.get(specs[std::size_t(elementLevelParam(0, e))].id) < 0.05f) h.set(specs[std::size_t(elementLevelParam(0, e))].id, 0.8f);
+                        arr::Arrangement a;
+                        a.sections[0] = arr::makeSection("Loop", 64, 0, 1.0f);
+                        a.count = 1;
+                        for (auto& c : a.sections[0].cells[0]) c.variant = uint8_t(v == 0 ? arr::VariantA : arr::VariantB);
+                        h.p->arrangement.set(a);
+                        arrangeTest::play(h);
+                        lv[std::size_t(v)] = integrated(h.render(36.0), 4.0);   // two cycles of an eight-bar pattern
+                    }
+                    db = lv[0] < -100.0 || lv[1] < -100.0 ? 0.0 : std::clamp(lv[1] - lv[0], -12.0, 12.0);
+                }
+                std::cout << " " << juce::String(db, 1);
+            }
+            std::cout << std::endl;
+        }
         std::cout << "CAL " << name << " calm " << fmt(calm) << " asset " << fmt(asSet) << " target " << fmt(target) << std::endl;
         drama::balanceOff = false;
         bool zero = true;
@@ -321,7 +348,43 @@ void calibrateBalance() {
             for (int t = 1; t <= 3; ++t) {
                 const float intensity = tierIntensity[std::size_t(t - 1)];
                 double placeDb = 0, layerDb = 0;
-                if (zero) {
+                double percRel = 0;
+                if (drama::Layer::mixPass) {
+                    // The orchestration pass: the Place untouched; the layer under it, so the slot
+                    // is layerAddDb louder than the Place with Drama 0 at this Score Intensity, its
+                    // percussion percUnderDb under the melodic parts (the Place and the Drama
+                    // ostinato and stabs). Solved from the parts as the table plays them now (the
+                    // first pass: a zero table, the layer as it is), so a second pass corrects.
+                    double reference = 0;
+                    {
+                        auto h = dramaTest::placeHost(type, intensity, 0.0f);
+                        reference = integrated(h.render(12.0), 4.0);
+                    }
+                    const double want = reference + double(drama::layerAddDb[std::size_t(t - 1)]), under = double(drama::percUnderDb[std::size_t(t - 1)]);
+                    const auto b = drama::balance(type, style, t, 0);
+                    const double place = integrated(renderMasked(type, intensity, style, 0u), 4.0);
+                    uint32_t percMask = 0;
+                    for (int k = 0; k < drama::Layer::PartCount; ++k) percMask |= drama::Layer::isPercussion(k) ? 1u << k : 0u;
+                    const uint32_t melMask = ~percMask & ((1u << drama::Layer::PartCount) - 1u);
+                    const double withMel = integrated(renderMasked(type, intensity, style, melMask), 4.0);
+                    const double withPerc = integrated(renderMasked(type, intensity, style, percMask), 4.0);
+                    const double all = integrated(renderMasked(type, intensity, style, 0xffffffffu), 4.0);
+                    const double mel = withMel - place < 0.01 ? -200.0 : powerMinus(withMel, place);
+                    const double perc = withPerc - place < 0.01 ? -200.0 : powerMinus(withPerc, place);
+                    // The melodic total X and the percussion X - under make the target; the melodic
+                    // Drama parts never more than 14 dB under the Place (nor the percussion under them).
+                    const double x = want - 10.0 * std::log10(1.0 + std::pow(10.0, -under / 10.0));
+                    const double melWant = std::max(x > place + 0.05 ? powerMinus(x, place) : -200.0, place - 14.0);
+                    const double melTotal = 10.0 * std::log10(std::pow(10.0, place / 10.0) + std::pow(10.0, melWant / 10.0));
+                    double percWant = melTotal - under;
+                    if (melTotal + 10.0 * std::log10(1.0 + std::pow(10.0, -under / 10.0)) > want) percWant = want > melTotal + 0.05 ? powerMinus(want, melTotal) : melTotal - 14.0;
+                    percWant = std::max(percWant, melTotal - 14.0);
+                    const double melStep = mel < -150.0 ? 0.0 : melWant - mel, percStep = perc < -150.0 ? melStep : percWant - perc;
+                    layerDb = std::clamp(double(zero ? 0.0f : b.layerDb) + melStep, -30.0, 6.0);
+                    percRel = std::clamp(double(zero ? 0.0f : b.percRelDb) + percStep - melStep, -24.0, 12.0);
+                    std::cout << "  " << name << " s" << style << " t" << t << " d0 " << fmt(reference) << " place " << fmt(place) << " (" << fmt(place - reference)
+                              << ") all " << fmt(all) << " (" << fmt(all - reference) << ") melodic " << fmt(mel - place) << " percussion " << fmt(perc - withMel) << std::endl;
+                } else if (zero) {
                     drama::balanceOff = true;
                     const double all = integrated(renderMasked(type, intensity, style, 0xffffffffu), 4.0);
                     const double place = integrated(renderMasked(type, intensity, style, 0u), 4.0);
@@ -341,7 +404,7 @@ void calibrateBalance() {
                     layerDb = std::clamp(double(b.layerDb) + error, -30.0, 6.0);
                     std::cout << "  " << name << " s" << style << " t" << t << " now " << fmt(now) << " error " << fmt(error) << std::endl;
                 }
-                std::cout << "BAL " << name << " " << style << " " << t << " " << juce::String(placeDb, 1) << " " << juce::String(layerDb, 1) << std::endl;
+                std::cout << "BAL " << name << " " << style << " " << t << " " << juce::String(placeDb, 1) << " " << juce::String(layerDb, 1) << " " << juce::String(percRel, 1) << std::endl;
             }
         WorldEngine::probeLinear = false;
     }

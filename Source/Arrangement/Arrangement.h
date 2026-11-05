@@ -23,8 +23,9 @@
 
 namespace wb::arr {
 
-// Sections up to 128 bars (the Drama tier rework: scoring cues hold a fight for minutes).
-constexpr int maxSections = 32, minBars = 1, maxBars = 128, beatsPerBar = 4, nameLength = 24;
+// Sections up to 240 bars (the orchestration pass: an Epic cue at 180 BPM holds its climax
+// for over three minutes; the Drama tier rework had 128).
+constexpr int maxSections = 32, minBars = 1, maxBars = 240, beatsPerBar = 4, nameLength = 24;
 
 // How an instrument plays in a section.
 enum Entry : uint8_t { EntryOn, EntryOff, EntryHalfway, EntryFadeIn, EntryFadeOut, EntryCount };
@@ -143,6 +144,13 @@ struct Section {
     // entering over its first bars, Score Intensity rising across it, the variants changing
     // every 8 or 16 bars, small fills on the phrase lines.
     bool evolve = false;
+    // The orchestration pass: the section is orchestrated (templates, Auto-arrange, Inspire
+    // and ARRANGE's Orchestrate set it): drama's reshaping keeps to its part budget and its
+    // roles (one kit, one bass, one lead, one ostinato), the Drama drums take over from a
+    // Place's kit while a tier above Calm plays, a build-up brings its parts in one by one
+    // across its whole length, and the Places other than `lead` keep less of their space.
+    bool orchestrated = false;
+    int8_t lead = -1;   // the slot that leads (its melody, its environment), -1: none
 
     void setName(const char* text) {
         name.fill(0);
@@ -156,7 +164,7 @@ struct Section {
         return std::strncmp(name.data(), o.name.data(), std::size_t(nameLength)) == 0 && colour == o.colour && bars == o.bars
                && repeats == o.repeats && curve == o.curve && intensityStart == o.intensityStart && intensityEnd == o.intensityEnd
                && cells == o.cells && transition == o.transition && transitionLength == o.transitionLength && location == o.location
-               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve;
+               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve && orchestrated == o.orchestrated && lead == o.lead;
     }
 };
 
@@ -238,6 +246,9 @@ struct State {
     // An evolving section's swell (dB on every Place: from -2.5 dB at its start to 0 at its end
     // in a rising section; 0 otherwise).
     float swellDb = 0;
+    // The orchestration pass: how much of each Place's environment plays (its World Space
+    // and reverb sends): 1, less for the Places that do not lead an orchestrated section.
+    std::array<float, placeSlots> focus { 1, 1, 1, 1 };
 };
 
 struct Arrangement {

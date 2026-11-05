@@ -518,6 +518,8 @@ public:
         for (auto& e : dlyFrom) e.fill(0);
         driveNow.fill(0);
         driveFrom.fill(0);
+        for (auto& e : lowCut)
+            for (auto& f : e) f.reset();
         lastScale.fill(1);
         sends.revFed.fill(true);
         sends.dlyFed.fill(true);
@@ -569,12 +571,25 @@ public:
     // An instrument's bus (already at its level): effects in place, then its sends.
     // sendScale: the Place's own say in how much reaches the buses (its Character,
     // Tension...), on top of the instrument's sends.
-    void process(int e, float* l, float* r, int n, float sendScale = 1.0f) {
+    // lowCutHz > 0 (the orchestration pass: the Drama percussion): what reaches the sends is
+    // high-passed (12 dB / octave), so the reverbs get the attack, not the boom.
+    void process(int e, float* l, float* r, int n, float sendScale = 1.0f, float lowCutHz = 0.0f) {
         if (e < 0 || e >= elements) return;
         auto& ch = character[std::size_t(e)];
         const float invN = 1.0f / float(n);
         drive(e, l, r, n, invN);
         if (!ch.idle()) ch.process(l, r, n);
+        std::array<float, chunk> cutL, cutR;
+        if (lowCutHz > 0.0f) {
+            auto& f = lowCut[std::size_t(e)];
+            for (auto& p : f) p.setCutoff(lowCutHz, rate);
+            for (int i = 0; i < n; ++i) {
+                cutL[std::size_t(i)] = f[1].hp(f[0].hp(l[i]));
+                cutR[std::size_t(i)] = f[3].hp(f[2].hp(r[i]));
+            }
+            l = cutL.data();
+            r = cutR.data();
+        }
         if (std::abs(sendScale - lastScale[std::size_t(e)]) > 1.0e-6f) {
             // Glide to a new scale over this chunk.
             const float from = lastScale[std::size_t(e)];
@@ -628,6 +643,7 @@ private:
     std::array<float, elements> lastScale { 1, 1, 1, 1, 1, 1, 1, 1, 1 };
     bool fresh = true;
     std::array<CharacterFx, elements> character;
+    std::array<std::array<OnePole, 4>, elements> lowCut {};
     std::array<std::array<float, ReverbTypeCount>, elements> revLevel {}, revFrom {};
     std::array<std::array<float, DelayTypeCount>, elements> dlyLevel {}, dlyFrom {};
 };

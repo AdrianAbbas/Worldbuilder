@@ -152,10 +152,10 @@ struct BasicPattern {
 using Pattern = BasicPattern<maxNotes, maxBars>;
 
 // An arrangement section's own notes for one instrument (Milestone 16). As long as its
-// section (one pass), so step 0 is the section's first downbeat. `ownSwing`: the clip
+// section (one pass, up to 240 bars), so step 0 is the section's first downbeat. `ownSwing`: the clip
 // swings by its own Swing (it came from an edited pattern, or was edited); else by
 // its Place's, as a generated pattern does.
-constexpr int maxClipNotes = 4096, maxClipBars = 128;
+constexpr int maxClipNotes = 8192, maxClipBars = 240;   // the orchestration pass: as long as the longest section
 struct Clip : BasicPattern<maxClipNotes, maxClipBars> {
     bool ownSwing = false;
 };
@@ -308,6 +308,7 @@ struct Playback {
     // The Drama tier rework: a part doubled (scale steps: an octave up or down) as the
     // drama rises; each note also plays there, softer (0: no doubling).
     int doubleDegrees = 0;
+    float doubleVelocity = 0.7f;   // the doubled note's velocity against the note's (the orchestration pass: 0.5, under it)
 
     bool active() const { return notes != nullptr; }
     template <int N, int B>
@@ -440,7 +441,7 @@ struct Playback {
                 if (!c.skip && at >= beat && at < beat + span) {
                     f(Event { at + origin, double(n.length) / perBeat, int(n.degree) + c.pitch, int(n.alter), dsp::clamp01(v * c.velocity), i, false });
                     if (doubleDegrees != 0 && !kit)
-                        f(Event { at + origin, double(n.length) / perBeat, int(n.degree) + c.pitch + doubleDegrees, int(n.alter), dsp::clamp01(0.7f * v * c.velocity), i,
+                        f(Event { at + origin, double(n.length) / perBeat, int(n.degree) + c.pitch + doubleDegrees, int(n.alter), dsp::clamp01(doubleVelocity * v * c.velocity), i,
                                   false });
                 }
                 if (c.extra) {

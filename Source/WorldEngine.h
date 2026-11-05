@@ -216,6 +216,9 @@ private:
     // (dB; 0 at Drama 0), and the transitions' own sounds following the slots' balance.
     std::array<float, placeSlots> shapeDb {};
     float transitionBalance = 1;
+    // The orchestration pass: per slot, what drama's reshaping adds, taken from the Drama layer (dB, <= 0).
+    std::array<float, placeSlots> layerShapeDb {};
+    std::array<std::array<uint8_t, slotElements>, placeSlots> writtenVariant {};   // the variants before drama shaped them
     uint64_t balanceKey = 0;
     float sectionBalance = 0, nextBalance = 0;
     double placePower(const arr::State& st, int slot, const EngineControls& controls, bool full = false) const;
