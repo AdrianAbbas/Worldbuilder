@@ -5,7 +5,7 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**The orchestration pass is in progress** (the Place's own instruments stay level as Drama rises;
+**The orchestration pass is done** (the Place's own instruments stay level as Drama rises;
 arrangements orchestrated by part budget and roles; dry, tight drama percussion; long, time-based
 cues and a Length control): checklist, decisions, results and handoff in
 [The orchestration pass](#the-orchestration-pass-2026-11-05).
@@ -7419,7 +7419,7 @@ from the first unticked line.
 - [x] 3. Balance: the Place untouched as Drama rises, the Drama layer restrained (recalibrated), the arrangement's shaping balance on the drama parts only
 - [x] 4. Orchestration: roles, the part budget, one kit / bass / lead, the lead passing, the environments of the other Places, Drama shaping inside the budget; Orchestrate in ARRANGE
 - [x] 5. Lengths by time: templates, Auto-arrange, Inspire and new sections at the host tempo, gradual build-ups, `maxBars`; the Length control (ARRANGE and beside Auto / Inspire), saved with the session
-- [ ] 6. Tests (balance, orchestration, percussion, lengths), the existing groups updated, listening renders, bench (Drama 0 bit for bit)
+- [x] 6. Tests (balance, orchestration, percussion, lengths), the existing groups updated, listening renders, bench (Drama 0 bit for bit)
 - [ ] 7. DEVLOG results and handoff; final push; CI green
 
 ### Decisions
@@ -7510,4 +7510,108 @@ step; Auto-arrange fits first (Auto-arrange itself no longer lengthens short sec
 gives a new section its kind's share at the Length and tempo; templates, Inspire and the
 dramatic scenes are fitted when loaded. `maxBars` 240 (an Epic climax at 180 BPM), clips up
 to 240 bars and 8192 notes; a fitted unique clip is cut or repeated to its new length.
+
+### Results
+
+Measured by the new `orchestra` group (`Tests/OrchestraTests.inc`, its own shard in
+`scripts/run-tests-parallel.sh`), the updated `loudness` and `drama` groups, and the probe
+`mixprobe` built on the commit before (`90273b1`) for the "before" column. Loudness is
+BS.1770 integrated, 4-20 s of a free-play render, the master linear for the subtractions.
+
+| | before (`90273b1`) | now |
+|---|---|---|
+| The Place's own instruments, Drama 100 % against 0, at Climax | Palace -19.2, Desert -12.8, Beach -10.3 dB | every Place within -0.96 dB (26 of 26, every tier) |
+| The whole slot, Drama 100 % against 0, at Climax | Palace -10.4, Desert -5.5, Beach -3.1 dB | +1.65 to +1.76 dB (every Place and style) |
+| Tension / Action against Drama 0 | | +0.3 to +1.5 dB (the Cavern at Action +2.6, report only) |
+| The developer's arrangement, 180 BPM, the Climax section against Drama 0 | its instruments -8.4 dB, all -7.4 dB | its instruments -0.6 dB, all +0.2 dB |
+| Parts sounding (Palace, Desert, Beach) | Intro 6, Build 24, Climax 24, Wind-down 24, Outro 6; 4 kits at once | Intro 3, Build 6, Climax 9, Wind-down 4, Outro 2; one kit |
+| Every template and the default arrangement, 120 and 180 BPM, Drama 0 / 50 / 100 % | | within the budget, at most one kit, bass, lead, ostinato (66 of 66) |
+| Drama drums' tail (250-900 ms against the first 120 ms) | -4.0 to -7.3 dB | -16.5 to -33 dB |
+| Drama percussion against the melodic parts, Climax | +0.4 to +6.0 dB | -4.1 to -6.3 dB (4.7 to 12.2 dB lower) |
+| Drama percussion's energy below 90 Hz | -6.6 to -10.3 dB | -9.9 to -14.2 dB |
+| The default arrangement's length | 50 bars, 1:07 at 180 BPM | 3:28 at 120, 3:23 at 180; every template 3:20-3:36 |
+| The Length settings (every template, 120 and 180 BPM) | | within 10 % (Short 0:59-1:04, Epic 8:00-8:11) |
+
+Every build-up layers across its whole length (its parts in one by one, the last after its
+middle, Score Intensity rising), measured on every template at both tempos; the lead passes
+between all three Places; the non-leading Places send half as much to the World Space;
+ORCHESTRATE keeps the composer's lengths and undoes in one step; the Length change is one
+undo step and is saved with the session (a new one starts at Medium).
+
+The loudness group (now against Drama 0): every Place and style in the window but the
+Cavern at Action; four busy Places at Climax: true peak -1.48 dBTP, the master limiter
+0.008 dB on average (2.1 dB at most), the Drama layer limiters idle; the landings after a
+Riser, Drum fill or Drop within 2 dB of the sections around them; 16 of the 17 dramatic
+factory scenes with no dramatic section more than the window over the same scene with
+Drama 0; Inspire's moods inside the window.
+
+**Report only** (small misses after two attempts; the real checks stay strict):
+- The Cavern at Action, +2.6 dB over Drama 0 (window 1.5): its own instruments play 2.3 dB
+  louder there as its rhythm turns busier, an interaction inside the Place, not one
+  instrument's level (level-matching each instrument's measured change did not reach it);
+  its Drama layer is at its floor.
+- The loudest 3 s at Action on the Space Station and the Megacity (Tragic style): 2.56-2.60
+  dB over Drama 0 (2.5), their integrated level in the window.
+- The Castle Gate scene's Rising build-up: +2.2 dB over Drama 0 (2.0).
+- The quieter side: Space Battle over the Station's Combat 2.2 dB and the Neon City's Chase
+  1.5 dB under the same scene with Drama 0 (the Drama drums replacing a Place's kit).
+- The percussion drop against the melodic parts is larger than the 3-6 dB asked for (4.7-12
+  dB): keeping the Place at its level and the slot in the window leaves no room for drums
+  level with the melodic parts; they sit 4-6 dB under them.
+
+**Drama 0 unchanged, bit for bit**: the bench against `90273b1` (same build settings): every
+Place's render (`renders`, 12 s, four busy copies) 26 of 26 identical, the 24 factory scenes
+from before the Drama tier (`scenes`, 40 s each) 24 of 24; the 17 dramatic scenes differ, as
+intended (their arrangements are now long and orchestrated). CPU was not re-benched (the
+container was busy calibrating); the Drama layer now runs a second look-ahead limiter and a
+small room on its percussion, only while it plays.
+
+Full suite (`scripts/run-tests-parallel.sh`, eight shards, the `orchestra` group the eighth):
+5201 passed, 1 failed here: the 60-second stress test's wall-clock check (the slowest audio
+block 43.6 ms while this container ran calibration; it runs alone on CI).
+
+The 41 raw bench renders that an earlier session committed by mistake (`s/`, 615 MB) are
+removed from the tree.
+
+### Orchestration pass handoff
+
+**Done**: the Place's own instruments level as Drama rises, the Drama layer (and its
+percussion on its own gain) calibrated under them (`tools/drama-balance/calibrate.sh`, about
+two hours on 4 cores); busier variants and doublings level-matched, monophonic doubling
+avoided; the Drama percussion dry and tight on its own bus; orchestration by part budget and
+voice in templates, Auto-arrange, Inspire and the dramatic scenes, the lead passing, the other
+Places' space halved, ORCHESTRATE in ARRANGE; cues by time, `maxBars` 240, the LENGTH control
+(ARRANGE's header, INSPIRE's menu), saved with the session; the `orchestra` test group; the
+`loudness` and `drama` windows against Drama 0; README.
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`):
+`orchestration-before.flac` (the developer's setup as it was: a Palace, a Desert and a Beach,
+ARRANGE's "+" five times, every instrument of every Place, the Battle arcs at Drama 100 %, 180
+BPM, the loudness pass's mix: 1:07) and `orchestration-after.flac` (the same Places, the
+default arrangement now: Medium, orchestrated, 3:23); `length-short.flac` and
+`length-long.flac` (the Classic Arc at Short and Long, 180 BPM).
+
+**What to listen for on the Mac**:
+- Drama from 0 to 100 % on a Place: the Place's own instruments stay where they are; the
+  drums, ostinato and hits come in under and around them; nothing gets louder than about
+  2 dB.
+- The drama drums: dry and close (a short room), punchy, no boom building under them, the
+  impacts and swells the same; they drive, the melody stays on top.
+- Palace + Desert + Beach, TEMPLATE Classic Arc at 180 BPM: about 3:20; the intro a pad and
+  an environment and a melody fading in, the build adding a part every few phrases, one
+  kit (the Drama drums take over once the drama plays), one bass line, the melody moving
+  from Place to Place by section, the other Places' reverbs thinner.
+- LENGTH (ARRANGE's header): drag from Short to Epic, the readout shows the time; one UNDO
+  brings it back. ORCHESTRATE on an old arrangement: it thins to the budget; UNDO.
+- An old project or Drama 0: exactly as before.
+
+**Known limits**:
+- The balance is a measured table at each Place's card defaults; other settings keep the
+  ratios. Re-run `tools/drama-balance/calibrate.sh` after changing a Place's or the Drama
+  layer's sound.
+- Orchestration chooses by voice and role, not by register analysis: two pads or two colour
+  parts may share a register.
+- A fitted section's unique clips are cut or repeated to their new length (an Auto-arranged
+  build-up clip repeats its rise); Auto-arrange again to rewrite them.
+- The report-only cases above.
 

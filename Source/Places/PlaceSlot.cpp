@@ -561,7 +561,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
             // (Measured per Place and instrument: B in a higher register can sound softer.)
             // (Both ways: a busier B never makes the part quieter, nor louder than A by more than
             // it gets denser.)
-            if (gearB[k] && clipNow[k] == nullptr) want = dbToGain(std::clamp(-drama::busierDb(currentType, e, dramaLayer.tier()), -6.0f, 3.0f));
+            if (gearB[k] && clipNow[k] == nullptr && !noMakeUp) want = dbToGain(std::clamp(-drama::busierDb(currentType, e, dramaLayer.tier()), -6.0f, 3.0f));
             // A part doubled an octave plays denser, not louder: what the double adds is taken
             // from the part (measured per instrument), so the drama parts keep their room.
             if (c.doubling[k] != 0 && !noDoubling && !drama::forceDoubling) want *= dbToGain(-std::clamp(drama::doublingDb(currentType, e), 0.0f, 6.0f));

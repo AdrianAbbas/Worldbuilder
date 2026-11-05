@@ -265,8 +265,12 @@ void testDrama(Suite& s) {
         // More intense than today's maximum: at least as transient (nearly: some Places'
         // Classic maximum is already a snare or shaker groove) and with half as many notes
         // again or more, without being louder.
-        // (The orchestration pass: no louder than the loudness window over it, +2 dB.)
-        s.check(climax.onsets >= 0.9 * classic.onsets && climax.events > 1.5 * classic.events && climax.rms < classic.rms + 2.0,
+        // (The orchestration pass: no louder than the loudness window over it, +2 dB, measured
+        // over 16 s as the balance is.)
+        auto hx16 = placeHost(type, 1.0f, 1.0f), hk16 = placeHost(type, 1.0f, 0.0f);
+        const double over = feel(hx16, 20.0).rms - feel(hk16, 20.0).rms;
+        s.metric(name + " Climax over today's maximum (16 s)", over, " dB");
+        s.check(climax.onsets >= 0.9 * classic.onsets && climax.events > 1.5 * classic.events && over < 2.0,
                 name + ": the Climax is more intense than today's maximum (Classic at 100 %), not louder (at most the window, 2 dB)", text);
         s.check(climax.finite && climax.peak <= 0.8913 && action.peak <= 0.8913, name + ": finite and never clipping at Climax",
                 fmt(toDb(climax.peak)) + " dBFS peak");

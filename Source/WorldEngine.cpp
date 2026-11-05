@@ -174,7 +174,17 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
         // Drama layer instead, so the section stays about as loud as it plays at Drama 0; a
         // calm section thinned out is not turned up either. No section balance against the
         // calm sections: the arrangement's own dynamics are the composer's.
-        for (int s = 0; s < placeSlots; ++s) layerShapeDb[std::size_t(s)] = std::min(0.0f, 1.25f * shapeBalanceDb(arranged, evolving, s, controls) / 0.8f);
+        // The layer is balanced against the whole Place (free play): where the section plays only
+        // part of the Place (a build-up's first bars, a thin section), it follows down with it.
+        for (int s = 0; s < placeSlots; ++s) {
+            float db = std::min(0.0f, 1.25f * shapeBalanceDb(arranged, evolving, s, controls) / 0.8f);
+            if (controls.places[std::size_t(s)].type != NoPlace) {
+                const double full = std::max(placePower(arranged, s, controls, true), 1.0e-6);
+                const double played = placePower(arranged, s, controls);
+                db += float(std::clamp(1.5 * 10.0 * std::log10((played + 0.05 * full) / full), -12.0, 0.0));
+            }
+            layerShapeDb[std::size_t(s)] = db;
+        }
         sectionBalance = nextBalance = 0.0f;
         return;
     }

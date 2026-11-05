@@ -172,6 +172,7 @@ private:
     static float patternEnergy(const pat::Pattern& p);
 public:
     static inline bool noDoubling = false;   // Tests only (the calibration measures the doubling)
+    static inline bool noMakeUp = false;     // Tests only (the calibration measures the gear change)
 private:
     std::array<dsp::OnePole, 2> dcBlock;
     std::array<dsp::OnePole, 2> fullness;   // a gentle low shelf: weight in the low mids and bass

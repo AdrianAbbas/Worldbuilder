@@ -177,10 +177,8 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
         lengthFirst = false;
     };
     addAndMakeVisible(cueLength);
-    cueLengthText.setJustificationType(juce::Justification::centredLeft);
-    cueLengthText.setFont(juce::FontOptions(12.0f));
+    // (The readout is painted in the interface's own type, in the label's place.)
     cueLengthText.setTooltip(cueLength.getTooltip());
-    addAndMakeVisible(cueLengthText);
 
     for (int t = 0; t < arr::TransitionCount; ++t) transitionChoice.addItem(arr::transitionNames[std::size_t(t)], t + 1);
     transitionChoice.setTooltip("How this section hands over to the next one: Cut; Crossfade (instruments leaving fade out, those entering fade in); "
@@ -412,8 +410,8 @@ juce::String ArrangeView::cueLengthLabel() const {
     const int s = juce::roundToInt(seconds);
     const float p = processor.arrangeLength();
     const int name = juce::jlimit(0, 3, juce::roundToInt(p));
-    juce::String text = juce::String(s / 60) + ":" + juce::String(s % 60).paddedLeft('0', 2);
-    if (shown.count > 0) text << " · " << shown.totalBars() << " bars";
+    juce::String text = "LENGTH " + juce::String(s / 60) + ":" + juce::String(s % 60).paddedLeft('0', 2);
+    // (The bars are in the summary beside the title.)
     if (std::abs(p - float(name)) < 0.08f) text << " (" << arr::lengthNames[std::size_t(name)] << ")";
     return text;
 }
@@ -676,6 +674,10 @@ void ArrangeView::resized() {
         t.removeFromRight(14);
         redoButton.setBounds(t.removeFromRight(64).withSizeKeepingCentre(62, 24));
         undoButton.setBounds(t.removeFromRight(64).withSizeKeepingCentre(62, 24));
+        // The orchestration pass: the cue's LENGTH (the whole arrangement) and its readout.
+        t.removeFromRight(16);
+        cueLength.setBounds(t.removeFromRight(std::clamp(t.getWidth() / 3, 90, 170)).withSizeKeepingCentre(std::clamp(t.getWidth() / 3, 90, 170), 22));
+        cueLengthText.setBounds(t.removeFromRight(std::clamp(t.getWidth() / 2, 110, 190)));
     }
     r.removeFromTop(4);
     toolbarArea = r.removeFromTop(26);
@@ -689,9 +691,6 @@ void ArrangeView::resized() {
         autoButton.setBounds(t.removeFromLeft(118).reduced(2, 1));
         orchestrateButton.setBounds(t.removeFromLeft(112).reduced(2, 1));
         endChoice.setBounds(t.removeFromRight(210).reduced(2, 1));
-        t.removeFromLeft(10);
-        cueLengthText.setBounds(t.removeFromRight(std::min(150, std::max(0, t.getWidth() / 2))));
-        cueLength.setBounds(t.reduced(2, 1));
     }
     r.removeFromTop(6);
     inspectorArea = r.removeFromTop(78);
@@ -757,7 +756,11 @@ void ArrangeView::paint(juce::Graphics& g) {
         const int total = shown.totalBars();
         juce::String sub = juce::String(shown.count) + (shown.count == 1 ? " SECTION" : " SECTIONS") + " - " + juce::String(total) + " BARS";
         if (shown.firstEndless() < shown.count) sub << " - ENDS IN A LOOP";
-        pixel::drawText(g, sub, t.withWidth(400), pal.heading, juce::Justification::centredLeft, pixel::Font::Small);
+        pixel::drawText(g, sub, t.withWidth(std::max(0, std::min(400, cueLengthText.getX() - t.getX() - 8))), pal.heading, juce::Justification::centredLeft,
+                        pixel::Font::Small);
+        // The orchestration pass: the cue's LENGTH readout beside its slider.
+        pixel::drawText(g, cueLengthLabel().toUpperCase(), cueLengthText.getBounds().withTrimmedRight(6), pal.heading, juce::Justification::centredRight,
+                        pixel::Font::Small);
     }
 
     // The inspector's labels.
