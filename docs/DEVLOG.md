@@ -7653,7 +7653,7 @@ A resumed session continues from the first unticked line.
 - [x] 4. The VSCO percussion: CI fetch (cached), `vsco.py` preparation, the sampled Drama kit (layers, round-robins, djembe layering), tight and dry
 - [x] 5. The drums' mix: at a Climax level with the other main parts, under the melody; impacts, cymbals, braams and hits the same
 - [x] 6. Tests (the `level` group), the existing groups updated, listening renders (Battle at Drama 0 / 50 / 100 %, before and after, a Drama sweep)
-- [ ] 7. DEVLOG results and handoff; final push; CI green
+- [x] 7. DEVLOG results and handoff; final push; CI green (run 42184139587: 5218 passed, macOS green)
 
 ### Decisions
 
@@ -7796,7 +7796,7 @@ of the Place and the Drama ostinato and stabs); its "before" renders now switch 
 too. Full suite (`scripts/run-tests-parallel.sh`, the `level` group a ninth shard, about 15
 minutes alone), before the last calibration step: 5215 passed, 3 failed (the three fixed
 since); after it the changed groups again: level 16 / 0, loudness 96 / 0, orchestra 79 / 0,
-drama and dramarework 191 / 0, places and scenes 1138 / 0.
+drama and dramarework 191 / 0, places and scenes 1138 / 0. On CI (run 42184139587, the push of `68c7f61`; the VSCO 2 CE percussion fetched from its repository, its licence checked, cached): 5218 passed, 0 failed; macOS (universal build, smoke tests on arm64 and x86_64, bundle checks, a quarantined install, auval and the AU harness) green.
 
 ### Level and drums pass handoff
 
