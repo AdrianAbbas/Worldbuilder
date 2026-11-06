@@ -256,8 +256,9 @@ their hits only, so a world of four never stacks four drum kits.
   drums the war and march kits). Four velocity layers, and the recorded takes rotate so no
   stroke repeats the one before. Tight and dry: short decays, a short room, low-cut sends,
   no World Space reverb, the low end held. At a Climax the drums drive the track at about
-  the level of the Place's main parts, about 2.5 dB under its loudest instrument (its melody
-  or harmony), never above it; the impacts, cymbals, braams and stabs the same.
+  the level of the Place's main parts (measured: 1-4 dB under its loudest instrument, the
+  melody or harmony, or level with its second where one instrument dominates), never above
+  the loudest; the impacts, cymbals, braams and stabs the same.
 - The safety limiters only catch real peaks: at a Climax the master limiter does not act at
   all on any single Place (each Place's Drama instruments also pass a transparent
   look-ahead limiter that rarely engages).

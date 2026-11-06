@@ -283,6 +283,7 @@ void testOrchestra(Suite& s) {
             std::array<double, 2> tail {}, diff {}, sub {};
             for (int after = 0; after < 2; ++after) {
                 drama::Layer::mixPass = after == 1;
+                drama::levelPass = after == 1;   // (before: the drums before the level and drums pass too)
                 const auto p = renderWith(type, 1.0f, 1.0f, 0u);
                 const auto perc = minus(renderWith(type, 1.0f, 1.0f, percMask()), p);
                 const auto mel = renderWith(type, 1.0f, 1.0f, melodicMask());
@@ -293,9 +294,13 @@ void testOrchestra(Suite& s) {
                 tail[std::size_t(after)] = tailRatio(minus(renderWith(type, 1.0f, 1.0f, drumsMask(), 12.0, &el), ps), 4.0);
             }
             drama::Layer::mixPass = true;
+            drama::levelPass = true;
             // (What rings after 250 ms is mostly the big drums' own decay, not a room.)
             tailOk = tailOk && tail[1] <= -10.0 && tail[1] <= tail[0] - 6.0;
-            levelOk = levelOk && diff[1] <= -1.0 && diff[1] >= -7.0;
+            // (The level and drums pass, at the developer's request: the drums about level with
+            // the Place's main parts, 2.5 dB under its loudest instrument (the `level` group
+            // checks that), which puts them 6-8 dB under the melodic parts' sum here.)
+            levelOk = levelOk && diff[1] <= -1.0 && diff[1] >= -9.0;
             dropOk = dropOk && diff[0] - diff[1] >= 3.0;
             text += std::string(placeKeys[std::size_t(type)]) + " tail " + fmt(tail[0]) + " -> " + fmt(tail[1]) + " dB, against the melodic " + fmt(diff[0]) + " -> " + fmt(diff[1])
                     + " dB, below 90 Hz " + fmt(sub[0]) + " -> " + fmt(sub[1]) + " dB; ";
@@ -304,7 +309,7 @@ void testOrchestra(Suite& s) {
         WorldEngine::probeLinear = false;
         std::cout << "  [info] percussion: " << text << "\n";
         s.check(tailOk, "the Drama drums dry: their tail (250-900 ms against the first 120 ms) at most -10 dB and 6 dB under before", text);
-        s.check(levelOk, "the Drama percussion under the melodic parts at Climax (1 to 7 dB under them)", text);
+        s.check(levelOk, "the Drama percussion under the melodic parts at Climax (1 to 9 dB under their sum)", text);
         s.check(dropOk, "the Drama percussion at least 3 dB lower against the melodic parts than before", text);
     }
 

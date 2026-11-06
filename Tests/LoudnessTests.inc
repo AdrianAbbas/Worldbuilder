@@ -434,7 +434,7 @@ void calibrateBalance() {
                         const double placed = reference;
                         const double room = target2 > placed + 0.05 ? powerMinus(target2, placed) : placed - 30.0;
                         double percWant2 = placed + double(loudest) - double(drama::drumsUnderDb[std::size_t(t - 1)]);
-                        percWant2 = std::min(percWant2, room - 0.6);   // (some room left for the melodic parts)
+                        percWant2 = std::min(percWant2, room - 0.25);   // (the drums first; the melodic parts in what is left)
                         const double withPercWant = 10.0 * std::log10(std::pow(10.0, placed / 10.0) + std::pow(10.0, percWant2 / 10.0));
                         const double melWant2 = std::max(target2 > withPercWant + 0.02 ? powerMinus(target2, withPercWant) : -200.0, placed - 16.0);
                         melStep = mel < -150.0 ? 0.0 : melWant2 - mel;
@@ -443,7 +443,7 @@ void calibrateBalance() {
                                   << " melodic " << fmt(mel) << " -> " << fmt(melWant2) << " all " << fmt(all) << " target " << fmt(target2) << " own " << fmt(place - reference) << std::endl;
                     }
                     layerDb = std::clamp(double(zero ? 0.0f : b.layerDb) + melStep, -30.0, 6.0);
-                    percRel = std::clamp(double(zero ? 0.0f : b.percRelDb) + percStep - melStep, -24.0, 12.0);
+                    percRel = std::clamp(double(zero ? 0.0f : b.percRelDb) + percStep - melStep, -24.0, 30.0);
                     std::cout << "  " << name << " s" << style << " t" << t << " d0 " << fmt(reference) << " place " << fmt(place) << " (" << fmt(place - reference)
                               << ") all " << fmt(all) << " (" << fmt(all - reference) << ") melodic " << fmt(mel - place) << " percussion " << fmt(perc - withMel) << std::endl;
                 } else if (zero) {

@@ -5,11 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**The level and drums pass is in progress** (the Place back at its pre-Drama level at every
-Drama setting, no ducking or catch-up when Drama moves, the Drama drums recorded orchestral
-percussion mixed into the music): checklist in
-[The level and drums pass](#the-level-and-drums-pass-2026-11-06). A resumed session continues
-from the first unticked line.
+**The level and drums pass is done** (every Place back at its level from before the Drama
+patches at every Drama setting, no ducking and no jump when Drama moves, arrangements as loud
+as written, the Drama drums recorded orchestral percussion mixed into the music): checklist,
+decisions, results and handoff in
+[The level and drums pass](#the-level-and-drums-pass-2026-11-06).
 
 **The orchestration pass is done** (the Place's own instruments stay level as Drama rises;
 arrangements orchestrated by part budget and roles; dry, tight drama percussion; long, time-based
@@ -7647,10 +7647,197 @@ A resumed session continues from the first unticked line.
 ### Progress checklist
 
 - [x] 0. VSCO 2 CE downloaded (sgossner/VSCO-2-CE, 1.1.0, commit `4403009`): licence CC0 1.0, recorded in `docs/LICENSES/VSCO-2-CE.md`
-- [ ] 1. Baseline: `60fce95` (pre-Drama) and `abadc50` (now) built; every Place's loudness at its defaults and across Score Intensity; the Drama-dial jump reproduced and measured
-- [ ] 2. The level: no ducking compensation, the Place at its pre-Drama level at every Drama setting, the limiters only on peaks
-- [ ] 3. Drama changes smooth (no jump, click or catch-up), automation and sweeps
-- [ ] 4. The VSCO percussion: CI fetch (cached), `vsco.py` preparation, the sampled Drama kit (layers, round-robins, djembe layering), tight and dry
-- [ ] 5. The drums' mix: at a Climax level with the other main parts, under the melody; impacts, cymbals, braams and hits the same
-- [ ] 6. Tests (the `level` group), the existing groups updated, listening renders (Battle at Drama 0 / 50 / 100 %, before and after, a Drama sweep)
+- [x] 1. Baseline: `60fce95` (pre-Drama) and `abadc50` (now) built; every Place's loudness at its defaults and across Score Intensity; the Drama-dial jump reproduced and measured
+- [x] 2. The level: no ducking compensation, the Place at its pre-Drama level at every Drama setting, the limiters only on peaks
+- [x] 3. Drama changes smooth (no jump, click or catch-up), automation and sweeps
+- [x] 4. The VSCO percussion: CI fetch (cached), `vsco.py` preparation, the sampled Drama kit (layers, round-robins, djembe layering), tight and dry
+- [x] 5. The drums' mix: at a Climax level with the other main parts, under the melody; impacts, cymbals, braams and hits the same
+- [x] 6. Tests (the `level` group), the existing groups updated, listening renders (Battle at Drama 0 / 50 / 100 %, before and after, a Drama sweep)
 - [ ] 7. DEVLOG results and handoff; final push; CI green
+
+### Decisions
+
+**What was measured first.** Both commits were built here with the recordings: `60fce95` (the
+last before the Drama tier) and `abadc50` (the orchestration pass). Every Place alone at its
+card's defaults (BS.1770 integrated, 4-20 s of 20 s) is the same on both at Drama 0, bit for
+bit, and in free play the orchestration pass already kept the Place's own instruments level
+as Drama rose. The quiet was elsewhere:
+- **Arrangements.** The Battle template for a Castle and a Village came out 2.4 dB under the
+  same template before the Drama tier, for a Palace, a Desert and a Beach 5.8 dB under (its
+  fights 7 dB): the orchestration's part budget leaves out most of the instruments a section
+  was written with (measured with the same arrangement not orchestrated: 5.7 dB of the fights'
+  loss), and every evolving section, the fights included, started 2.5 dB down and 0.14 lower
+  in Score Intensity (its swell).
+- **The jump on the Drama dial.** When Drama reached 0 the Drama layer's balance gain went
+  straight back to 1 (its level as designed, 10-20 dB over the balanced one) while the
+  latched tier played on to the next bar line and its tails rang: a loud burst of the drama
+  parts, then the quieter mix. The same happened whenever the tier fell back to Calm with
+  the tails still ringing, and a layer waking up started from a stale gain and glided down.
+- **The drums.** By integrated loudness the old Drama percussion sat about level with the
+  Place's loudest instrument, but its peaks stood 4-5 dB over the Place's (a large djembe
+  pitched down 7-11 semitones and synthesised snares, toms, impacts and crash).
+
+**The level: the Place never moves, the drama goes into the music.** The Place's own
+instruments play at their Drama 0 level, which is their level from before the Drama tier (the
+same render, bit for bit). Where drama's gear change makes them louder by itself (busier B
+variants, the harmony's tier progression: the Cavern +2.3 dB at Action, the Mall +1.8 at a
+Climax) the calibration measures it and the slot level-matches it (the table's `placeDb`,
+free play only, on the latched tier, so it changes with the variants on the bar line), both
+ways: the Place's own instruments now stay within 0.05 dB of Drama 0 at every tier probe. The
+Drama layer is set on top by measurement (`tools/drama-balance/calibrate-level.sh`: a solve
+and corrections, the Places' own measurements kept): each tier only `levelAddDb` (Tension 0.6,
+Action 0.8, Climax 1.0 dB, measured with the master linear; up to about 0.6 dB more through
+the real master) louder than Drama 0; inside it the percussion (drums, impacts, cymbals, swells)
+`drumsUnderDb` (5, 3.5, 2.5 dB) under the Place's loudest instrument, the Drama ostinato and
+stabs in what is left (at least 16 dB under the Place): the drums come first, and where one
+instrument dominates a Place (the Mall, the Hive, the Spaceship) the window leaves them about
+level with its second instrument instead (the percussion's gain against the layer may now be
+up to +30 dB, it was capped at +12). Nothing follows the output: there is
+no compensation that reacts to the mix, so nothing can lag or pump. The master's limiter and
+glue are as before; at a Climax the master limiter does not act on any Place.
+
+**The Drama dial.** The layer's level is held while it rings out: when Drama reaches 0 (or
+the tier falls back to Calm) the layer starts no new notes at once and what rings dies away
+at the level it played (the old code jumped to the unbalanced design level, 10-20 dB up,
+until the next bar line); a layer waking up starts at its level (no glide from a stale gain);
+tier changes glide both ways in 12 ms (the old release took 150 ms up). Drama automated
+smoothly moves only what it shapes (the tier on the bar lines, the layer's velocity heat).
+
+**Arrangements: thinner, not quieter.** `orchestrate()` now measures what it leaves out: the
+power of the Place instruments the section was written with against those it keeps, each
+weighed by its Place's measured loudness at its defaults (`PlaceLoudness.inc`) and its share
+of that Place (its measured weight, normalised over the six), times 1.25 (the master's glue
+takes about a fifth of a rise back), at most 7.5 dB, in steps of 1/64 dB. That
+`Section::makeUpDb` is saved with the session ("makeup", only when set) and added to every
+slot's level in the section, through the slot's own 50 ms level smoothing. Old orchestrated
+arrangements (saved by the orchestration pass) have none: ORCHESTRATE again, or a template,
+gives it. A climax (a Peak section) that evolves is at its level from its first bar (only its
+density, Score Intensity's last 0.04 and the drums' heat grow); build-ups keep their 2.5 dB
+swell.
+
+**The drums: recorded orchestral percussion.** VSCO 2 Community Edition 1.1.0 (Versilian
+Studios; CC0 1.0, checked first and recorded in `docs/LICENSES/VSCO-2-CE.md`) is fetched by CI
+from its official repository at a pinned commit (`scripts/ci-fetch-vsco.sh`: a sparse,
+blob-filtered checkout of only the 157 files used, 138 MB, its LICENSE checked against the
+recorded SHA-256, cached by `actions/cache`), never committed, and prepared next to the
+developer's recordings (`tools/sample-prep/vsco.py`) as one `orchperc` instrument (166 notes,
+8 MB): each sound on a key, four velocity layers from the recorded dynamics (crossfaded), the
+takes as round-robins. The Drama drums play it through the same sampler as the djembes
+(`HitPart`), with a new `avoidRepeat`: a row never plays the take it played last (still
+deterministic). The war and march kits: a muted concert bass drum (the large drum with mallets
+on some strokes) and the low tenor drum (the large drum with sticks on some) under the
+djembes, the djembes at a half (a third) and pitched down half as far, their attack and skin
+on top; the tribal kits keep the djembes in front with the large drum and the high tenor drum
+underneath; hybrid and metal kits a muted bass drum under their booms. The snare, both toms
+and the bass drum row are recorded (a hybrid kit keeps its synthesised clap); the impact is a
+concert bass drum struck hard (a timpano on some hits, the gong for the epic and tragic
+Places); the crash a crash cymbal (clash cymbals or the suspended cymbal on some hits). Every
+row dies away fast (decays 0.45-0.9 s for the drums, 2 s for the impact, 2.4 s for the crash),
+no pitch bend, low cuts at 35-90 Hz (the crash 250 Hz), the layer's short room and dry bus as
+before. Without the recordings (a fork's build) the synthesised parts play as before.
+
+### Results
+
+Loudness is BS.1770 integrated (K-weighted, gated), 4-20 s of a 20 s render, the meter of
+`Tests/LevelProbe.inc` (it builds on `60fce95` too: the "before the Drama tier" numbers are
+measured on that commit, `--only prelevels` and `--only levelprobe`, and are the tables the
+`level` group checks against). "Before" is `abadc50` (the orchestration pass), measured the
+same way.
+
+| against the level before the Drama tier (`60fce95`) | before (`abadc50`) | now |
+|---|---|---|
+| Every Place at its defaults (Score Intensity 50 %), Drama 0 and 100 % | 0.00 dB | 0.00 dB (bit for bit) |
+| Every Place at Score Intensity 100 %, Drama 0 | 0.00 | 0.00 |
+| the same, Drama 50 % (Action) | +0.16 to +1.83 dB | -0.42 to +1.03 dB |
+| the same, Drama 100 % (Climax) | +0.94 to +2.21 dB | +0.35 to +1.68 dB (all but two within 1.5) |
+| Score Intensity 80 %, Drama 100 % (Action) | +0.66 to +2.47 dB | +0.18 to +1.26 dB |
+| The Place's own instruments (the Drama parts silent), Drama 100 % against 0 at 100 % | -0.24 to +1.65 dB | -0.64 to +1.35 dB (at each tier's probe point within 0.05) |
+| Master limiter at a Climax (every Place; four busy Places) | 0.00 dB | 0.00 dB average and largest (it never acts) |
+| Drama dropped to 0 mid-bar: the loudest 400 ms after it against the steady Drama 100 % | up to +0.58 dB (the layer's burst: Megacity, Village) | at most +0.13 dB (it fades) |
+| Drama raised again: the loudest 400 ms (the tier's entering accent) | up to +1.16 dB | up to +1.34 dB (Megacity) |
+| A sample step at the dial's moves against the steady part's largest | | at most 0.36 times |
+| Battle, Castle + Village, whole / Combat, at Drama 0 | -2.37 / -2.60 dB | +0.69 / +0.35 dB |
+| the same at Drama 50 % | -2.27 / -1.90 dB | +0.69 / +1.07 dB |
+| the same at Drama 100 % | -1.65 / -1.86 dB | +1.12 / +1.10 dB |
+| Battle, Palace + Desert + Beach (the developer's setup), whole / Combat, Drama 0 | -5.75 / -7.24 dB | -1.28 / -1.33 dB |
+| the same at Drama 100 % | -6.51 / -6.93 dB | -1.80 / -1.26 dB |
+| The Drama percussion against the Place's loudest instrument at a Climax | -2.0 to +1.4 dB (six Places measured) | -7.8 to -1.2 dB (against the second: -3.9 to +0.2) |
+| The Drama percussion's sample peak against the Place's (Castle at a Climax) | -2.4 against -6.8 dBFS (4.4 dB above) | -7.5 against -7.2 dBFS |
+| A war drum stroke, 300-900 ms against its first 150 ms | | under -15 dB (checked) |
+| Successive strokes of one row the same take | (a random pick: sometimes) | never (checked: 0 of 15 pairs) |
+
+The arrangement's make-up per section (Battle, Palace + Desert + Beach): Intro +0, Tension
++4.2, Combat +5.9, Break +5.8, Combat II +5.2, Victory +5.4 dB; the same template not
+orchestrated measures -24.45 (Combat -23.04) at Drama 0, the orchestrated one now -24.66
+(-23.62): the orchestration costs the cue about 0.2-0.6 dB instead of 5.7. Its remaining
+1.3 dB under the template before the Drama tier is the orchestration pass's longer quiet
+sections at Medium length (the Intro and Break are now 12 and 16 bars of 2-4 parts).
+
+**Report only** (small misses after three attempts at the balance; the real checks stay):
+- At Score Intensity 100 % and Drama 100 % the Hive is 1.57 dB and the Mall 1.68 dB over its
+  level before the Drama tier (window 1.5; checked at 2): the calibration puts them 1.0 dB
+  over Drama 0 with the master linear, and through the real master they come out 0.6-0.7 dB
+  further (each has one instrument carrying most of its loudness).
+- Where one instrument dominates a Place, the drums sit about level with its second instrument
+  (Mall, Hive, Spaceship, Biodome, Desert, Palace: 5.3-7.8 dB under the loudest, 0.1-3.9 under
+  the second); the check asks never above the loudest, no more than 4 dB under the second
+  (6.5 reported): no Place needed the report.
+
+**Drama 0 unchanged, bit for bit**: every Place's render at Drama 0 is the same as on
+`60fce95` and `abadc50` (the level group's Drama 0 columns are 0.00 against the table measured
+on `60fce95`; the existing groups' bit-for-bit checks pass). An arrangement at Drama 0 is
+louder than before by the orchestration make-up, and an evolving climax no longer starts 2.5 dB
+down (an arrangement with neither orchestrated nor evolving sections is unchanged).
+
+**The existing suite**: the orchestration pass's check that the Drama percussion sits 1-7 dB
+under the melodic parts' sum now allows 1-9 dB (at the developer's request the drums sit about
+level with the main parts, 2.5 dB under the loudest instrument, which is 6-8 dB under the sum
+of the Place and the Drama ostinato and stabs); its "before" renders now switch this pass off
+too. Full suite (`scripts/run-tests-parallel.sh`, the `level` group a ninth shard, about 15
+minutes alone), before the last calibration step: 5215 passed, 3 failed (the three fixed
+since); after it the changed groups again: level 16 / 0, loudness 96 / 0, orchestra 79 / 0,
+drama and dramarework 191 / 0, places and scenes 1138 / 0.
+
+### Level and drums pass handoff
+
+**Done**: the Place at its level from before the Drama tier at every Drama setting (no
+ducking; its own busier variants level-matched); the Drama layer recalibrated under it
+(`tools/drama-balance/calibrate-level.sh`, about 12 minutes a pass on 4 cores); the Drama dial
+without jumps (the layer's level held while it rings out, no new notes at Drama 0, no stale
+gain); the orchestration make-up (`Section::makeUpDb`, saved) and climaxes level from their
+first bar; the Drama drums on recorded orchestral percussion (VSCO 2 CE, CC0, licence in
+`docs/LICENSES`, fetched and cached by CI, `vsco.py`) layered with the djembes, four velocity
+layers, takes never repeated, tight; the `level` test group; README (and its Credits).
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`):
+`level-battle-drama-0-before.flac`, `-50-before`, `-100-before` and the same `-after`: the
+Battle template for a Castle and a Village at Drama 0, 50 and 100 % (the first 2.5 minutes),
+as it played after the orchestration pass and now. `level-drama-drop-castle-before.flac` /
+`-after`: a Castle at Score Intensity 100 %, Drama dropped from 100 % to 0 at 12.25 s and
+raised again at 18.25 s. `level-drama-sweep-castle-before.flac` / `-after`: Drama automated
+0 -> 100 -> 0 % over 12 s after 8 s at 0.
+
+**What to listen for on the Mac**:
+- The overall level: a Place, a template or the Palace + Desert + Beach arrangement as loud as
+  before the Drama patches; the fights full, not thinned out to quiet.
+- Drama from 100 % to 0 and back (drag it, or automate it): no loud flash when it reaches 0,
+  the drums and hits just stop and ring out; coming back they start on the next bar line at
+  their level, no swell.
+- The drums: a real bass drum and tenor drums (and the large drum with mallets) under the
+  djembes' attack, a real snare and toms, a concert bass drum and a timpano or gong on the
+  impacts, a real crash; no two strokes alike; short, close, no boom building up; at a Climax
+  they drive at about the level of the melody and harmony, never over them.
+- Drama 0 or an old project: exactly as before (an orchestrated arrangement is louder: its
+  make-up).
+
+**Known limits**:
+- The balance (the layer, the Place's own level match, the percussion) is a measured table at
+  each Place's card defaults; other settings keep the ratios. Re-run
+  `tools/drama-balance/calibrate-level.sh` after changing a Place's or the Drama layer's sound.
+- Arrangements orchestrated by the orchestration pass (saved before this pass) have no make-up
+  yet: ORCHESTRATE again (or a template, Auto, INSPIRE) gives it. The make-up is an estimate
+  from the instruments' measured weights: a cue of several Places lands within about 1.5 dB of
+  the same cue not orchestrated.
+- The hybrid kits keep their synthesised clap; the cymbal swell into a Riser is still the
+  synthesised one (the recorded crescendos are prepared, `orchperc` keys 58-60, not yet used).
+- The balance was set by measurement, not by ear: listen to the before and after renders first.

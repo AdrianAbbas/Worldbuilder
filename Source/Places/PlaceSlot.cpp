@@ -485,7 +485,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
             const float matchDb = c.freePlay && dramaLayer.tier() > drama::Calm ? std::clamp(b.placeDb, -4.0f, 2.0f) : 0.0f;
             placeTo = dbToGain(matchDb);
             layerTo = dbToGain(b.layerDb - matchDb + std::min(0.0f, c.dramaLayerDb));
-            percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 12.0f));
+            percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 30.0f));
             heldLayer = layerTo * placeTo;
             heldPerc = percTo;
         } else {
@@ -505,7 +505,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
             const auto b = drama::balance(currentType, style, dramaLayer.tier(), c.drama.rank, world.intensity);
             placeDb += b.placeDb;
             layerTo = dbToGain(b.layerDb - b.placeDb + std::min(0.0f, c.dramaLayerDb));
-            percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 12.0f));
+            percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 30.0f));
         }
         // Rising, the Place makes room for the tier ahead before its bar line (its own rise
         // with Score Intensity does not wait for it); the layer keeps the tier it plays.
