@@ -450,12 +450,16 @@ void testInstrumentMode(Suite& s) {
         note(bright, 57, 110);
         const auto ds = measure(dark.render(1.0), 0.2), bs = measure(bright.render(1.0), 0.2);
         s.check(bs.highDb - bs.lowDb > ds.highDb - ds.lowDb + 6.0, "Tone: dark to bright", fmt((bs.highDb - bs.lowDb) - (ds.highDb - ds.lowDb)) + " dB");
+        // (The flute's synthesised model, a near-sine: the woodwinds pass's recorded flute has
+        // harmonics of its own.)
         const inst::Id flute { Forest, ForestPlace::Flute };
+        samples::Bank::hideForTests("ww-");
         auto clean = ihost(flute), driven = ihost(flute);
         driven.set("inst_drive", 1.0f);
         note(clean, 57, 127);
         note(driven, 57, 127);
         const auto ca = clean.render(1.0), da = driven.render(1.0);
+        samples::Bank::hideForTests(nullptr);
         const auto cs = measure(ca, 0.2), dv = measure(da, 0.2);
         // The third harmonic against the fundamental (a flute is nearly a sine).
         const auto cy = mono(ca, 0.3, 0.5), dy = mono(da, 0.3, 0.5);

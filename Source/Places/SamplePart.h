@@ -115,6 +115,9 @@ struct SamplePatch {
     // Legato: how far into the recording a slurred note starts (seconds: past its attack) and
     // how much longer than the new note's fade in the old one takes to let go.
     float legatoSkip = 0.08f, legatoOverlap = 1.5f;
+    // Off: a held note keeps its pitch to its end when the chords (or the Root or Mood) move
+    // under it, as a melody instrument's model does.
+    bool followChords = true;
 };
 
 class SamplePart final : public Part {
@@ -415,6 +418,7 @@ private:
         // An undamped piano key rings on whatever the key does.
         if (patch.damper && midi >= float(patch.undampedFrom) - 0.5f && n.live == 0) held[std::size_t(k)].on = false;
         held[std::size_t(k)].semis = n.semis;
+        if (!patch.followChords) held[std::size_t(k)].follow = false;
         // Live (KEYS, Instrument mode): a short hit first; held past the short notes'
         // length it hands over to the long hit (see update()).
         v.upgrade = n.live != 0 && inst != main && main != nullptr;
@@ -979,6 +983,7 @@ inline SamplePatch woodwindPatch(const char* sustain, const char* staccato) {
     p.breathAttack = 0.08f;
     p.keyNoise = 0.006f;
     p.mono = true;
+    p.followChords = false;     // a melody: each note keeps its pitch, as the models do
     return p;
 }
 

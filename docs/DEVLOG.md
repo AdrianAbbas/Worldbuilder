@@ -7865,7 +7865,7 @@ sample set. A resumed session continues from the first unticked line.
 - [x] 2. Preparation: `vsco.py` prepares the woodwinds (looped sustains, staccatos, vibrato, velocity layers, pitch from the audio), the fetch takes their files, licence entry updated
 - [x] 3. The sampler: mod wheel as expression (live layer crossfade and level), subtle breath and key noise, a second sample set taking over where it exists
 - [x] 4. The parts switched, each processed for its Place, level-matched to its stand-in
-- [ ] 5. Tests (the `woodwinds` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, legato), level-matched, Places keep their identity, CPU within the budget; listening renders before and after
+- [x] 5. Tests (the `woodwinds` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, legato), level-matched, Places keep their identity, CPU within the budget; listening renders before and after
 - [ ] 6. DEVLOG results and handoff; final push; CI green
 
 ### Decisions
@@ -7950,3 +7950,71 @@ a stand-in set (the oboe as the flute's second set: it plays, levelled within 3 
 **Levels.** Each part's gain per Character is set so that alone (Activity 0.9) it measures what
 its synthesised stand-in measures (BS.1770 integrated, `--only wwaudit`); without the samples the
 stand-ins play exactly as before.
+Like their models, the woodwinds' held notes keep their pitch when the chords, Root or Mood
+move under them (`followChords` off): a Location's Root changing at its far point no longer
+retunes a sounding flute (the `locations` group's click check found it).
+
+### Results
+
+The `woodwinds` group (`--only woodwinds`, 38 checks; in `scripts/run-tests-parallel.sh` after
+the CPU groups, alone, as `10-woodwinds.txt`), here with VSCO 2 CE prepared (the developer's
+private recordings are not in this container; CI has both):
+
+| Check | Result |
+|---|---|
+| The thirteen sets load; every sustain has its loop and recorded end; the dynamics are crossfaded layers | 13 of 13; 174 of 174; 12 of 12 (the piccolo's staccatos have one layer) |
+| In tune: every sustained take on its loop (cents report per note in the log) | all within 10 cents (most within 3) |
+| In tune: every staccato over 30-230 ms | 218 or more of 220 within 15 cents (at most two short attacks off) |
+| In tune from a keyboard, each part across its range (12 notes) | -0.8 to +1.6 cents |
+| A velocity sweep rises evenly | no dip over 0.75 dB (staccatos 2 dB), no step over 4 dB, at least 4 dB soft to full: 21 of 21 |
+| The mod wheel (expression) on a held note | 5-15 dB louder through the layers, no rise over 1.5 dB per 50 ms, no dip, no click: 10 of 10; every part live: 4 dB or more louder, no click |
+| No clicks: held 6 s through the loops; released notes; legato; staccato ends | all (held: no step 6 dB sharper than the take's own; released: 40 dB down within 1.5 s; legato: never 3 dB under the quieter note) |
+| Each part against its stand-in, per Character (BS.1770, alone) | within 0.25 LU (checked within 1.5) |
+| Each whole Place at its defaults against the same with the stand-in | within 0.75 LU in every Character |
+| Each Place keeps its identity | nearer to itself with the stand-in than to any other Place (fingerprints) |
+| A second sample set takes over, levelled | plays, within 3 dB over three notes |
+| CPU, four busy woodwind Places (Standard quality) | 11.4 % of one core with the woodwinds, 11.0 % with the stand-ins (budget 15 %, added under 2 %) |
+| Memory | the woodwinds 64 MB (the bank 93 MB here, without the private recordings) |
+
+**The rest of the suite**, here against the commit before this pass (`cca23f7`) built the same
+way: the same failures on both (all from the developer's private recordings missing in this
+container: the guitar, violin and Minilogue sets, the level tables measured with them), none
+new. Two checks this pass broke were fixed: replaying from bar 1 (the breath's noise is reset
+with the part) and a Root change at a Location's far point (above). The Drive check in
+Instrument mode measures the effect on a near-sine: it now runs on the Forest flute's model
+(the woodwinds hidden for it), as it did before; the recorded flute has harmonics of its own.
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`): for each changed part,
+`woodwinds-<place>-<part>-before.wav` and `-after.wav` (the part alone in its three
+Characters, 10 s each: the synthesised stand-in, then the recordings), and
+`woodwinds-<place>-place-before-after.wav` (the whole Place, first Character, 16 s before, then
+after): village-recorder, forest-flute, desert-ney-flute, mining-beacon.
+
+### Woodwinds pass handoff
+
+**Changed parts** (Place mode, KEYS and Instrument mode alike): Village Recorder (flute,
+piccolo above C7), Forest Flute (flute with vibrato; plain in the Dark Woods), Desert Ney Flute
+(flute, breathy, with its bend-in), Asteroid Mining Beacon (clarinet, made strange). Nothing
+else changes: patterns, Drama tiers, orchestration and arrangements are untouched; the
+woodwinds play one line as their models do; without the samples (a fork's build) the models
+play exactly as before.
+
+**What to listen for on the Mac**: the four renders before and after; the recorder woody and
+light, the forest flute breathy and close, the ney dark and airy with its lean into each note,
+the beacon hollow and beating, its colour slowly moving. From a keyboard: soft to hard keys
+through the dynamics, the mod wheel swelling a held note, slurred lines, short notes on the
+staccatos.
+
+**Known limits**:
+- The oboe and bassoon (and the clarinet's and bassoon's staccatos beyond the beacon's range)
+  are prepared and verified but no part plays them: no Place has an oboe or bassoon part. They
+  cost about 33 MB of memory; drop them from `vsco_woodwinds.py`'s `SETS` if none will.
+- The Forest's Dark Woods and the Village's Harvest Night play down to C3 and F3, below the
+  flute (C4): those notes are the flute's lowest recording played lower (darker, slower
+  vibrato), not an alto flute.
+- VSCO has no legato recordings: slurs are crossfades (the new note from its sustain, 25 ms in,
+  the old one out over 150 ms).
+- The level match is a measured table per Character at the cards' defaults (`--only wwaudit`
+  regenerates it after a sound change); the levels were set by measurement, not by ear.
+- The developer's alto recorder and ocarina: see `tools/sample-prep/README.md` (bank ids
+  `recorder-alto`, `recorder-alto-short`, `ocarina`, `ocarina-short`).
