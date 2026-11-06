@@ -49,6 +49,10 @@ struct HitPatch {
     float drive = 0;              // a little grit (a cramped room, a tape)
     float velocityScale = 1;      // played harder or softer (into the louder or softer layers)
     int voices = 8;
+    // The level and drums pass (the Drama percussion): a row never plays the same take twice
+    // in a row (no machine-gun repeats; still deterministic). Off for the Places' own kits,
+    // which play exactly as before.
+    bool avoidRepeat = false;
 };
 
 class HitPart final : public Part {
@@ -86,6 +90,7 @@ public:
         fallback.reset();
         for (auto& v : voice) v = {};
         for (auto& f : dc) f.reset();
+        lastTake.fill(nullptr);
         gainNow = -1;
     }
     void setKey(uint32_t key, uint32_t salt) override {
@@ -113,8 +118,13 @@ public:
         }
         const int stroke = (row.alt >= 0 && n.random < row.altChance) ? row.alt : row.stroke;
         const float velocity = dsp::clamp01(n.velocity * patch.velocityScale);
-        const auto pair = kit->crossfade ? kit->findPair(stroke, velocity, n.random2) : samples::ZonePair { kit->find(stroke, velocity, n.random2), nullptr, 0.0f };
+        const auto pick = [&](float r) { return kit->crossfade ? kit->findPair(stroke, velocity, r) : samples::ZonePair { kit->find(stroke, velocity, r), nullptr, 0.0f }; };
+        auto pair = pick(n.random2);
+        const std::size_t rowIndex = std::size_t(std::clamp(n.row, 0, 3));
+        if (patch.avoidRepeat && pair.a != nullptr)
+            for (int tries = 1; tries <= 3 && pair.a == lastTake[rowIndex]; ++tries) pair = pick(std::fmod(n.random2 + 0.37f * float(tries), 1.0f));
         if (pair.a == nullptr) return;
+        lastTake[rowIndex] = pair.a;
         auto& v = voice[dsp::pickVoice(voice, std::clamp(patch.voices, 1, maxVoices), [](const Voice& x) { return x.on ? x.level + 1.0e-9f : 0.0f; })];
         v = {};
         v.on = true;
@@ -257,6 +267,7 @@ private:
     HitPatch designedPatch {};
     bool shaped = false;
     const samples::Instrument* kit = nullptr;
+    std::array<const samples::Zone*, 4> lastTake {};
     std::array<Voice, maxVoices> voice {};
     std::array<dsp::OnePole, 2> dc;
     float gainNow = -1;

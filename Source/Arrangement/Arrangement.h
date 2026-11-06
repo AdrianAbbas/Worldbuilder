@@ -151,6 +151,11 @@ struct Section {
     // across its whole length, and the Places other than `lead` keep less of their space.
     bool orchestrated = false;
     int8_t lead = -1;   // the slot that leads (its melody, its environment), -1: none
+    // The level and drums pass: what orchestrating the section took from its loudness (the
+    // parts it left out, by their measured weights), given back to the parts that play (dB,
+    // 0 to 6; set by orchestrate(), saved only when set). The section sounds as full as it was
+    // written, with fewer parts: thinner, not quieter.
+    float makeUpDb = 0;
 
     void setName(const char* text) {
         name.fill(0);
@@ -164,7 +169,7 @@ struct Section {
         return std::strncmp(name.data(), o.name.data(), std::size_t(nameLength)) == 0 && colour == o.colour && bars == o.bars
                && repeats == o.repeats && curve == o.curve && intensityStart == o.intensityStart && intensityEnd == o.intensityEnd
                && cells == o.cells && transition == o.transition && transitionLength == o.transitionLength && location == o.location
-               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve && orchestrated == o.orchestrated && lead == o.lead;
+               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve && orchestrated == o.orchestrated && lead == o.lead && makeUpDb == o.makeUpDb;
     }
 };
 
@@ -246,6 +251,7 @@ struct State {
     // An evolving section's swell (dB on every Place: from -2.5 dB at its start to 0 at its end
     // in a rising section; 0 otherwise).
     float swellDb = 0;
+    float makeUpDb = 0;   // the section's orchestration make-up (Section::makeUpDb)
     // The orchestration pass: how much of each Place's environment plays (its World Space
     // and reverb sends): 1, less for the Places that do not lead an orchestrated section.
     std::array<float, placeSlots> focus { 1, 1, 1, 1 };

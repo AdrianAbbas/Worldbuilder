@@ -256,6 +256,7 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
         // The orchestration pass: written only when set.
         if (s.orchestrated) x.setProperty("orchestrated", true, nullptr);
         if (s.lead >= 0) x.setProperty("lead", int(s.lead), nullptr);
+        if (s.makeUpDb != 0.0f) x.setProperty("makeup", double(s.makeUpDb), nullptr);
         // Milestone 11b: written only when set, so older readers and files stay as they were.
         if (s.transition != TransCut) {
             x.setProperty("transition", int(s.transition), nullptr);
@@ -308,6 +309,7 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.evolve = bool(x.getProperty("evolve", false));
         s.orchestrated = bool(x.getProperty("orchestrated", false));
         s.lead = int8_t(int(number(x, "lead", -1, -1, float(placeSlots - 1))));
+        s.makeUpDb = number(x, "makeup", 0.0f, 0.0f, 6.0f);
         s.transition = uint8_t(int(number(x, "transition", 0, 0, float(TransitionCount - 1))));
         s.transitionLength = uint8_t(int(number(x, "transitionLength", 1, 1, float(maxTransitionLength))));
         s.location = int8_t(int(number(x, "location", -1, -1, 7)));

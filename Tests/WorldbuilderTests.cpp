@@ -9446,6 +9446,7 @@ void testSamples(Suite& s) {
 #include "MixProbe.inc"
 #include "OrchestraTests.inc"
 
+#include "LevelProbe.inc"
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -9568,6 +9569,8 @@ int main(int argc, char** argv) {
     if (only.contains("mixprobe")) probeMix();
     // 60 s of real time: only when asked for (the parallel script runs it in its own shard).
     if (only.contains("stress")) testStress(s);
+    if (only.contains("levelprobe")) probeLevels();
+    if (only.contains("prelevels")) probePlaceLevels();
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

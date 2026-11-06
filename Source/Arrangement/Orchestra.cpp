@@ -1,4 +1,5 @@
 #include "Orchestra.h"
+#include <cmath>
 #include <vector>
 
 namespace wb::arr {
@@ -152,6 +153,26 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
             }
         }
         if (leadSlot < 0) leadSlot = active[std::size_t(leadPos)];
+        // The level and drums pass: the weighted power of the Place instruments the section
+        // was written with (its cells before) and of those it keeps; what is missing is made up.
+        const auto power = [&](bool after) {
+            double sum = 0;
+            for (int slot = 0; slot < placeSlots; ++slot) {
+                const int type = types[std::size_t(slot)];
+                if (type == NoPlace) continue;
+                for (int e = 0; e < placeElements; ++e) {
+                    const auto& c = s.cells[std::size_t(slot)][std::size_t(e)];
+                    const bool on = after ? chosen[std::size_t(slot)][std::size_t(e)] : c.entry != EntryOff;
+                    if (!on || !has(slot, e)) continue;
+                    static constexpr std::array<double, 4> variantPower { 1.0, 1.4, 0.7, 1.0 };
+                    const double v = after && c.entry == EntryOff ? 1.0 : variantPower[std::size_t(std::min<int>(c.variant, 3))];
+                    sum += std::pow(10.0, double(drama::elementWeightDb(type, e)) / 10.0) * v;
+                }
+            }
+            return sum;
+        };
+        const double written = power(false), kept = power(true);
+        s.makeUpDb = kept > 1.0e-9 && written > kept ? float(std::clamp(10.0 * std::log10(written / kept), 0.0, 6.0)) : 0.0f;
         // The cells: a part kept plays as written; one brought in plays its kind's way.
         const bool lastSection = i == a.count - 1;
         for (int slot = 0; slot < placeSlots; ++slot) {

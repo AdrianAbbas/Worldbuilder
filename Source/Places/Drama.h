@@ -93,6 +93,13 @@ inline int styleFor(int placeType, int style) { return style > StyleAuto && styl
 // melodic parts (the Place and the Drama ostinato and stabs): it drives without dominating.
 inline constexpr std::array<float, 3> layerAddDb { 0.9f, 1.3f, 1.7f };
 inline constexpr std::array<float, 3> percUnderDb { 8.0f, 6.0f, 5.0f };
+// The level and drums pass: the slot at Tension, Action and Climax only levelAddDb louder
+// than the same Place with Drama 0 (its level before the Drama tier) at that Score
+// Intensity, the Drama percussion (drums, impacts, cymbals) drumsUnderDb under the Place's
+// loudest instrument (its melody or harmony: level with the main parts, never above them),
+// the Drama ostinato and stabs in what is left.
+inline constexpr std::array<float, 3> levelAddDb { 0.7f, 1.0f, 1.4f };
+inline constexpr std::array<float, 3> drumsUnderDb { 5.0f, 3.5f, 2.5f };
 struct Balance {
     float placeDb = 0, layerDb = 0, percRelDb = 0;
 };
@@ -123,12 +130,27 @@ inline bool balanceOff = false;
 // Tests only: false plays the Drama tier as it was before the loudness pass (the old hit
 // levels, no balance, no layer limiter): the "before" of the listening renders.
 inline bool loudnessPass = true;
+// Tests only: false plays the Drama layer as it was before the level and drums pass (the
+// synthesised snare, toms, impacts and crash and the djembe war drums; its balance table;
+// a layer jumping to its unbalanced level when Drama goes to 0; no orchestration make-up):
+// the "before" of the listening renders.
+inline bool levelPass = true;
 
 // The Drama instruments' kit rows (the Drama tier rework). The drums: the low (war) drum,
 // the mid drum, a third voice that depends on the kit (slaps and their muted ghosts; a
 // clank; a hat; snare ghost strokes), the snare (a clap on a hybrid kit), two toms, and
 // the pistons of a metal kit. The hits: the Place's two stabs (chords on the current
 // chord), an impact with a crash, and a cymbal swell as long as its note.
+// The orchestral percussion's sounds: their keys in the "orchperc" instrument
+// (tools/sample-prep/vsco.py; VSCO 2 Community Edition, CC0).
+namespace orchperc {
+enum Sound : int {
+    BassDrum = 36, BassDrumMuted = 37, LargeDrumMallet = 38, LargeDrumSticks = 39, Timpani1 = 41, Timpani2 = 42, Timpani3 = 43,
+    Snare = 48, SnareTaps = 50, TomHigh = 52, TomLow = 53, Crash = 56, SuspendedCymbal = 57, SwellShort = 58, SwellMedium = 59,
+    SwellLong = 60, Gong = 61, Clash = 62
+};
+}
+
 enum DrumLine { RowLow, RowMid, RowHigh, RowSnare, RowTomHigh, RowTomLow, RowPistons, DrumRowCount };
 enum HitRow { RowStabA, RowStabB, RowImpact, RowSwell, HitRowCount };
 
@@ -216,7 +238,10 @@ public:
         PDrums, PPerc, PMetal, PSwell, PStrings, PPulse, PBass, PPluck, PLow, PBrass, PChoir, PPiano, PBraam, PSynth, PHands,
         // The Drama tier rework: the doublings and hits on parts of their own, so each Drama
         // instrument has its own bus (its level and effects).
-        PBrassOst, PPianoOst, PMetalHit, PImpact, PartCount
+        PBrassOst, PPianoOst, PMetalHit, PImpact,
+        // The level and drums pass: the orchestral war drums (VSCO 2 CE's bass drums, large
+        // drum and tenor drums), layered with the djembes on the low and mid strokes.
+        PDrumsOrch, PartCount
     };
     // Which Drama instrument (0 drums, 1 ostinato, 2 hits) a part belongs to.
     static int elementOf(int part);
@@ -239,6 +264,7 @@ private:
     };
     static constexpr int maxNotes = 160;
     void configure(int placeType, const WorldFrame& world, int style, float tension, float bpm);
+    void configureRecorded(const Theme& theme, int quality);
     // The arrangement's and the gear changes' own sounds (stingers, rolls into a section,
     // its landing), at the step `step` (sixteenths).
     void stingers(int64_t step, int offset, int placeType, int style, const WorldFrame& world, bool sync, double stepBeat, const Cue& cue,
@@ -255,7 +281,7 @@ private:
     uint32_t seedKey = 0;
     dsp::Stream noise;
     // Fallbacks (the synthesised parts that play when the bank has no recordings).
-    DrumPart drumsSynth, handsSynth, perc, metal, metalHit, impact;
+    DrumPart drumsSynth, handsSynth, perc, metal, metalHit, impact, orchSynth;
     NoisePart swell;
     BowedPart stringsSynth;
     SynthPart pulseSynth, bassSynth, low, brass, brassOst, pianoSynth, pianoOstSynth, braamSynth, synthStabSynth;
@@ -264,6 +290,12 @@ private:
     // The war drums (the low and mid strokes) and the hands (slaps and ghost notes) apart,
     // so the dense hand strokes never cut the booms short.
     HitPart drums { drumsSynth }, hands { handsSynth };
+    // The level and drums pass: recorded orchestral percussion (the "orchperc" instrument,
+    // VSCO 2 Community Edition, CC0): the snare and toms, the impacts (a concert bass drum,
+    // timpani), the crash; the synthesised parts they replace play only the rows without a
+    // recording, and everything where the bank has none. The orchestral war drums layer the
+    // djembes (their fallback is silent: without recordings the djembes' own fallback plays).
+    HitPart percRec { perc }, metalHitRec { metalHit }, impactRec { impact }, drumsOrch { orchSynth };
     SamplePart strings { stringsSynth }, pulse { pulseSynth }, bass { bassSynth }, pluck { pluckSynth }, piano { pianoSynth }, pianoOst { pianoOstSynth },
         braam { braamSynth }, synthStab { synthStabSynth };
     VoicePart choir { choirSynth, &choirSynth };

@@ -64,10 +64,11 @@ struct BalanceRow {
 };
 #include "DramaBalance.inc"
 #include "DramaBalanceV1.inc"
+#include "DramaBalanceV2.inc"
 constexpr std::array<float, 4> probeIntensity { 0.5f, 0.62f, 0.8f, 1.0f };
 // The table in use: the orchestration pass's (the Place untouched, the layer under it), or
 // (Layer::mixPass false, the listening renders' "before") the loudness pass's.
-const BalanceRow& rowOf(int placeType) { return (Layer::mixPass ? balanceTable : balanceTableV1)[std::size_t(placeType)]; }
+const BalanceRow& rowOf(int placeType) { return (Layer::mixPass ? (levelPass ? balanceTable : balanceTableV2) : balanceTableV1)[std::size_t(placeType)]; }
 } // namespace
 
 float arrangedCorrectionDb(int placeType, int tier, int rank) {
@@ -213,9 +214,9 @@ float velocityOf(char c) {
 //                                               drums perc metal swell strings pulse bass pluck low brass choir piano braam synth
 //                                               ... hands brassOst pianoOst metalHit impact
 constexpr std::array<float, Layer::PartCount> trimBeforeDb { 7.0f, -6.0f, 5.0f, 4.0f, 1.0f, 0.0f, 0.0f, 0.0f, -10.0f, -8.0f, 3.0f, 0.0f, 0.0f, 0.0f, 5.0f,
-                                                             -8.0f, 0.0f, 5.0f, -6.0f };   // (before the loudness pass; tests only)
+                                                             -8.0f, 0.0f, 5.0f, -6.0f, 0.0f };   // (before the loudness pass; tests only)
 constexpr std::array<float, Layer::PartCount> trimDb { 7.0f, -6.0f, 4.0f, 4.0f, 1.0f, 0.0f, 0.0f, 0.0f, -10.0f, -8.0f, 2.0f, -4.0f, -3.5f, -2.5f, 5.0f,
-                                                       -8.0f, 0.0f, 2.0f, -8.5f };
+                                                       -8.0f, 0.0f, 2.0f, -8.5f, 0.0f };
 const char* hitName(int hit) {
     static constexpr std::array<const char*, 6> names { "Brass", "Choir", "Low Piano", "Braam", "Synth", "Metal" };
     return names[std::size_t(std::clamp(hit, 0, 5))];
@@ -452,8 +453,10 @@ const ElementSpec& dramaElementSpec(int type, int element) {
 namespace wb::drama {
 
 Layer::Layer() {
-    parts = { &drums, &perc, &metal, &swell, &strings, &pulse, &bass, &pluck, &low, &brass, &choir, &piano, &braam, &synthStab, &hands,
-              &brassOst, &pianoOst, &metalHit, &impact };
+    parts = { &drums, &percRec, &metal, &swell, &strings, &pulse, &bass, &pluck, &low, &brass, &choir, &piano, &braam, &synthStab, &hands,
+              &brassOst, &pianoOst, &metalHitRec, &impactRec, &drumsOrch };
+    for (auto* p : { &percRec, &metalHitRec, &impactRec, &drumsOrch }) p->patch.instrument = "orchperc";
+    orchSynth.patch.gain = 0.0f;
     // The recordings each part plays (resolved once, when the bank is ready).
     strings.patch.instrument = "violin-sustain";
     pulse.patch.instrument = "mlg-pulse-long";
@@ -480,14 +483,14 @@ void Layer::clearPercussion() {
 
 bool Layer::isPercussion(int part) {
     switch (part) {
-        case PDrums: case PPerc: case PMetal: case PHands: case PMetalHit: case PImpact: case PSwell: case PLow: return true;
+        case PDrums: case PPerc: case PMetal: case PHands: case PMetalHit: case PImpact: case PSwell: case PLow: case PDrumsOrch: return true;
         default: return false;
     }
 }
 
 int Layer::elementOf(int part) {
     switch (part) {
-        case PDrums: case PPerc: case PMetal: case PHands: return 0;
+        case PDrums: case PPerc: case PMetal: case PHands: case PDrumsOrch: return 0;
         case PStrings: case PPulse: case PBass: case PPluck: case PLow: case PBrassOst: case PPianoOst: return 1;
         default: return 2;
     }
@@ -931,12 +934,118 @@ void Layer::configure(int placeType, const WorldFrame& world, int style, float t
     metalHit.patch = metal.patch;
     metalHit.patch.gain = 1.0f;
     impact.patch = perc.patch;
+    configureRecorded(t, q);
     kitNow = t.kit;
     static constexpr int ostinatoParts[] { PStrings, PPulse, PBass, PPluck, PPianoOst };
     ostinatoPart = ostinatoParts[std::clamp(t.ostinato, 0, 4)];
     ostinatoRegister = t.ostinato == OstBass ? -12.0f : 0.0f;
     hall.set(t.hall, lerp(1.5f, 4.5f, t.hall), lerpExp(2500.0f, 7000.0f, tone));
     hallWet = 0.35f + 0.4f * t.hall;
+}
+
+// The level and drums pass: the Drama percussion plays recorded orchestral percussion (the
+// "orchperc" instrument, tools/sample-prep/vsco.py: VSCO 2 Community Edition, CC0). Each row:
+// its sound's key, a second sound on some hits, a little transposition, its level and pan, a
+// low-pass that darkens the softer hits, a low cut (the low end held), how fast it dies away
+// (tight: the drums do not ring on under the music) and no pitch bend (natural drums). The
+// velocity layers (pp to ff, crossfaded) do the dynamics; every row's takes rotate without
+// repeating. The djembes (the drums and hands parts) stay: the war drums layer both.
+void Layer::configureRecorded(const Theme& t, int q) {
+    namespace op = orchperc;
+    if (!levelPass) {
+        // (Before the pass: every row on the synthesised parts, the djembes as they were.)
+        for (auto* p : { &percRec, &metalHitRec, &impactRec, &drumsOrch }) p->patch.rows = {};
+        return;
+    }
+    const float s = t.drumSemis;
+    const auto row = [](int stroke, int alt, float altChance, float semis, float gain, float pan, float toneHz, float lowCutHz, float decay) {
+        wb::HitRow r;
+        r.stroke = stroke;
+        r.alt = alt;
+        r.altChance = altChance;
+        r.semis = semis;
+        r.gain = gain;
+        r.pan = pan;
+        r.toneHz = toneHz;
+        r.velocityTone = 0.6f;
+        r.lowCutHz = lowCutHz;
+        r.decay = decay;
+        r.bendSemis = 0.0f;
+        return r;
+    };
+    const auto common = [&](HitPatch& p, int voices) {
+        p.instrument = "orchperc";
+        p.velocityGain = 0.3f;
+        p.even = 0.5f;
+        p.velocityScale = lerp(0.95f, 1.12f, heat);
+        p.drive = 0.0f;
+        p.spread = 0.15f;
+        p.voices = voices;
+        p.avoidRepeat = true;
+        p.gain = 1.0f;
+    };
+    // The war drums under (or over) the djembes: a concert bass drum muted tight, the large
+    // drum with mallets or sticks, the tenor drums as the mid drums; a little lower for the
+    // bigger Places (a quarter of the djembes' tape-speed drop).
+    {
+        auto& p = drumsOrch.patch;
+        common(p, byQuality(q, 4, 6, 8));
+        const float semis = 0.25f * s;
+        p.rows = {};
+        switch (t.kit) {
+            case KitWar:
+                p.rows[0] = row(op::BassDrumMuted, op::LargeDrumMallet, 0.35f, semis, 1.0f, -0.05f, 6000.0f, 38.0f, 0.9f);
+                p.rows[1] = row(op::TomLow, op::LargeDrumSticks, 0.3f, semis, 0.85f, 0.2f, 9000.0f, 55.0f, 0.6f);
+                break;
+            case KitMarch:
+                p.rows[0] = row(op::BassDrum, op::BassDrumMuted, 0.3f, semis, 1.0f, 0.0f, 6000.0f, 38.0f, 1.1f);
+                p.rows[1] = row(op::TomLow, -1, 0.0f, semis, 0.75f, 0.2f, 9000.0f, 55.0f, 0.6f);
+                break;
+            case KitTribal:
+                p.rows[0] = row(op::LargeDrumMallet, -1, 0.0f, semis, 0.5f, -0.05f, 5000.0f, 45.0f, 0.7f);
+                p.rows[1] = row(op::TomHigh, -1, 0.0f, semis, 0.4f, 0.2f, 9000.0f, 70.0f, 0.45f);
+                break;
+            default:   // hybrid and metal kits: the muted bass drum under the djembes' booms
+                p.rows[0] = row(op::BassDrumMuted, -1, 0.0f, semis - 2.0f, 0.7f, 0.0f, 5000.0f, 38.0f, 0.7f);
+                p.rows[1] = row(op::TomLow, -1, 0.0f, semis, 0.5f, 0.2f, 8000.0f, 60.0f, 0.5f);
+                break;
+        }
+    }
+    // The djembes' share where the orchestral drums lead (war and march kits): their attack
+    // and skin on top, the boom from the bass drum (and less tape-speed smear).
+    if (t.kit == KitWar || t.kit == KitMarch) {
+        drums.patch.gain *= t.kit == KitWar ? 0.5f : 0.35f;
+        for (int r = 0; r < 2; ++r) {
+            drums.patch.rows[std::size_t(r)].semis = 0.5f * drums.patch.rows[std::size_t(r)].semis;
+            drums.patch.rows[std::size_t(r)].decay = r == 0 ? 0.8f : 0.5f;
+        }
+    }
+    // The snare (a hybrid kit keeps its synthesised clap), the two toms, the bass drum.
+    {
+        auto& p = percRec.patch;
+        common(p, byQuality(q, 4, 5, 6));
+        p.rows = {};
+        p.rows[0] = t.kit == KitHybrid ? wb::HitRow {} : row(op::Snare, -1, 0.0f, 0.0f, 0.8f, 0.1f, 14000.0f, 90.0f, t.kit == KitMarch ? 0.6f : 0.45f);
+        p.rows[1] = row(op::TomHigh, -1, 0.0f, 0.15f * s, 0.9f, -0.3f, 10000.0f, 60.0f, 0.65f);
+        p.rows[2] = row(op::TomLow, -1, 0.0f, 0.15f * s, 0.9f, 0.3f, 9000.0f, 45.0f, 0.75f);
+        p.rows[3] = row(op::BassDrum, -1, 0.0f, 0.0f, 1.0f, 0.0f, 7000.0f, 35.0f, 1.6f);
+    }
+    // The impact: a concert bass drum struck hard (a timpano on some hits; the gong now and
+    // then for the epic and tragic Places), dying away within two seconds.
+    {
+        auto& p = impactRec.patch;
+        common(p, byQuality(q, 2, 3, 4));
+        p.rows = {};
+        const bool big = t.style == StyleEpic || t.style == StyleTragic;
+        p.rows[3] = row(op::BassDrum, big ? op::Gong : op::Timpani1, big ? 0.25f : 0.3f, 0.0f, 1.0f, 0.0f, 9000.0f, 35.0f, 2.0f);
+    }
+    // The crash (clash cymbals on some hits for the war and march kits), its ring cut short.
+    {
+        auto& p = metalHitRec.patch;
+        common(p, byQuality(q, 2, 3, 4));
+        p.rows = {};
+        p.rows[0] = row(op::Crash, t.kit == KitWar || t.kit == KitMarch ? op::Clash : op::SuspendedCymbal, 0.3f, 0.0f, 0.7f, -0.2f, 16000.0f, 250.0f, 2.4f);
+    }
 }
 
 void Layer::add(int part, int offset, float semis, float velocity, double beat, double lengthBeats, int row, float pan, int live) {
@@ -985,8 +1094,15 @@ void Layer::chord(int part, int offset, int root, int mood, int degree, float ve
 void Layer::playDrum(int row, int offset, float velocity, double beat, double length, int kit, int live) {
     liveId = live;
     switch (row) {
-        case RowLow: add(PDrums, offset, 0, velocity, beat, length, 0, 2.0f, live); break;
-        case RowMid: add(PDrums, offset, 0, velocity, beat, length, 1, 2.0f, live); break;
+        // The level and drums pass: the war drums are the orchestral drums layered with the djembes.
+        case RowLow:
+            add(PDrums, offset, 0, velocity, beat, length, 0, 2.0f, live);
+            if (levelPass) add(PDrumsOrch, offset, 0, velocity, beat, length, 0, 2.0f, live);
+            break;
+        case RowMid:
+            add(PDrums, offset, 0, velocity, beat, length, 1, 2.0f, live);
+            if (levelPass) add(PDrumsOrch, offset, 0, velocity, beat, length, 1, 2.0f, live);
+            break;
         case RowHigh:
             if (kit == KitMetal) add(PMetal, offset, 0, velocity, beat, length, 1, 2.0f, live);
             else if (kit == KitHybrid) add(PMetal, offset, 0, velocity, beat, length, 3, 2.0f, live);
@@ -1207,7 +1323,9 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         return remaining <= 4.0 + 1.0e-6 && remaining > 0.0;
     };
     // The three Drama instruments' patterns (they rest at Calm).
-    if (latched > Calm && !dropping)
+    // (The level and drums pass: Drama turned to 0 starts no more notes at once; what rings
+    // dies away at the level it played.)
+    if (latched > Calm && !dropping && (cue.drama > 0.0f || !levelPass))
         for (int k = 0; k < dramaElements; ++k) {
             const auto* play = el.play[std::size_t(k)];
             if (play == nullptr || !play->active() || !el.notes[std::size_t(k)] || el.gainTo[std::size_t(k)] <= 0.0f) continue;
@@ -1300,7 +1418,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         // A part whose last note has rung out (well below -60 dB) is neither updated nor
         // rendered: an idle part costs nothing.
         static constexpr std::array<float, PartCount> tails { 5.0f, 7.0f, 5.0f, 24.0f, 3.0f, 4.0f, 4.0f, 4.0f, 2.0f, 3.0f, 5.0f, 10.0f, 6.0f, 4.0f, 3.0f,
-                                                              3.0f, 10.0f, 5.0f, 7.0f };
+                                                              3.0f, 10.0f, 5.0f, 7.0f, 4.0f };
         if (!any && q > int(tails[std::size_t(k)] * rate) && !(liveHere && elementOf(k) == el.liveElement && part->sustains())) continue;
         q += n;
         const int e = elementOf(k);

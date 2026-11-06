@@ -34,6 +34,19 @@ jobs:
         env:
           SAMPLES_TOKEN: ${{ secrets.SAMPLES_TOKEN }}
         run: bash scripts/ci-fetch-samples.sh "${{ runner.temp }}/samples-src" "${{ runner.temp }}/samples"
+      # The Drama drums' orchestral percussion: VSCO 2 Community Edition (Versilian Studios,
+      # CC0 1.0, docs/LICENSES/VSCO-2-CE.md), fetched from its official repository at a pinned
+      # commit (the licence checked), cached, prepared next to the recordings. Never committed.
+      - name: VSCO 2 CE percussion cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vsco
+          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'scripts/ci-fetch-vsco.sh') }}
+      - name: Fetch and prepare the orchestral percussion (VSCO 2 CE, CC0)
+        run: |
+          bash scripts/ci-fetch-vsco.sh "${{ runner.temp }}/vsco"
+          python3 tools/sample-prep/vsco.py --source "${{ runner.temp }}/vsco" --out "${{ runner.temp }}/samples" | tee "${{ runner.temp }}/vsco.log"
+          grep '^Prepared:' "${{ runner.temp }}/vsco.log" | while read -r line; do echo "::notice title=Samples::$line"; done
       # JUCE is fetched once and kept (the configure step otherwise clones its whole history).
       - name: JUCE source cache
         id: juce
@@ -128,6 +141,19 @@ jobs:
         env:
           SAMPLES_TOKEN: ${{ secrets.SAMPLES_TOKEN }}
         run: bash scripts/ci-fetch-samples.sh "${{ runner.temp }}/samples-src" "${{ runner.temp }}/samples"
+      # The Drama drums' orchestral percussion: VSCO 2 Community Edition (Versilian Studios,
+      # CC0 1.0, docs/LICENSES/VSCO-2-CE.md), fetched from its official repository at a pinned
+      # commit (the licence checked), cached, prepared next to the recordings. Never committed.
+      - name: VSCO 2 CE percussion cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vsco
+          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'scripts/ci-fetch-vsco.sh') }}
+      - name: Fetch and prepare the orchestral percussion (VSCO 2 CE, CC0)
+        run: |
+          bash scripts/ci-fetch-vsco.sh "${{ runner.temp }}/vsco"
+          python3 tools/sample-prep/vsco.py --source "${{ runner.temp }}/vsco" --out "${{ runner.temp }}/samples" | tee "${{ runner.temp }}/vsco.log"
+          grep '^Prepared:' "${{ runner.temp }}/vsco.log" | while read -r line; do echo "::notice title=Samples::$line"; done
       - name: Dependencies
         run: sudo apt-get update && sudo apt-get install -y ninja-build libasound2-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libgl1-mesa-dev
       - name: JUCE source cache

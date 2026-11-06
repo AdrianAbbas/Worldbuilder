@@ -218,6 +218,7 @@ private:
     // room, the Drama layer at its share of the Calm level): gains, smoothed.
     dsp::Smoother placeComp, layerComp, percComp;
     float compRelease = 1;
+    float heldLayer = 1, heldPerc = 1;   // the level and drums pass: the layer's last tier level (it rings out at it)
 public:
     const drama::Layer& drama() const { return dramaLayer; }
     void clearReductions() { dramaLayer.clearReduction(); }

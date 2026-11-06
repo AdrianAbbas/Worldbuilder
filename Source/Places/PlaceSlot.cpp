@@ -58,6 +58,7 @@ void PlaceSlot::reset() {
     percComp.snap(1.0f);
     placeComp.snap(1.0f);
     layerComp.snap(1.0f);
+    heldLayer = heldPerc = 1.0f;
     for (auto& bus : sendTilt)
         for (auto& f : bus) f.reset();
     fresh = true;
@@ -468,7 +469,32 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     // takes its share, so the slot stays about as loud as at Calm (a table measured per
     // Place, Drama Style and tier; Drama.cpp). Calm and Drama 0: exactly as before.
     float placeTo = 1.0f, layerTo = 1.0f, percTo = 1.0f;
-    if (dramaOn && !c.instrument && c.drama.drama > 0.0f) {
+    // The level and drums pass: the Place is never turned down (no ducking, no catch-up); the
+    // Drama layer plays at its tier's level (the table) and keeps that level while it rings out
+    // (Drama turned to 0, the tier back at Calm): no jump to its unbalanced level. A layer
+    // waking up starts at its level at once (no swell from a stale gain), and a tier change
+    // glides both ways in 12 ms.
+    const bool levelMix = drama::levelPass && drama::Layer::mixPass && drama::loudnessPass;
+    if (levelMix && dramaOn && !c.instrument && !(dramaKeys && c.drama.drama <= 0.0f && !dramaLayer.active())) {
+        const int style = drama::styleFor(currentType, c.drama.style);
+        const int t = dramaLayer.tier() > drama::Calm ? dramaLayer.tier() : dramaLayer.wanted();
+        if (c.drama.drama > 0.0f && t > drama::Calm) {
+            const auto b = drama::balance(currentType, style, t, c.drama.rank, world.intensity);
+            layerTo = dbToGain(b.layerDb + std::min(0.0f, c.dramaLayerDb));
+            percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 12.0f));
+            heldLayer = layerTo;
+            heldPerc = percTo;
+        } else {
+            layerTo = heldLayer;
+            percTo = heldPerc;
+        }
+        if (!dramaLayer.active()) {
+            layerComp.snap(layerTo);
+            percComp.snap(percTo);
+        }
+    } else if (levelMix) {
+        heldLayer = heldPerc = 1.0f;
+    } else if (dramaOn && !c.instrument && c.drama.drama > 0.0f) {
         float placeDb = c.dramaShapeDb;
         const int style = drama::styleFor(currentType, c.drama.style);
         if (dramaLayer.tier() > drama::Calm) {
@@ -491,7 +517,7 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
     }
     const bool compResting = placeComp.value == 1.0f && layerComp.value == 1.0f && placeTo == 1.0f && layerTo == 1.0f;
     const auto follow = [&](dsp::Smoother& sm, float to) {
-        if (to < sm.value) return sm.next(to);
+        if (to < sm.value || levelMix) return sm.next(to);
         return sm.value += compRelease * (to - sm.value);
     };
     const float placeGain = compResting ? 1.0f : follow(placeComp, placeTo);

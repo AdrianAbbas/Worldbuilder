@@ -798,6 +798,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             arrangedControls.clipOrigin = arranged.clipOrigin;
             arrangedControls.clipSpan = arranged.clipSpan;
             arrangedControls.levelDb += arranged.swellDb;   // an evolving section's swell
+            // The level and drums pass: an orchestrated section's make-up (the parts it left out),
+            // through the slot's level smoothing (no step at a section line).
+            if (drama::levelPass) arrangedControls.levelDb += arranged.makeUpDb;
             arrangedControls.dramaShapeDb = shapeDb[si];
             arrangedControls.dramaLayerDb = layerShapeDb[si];
             if (world.drama > 0.0f)

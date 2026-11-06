@@ -4,6 +4,22 @@ src=open('/home/user/worldbuilder/Source/Places/Place.h').read()
 m=re.search(r'placeKeys\s*\{([^}]*)\}',src)
 keys=[k.strip().strip('"') for k in m.group(1).split(',') if k.strip()]
 tab={};cls={};calm={};elw={};arrc={};arr2={};var={};dbl={};var80={}
+# The level and drums pass: what a run does not measure keeps the table's current values
+# (a layer-only calibration, WB_NOVAR, leaves the Places' own measurements as they were).
+import os
+inc='/home/user/worldbuilder/Source/Places/DramaBalance.inc'
+if os.path.exists(inc):
+    for line in open(inc):
+        m2=re.search(r'//\s*(\w+)\s*$',line)
+        if not line.lstrip().startswith('{ { {') or not m2: continue
+        k=m2.group(1)
+        v=[float(x) for x in re.findall(r'-?\d+\.\d+',line.split('//')[0])]
+        if len(v)!=79: continue
+        for si in range(5):
+            for t in range(3):
+                b=v[(si*3+t)*3:(si*3+t)*3+3]; tab[(k,si+1,t+1)]=tuple(b)
+        o=45; cls[k]=v[o:o+3]; calm[k]=v[o+3]; elw[k]=v[o+4:o+10]; arrc[k]=v[o+10:o+13]; arr2[k]=v[o+13:o+16]
+        var[k]=v[o+16:o+22]; dbl[k]=v[o+22:o+28]; var80[k]=v[o+28:o+34]
 for f in sys.argv[1:]:
     for line in open(f):
         p=line.split()
