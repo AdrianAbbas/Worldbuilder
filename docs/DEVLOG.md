@@ -7841,3 +7841,29 @@ raised again at 18.25 s. `level-drama-sweep-castle-before.flac` / `-after`: Dram
 - The hybrid kits keep their synthesised clap; the cymbal swell into a Riser is still the
   synthesised one (the recorded crescendos are prepared, `orchperc` keys 58-60, not yet used).
 - The balance was set by measurement, not by ear: listen to the before and after renders first.
+
+## The woodwinds pass (2026-11-06)
+
+The developer's request: the woodwind parts on real woodwinds from the CC0 VSCO 2 Community
+Edition (Versilian Studios): flute, piccolo, oboe, clarinet and bassoon; looped sustains,
+staccatos, vibrato and legato where recorded, the dynamics as velocity layers, the mod wheel as
+expression; natural, breathy attacks, key and breath noise subtle. Every Place part and every
+KEYS / Instrument-mode instrument that is a woodwind switched to the matching recording,
+processed to fit its Place (the Desert's ney breathy with a slight bend-in, the village and
+forest flutes woody and folky, the sci-fi Places strange). Patterns, Drama tiers,
+orchestration and arrangements exactly as they are: only the sound changes. VSCO 2 CE is
+reused as the Drama percussion set it up (licence entry, pinned commit, CI fetch and cache);
+the samples are never committed. Each part's synthesised stand-in stays for builds without
+the samples, level-matched. The folk flutes (the Village's recorder, the Forest's flute) are
+ready to take the developer's own alto recorder and ocarina recordings later as a second
+sample set. A resumed session continues from the first unticked line.
+
+### Progress checklist
+
+- [x] 0. VSCO 2 CE already in use (the level and drums pass: CC0 1.0, `docs/LICENSES/VSCO-2-CE.md`, commit `4403009`, `scripts/ci-fetch-vsco.sh`): reused; its `Woodwinds/` folder has flute (sustain, vibrato, expressive vibrato, staccato), piccolo, oboe, clarinet and bassoon
+- [ ] 1. Every woodwind found (Place parts, KEYS / Instrument mode): list and decisions
+- [ ] 2. Preparation: `vsco.py` prepares the woodwinds (looped sustains, staccatos, vibrato, velocity layers, pitch from the audio), the fetch takes their files, licence entry updated
+- [ ] 3. The sampler: mod wheel as expression (live layer crossfade and level), subtle breath and key noise, a second sample set taking over where it exists
+- [ ] 4. The parts switched, each processed for its Place, level-matched to its stand-in
+- [ ] 5. Tests (the `woodwinds` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, legato), level-matched, Places keep their identity, CPU within the budget; listening renders before and after
+- [ ] 6. DEVLOG results and handoff; final push; CI green
