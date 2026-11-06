@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-DesertPlace::DesertPlace() : EnsemblePlace(2800) { setParts({ &oudRec, &drumsRec, &ney, &tanpura, &wind, &chimes }); }
+DesertPlace::DesertPlace() : EnsemblePlace(2800) { setParts({ &oudRec, &drumsRec, &neyRec, &tanpura, &wind, &chimes }); }
 
 void DesertPlace::prepareFx() {
     space.prepare(rate);
@@ -307,6 +307,38 @@ void DesertPlace::configure(const PlaceContext& c) {
         p.air = 0.3f;
         p.wander = 6.0f;
         p.gain = 1.0f;
+    }
+    // The recorded ney (the woodwinds pass): the flute without vibrato, dark and very breathy
+    // (more breath than tone at the edges of each note, a hollow tube), a slight bend up into
+    // each tongued note (Scoop / Glide on: the ney's full scoop), a gentle breath vibrato.
+    {
+        const auto& w = ney.patch;
+        auto& p = neyRec.patch;
+        p = woodwindPatch("ww-flute", "ww-flute-stac");
+        p.toneHz = lerpExp(3200.0f, 8500.0f, tone);
+        p.velocityTone = 0.7f;
+        p.formantHz = 750.0f;
+        p.formantQ = 0.8f;
+        p.formantDb = 2.0f;
+        p.breath = 0.07f + 0.04f * (1.0f - tone);
+        p.breathRatio = 1.0f;
+        p.breathQ = 0.9f;
+        p.breathBurst = 3.0f;
+        p.breathAttack = 0.15f;
+        p.keyNoise = 0.0f;   // finger holes, no keys
+        p.bendIn = -0.3f;
+        p.bendInSeconds = 0.07f;
+        p.attack = 0.03f;
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = 0.35f * w.vibratoDepth;
+        p.vibratoDelay = w.vibratoDelay;
+        p.scoopSemis = -w.scoop;
+        p.scoopSeconds = w.scoopSeconds;
+        p.release = w.release;
+        p.pan = w.pan;
+        p.spread = w.spread;
+        p.transpose = w.transpose;
+        p.gain = neyGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // The tanpura: a buzzing drone whose bright jawari shimmers as the strings are plucked round.
     {

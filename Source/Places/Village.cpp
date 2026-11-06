@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-VillagePlace::VillagePlace() : EnsemblePlace(1200) { setParts({ &luteRec, &hurdy, &drumsRec, &marimba, &recorder, &jingles }); }
+VillagePlace::VillagePlace() : EnsemblePlace(1200) { setParts({ &luteRec, &hurdy, &drumsRec, &marimba, &recorderRec, &jingles }); }
 
 void VillagePlace::prepareFx() {
     room.prepare(rate);
@@ -434,6 +434,38 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.air = 0.04f;
         p.wander = 2.0f;
         p.gain = 1.0f;
+    }
+    // The recorded recorder (the woodwinds pass): the flute played plainly, woody and folky:
+    // a darker top, a hollow wooden resonance, the fipple's quick chiff of breath, a gentle
+    // vibrato (more at dawn), the piccolo above C7. The developer's alto recorder plays
+    // instead once it is recorded (levelled to the flute).
+    {
+        const auto& w = recorder.patch;
+        auto& p = recorderRec.patch;
+        p = woodwindPatch("ww-flute", "ww-flute-stac");
+        p.alternate = "recorder-alto";
+        p.alternateShort = "recorder-alto-short";
+        p.toneHz = lerpExp(4500.0f, 11000.0f, tone);
+        p.velocityTone = 0.6f;
+        p.formantHz = 1500.0f;
+        p.formantQ = 1.3f;
+        p.formantDb = 3.0f;
+        p.breath = 0.02f;
+        p.breathRatio = 3.0f;
+        p.breathBurst = 4.0f;
+        p.breathAttack = 0.05f;
+        p.keyNoise = 0.004f;
+        // The model's vibrato is a third in pitch (the rest in its breath): the same share.
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = 0.35f * w.vibratoDepth;
+        p.vibratoDelay = w.vibratoDelay;
+        p.scoopSemis = -w.scoop;
+        p.scoopSeconds = w.scoopSeconds;
+        p.release = w.release;
+        p.pan = w.pan;
+        p.spread = w.spread;
+        p.transpose = w.transpose;
+        p.gain = recorderGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Small bells: bright, inharmonic, short.
     {

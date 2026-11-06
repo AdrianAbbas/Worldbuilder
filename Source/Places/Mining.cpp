@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-MiningPlace::MiningPlace() : EnsemblePlace(3000) { setParts({ &drillRec, &bass, &clanks, &dust, &hymnRec, &beacon }); }
+MiningPlace::MiningPlace() : EnsemblePlace(3000) { setParts({ &drillRec, &bass, &clanks, &dust, &hymnRec, &beaconRec }); }
 
 void MiningPlace::prepareFx() {
     room.prepare(rate);
@@ -307,6 +307,37 @@ void MiningPlace::configure(const PlaceContext& c) {
         p.spread = 0.1f;
         p.voices = 1;
         p.gain = 1.0f;
+    }
+    // The recorded beacon (the woodwinds pass): the clarinet's hollow low register (pure, like
+    // an ocarina), made strange: a second player a sixth of a tone sharp beating against it,
+    // a narrow resonance sweeping slowly up and down, a slow wide vibrato, a swell in.
+    {
+        const auto& w = beacon.patch;
+        auto& p = beaconRec.patch;
+        p = woodwindPatch("ww-clarinet", "ww-clarinet-stac");
+        const double t = double(c.clock) / rate;
+        p.toneHz = lerpExp(2500.0f, 7000.0f, tone);
+        p.velocityTone = 0.3f;
+        p.breath = 0.008f;
+        p.keyNoise = 0.0f;
+        p.courseLoops = true;
+        p.courseCents = 16.0f;
+        p.courseLevel = 0.45f;
+        p.courseMs = 30.0f;
+        p.formantHz = 700.0f * std::exp2(1.2f * std::sin(float(t) * twoPi * 0.07f));
+        p.formantQ = 4.0f;
+        p.formantDb = 6.0f;
+        p.attack = w.attack;
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = 0.6f * w.vibratoDepth;
+        p.vibratoDelay = w.vibratoDelay;
+        p.scoopSemis = -w.scoop;
+        p.scoopSeconds = w.scoopSeconds;
+        p.release = w.release;
+        p.pan = w.pan;
+        p.spread = w.spread;
+        p.transpose = w.transpose;
+        p.gain = beaconGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     sendScale.fill(night ? 1.3f : (cavein ? 0.8f : 1.0f));
     level = { 0.20f * (0.7f + 0.6f * s.machinery) * (night ? 0.7f : 1.0f), 0.16f * (cavein ? 1.2f : 1.0f) * (0.8f + 0.4f * s.machinery),

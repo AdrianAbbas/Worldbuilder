@@ -98,6 +98,10 @@ private:
     static constexpr std::array<float, 3> drumsGain { 1.168f, 1.13f, 1.781f };   // per Character, level-matched (Tests "recordings")
     ModalPart marimba, jingles;
     WindPart recorder;
+    // The recorder (the woodwinds pass): VSCO 2 CE's flute, woody and folky (the developer's
+    // alto recorder takes over once recorded); the model plays without the samples.
+    SamplePart recorderRec { recorder };
+    static constexpr std::array<float, 3> recorderGain { 4.257f, 6.714f, 4.958f };   // per Character, level-matched (Tests "woodwinds")
     dsp::SmallSpace room;
     dsp::Warmth warmth;
     float roomSend = 0;
@@ -239,6 +243,10 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     WindPart flute, birds, rustle;
+    // The flute (the woodwinds pass): VSCO 2 CE's flute, breathy and woody (the developer's
+    // ocarina takes over once recorded); the model plays without the samples.
+    SamplePart fluteRec { flute };
+    static constexpr std::array<float, 3> fluteGain { 2.491f, 16.82f, 2.048f };   // per Character, level-matched (Tests "woodwinds")
     DrumPart wood;
     ModalPart kalimba;
     // The kalimba plays the developer's recorded kalimba (Milestone 15); the modal model
@@ -692,6 +700,10 @@ private:
     HitPart drumsRec { drums };
     static constexpr std::array<float, 3> drumsGain { 2.329f, 2.686f, 2.296f };   // per Character, level-matched (Tests "recordings")
     WindPart ney, wind;
+    // The ney (the woodwinds pass): VSCO 2 CE's flute, breathy, leaning into its notes; the
+    // model plays without the samples.
+    SamplePart neyRec { ney };
+    static constexpr std::array<float, 3> neyGain { 5.131f, 4.9f, 7.845f };   // per Character, level-matched (Tests "woodwinds")
     SynthPart tanpura;
     ModalPart chimes;
     dsp::SmallSpace space;
@@ -924,6 +936,11 @@ private:
     SynthPart bass;
     ModalPart clanks;
     WindPart dust, beacon;
+    // The beacon (the woodwinds pass): VSCO 2 CE's clarinet in its hollow low register,
+    // made strange (a second player beating against it, a slowly sweeping resonance); the
+    // model plays without the samples.
+    SamplePart beaconRec { beacon };
+    static constexpr std::array<float, 3> beaconGain { 5.394f, 5.239f, 5.821f };   // per Character, level-matched (Tests "woodwinds")
     ChoirPart hymn;
     // The worker hymn (Milestone 17): the developer's voice, mostly hummed, gritty, low.
     VoicePart hymnRec { hymn, &hymn };

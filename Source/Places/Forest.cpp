@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-ForestPlace::ForestPlace() : EnsemblePlace(1600) { setParts({ &flute, &birds, &wood, &kalimbaRec, &stringsRec, &rustle }); }
+ForestPlace::ForestPlace() : EnsemblePlace(1600) { setParts({ &fluteRec, &birds, &wood, &kalimbaRec, &stringsRec, &rustle }); }
 
 void ForestPlace::prepareFx() {
     diffuser.prepare(rate);
@@ -241,6 +241,38 @@ void ForestPlace::configure(const PlaceContext& c) {
         p.air = 0.12f;
         p.wander = 3.0f;
         p.gain = 1.0f;
+    }
+    // The recorded flute (the woodwinds pass): woody and folky, breathy, its own recorded
+    // vibrato in the enchanted wood and the glade; in the dark woods plain, darker and
+    // breathier (low notes from the flute's lowest, played lower). The developer's ocarina
+    // plays instead once it is recorded (levelled to the flute).
+    {
+        const auto& w = flute.patch;
+        auto& p = fluteRec.patch;
+        p = woodwindPatch(dark ? "ww-flute" : "ww-flute-vib", "ww-flute-stac");
+        p.alternate = "ocarina";
+        p.alternateShort = "ocarina-short";
+        p.toneHz = dark ? lerpExp(2800.0f, 7000.0f, tone) : lerpExp(4500.0f, 12000.0f, tone);
+        p.velocityTone = 0.6f;
+        p.formantHz = 900.0f;
+        p.formantQ = 0.9f;
+        p.formantDb = 2.5f;
+        p.breath = dark ? 0.045f : 0.03f;
+        p.breathRatio = 1.5f;
+        p.breathQ = 1.2f;
+        p.breathBurst = 3.0f;
+        p.breathAttack = 0.1f;
+        p.keyNoise = 0.005f;
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = dark ? 0.35f * w.vibratoDepth : 0.0f;   // the recordings' own vibrato
+        p.vibratoDelay = w.vibratoDelay;
+        p.scoopSemis = -w.scoop;
+        p.scoopSeconds = w.scoopSeconds;
+        p.release = w.release;
+        p.pan = w.pan;
+        p.spread = w.spread;
+        p.transpose = w.transpose;
+        p.gain = fluteGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Birds: nearly pure whistles that swoop into each note; trills, or an owl's hoot.
     {
