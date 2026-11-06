@@ -98,7 +98,7 @@ inline constexpr std::array<float, 3> percUnderDb { 8.0f, 6.0f, 5.0f };
 // Intensity, the Drama percussion (drums, impacts, cymbals) drumsUnderDb under the Place's
 // loudest instrument (its melody or harmony: level with the main parts, never above them),
 // the Drama ostinato and stabs in what is left.
-inline constexpr std::array<float, 3> levelAddDb { 0.6f, 0.8f, 1.0f };
+inline constexpr std::array<float, 3> levelAddDb { 0.6f, 0.8f, 0.85f };
 inline constexpr std::array<float, 3> drumsUnderDb { 5.0f, 3.5f, 2.5f };
 struct Balance {
     float placeDb = 0, layerDb = 0, percRelDb = 0;

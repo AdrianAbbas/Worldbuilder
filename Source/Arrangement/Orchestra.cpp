@@ -174,7 +174,8 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
         };
         const double written = power(false), kept = power(true);
         // (1.25 times the estimate: the master's glue takes about a fifth of a rise back.)
-        s.makeUpDb = kept > 1.0e-9 && written > kept ? float(std::clamp(1.25 * 10.0 * std::log10(written / kept), 0.0, double(maxMakeUpDb))) : 0.0f;
+        // (In steps of 1/64 dB: saved and restored exactly.)
+        s.makeUpDb = kept > 1.0e-9 && written > kept ? float(std::round(64.0 * std::clamp(1.25 * 10.0 * std::log10(written / kept), 0.0, double(maxMakeUpDb))) / 64.0) : 0.0f;
         // The cells: a part kept plays as written; one brought in plays its kind's way.
         const bool lastSection = i == a.count - 1;
         for (int slot = 0; slot < placeSlots; ++slot) {
