@@ -5,6 +5,12 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**The level and drums pass is in progress** (the Place back at its pre-Drama level at every
+Drama setting, no ducking or catch-up when Drama moves, the Drama drums recorded orchestral
+percussion mixed into the music): checklist in
+[The level and drums pass](#the-level-and-drums-pass-2026-11-06). A resumed session continues
+from the first unticked line.
+
 **The orchestration pass is done** (the Place's own instruments stay level as Drama rises;
 arrangements orchestrated by part budget and roles; dry, tight drama percussion; long, time-based
 cues and a Length control): checklist, decisions, results and handoff in
@@ -7618,3 +7624,33 @@ default arrangement now: Medium, orchestrated, 3:23); `length-short.flac` and
   build-up clip repeats its rise); Auto-arrange again to rewrite them.
 - The report-only cases above.
 
+
+## The level and drums pass (2026-11-06)
+
+The developer's report after the Drama patches: WORLDBUILDER is far too quiet overall and the
+drama drums sound bad and too loud against everything else; turning Drama all the way down
+plays LOUD for a split second, the level it should always have (the loudness compensation /
+limiter pulls the whole mix down, then catches up). (1) The level: every Place at its default
+settings as loud as in the last version before the Drama patches (`60fce95`), at every Drama
+setting: the Place's own instruments at that level at Drama 0 and staying there as drama
+rises; the global gain compensation removed or drastically reduced; the safety limiter only on
+real peaks (average reduction under about 1 dB, no pumping); drama adds parts, density and
+drums into the music, never ducks it. (2) No level jumps, clicks or catch-up swells when Drama
+changes or is automated. (3) The drama drums: real orchestral percussion from the CC0 VSCO 2
+Community Edition (timpani, bass drum, toms, cymbals...), licence recorded first
+(`docs/LICENSES`), fetched in CI (cached), never committed; layered with the djembes where it
+helps; velocity layers and round-robins, tight, little room, controlled low end; at a Climax
+about level with the other main parts, never above the melody and harmony (impacts, cymbals,
+braams and hits the same). (4) The orchestration, long sections and Length control kept.
+A resumed session continues from the first unticked line.
+
+### Progress checklist
+
+- [x] 0. VSCO 2 CE downloaded (sgossner/VSCO-2-CE, 1.1.0, commit `4403009`): licence CC0 1.0, recorded in `docs/LICENSES/VSCO-2-CE.md`
+- [ ] 1. Baseline: `60fce95` (pre-Drama) and `abadc50` (now) built; every Place's loudness at its defaults and across Score Intensity; the Drama-dial jump reproduced and measured
+- [ ] 2. The level: no ducking compensation, the Place at its pre-Drama level at every Drama setting, the limiters only on peaks
+- [ ] 3. Drama changes smooth (no jump, click or catch-up), automation and sweeps
+- [ ] 4. The VSCO percussion: CI fetch (cached), `vsco.py` preparation, the sampled Drama kit (layers, round-robins, djembe layering), tight and dry
+- [ ] 5. The drums' mix: at a Climax level with the other main parts, under the melody; impacts, cymbals, braams and hits the same
+- [ ] 6. Tests (the `level` group), the existing groups updated, listening renders (Battle at Drama 0 / 50 / 100 %, before and after, a Drama sweep)
+- [ ] 7. DEVLOG results and handoff; final push; CI green
