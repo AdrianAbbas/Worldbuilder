@@ -34,15 +34,15 @@ jobs:
         env:
           SAMPLES_TOKEN: ${{ secrets.SAMPLES_TOKEN }}
         run: bash scripts/ci-fetch-samples.sh "${{ runner.temp }}/samples-src" "${{ runner.temp }}/samples"
-      # The Drama drums' orchestral percussion: VSCO 2 Community Edition (Versilian Studios,
+      # The Drama drums' orchestral percussion and the woodwind parts: VSCO 2 Community Edition (Versilian Studios,
       # CC0 1.0, docs/LICENSES/VSCO-2-CE.md), fetched from its official repository at a pinned
       # commit (the licence checked), cached, prepared next to the recordings. Never committed.
-      - name: VSCO 2 CE percussion cache
+      - name: VSCO 2 CE percussion and woodwinds cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/vsco
-          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'scripts/ci-fetch-vsco.sh') }}
-      - name: Fetch and prepare the orchestral percussion (VSCO 2 CE, CC0)
+          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'tools/sample-prep/vsco_woodwinds.py', 'scripts/ci-fetch-vsco.sh') }}
+      - name: Fetch and prepare the orchestral percussion and woodwinds (VSCO 2 CE, CC0)
         run: |
           bash scripts/ci-fetch-vsco.sh "${{ runner.temp }}/vsco"
           python3 tools/sample-prep/vsco.py --source "${{ runner.temp }}/vsco" --out "${{ runner.temp }}/samples" | tee "${{ runner.temp }}/vsco.log"
@@ -141,15 +141,15 @@ jobs:
         env:
           SAMPLES_TOKEN: ${{ secrets.SAMPLES_TOKEN }}
         run: bash scripts/ci-fetch-samples.sh "${{ runner.temp }}/samples-src" "${{ runner.temp }}/samples"
-      # The Drama drums' orchestral percussion: VSCO 2 Community Edition (Versilian Studios,
+      # The Drama drums' orchestral percussion and the woodwind parts: VSCO 2 Community Edition (Versilian Studios,
       # CC0 1.0, docs/LICENSES/VSCO-2-CE.md), fetched from its official repository at a pinned
       # commit (the licence checked), cached, prepared next to the recordings. Never committed.
-      - name: VSCO 2 CE percussion cache
+      - name: VSCO 2 CE percussion and woodwinds cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/vsco
-          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'scripts/ci-fetch-vsco.sh') }}
-      - name: Fetch and prepare the orchestral percussion (VSCO 2 CE, CC0)
+          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'tools/sample-prep/vsco_woodwinds.py', 'scripts/ci-fetch-vsco.sh') }}
+      - name: Fetch and prepare the orchestral percussion and woodwinds (VSCO 2 CE, CC0)
         run: |
           bash scripts/ci-fetch-vsco.sh "${{ runner.temp }}/vsco"
           python3 tools/sample-prep/vsco.py --source "${{ runner.temp }}/vsco" --out "${{ runner.temp }}/samples" | tee "${{ runner.temp }}/vsco.log"

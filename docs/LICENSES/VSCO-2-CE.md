@@ -1,6 +1,7 @@
-# VS Chamber Orchestra 2: Community Edition (percussion)
+# VS Chamber Orchestra 2: Community Edition (percussion and woodwinds)
 
-WORLDBUILDER's Drama percussion plays orchestral percussion recordings from **VSCO 2:
+WORLDBUILDER's Drama percussion plays orchestral percussion recordings, and its woodwind parts
+(the woodwinds pass) woodwind recordings, from **VSCO 2:
 Community Edition** by Versilian Studios (recorded by Sam Gossner and Simon Dalzell;
 sample cutting by Elan Hickler / Soundemote).
 
@@ -29,6 +30,12 @@ sample cutting by Elan Hickler / Soundemote).
   suspended cymbal hits and crescendo rolls (`susCymb1-hit_*`, `susCymb1-cresc-*`), gong
   (`gongHit_*`). The exact list and how each is mapped are in
   `tools/sample-prep/vsco.py`.
+- **Woodwinds** (the woodwinds pass, 2026-11-06; the same repository, commit and licence,
+  checked again before use): the repository's `Woodwinds/` folder: flute (`Flute/susNV`,
+  `Flute/susvib`, `Flute/stac`), piccolo (`Piccolo/Sus`, `Piccolo/Stac`), oboe (`Oboe/Sus`,
+  `Oboe/Vib`, `Oboe/Stacc`), clarinet (`Clarinet/susLong`, `Clarinet/stac`) and bassoon
+  (`Bassoon/sus`, `Bassoon/vib`, `Bassoon/stac`), 380 files. How each is prepared and mapped
+  is in `tools/sample-prep/vsco_woodwinds.py`. (The flute's `expvib` takes are not used.)
 
 ## The licence text (the repository's LICENSE, verbatim)
 

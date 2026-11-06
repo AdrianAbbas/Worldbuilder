@@ -1,4 +1,5 @@
-"""Orchestral percussion from VSCO 2: Community Edition (the level and drums pass).
+"""Orchestral percussion and woodwinds from VSCO 2: Community Edition (the level and drums pass,
+the woodwinds pass: vsco_woodwinds.py).
 
 VSCO 2 CE (Versilian Studios, https://github.com/sgossner/VSCO-2-CE, 1.1.0) is CC0 1.0
 (docs/LICENSES/VSCO-2-CE.md). CI fetches the files below from the official repository at a
@@ -40,6 +41,7 @@ from scipy import signal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import prepare as P  # noqa: E402
+import vsco_woodwinds as W  # noqa: E402
 
 RATE = P.RATE
 LAYERS = ["pp", "mp", "mf", "ff"]
@@ -84,7 +86,8 @@ for n in range(1, 6):
 
 # What scripts/ci-fetch-vsco.sh checks out (sparse, non-cone patterns): the licence and
 # readmes, and every glob above.
-FETCH = ["/LICENSE", "/README.md", "/Readme.txt"] + sorted("/" + s["glob"] for s in SOUNDS)
+# The woodwinds (the woodwinds pass, vsco_woodwinds.py) with them.
+FETCH = ["/LICENSE", "/README.md", "/Readme.txt"] + sorted("/" + s["glob"] for s in SOUNDS) + W.FETCH
 
 
 def load(path, hp):
@@ -214,11 +217,20 @@ def main():
             index = json.load(f)
     if out_id not in index["instruments"]:
         index["instruments"].append(out_id)
+    # The woodwinds (the woodwinds pass).
+    print("Woodwinds:")
+    ww_ids, ww_notes, ww_problems = W.prepare_woodwinds(args.source, args.out)
+    for i in ww_ids:
+        if i not in index["instruments"]:
+            index["instruments"].append(i)
     with open(index_path, "w") as f:
         json.dump(index, f, indent=1)
-    for p in problems:
+    for p in problems + ww_problems:
         print(" - " + p)
     print(f"Prepared: {len(zones)} notes (vsco: {out_id})")
+    print(f"Prepared: {ww_notes} notes (vsco: {', '.join(ww_ids)})")
+    if len(ww_ids) < len(W.SETS):
+        raise SystemExit(f"only {len(ww_ids)} of {len(W.SETS)} woodwind sets were prepared")
     if len(strokes) < len(SOUNDS):
         raise SystemExit(f"only {len(strokes)} of {len(SOUNDS)} sounds were found")
 

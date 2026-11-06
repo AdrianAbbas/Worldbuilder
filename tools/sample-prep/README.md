@@ -131,3 +131,27 @@ checkout of only the files mapped, its licence checked; CI caches it) and prepar
 four velocity layers (pp, mp, mf, ff) from the recorded dynamics, the takes as round-robins,
 the two mic channels summed to mono, a 25-30 Hz high-pass, cut where they have fallen 60 dB,
 each sound's loudest take at -1 dBFS (the dynamics as recorded).
+
+**Woodwinds** (`vsco_woodwinds.py`, the woodwinds pass): VSCO 2 CE's flute, piccolo, oboe,
+clarinet and bassoon (the same checkout, commit and licence as the percussion; `vsco.py`
+prepares them after `orchperc`): thirteen instruments (`ww-flute`, `ww-flute-vib`,
+`ww-flute-stac`, `ww-piccolo`, `ww-piccolo-stac`, `ww-oboe`, `ww-oboe-vib`, `ww-oboe-stac`,
+`ww-clarinet`, `ww-clarinet-stac`, `ww-bassoon`, `ww-bassoon-vib`, `ww-bassoon-stac`).
+VSCO names its woodwind files an octave below the pitch they sound: each note's pitch is
+measured from the audio near its name plus an octave (YIN, then where its first four harmonics
+carry the most energy; a sustain on its loop, a staccato over 30-230 ms). Sustains: a loop of
+0.6-2.6 s in the steady part (prepare.py's search, crossfaded), the rest of the sustain cut out
+and the recorded end (from where the player stops blowing, at most 1 s) joined 8 samples after
+the loop. The dynamics are velocity layers (p and f, or p, mf and f), crossfaded; a set
+recorded at one dynamic (the vibrato flute, the piccolo) gets a derived f layer: its takes again
+at the gain and brightness (a shelf above 2 kHz) the plain flute's f has over its p. The flute
+instruments carry the piccolo's notes above C7. One gain per instrument, its loudest note at
+-1 dBFS.
+
+**The developer's own folk flutes** (planned): the Village's recorder looks for the bank ids
+`recorder-alto` (held notes, looped) and `recorder-alto-short` (short notes), the Forest's
+flute for `ocarina` and `ocarina-short`. Where the bank has them they play instead of the VSCO
+flute, levelled to it by their layers' measured loudness; nothing else changes. A manifest
+entry for each, as the violin's sustains (`"kind": "bowed"`, `"loop": true`, a layer per
+dynamic, `"crossfade": true` with two or more), is all it takes; rerun `prepare.py`, then the
+`woodwinds` tests (`--only woodwinds`) and `--only wwaudit` to check the level.
