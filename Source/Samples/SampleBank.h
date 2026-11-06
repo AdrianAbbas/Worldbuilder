@@ -111,6 +111,9 @@ public:
     bool ready() const { return state() == Ready && !bypassed.load(std::memory_order_relaxed); }
     // Tests: new parts act as if there were no samples (their synthesised fallbacks play).
     static void bypassForTests(bool on) { bypassed = on; }
+    // Tests: the instruments whose ids start with this (nullptr: none) are left out, as in a
+    // build without them (the woodwinds pass's "before": the Place's other recordings play).
+    static void hideForTests(const char* prefix) { hidden = prefix; }
     // nullptr unless Ready and the instrument exists. Safe on the audio thread.
     const Instrument* instrument(const char* id) const;
 
@@ -138,6 +141,7 @@ private:
     juce::File from;
     juce::String error;
     static inline std::atomic<bool> bypassed { false };
+    static inline std::atomic<const char*> hidden { nullptr };
 };
 
 } // namespace wb::samples

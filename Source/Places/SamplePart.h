@@ -81,6 +81,40 @@ struct SamplePatch {
     // Off: new notes play on the synthesised part (a Character that keeps its model, as the
     // Suburbs' sunny electric piano); notes already sounding ring on.
     bool off = false;
+
+    // The woodwinds pass.
+    // The mod wheel is expression: it raises each sounding note's dynamic from its velocity
+    // toward full (the velocity layers crossfading live, the level and the tone following),
+    // instead of opening the filter and adding vibrato.
+    bool expression = false;
+    // Breath over the recording (the player's air, tuned to the note): its level against the
+    // note's, its band (times the note's pitch) and Q, and how much stronger it is in the
+    // attack (fading over `breathAttack` seconds). 0: none.
+    float breath = 0, breathRatio = 2.0f, breathQ = 1.5f, breathBurst = 2.0f, breathAttack = 0.08f;
+    // A soft key click at the start of a tongued (not slurred) note: its level against the note's.
+    float keyNoise = 0;
+    // > 0: the short articulations play only within this many semitones of the notes they
+    // recorded (outside, the long articulation plays the note).
+    float shortRange = 0;
+    // Live notes (KEYS, Instrument mode) start on the long articulation.
+    bool liveLong = false;
+    // A second sample set (the developer's own recordings) that plays instead where the bank
+    // has it, levelled to the first set (their layers' measured loudness).
+    const char* alternate = nullptr;
+    const char* alternateShort = nullptr;
+    // A formant over the part (a resonance: the wood of a folk flute, a sci-fi sweep):
+    // its centre, Q and boost (dB, 0: none). The Place may move it while notes sound.
+    float formantHz = 1000, formantQ = 1.0f, formantDb = 0;
+    // A bend into each tongued note that is part of the instrument's sound (semitones, - from
+    // below; the ney's lean into its notes), whatever Scoop / Glide says; Scoop / Glide on
+    // plays the designed scoop instead.
+    float bendIn = 0, bendInSeconds = 0.05f;
+    // One line (a flute, as its model plays): a new note takes over from the one sounding,
+    // slurred from it while it still sounds (Instrument mode plays chords).
+    bool mono = false;
+    // Legato: how far into the recording a slurred note starts (seconds: past its attack) and
+    // how much longer than the new note's fade in the old one takes to let go.
+    float legatoSkip = 0.08f, legatoOverlap = 1.5f;
 };
 
 class SamplePart final : public Part {
@@ -103,6 +137,7 @@ public:
         patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
         if (!patch.held && r < 0.0f) patch.decay = (patch.decay > 0.0f ? patch.decay : 6.0f) * timeScale(r);
         patch.voices = maxVoices;
+        patch.mono = false;
     }
     explicit SamplePart(Part& synthFallback) : fallback(synthFallback) {}
 
@@ -126,6 +161,7 @@ public:
         for (auto& f : dc) f.reset();
         for (auto& b : bodyFilter)
             for (auto& f : b) f.reset();
+        for (auto& f : formant) f.reset();
         for (auto& o : open) o.clear();
         for (auto& f : openDamp) f.reset();
         bodyType = -1;
@@ -167,20 +203,65 @@ public:
         }
         lastPlayed = n.semis + patch.transpose;
         const auto* inst = articulation(n);
+        // A short articulation far from the notes it recorded: the long one plays the note.
+        if (patch.shortRange > 0.0f && inst != main && inst != nullptr) {
+            const float midi = keyOf(f, n);
+            if (midi < inst->lowRoot - patch.shortRange || midi > inst->highRoot + patch.shortRange) inst = main;
+        }
         startWith(f, n, inst, -1.0f, -1.0f);
     }
+
+    // The second sample set plays (tests).
+    bool alternatePlays() const { return alternateOn; }
+
+private:
+    // The MIDI note a note plays (its octave folded into the patch's range).
+    float keyOf(const PartFrame& f, const NoteOn& n) const {
+        const float hz = music::noteHz(f.root, n.semis + patch.transpose);
+        float midi = 69.0f + 12.0f * std::log2(std::max(hz, 1.0f) / 440.0f);
+        while (midi < float(patch.lowestKey) - 0.5f) midi += 12.0f;
+        while (midi > float(patch.highestKey) + 0.5f && midi - 12.0f >= float(patch.lowestKey) - 0.5f) midi -= 12.0f;
+        return midi;
+    }
+    // The dynamic a note plays at: its velocity, raised by the mod wheel toward full (expression).
+    float dynamicOf(float velocity) const {
+        const float v = dsp::clamp01(velocity);
+        return patch.expression ? v + (1.0f - v) * dsp::clamp01(mod) : v;
+    }
+    // Expression: the whole range of dynamics crossfades across the layers (the softest
+    // dynamic the softest layer alone, full the loudest alone), so the level rises evenly.
+    static float spreadOver(const samples::Instrument& inst, float dynamic) {
+        if (inst.layers < 2) return dynamic;
+        const float lo = inst.layerCentre[0], hi = inst.layerCentre[std::size_t(std::min(inst.layers, int(inst.layerCentre.size())) - 1)];
+        return lo + dsp::clamp01(dynamic) * (hi - lo);
+    }
+    float levelOf(float dynamic) const { return 1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(dynamic), 1.3f); }
+    float cutoffOf(float dynamic) const {
+        return patch.toneHz * std::exp2(-patch.velocityTone * (1.0f - dsp::clamp01(dynamic))) * (patch.expression ? 1.0f : std::exp2(2.0f * mod));
+    }
+public:
 
 private:
     // Starts a note on one articulation; skip >= 0 starts that far into the recording,
     // attack >= 0 fades it in over that long (a short hit handing over to its long one).
     void startWith(const PartFrame& f, const NoteOn& n, const samples::Instrument* inst, float skipOver, float attackOver) {
-        const float hz = music::noteHz(f.root, n.semis + patch.transpose);
-        float midi = 69.0f + 12.0f * std::log2(std::max(hz, 1.0f) / 440.0f);
-        while (midi < float(patch.lowestKey) - 0.5f) midi += 12.0f;
-        while (midi > float(patch.highestKey) + 0.5f && midi - 12.0f >= float(patch.lowestKey) - 0.5f) midi -= 12.0f;
+        const float midi = keyOf(f, n);
+        // (Expression: the layers at the note's dynamic, the mod wheel's raise included.)
+        const float layerVelocity = patch.expression ? dynamicOf(n.velocity) : n.velocity;
         samples::ZonePair pair;
-        if (inst->crossfade && patch.crossfade) pair = inst->findPair(int(std::lround(midi)), n.velocity, n.random2);
-        else pair.a = inst->find(int(std::lround(midi)), n.velocity, n.random2);
+        if (inst->crossfade && patch.crossfade) pair = inst->findPair(int(std::lround(midi)), patch.expression ? spreadOver(*inst, layerVelocity) : layerVelocity, n.random2);
+        else pair.a = inst->find(int(std::lround(midi)), layerVelocity, n.random2);
+        // Expression on a short articulation: one take (the nearer layer's), its level between
+        // the two layers' (two short takes summed peak apart; each note is heard on its own).
+        float pickedGainDb = 0;
+        bool picked = false;
+        if (patch.expression && pair.a != nullptr && pair.b != nullptr && !pair.a->loops() && !pair.b->loops()) {
+            const float target = pair.a->loudnessDb + (pair.b->loudnessDb - pair.a->loudnessDb) * pair.mix;
+            if (pair.mix >= 0.5f) pair.a = pair.b;
+            pickedGainDb = target - pair.a->loudnessDb;
+            pair.b = nullptr;
+            picked = true;
+        }
         const auto* zone = pair.a;
         if (zone == nullptr) return;
 
@@ -195,9 +276,30 @@ private:
                 auto& old = voice[std::size_t(i)];
                 if (old.on && h.on && h.until <= n.beat + 1.0e-6 && h.until >= n.beat - 0.07) {
                     held[std::size_t(i)].on = false;
-                    release(old, patch.legatoSeconds * 1.5f);
+                    release(old, patch.legatoSeconds * patch.legatoOverlap);
                     legato = true;
                 }
+            }
+        if (patch.mono)
+            for (int i = 0; i < maxVoices; ++i) {
+                auto& old = voice[std::size_t(i)];
+                auto& h = held[std::size_t(i)];
+                if (!old.on) continue;
+                // Still sounding, or let go just now (its written end is this note's start):
+                // the new note slurs on from it (a held one, not a short hit), and it goes.
+                const bool justEnded = old.releasing && h.until >= n.beat - 0.07 && h.until <= n.beat + 1.0e-6;
+                if (old.releasing && !justEnded) continue;
+                if (patch.held && inst != shortOne && !patch.damper) legato = true;
+                h.on = false;
+                old.upgrade = false;
+                if (old.releasing && (old.tailPos >= 0.0 || old.tailPosB >= 0.0)) {
+                    // Still crossing into its recorded end: back on its sustain, to fade from there.
+                    old.tailPos = old.tailPosB = -1;
+                    old.tailMix = 0;
+                    old.releasing = false;
+                }
+                if (old.releasing) hurry(old, patch.legatoSeconds * patch.legatoOverlap);
+                else release(old, patch.legatoSeconds * patch.legatoOverlap);
             }
         const int k = int(dsp::pickVoice(voice, limit, [](const Voice& v) { return v.on ? v.amp * v.fade * v.gain + 1.0e-9f : 0.0f; }));
         auto& v = voice[std::size_t(k)];
@@ -225,9 +327,10 @@ private:
         // its zone's own gain: a derived layer's level).
         if (pair.b != nullptr && pair.mix > 0.001f) {
             v.zoneB = pair.b;
-            samples::crossfadeGains(*zone, *pair.b, pair.mix, v.mixA, v.mixB);
+            if (patch.expression) mixGains(*zone, *pair.b, pair.mix, v.mixA, v.mixB);
+            else samples::crossfadeGains(*zone, *pair.b, pair.mix, v.mixA, v.mixB);
         } else {
-            v.mixA = dsp::dbToGain(zone->gainDb);
+            v.mixA = dsp::dbToGain(zone->gainDb + (picked ? pickedGainDb : 0.0f));
         }
         // A derived layer's brightness: a high shelf (the weighted mix of the two layers').
         const float shelfDb = pair.b != nullptr ? dsp::lerp(zone->shelfDb, pair.b->shelfDb, pair.mix) : zone->shelfDb;
@@ -240,7 +343,7 @@ private:
         v.midi = v.target = midi;
         v.rateRatio = inst->rate / rate;
         const bool quick = patch.held && n.live == 0 && n.seconds < patch.quickBelow;
-        const float skip = skipOver >= 0.0f ? skipOver : (quick ? patch.quickSeconds : (legato ? 0.08f : patch.startSeconds));
+        const float skip = skipOver >= 0.0f ? skipOver : (quick ? patch.quickSeconds : (legato ? patch.legatoSkip : patch.startSeconds));
         v.pos = double(std::min(skip * inst->rate, float(zone->length) * 0.25f));
         if (zone->loops() && v.pos >= double(zone->loopStart)) v.pos = double(zone->loopStart);
         v.posB = v.pos;
@@ -253,21 +356,46 @@ private:
             v.posB = v.zoneB != nullptr ? std::min(v.pos, double(v.zoneB->length - 4)) : v.pos;
         }
         v.limit = patch.fragmentSeconds > 0.0f ? int(patch.fragmentSeconds * rate) : -1;
-        v.plain = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0;
+        // Expression moves the note through the layers while it sounds; breath and the key
+        // add to it: not the straight path.
+        v.expressive = patch.expression && inst->crossfade && patch.crossfade && (v.zone->loops() || (v.zoneB != nullptr && v.zoneB->loops()));
+        v.inst = inst;
+        v.key = int(std::lround(midi));
+        v.pick = n.random2;
+        v.dyn = layerVelocity;
+        v.noisy = patch.breath > 0.0f || patch.keyNoise > 0.0f;
+        v.plain = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0 && !v.expressive && !v.noisy;
         // Level: velocity (the layers already differ), evened toward the median loudness
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
-        v.gain = (1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(velocity), 1.3f)) * dsp::dbToGain(even);
+        v.evenGain = dsp::dbToGain(even);
+        v.gain = levelOf(patch.expression ? dynamicOf(velocity) : velocity) * v.evenGain;
         const float attack = attackOver >= 0.0f ? attackOver : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack));
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
         v.fadeMul = patch.decay > 0.0f ? std::exp(-6.9078f / (patch.decay * weight::ring * n.decay * rate)) : 1.0f;
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
-        const float cutoff = patch.toneHz * std::exp2(-patch.velocityTone * (1.0f - dsp::clamp01(velocity))) * std::exp2(2.0f * mod);
-        v.filter.set(std::min(cutoff, 0.45f * rate), 0.6f, rate);
+        v.filter.set(std::min(cutoffOf(patch.expression ? dynamicOf(velocity) : velocity), 0.45f * rate), 0.6f, rate);
+        if (v.noisy) {
+            // The player's breath, tuned to the note (a band around a harmonic), strongest in
+            // the attack; a slurred note has no new attack (and no key click).
+            v.breathBand.set(std::min(440.0f * std::exp2((midi - 69.0f) / 12.0f) * patch.breathRatio, 0.42f * rate), patch.breathQ, rate);
+            v.breathBand.reset();
+            v.keyLp.setCutoff(900.0f, rate);
+            v.keyLp.reset();
+            v.noiseAt = noiseAt;
+            noiseAt += 1ull << 24;
+            v.breathAge = legato ? 1.0f : 0.0f;
+            v.keyLeft = legato || patch.keyNoise <= 0.0f ? 0 : int(0.012f * rate);
+            v.keyLength = std::max(v.keyLeft, 1);
+        }
         // A slide into the note, as Scoop / Glide says (off: the note starts on its pitch).
         v.scoop = slide.depth(patch.scoopSemis) - slide.plain(patch.scoopSemis);
-        const float scoopSeconds = patch.scoopSemis != 0.0f ? slide.time(patch.scoopSeconds) : slide.seconds;
+        float scoopSeconds = patch.scoopSemis != 0.0f ? slide.time(patch.scoopSeconds) : slide.seconds;
+        if (v.scoop == 0.0f && patch.bendIn != 0.0f && !legato) {
+            v.scoop = patch.bendIn;
+            scoopSeconds = patch.bendInSeconds;
+        }
         v.scoopMul = v.scoop != 0.0f ? std::exp(-float(dsp::chunk) / (std::max(scoopSeconds, 0.002f) * rate)) : 0.0f;
         v.course = (!zone->loops() || patch.courseLoops) && patch.courseLevel > 0.0f;
         v.courseZone = zone;
@@ -297,7 +425,7 @@ private:
 public:
 
     void update(const PartFrame& f) override {
-        if (main == nullptr && samples::Bank::get().ready()) resolve();
+        if ((main == nullptr || patch.instrument != resolvedId || patch.shortInstrument != resolvedShort) && samples::Bank::get().ready()) resolve();
         if (!sampled() || fallbackAge < fallbackRings) {
             fallback.bend = bend;
             fallback.mod = mod;
@@ -314,6 +442,8 @@ public:
             for (auto& side : bodyFilter)
                 for (std::size_t k = 0; k < side.size(); ++k) side[k].set(b.mode[k].hz, b.mode[k].q, rate);
         }
+        if (patch.formantDb != 0.0f)
+            for (auto& fm : formant) fm.set(std::min(patch.formantHz, 0.42f * rate), std::max(patch.formantQ, 0.3f), rate);
         if (patch.sympathetic > 0.0f) {
             // (Instrument mode: in sympathy with the note played last, not the key.)
             const float base = instrumentMode ? lastPlayed - 12.0f : -12.0f;
@@ -352,12 +482,11 @@ public:
                 v.target = 69.0f + 12.0f * std::log2(hz / 440.0f);
             }
             v.midi = v.target + (v.midi - v.target) * glide;
-            if (patch.liveTone) {
-                const float cutoff = patch.toneHz * std::exp2(-patch.velocityTone * (1.0f - dsp::clamp01(v.velocity))) * std::exp2(2.0f * mod);
-                v.filter.set(std::min(cutoff, 0.45f * rate), 0.6f, rate);
-            }
+            if (patch.expression && !v.releasing) express(v);
+            else if (patch.liveTone) v.filter.set(std::min(cutoffOf(v.velocity), 0.45f * rate), 0.6f, rate);
             v.scoop *= v.scoopMul;
             v.vibratoAge += float(dsp::chunk) / rate;
+            if (v.breathAge < 1.0f) v.breathAge = std::min(1.0f, v.breathAge + float(dsp::chunk) / (std::max(patch.breathAttack, 0.005f) * rate));
             pitch(v, float(dsp::chunk) / rate);
         }
     }
@@ -373,8 +502,10 @@ public:
         const bool body = bodyType > dsp::BodyNone && amount > 0.0f;
         const float direct = dsp::lerp(1.0f, b.direct, amount);
         const float sym = patch.sympathetic;
+        const float boost = dsp::dbToGain(patch.formantDb) - 1.0f;
+        const bool formed = patch.formantDb != 0.0f;
         // The level glides (20 ms) to a new gain (a Character's own) and the tremolo.
-        const float target = patch.gain * trem;
+        const float target = patch.gain * trem * matchGain;
         if (gainNow < 0.0f) gainNow = target;
         const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
         // The voices one after another over each chunk (the same sums in the same order as
@@ -403,6 +534,10 @@ public:
                 }
                 l = bl;
                 r = br;
+            }
+            if (formed) {
+                l += boost * formant[0].bandpass(l);
+                r += boost * formant[1].bandpass(r);
             }
             if (sym > 0.0f) {
                 const float drive = 0.04f * (l + r);
@@ -456,6 +591,18 @@ private:
         int wait = 0;
         dsp::PanGains pan { 0.7071f, 0.7071f };
         dsp::Svf filter;
+        // Expression (the woodwinds pass): the note's instrument, key, round-robin pick and
+        // dynamic, so the mod wheel can move it through the layers; its evened gain.
+        bool expressive = false, noisy = false;
+        const samples::Instrument* inst = nullptr;
+        int key = 60;
+        float pick = 0.5f, dyn = 1, evenGain = 1;
+        // Breath and the key click.
+        dsp::Svf breathBand;
+        dsp::OnePole keyLp;
+        uint64_t noiseAt = 0;
+        float breathAge = 1;
+        int keyLeft = 0, keyLength = 1;
         // A live short hit that may still become its long one, its age and its note.
         bool upgrade = false;
         float age = 0;
@@ -567,7 +714,8 @@ private:
         }
         if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
         v.fade *= v.fadeMul * v.releaseMul;
-        const float out = v.filter.tick(y).lp * v.amp * v.fade * v.gain;
+        float out = v.filter.tick(y).lp * v.amp * v.fade * v.gain;
+        if (v.noisy) out += breathOf(v) * v.amp * v.fade * v.gain;
         const bool endA = v.backwards ? v.pos <= 1.0 : v.pos >= double(z.length - 1);
         if (endA || v.fade < 1.0e-4f) v.on = false;
         if (v.limit >= 0) {
@@ -576,6 +724,91 @@ private:
             else if (v.limit < int(0.015f * rate)) v.fade *= 0.997f;
         }
         return out;
+    }
+
+    // The breath and the key click (relative to the note's level): white noise through the
+    // breath's band, stronger in the attack, and the key's short low thump (a raised-cosine
+    // burst of low noise: no edge to click).
+    inline float breathOf(Voice& v) {
+        const float n = noise.white(v.noiseAt++);
+        float y = 0;
+        if (patch.breath > 0.0f) {
+            const float burst = v.breathAge < 1.0f ? 1.0f + patch.breathBurst * (1.0f - v.breathAge) * (1.0f - v.breathAge) : 1.0f;
+            y += v.breathBand.bandpass(n) * patch.breath * burst;
+        }
+        if (v.keyLeft > 0) {
+            const float t = 1.0f - float(v.keyLeft) / float(v.keyLength);
+            y += v.keyLp.lp(n) * patch.keyNoise * 4.0f * (0.5f - 0.5f * std::cos(dsp::twoPi * t));
+            --v.keyLeft;
+        }
+        return y;
+    }
+
+    // Expression: the note's dynamic follows its velocity raised by the mod wheel (gliding,
+    // 30 ms); the layers it crossfades between move with it (the louder layer coming in where
+    // the softer one has gone, each from where its recording has got to), its level and tone.
+    void express(Voice& v) {
+        const float target = dynamicOf(v.velocity);
+        const float k = 1.0f - std::exp(-float(dsp::chunk) / (0.03f * rate));
+        const float before = v.dyn;
+        v.dyn += (target - v.dyn) * k;
+        if (std::abs(target - v.dyn) < 1.0e-4f) v.dyn = target;
+        if (v.dyn == before) return;
+        v.gain = levelOf(v.dyn) * v.evenGain;
+        v.filter.set(std::min(cutoffOf(v.dyn), 0.45f * rate), 0.6f, rate);
+        if (!v.expressive || v.inst == nullptr || v.tailPos >= 0.0 || v.tailPosB >= 0.0) return;
+        const auto pair = v.inst->findPair(v.key, spreadOver(*v.inst, v.dyn), v.pick);
+        if (pair.a == nullptr) return;
+        const auto into = [](const samples::Zone& z, double pos) {
+            // Where a newly entering layer starts: as far in as the sounding one (in its loop).
+            if (z.loops() && pos >= double(z.loopEnd)) return double(z.loopStart) + std::fmod(pos - double(z.loopStart), double(z.loopEnd - z.loopStart));
+            return std::min(pos, double(z.length - 2));
+        };
+        if (pair.a != v.zone || pair.b != v.zoneB) {
+            if (v.zoneB != nullptr && pair.a == v.zoneB) {   // up a layer
+                v.zone = v.zoneB;
+                v.pos = v.posB;
+                v.zoneB = pair.b;
+                if (pair.b != nullptr) v.posB = into(*pair.b, v.pos);
+            } else if (pair.b != nullptr && pair.b == v.zone) {   // down a layer
+                v.zoneB = v.zone;
+                v.posB = v.pos;
+                v.zone = pair.a;
+                v.pos = into(*pair.a, v.posB);
+            } else if (pair.a == v.zone) {   // the second layer comes in or goes
+                v.zoneB = pair.b;
+                if (pair.b != nullptr) v.posB = into(*pair.b, v.pos);
+            } else {
+                return;   // another take: keep what sounds
+            }
+            v.rateRatio = v.inst->rate / rate;
+        }
+        if (v.zoneB != nullptr) mixGains(*v.zone, *v.zoneB, pair.mix, v.mixA, v.mixB);
+        else v.mixA = dsp::dbToGain(v.zone->gainDb), v.mixB = 0;
+        const float shelfDb = v.zoneB != nullptr ? dsp::lerp(v.zone->shelfDb, v.zoneB->shelfDb, pair.mix) : v.zone->shelfDb;
+        v.shelfGain = dsp::dbToGain(shelfDb);
+        if (!v.shelf && std::abs(shelfDb) > 0.05f) {
+            v.shelf = true;
+            v.shelfLp.setCutoff(std::min(v.zone->shelfHz, 0.4f * rate), rate);
+            v.shelfLp.reset();
+        }
+    }
+
+    // A voice already letting go (in its recorded end) goes within `seconds`, as a slurred
+    // note takes over from it.
+    void hurry(Voice& v, float seconds) {
+        v.releaseMul = std::min(v.releaseMul, std::exp(-6.9078f / (std::max(seconds, 0.01f) * rate)));
+    }
+
+    // Two layers' gains for a crossfade: equal power for two recordings; a layer derived from
+    // the same take (in phase with it) crossfades in amplitude, so the sum does not bulge.
+    static void mixGains(const samples::Zone& a, const samples::Zone& b, float mix, float& ga, float& gb) {
+        samples::crossfadeGains(a, b, mix, ga, gb);
+        if (a.data != b.data) return;
+        const float m = std::clamp(mix, 0.0f, 1.0f);
+        const float c = std::cos(1.5707963f * m), s = std::sin(1.5707963f * m);
+        ga *= c > 1.0e-6f ? (1.0f - m) / c : 0.0f;
+        gb *= s > 1.0e-6f ? m / s : 0.0f;
     }
 
     void release(Voice& v, float seconds = -1.0f) {
@@ -606,9 +839,10 @@ private:
 
     void pitch(Voice& v, float) {
         float semis = v.midi - v.zone->root + v.scoop + bend;
-        if (patch.vibratoDepth > 0.0f || mod > 0.01f) {
-            const float delay = mod > 0.01f ? 0.0f : patch.vibratoDelay;
-            const float depth = (patch.vibratoDepth + 0.45f * mod) * dsp::clamp01((v.vibratoAge - delay) / 0.4f);
+        const float wheel = patch.expression ? 0.0f : mod;   // (expression: the wheel is the dynamics)
+        if (patch.vibratoDepth > 0.0f || wheel > 0.01f) {
+            const float delay = wheel > 0.01f ? 0.0f : patch.vibratoDelay;
+            const float depth = (patch.vibratoDepth + 0.45f * wheel) * dsp::clamp01((v.vibratoAge - delay) / 0.4f);
             v.vibratoPhase += patch.vibratoHz * float(dsp::chunk) / rate;
             v.vibratoPhase -= std::floor(v.vibratoPhase);
             semis += depth * std::sin(dsp::twoPi * v.vibratoPhase);
@@ -619,7 +853,7 @@ private:
 
     const samples::Instrument* articulation(const NoteOn& n) const {
         // Live: its length is not known yet, so the short hit (see update()).
-        if (n.live != 0) return shortOne != nullptr ? shortOne : (tiny != nullptr ? tiny : main);
+        if (n.live != 0) return patch.liveLong ? main : (shortOne != nullptr ? shortOne : (tiny != nullptr ? tiny : main));
         if (tiny != nullptr && n.length <= double(patch.tinyBeats) + 1.0e-6) return tiny;
         if (shortOne != nullptr && n.live == 0 && n.length <= double(patch.shortBeats) + 1.0e-6) return shortOne;
         return main;
@@ -629,19 +863,45 @@ private:
     void resolve() {
         auto& bank = samples::Bank::get();
         if (!bank.ready() || patch.instrument == nullptr) return;
+        resolvedId = patch.instrument;
+        resolvedShort = patch.shortInstrument;
         main = bank.instrument(patch.instrument);
         shortOne = patch.shortInstrument != nullptr ? bank.instrument(patch.shortInstrument) : nullptr;
         tiny = patch.tinyInstrument != nullptr ? bank.instrument(patch.tinyInstrument) : nullptr;
+        // The second sample set, where the bank has it: levelled to the first by their
+        // layers' measured loudness (each note keeps its own dynamics).
+        alternateOn = false;
+        matchGain = 1;
+        if (const auto* alt = patch.alternate != nullptr ? bank.instrument(patch.alternate) : nullptr) {
+            if (main != nullptr) {
+                const auto mean = [](const samples::Instrument& i) {
+                    float sum = 0;
+                    for (int l = 0; l < i.layers; ++l) sum += i.medianDb(l);
+                    return sum / float(std::max(i.layers, 1));
+                };
+                const float a = mean(*main), b = mean(*alt);
+                matchGain = dsp::dbToGain(std::clamp(a - b, -24.0f, 24.0f));
+            }
+            main = alt;
+            const auto* altShort = patch.alternateShort != nullptr ? bank.instrument(patch.alternateShort) : nullptr;
+            shortOne = altShort;
+            alternateOn = true;
+        }
     }
 
     Part& fallback;
     SamplePatch designedPatch {};
     bool shaped = false;
     const samples::Instrument *main = nullptr, *shortOne = nullptr, *tiny = nullptr;
+    bool alternateOn = false;
+    float matchGain = 1;
+    const char* resolvedId = nullptr;
+    const char* resolvedShort = nullptr;
     std::array<Voice, maxVoices> voice {};
     std::array<HeldNote, maxVoices> held {};
     std::array<dsp::OnePole, 2> dc;
     std::array<std::array<dsp::Svf, 4>, 2> bodyFilter;
+    std::array<dsp::Svf, 2> formant;
     int bodyType = -1;
     std::array<dsp::DelayLine, 2> open;
     std::array<dsp::OnePole, 2> openDamp;
@@ -678,6 +938,46 @@ inline SamplePatch pianoPatch() {
     p.spread = 0.25f;
     p.voices = 8;
     p.legatoSeconds = 0.02f;
+    return p;
+}
+
+// A woodwind (the woodwinds pass: VSCO 2 Community Edition's flute, piccolo, oboe, clarinet
+// and bassoon), as every Place that plays one starts from: held notes on the looped
+// sustains (legato from one to the next), notes of a sixteenth or less on the staccatos
+// (where they recorded the note, else the sustain), the dynamics as crossfaded velocity
+// layers and the mod wheel as expression, live notes on the sustain, the recorded ends on
+// release; a little breath in the attack and a soft key click. A Place then sets its tone,
+// level, vibrato, slide and colour.
+inline SamplePatch woodwindPatch(const char* sustain, const char* staccato) {
+    SamplePatch p;
+    p.instrument = sustain;
+    p.shortInstrument = staccato;
+    p.shortBeats = 0.25f;
+    p.shortRange = 4.0f;
+    p.shortRings = false;
+    p.liveLong = true;
+    p.held = true;
+    p.recordedTail = true;
+    p.crossfade = true;
+    p.expression = true;
+    p.velocityGain = 0.25f;     // the layers carry most of the dynamics
+    p.velocityTone = 0.5f;
+    p.even = 0.5f;
+    p.toneHz = 16000;
+    p.legatoSeconds = 0.025f;
+    p.legatoSkip = 0.3f;        // a slurred note starts on its sustain, past the attack
+    p.legatoOverlap = 6.0f;
+    p.release = 0.12f;
+    p.glide = 0;                // a melody: its notes do not follow the chords
+    p.voices = 4;
+    p.spread = 0.25f;
+    p.breath = 0.015f;
+    p.breathRatio = 2.0f;
+    p.breathQ = 1.5f;
+    p.breathBurst = 2.5f;
+    p.breathAttack = 0.08f;
+    p.keyNoise = 0.006f;
+    p.mono = true;
     return p;
 }
 

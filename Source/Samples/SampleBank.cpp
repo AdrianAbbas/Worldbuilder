@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 namespace wb::samples {
 
@@ -186,6 +187,7 @@ bool Bank::waitUntilLoaded(int ms) const {
 
 const Instrument* Bank::instrument(const char* id) const {
     if (!ready()) return nullptr;
+    if (const char* h = hidden.load(std::memory_order_relaxed); h != nullptr && id != nullptr && std::strncmp(id, h, std::strlen(h)) == 0) return nullptr;
     for (const auto& i : instruments)
         if (i->id == id) return i.get();
     return nullptr;
