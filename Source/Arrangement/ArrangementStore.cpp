@@ -309,7 +309,7 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.evolve = bool(x.getProperty("evolve", false));
         s.orchestrated = bool(x.getProperty("orchestrated", false));
         s.lead = int8_t(int(number(x, "lead", -1, -1, float(placeSlots - 1))));
-        s.makeUpDb = number(x, "makeup", 0.0f, 0.0f, 6.0f);
+        s.makeUpDb = number(x, "makeup", 0.0f, 0.0f, maxMakeUpDb);
         s.transition = uint8_t(int(number(x, "transition", 0, 0, float(TransitionCount - 1))));
         s.transitionLength = uint8_t(int(number(x, "transitionLength", 1, 1, float(maxTransitionLength))));
         s.location = int8_t(int(number(x, "location", -1, -1, 7)));

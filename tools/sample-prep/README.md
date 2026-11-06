@@ -121,3 +121,13 @@ and palm-muted sweeps clipped while recording: flat tops rebuilt by a spline, re
 note) and `"extra"` files (the open fifth string, nine takes: shared out to the layers by
 loudness as round-robins). A note played on another pitch than its label is filed under
 the pitch it sounds.
+
+**Orchestral percussion** (`vsco.py`, the level and drums pass): the Drama drums' bass drums,
+large drum, tenor drums, snare, timpani, cymbals and gong from VS Chamber Orchestra 2:
+Community Edition 1.1.0 (Versilian Studios, CC0 1.0; `docs/LICENSES/VSCO-2-CE.md`), fetched
+from its official repository at a pinned commit by `scripts/ci-fetch-vsco.sh` (a sparse
+checkout of only the files mapped, its licence checked; CI caches it) and prepared after
+`prepare.py` into the same folder as one `orchperc` instrument: each sound on its own key,
+four velocity layers (pp, mp, mf, ff) from the recorded dynamics, the takes as round-robins,
+the two mic channels summed to mono, a 25-30 Hz high-pass, cut where they have fallen 60 dB,
+each sound's loudest take at -1 dBFS (the dynamics as recorded).

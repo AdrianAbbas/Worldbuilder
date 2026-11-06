@@ -98,7 +98,7 @@ inline constexpr std::array<float, 3> percUnderDb { 8.0f, 6.0f, 5.0f };
 // Intensity, the Drama percussion (drums, impacts, cymbals) drumsUnderDb under the Place's
 // loudest instrument (its melody or harmony: level with the main parts, never above them),
 // the Drama ostinato and stabs in what is left.
-inline constexpr std::array<float, 3> levelAddDb { 0.7f, 1.0f, 1.4f };
+inline constexpr std::array<float, 3> levelAddDb { 0.6f, 0.8f, 1.0f };
 inline constexpr std::array<float, 3> drumsUnderDb { 5.0f, 3.5f, 2.5f };
 struct Balance {
     float placeDb = 0, layerDb = 0, percRelDb = 0;
@@ -119,6 +119,11 @@ float busierDb(int placeType, int element, int tier = Climax);
 float doublingDb(int placeType, int element);
 bool doubles(int placeType, int element);
 inline bool forceDoubling = false;   // Tests only (the calibration measures the doubling)
+// The level and drums pass: the Place's loudness at its defaults (LUFS, measured) and one of
+// its six instruments' share of it (its weight, normalised over the six: dB, the six summing
+// to 0 dB): together the instrument's loudness in a mix of several Places.
+float placeLoudnessDb(int placeType);
+float elementShareDb(int placeType, int element);
 // In an arrangement, a section above Calm against the engine's estimate of it (dB, measured).
 float arrangedCorrectionDb(int placeType, int tier, int rank = 0);
 // The Drama layer's share of a slot's loudness at Tension, Action and Climax (the balance).

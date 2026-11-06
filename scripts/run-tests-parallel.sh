@@ -24,6 +24,9 @@ rest="instrument,frameregions,smoke,samples,recordings,balance,slide,arrangement
 # The orchestration pass: every Place at Drama 0 and 100 %, the developer's three Places
 # through their arrangements, the listening renders.
 "$tests" --only orchestra > "$logs/8-orchestra.txt" 2>&1 &
+# The level and drums pass: every Place against its level before the Drama tier, the Drama
+# dial moved, the recorded percussion against the main parts, the listening renders.
+"$tests" --only level > "$logs/9-level.txt" 2>&1 &
 wait
 "$tests" --only effects,realtime > "$logs/5-cpu.txt" 2>&1
 # The 60-second editor stress test (the GarageBand freeze), alone so it is not starved.
@@ -31,7 +34,7 @@ wait
 
 passed=0
 failed=0
-for log in "$logs"/[1-8]-*.txt; do
+for log in "$logs"/[1-9]-*.txt; do
     line=$(grep -E '^[0-9]+ passed, [0-9]+ failed' "$log" | tail -1)
     if [[ -z "$line" ]]; then
         echo "$log: did not finish"

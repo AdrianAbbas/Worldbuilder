@@ -77,6 +77,17 @@ float arrangedCorrectionDb(int placeType, int tier, int rank) {
     return (rank > 0 ? row.second : row.arranged)[std::size_t(std::clamp(tier, 1, 3) - 1)];
 }
 
+#include "PlaceLoudness.inc"
+float placeLoudnessDb(int placeType) { return placeLoudnessTable[std::size_t(std::clamp(placeType, 0, PlaceTypeCount - 1))]; }
+
+float elementShareDb(int placeType, int element) {
+    if (placeType <= 0 || placeType >= PlaceTypeCount || element < 0 || element >= placeElements) return -60.0f;
+    double sum = 0;
+    for (int e = 0; e < placeElements; ++e)
+        if (patternInfo(placeType, e).kind != NoPattern) sum += std::pow(10.0, double(elementWeightDb(placeType, e)) / 10.0);
+    return float(double(elementWeightDb(placeType, element)) - 10.0 * std::log10(std::max(sum, 1.0e-9)));
+}
+
 float elementWeightDb(int placeType, int element) {
     if (placeType <= 0 || placeType >= PlaceTypeCount || element < 0 || element >= placeElements) return 0.0f;
     return rowOf(placeType).element[std::size_t(element)];
@@ -128,7 +139,10 @@ Balance balance(int placeType, int style, int tier, int rank, float intensity) {
         // The orchestration pass: the Place plays at its own level (it never makes room); the
         // Drama layer sits under it, at the level measured at the tier's probe point, and
         // follows the Place's own rise with Score Intensity away from it.
-        b.placeDb = 0.0f;
+        // (The level and drums pass: placeDb is the Place's own level match, its busier
+        // variants and the harmony's gear measured against Drama 0; the slot applies it in
+        // free play.)
+        if (!levelPass) b.placeDb = 0.0f;
         if (intensity >= 0.0f)
             b.layerDb += std::clamp(classicRiseDb(placeType, intensity) - classicRiseDb(placeType, probeIntensity[std::size_t(t)]), -4.0f, 4.0f);
         return b;

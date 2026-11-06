@@ -480,9 +480,13 @@ bool PlaceSlot::render(const WorldFrame& worldIn, const PlaceSlotControls& c, co
         const int t = dramaLayer.tier() > drama::Calm ? dramaLayer.tier() : dramaLayer.wanted();
         if (c.drama.drama > 0.0f && t > drama::Calm) {
             const auto b = drama::balance(currentType, style, t, c.drama.rank, world.intensity);
-            layerTo = dbToGain(b.layerDb + std::min(0.0f, c.dramaLayerDb));
+            // The Place's own instruments at their Drama 0 level (free play: the tier's busier
+            // variants level-matched as measured; on the latched tier, with the variants).
+            const float matchDb = c.freePlay && dramaLayer.tier() > drama::Calm ? std::clamp(b.placeDb, -4.0f, 2.0f) : 0.0f;
+            placeTo = dbToGain(matchDb);
+            layerTo = dbToGain(b.layerDb - matchDb + std::min(0.0f, c.dramaLayerDb));
             percTo = dbToGain(std::clamp(b.percRelDb, -24.0f, 12.0f));
-            heldLayer = layerTo;
+            heldLayer = layerTo * placeTo;
             heldPerc = percTo;
         } else {
             layerTo = heldLayer;

@@ -9447,6 +9447,7 @@ void testSamples(Suite& s) {
 #include "OrchestraTests.inc"
 
 #include "LevelProbe.inc"
+#include "LevelTests.inc"
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -9560,6 +9561,7 @@ int main(int argc, char** argv) {
     if (run("dramarework")) testDramaRework(s);
     if (run("loudness")) testLoudness(s);
     if (run("orchestra")) testOrchestra(s);
+    if (run("level")) testLevel(s);
     if (only.contains("dramatrims")) probeDramaTrims();
     if (only.contains("loudprobe")) probeLoudness();
     if (only.contains("hitprobe")) probeHits();

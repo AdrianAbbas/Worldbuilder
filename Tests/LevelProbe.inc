@@ -100,7 +100,8 @@ inline Host battleHost(const std::vector<int>& types, float dramaAmount, arr::Ar
     if (variant == 1) a = arr::autoArrangeLegacy(arr::makeTemplate(arr::Battle), slots, 7);
     if (variant == 2)
         for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].lead = -1;
-    arr::dramatize(a, 7);
+    if (variant == 3) a = arr::autoArrangeLegacy(arr::makeTemplate(arr::Battle), slots, 7);
+    else arr::dramatize(a, 7);
 #else
     (void) variant;
 #endif
@@ -148,18 +149,21 @@ void probeLevels() {
             for (int i = 0; i < a.count; ++i) {
                 const double s0 = double(a.startOf(i)) * bar, s1 = std::min(total, double(a.startOf(i + 1 < a.count ? i + 1 : i) + (i + 1 < a.count ? 0 : a.sections[std::size_t(i)].bars)) * bar);
                 std::cout << " | " << a.sections[std::size_t(i)].name.data() << " " << juce::String(integratedLufs(audio, s0 + bar, std::max(s0 + 2 * bar, s1 - bar)), 2);
+#if WB_PROBE_DRAMA
+                std::cout << " (+" << juce::String(a.sections[std::size_t(i)].makeUpDb, 1) << ")";
+#endif
             }
             std::cout << std::endl;
         }
     }
 #if WB_PROBE_DRAMA
-    for (int variant : { 1, 2 })
+    for (int variant : { 1, 2, 3 })
         for (float d : { 0.0f, 1.0f }) {
             arr::Arrangement a;
             auto h = battleHost({ Palace, Desert, Beach }, d, a, variant);
             const double bar = 2.0, total = std::min(240.0, double(a.totalBars()) * bar);
             const auto audio = h.render(total);
-            std::cout << "BATTLEX " << (variant == 1 ? "legacy" : "nofocus") << " drama " << d << " all " << juce::String(integratedLufs(audio, 2.0, total), 2);
+            std::cout << "BATTLEX " << (variant == 1 ? "legacy" : (variant == 2 ? "nofocus" : "legacy-undramatized")) << " drama " << d << " all " << juce::String(integratedLufs(audio, 2.0, total), 2);
             for (int i = 0; i < a.count; ++i) {
                 const double s0 = double(a.startOf(i)) * bar, s1 = double(a.startOf(i) + a.sections[std::size_t(i)].bars) * bar;
                 std::cout << " | " << a.sections[std::size_t(i)].name.data() << " " << juce::String(integratedLufs(audio, s0 + bar, std::max(s0 + 2 * bar, std::min(total, s1) - bar)), 2);

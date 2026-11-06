@@ -220,8 +220,8 @@ each tier the music changes gear on the next bar line:
 A Place's own **Tension** (with Danger) pushes it further once Score Intensity is above
 the middle; at the very top of Tension the fifths rub a semitone and the stabs cluster.
 
-Each Place has its own dramatic colour, from the developer's recordings: the **Castle**
-war drums (the large djembe pitched down), spiccato strings, a brass ostinato and choir
+Each Place has its own dramatic colour, from the developer's recordings and orchestral
+percussion: the **Castle** war drums (bass drum and large drum over the djembe), spiccato strings, a brass ostinato and choir
 stabs (the voice recordings); the **Spaceport** hybrid pulses, braams and synth stabs
 (the developer's analog synth), hybrid percussion; the **Forest** tribal drums and driving strings; the
 **Factory** metal percussion and pistons as the rhythm, a grinding bass; the **Ruins**
@@ -241,16 +241,26 @@ their hits only, so a world of four never stacks four drum kits.
   builds arcs: intros and breaks Calm, build-ups at Tension, the first fight at Action and
   the later ones at Climax, a Riser into a fight, a Drop out of it, a Drum fill back in.
   New templates: **Chase**, **Siege**, **Final Stand**, **Lament**.
-- **More intense, not louder; the music stays.** Raising Drama never turns the Place's own
-  instruments down (they stay within about 1 dB of Drama 0; they play busier, never
-  quieter): the Drama instruments are mixed under and around them, so a tier is at most
-  about 1.5 dB (a Climax 2 dB) louder than the same music with Drama 0 (a balance measured
-  for every Place, Drama Style and tier). The Drama percussion is tight and dry (its own
-  short room, low-cut sends, no World Space reverb, its low end held) and sits about 5 dB
-  under the melodic parts at a Climax: it drives without dominating. The hits are staged
-  so that several on one downbeat never clip: each Place's Drama instruments pass a
-  transparent look-ahead limiter, and while drama plays the master holds its peaks under
-  -1.5 dBFS (true peak under -1).
+- **The music at its level; drama mixed into it.** Every Place plays at the level it had
+  before the Drama tier, at every Drama setting: its own instruments are never turned down to
+  make room (their busier variants are level-matched, so they stay at their Drama 0 level),
+  and the Drama instruments are mixed in under and around them, so a tier is at most about
+  1.5 dB louder than the same music with Drama 0. Nothing compensates the level after the
+  fact: no ducking, no catch-up. Turning **Drama** down (or automating it) never jumps: the
+  Drama instruments stop starting notes at once and what rings dies away at the level it
+  played; turning it up, they start on the next bar line at their level.
+- **The Drama drums** are recorded orchestral percussion: concert bass drums, a large drum
+  played with mallets and sticks, tenor drums as toms, a snare, timpani, crash and clash
+  cymbals and a gong (from VS Chamber Orchestra 2: Community Edition, CC0; see Credits),
+  layered with the developer's djembes (the djembes lead the hand-drum kits, the orchestral
+  drums the war and march kits). Four velocity layers, and the recorded takes rotate so no
+  stroke repeats the one before. Tight and dry: short decays, a short room, low-cut sends,
+  no World Space reverb, the low end held. At a Climax the drums drive the track at about
+  the level of the Place's main parts, about 2.5 dB under its loudest instrument (its melody
+  or harmony), never above it; the impacts, cymbals, braams and stabs the same.
+- The safety limiters only catch real peaks: at a Climax the master limiter does not act at
+  all on any single Place (each Place's Drama instruments also pass a transparent
+  look-ahead limiter that rarely engages).
 - The Drama instruments cost no CPU while the world is Calm.
 
 ### The Drama instruments
@@ -320,7 +330,10 @@ plays: never two kits), one ostinato, up to two pads, one environment bed, and c
 other Places fill the other roles or rest, and keep only half of their space (World Space
 and reverb sends), so several Places do not stack into mud. **ORCHESTRATE** (ARRANGE's
 toolbar) does the same for an arrangement you made: one click, your lengths and clips
-kept, one undo.
+kept, one undo. A section orchestrated this way plays as loud as it was written: what the
+parts left out carried is given back to the parts that play (up to 7.5 dB, saved with the
+session), so a cue of several Places is thinner, not quieter. A climax is at its level from
+its first bar (it grows denser and harder as it goes); build-ups still swell into theirs.
 
 ## Separate outputs in Logic Pro
 
@@ -1022,6 +1035,8 @@ never committed here. To build with them, prepare them and point CMake at the re
 ```
 pip install -r tools/sample-prep/requirements.txt
 python3 tools/sample-prep/prepare.py --source ../samples --out build/samples
+bash scripts/ci-fetch-vsco.sh build/vsco      # the orchestral percussion (CC0, public)
+python3 tools/sample-prep/vsco.py --source build/vsco --out build/samples
 cmake -S . -B build -DWORLDBUILDER_SAMPLES_DIR=build/samples ...
 ```
 
@@ -1051,3 +1066,15 @@ CI (`.github/workflows/build.yml`) runs on every push:
 - the Linux build and tests.
 
 The installable zip is uploaded only when every check passes.
+
+## Credits
+
+- The Drama drums' orchestral percussion (bass drums, large drum, tenor drums, snare,
+  timpani, cymbals, gong) comes from **VS Chamber Orchestra 2: Community Edition** 1.1.0 by
+  Versilian Studios (Sam Gossner, Simon Dalzell; sample cutting by Elan Hickler /
+  Soundemote), released under CC0 1.0: http://vis.versilstudios.net/vsco-community.html,
+  https://github.com/sgossner/VSCO-2-CE. The samples are not sold on their own and are not
+  in this repository: the build fetches them from that repository
+  (`scripts/ci-fetch-vsco.sh`) and prepares them (`tools/sample-prep/vsco.py`). The licence
+  record is in [docs/LICENSES](docs/LICENSES/VSCO-2-CE.md).
+- Every other recording is the developer's own.

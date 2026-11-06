@@ -802,6 +802,7 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             // through the slot's level smoothing (no step at a section line).
             if (drama::levelPass) arrangedControls.levelDb += arranged.makeUpDb;
             arrangedControls.dramaShapeDb = shapeDb[si];
+            arrangedControls.freePlay = false;
             arrangedControls.dramaLayerDb = layerShapeDb[si];
             if (world.drama > 0.0f)
                 for (int e = 0; e < slotElements; ++e) arrangedControls.writtenVariant[std::size_t(e)] = writtenVariant[si][std::size_t(e)];

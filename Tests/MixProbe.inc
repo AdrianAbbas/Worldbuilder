@@ -15,11 +15,11 @@ inline uint32_t bit(int part) { return 1u << part; }
 // swells, the low thump under the ostinato.
 inline uint32_t percMask() {
     using L = drama::Layer;
-    return bit(L::PDrums) | bit(L::PPerc) | bit(L::PMetal) | bit(L::PHands) | bit(L::PMetalHit) | bit(L::PImpact) | bit(L::PSwell) | bit(L::PLow);
+    return bit(L::PDrums) | bit(L::PPerc) | bit(L::PMetal) | bit(L::PHands) | bit(L::PMetalHit) | bit(L::PImpact) | bit(L::PSwell) | bit(L::PLow) | bit(L::PDrumsOrch);
 }
 inline uint32_t drumsMask() {
     using L = drama::Layer;
-    return bit(L::PDrums) | bit(L::PPerc) | bit(L::PHands);
+    return bit(L::PDrums) | bit(L::PPerc) | bit(L::PHands) | bit(L::PDrumsOrch);
 }
 inline uint32_t melodicMask() { return ~percMask() & ((1u << drama::Layer::PartCount) - 1u); }
 

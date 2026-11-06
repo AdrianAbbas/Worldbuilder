@@ -121,6 +121,8 @@ struct Cell {
 // Every instrument of every slot: the Place's six, then the three Drama instruments.
 using Grid = std::array<std::array<Cell, slotElements>, placeSlots>;
 
+inline constexpr float maxMakeUpDb = 7.5f;   // the level and drums pass: Section::makeUpDb at most
+
 struct Section {
     std::array<char, nameLength> name {};
     uint8_t colour = 0;
@@ -153,7 +155,7 @@ struct Section {
     int8_t lead = -1;   // the slot that leads (its melody, its environment), -1: none
     // The level and drums pass: what orchestrating the section took from its loudness (the
     // parts it left out, by their measured weights), given back to the parts that play (dB,
-    // 0 to 6; set by orchestrate(), saved only when set). The section sounds as full as it was
+    // 0 to maxMakeUpDb; set by orchestrate(), saved only when set). The section sounds as full as it was
     // written, with fewer parts: thinner, not quieter.
     float makeUpDb = 0;
 

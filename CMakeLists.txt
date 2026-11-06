@@ -122,7 +122,7 @@ if(WORLDBUILDER_BUILD_TESTS)
     target_sources(WorldbuilderTests PRIVATE Tests/WorldbuilderTests.cpp)
     target_link_libraries(WorldbuilderTests PRIVATE WORLDBUILDER juce::juce_audio_utils)
     target_compile_definitions(WorldbuilderTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
-        WB_TEST_SAMPLES_DIR="${WORLDBUILDER_SAMPLES_DIR}")
+        WB_TEST_SAMPLES_DIR="${WORLDBUILDER_SAMPLES_DIR}" WB_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME worldbuilder_tests COMMAND WorldbuilderTests)
 endif()
 # The performance bench (tools/bench/Bench.cpp, a development aid; never shipped): audio

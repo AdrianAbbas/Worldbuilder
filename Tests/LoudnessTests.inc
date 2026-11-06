@@ -428,15 +428,19 @@ void calibrateBalance() {
                         float loudest = -60.0f;
                         for (int e = 0; e < placeElements; ++e) loudest = std::max(loudest, drama::elementWeightDb(type, e));
                         const double target2 = reference + double(drama::levelAddDb[std::size_t(t - 1)]);
-                        const double room = target2 > place + 0.05 ? powerMinus(target2, place) : place - 30.0;
-                        double percWant2 = place + double(loudest) - double(drama::drumsUnderDb[std::size_t(t - 1)]);
+                        // The Place's own instruments level-matched to Drama 0 (their busier variants,
+                        // the harmony's gear): the match as it plays, corrected by what is left.
+                        placeDb = std::clamp(double(zero ? 0.0f : b.placeDb) - (place - reference), -4.0, 2.0);
+                        const double placed = reference;
+                        const double room = target2 > placed + 0.05 ? powerMinus(target2, placed) : placed - 30.0;
+                        double percWant2 = placed + double(loudest) - double(drama::drumsUnderDb[std::size_t(t - 1)]);
                         percWant2 = std::min(percWant2, room - 0.6);   // (some room left for the melodic parts)
-                        const double withPercWant = 10.0 * std::log10(std::pow(10.0, place / 10.0) + std::pow(10.0, percWant2 / 10.0));
-                        const double melWant2 = std::max(target2 > withPercWant + 0.02 ? powerMinus(target2, withPercWant) : -200.0, place - 16.0);
+                        const double withPercWant = 10.0 * std::log10(std::pow(10.0, placed / 10.0) + std::pow(10.0, percWant2 / 10.0));
+                        const double melWant2 = std::max(target2 > withPercWant + 0.02 ? powerMinus(target2, withPercWant) : -200.0, placed - 16.0);
                         melStep = mel < -150.0 ? 0.0 : melWant2 - mel;
                         percStep = perc < -150.0 ? melStep : percWant2 - perc;
                         std::cout << "  " << name << " s" << style << " t" << t << " level: loudest part " << fmt(place + loudest) << " perc " << fmt(perc) << " -> " << fmt(percWant2)
-                                  << " melodic " << fmt(mel) << " -> " << fmt(melWant2) << " all " << fmt(all) << " target " << fmt(target2) << std::endl;
+                                  << " melodic " << fmt(mel) << " -> " << fmt(melWant2) << " all " << fmt(all) << " target " << fmt(target2) << " own " << fmt(place - reference) << std::endl;
                     }
                     layerDb = std::clamp(double(zero ? 0.0f : b.layerDb) + melStep, -30.0, 6.0);
                     percRel = std::clamp(double(zero ? 0.0f : b.percRelDb) + percStep - melStep, -24.0, 12.0);

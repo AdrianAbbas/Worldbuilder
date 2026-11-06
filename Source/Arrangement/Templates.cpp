@@ -588,10 +588,13 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
     // Rising across the section (from a little below its ramp to a little above, so even a
     // climax at the top has room to grow); the Drama instruments play harder as it goes.
     const float through = float(std::clamp(b / bars, 0.0, 1.0));
-    if (s.evolve && !falling) st.intensity = dsp::clamp01(dsp::clamp01(st.intensity) - 0.14f * (1.0f - through) + 0.04f * through);
+    // (The level and drums pass: a climax plays at its level from its first bar, denser and
+    // harder as it goes; only the other rising sections swell into their level.)
+    const bool level = drama::levelPass && kind == KindPeak;
+    if (s.evolve && !falling) st.intensity = dsp::clamp01(dsp::clamp01(st.intensity) - (level ? 0.04f : 0.14f) * (1.0f - through) + 0.04f * through);
     if (s.evolve) st.heat = falling ? 1.0f - through : through;
-    if (s.evolve && !falling) st.swellDb = -2.5f * (1.0f - through);
-    st.makeUpDb = s.orchestrated ? std::clamp(s.makeUpDb, 0.0f, 6.0f) : 0.0f;
+    if (s.evolve && !falling && !level) st.swellDb = -2.5f * (1.0f - through);
+    st.makeUpDb = s.orchestrated ? std::clamp(s.makeUpDb, 0.0f, maxMakeUpDb) : 0.0f;
 
     // The orchestration pass: an orchestrated section keeps to its voices and its budget.
     const bool orchestra = s.orchestrated;

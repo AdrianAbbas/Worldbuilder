@@ -37,6 +37,10 @@ struct PlaceSlotControls {
     // The orchestration pass: the same, taken from the Drama layer instead (dB, never above 0):
     // the Place's own instruments keep their level.
     float dramaLayerDb = 0;
+    // The level and drums pass: free play (not an arrangement section): the Place's own
+    // instruments are level-matched at each tier (their busier variants and the harmony's
+    // gear measured against Drama 0), so Drama never changes their level.
+    bool freePlay = true;
     // The orchestration pass: the variants as written (before drama changed their gear;
     // 0xff: as `variant`). A part drama moved to a busier variant never plays quieter than
     // its A (its level made up, at most 4 dB).
