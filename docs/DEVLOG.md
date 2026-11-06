@@ -7861,9 +7861,92 @@ sample set. A resumed session continues from the first unticked line.
 ### Progress checklist
 
 - [x] 0. VSCO 2 CE already in use (the level and drums pass: CC0 1.0, `docs/LICENSES/VSCO-2-CE.md`, commit `4403009`, `scripts/ci-fetch-vsco.sh`): reused; its `Woodwinds/` folder has flute (sustain, vibrato, expressive vibrato, staccato), piccolo, oboe, clarinet and bassoon
-- [ ] 1. Every woodwind found (Place parts, KEYS / Instrument mode): list and decisions
-- [ ] 2. Preparation: `vsco.py` prepares the woodwinds (looped sustains, staccatos, vibrato, velocity layers, pitch from the audio), the fetch takes their files, licence entry updated
-- [ ] 3. The sampler: mod wheel as expression (live layer crossfade and level), subtle breath and key noise, a second sample set taking over where it exists
-- [ ] 4. The parts switched, each processed for its Place, level-matched to its stand-in
+- [x] 1. Every woodwind found (Place parts, KEYS / Instrument mode): list and decisions
+- [x] 2. Preparation: `vsco.py` prepares the woodwinds (looped sustains, staccatos, vibrato, velocity layers, pitch from the audio), the fetch takes their files, licence entry updated
+- [x] 3. The sampler: mod wheel as expression (live layer crossfade and level), subtle breath and key noise, a second sample set taking over where it exists
+- [x] 4. The parts switched, each processed for its Place, level-matched to its stand-in
 - [ ] 5. Tests (the `woodwinds` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, legato), level-matched, Places keep their identity, CPU within the budget; listening renders before and after
 - [ ] 6. DEVLOG results and handoff; final push; CI green
+
+### Decisions
+
+**What is a woodwind here.** Every Place's six instruments (and so every KEYS / Instrument-mode
+instrument: the catalog is the Places' parts) and the Drama layer were searched for flute,
+whistle, piccolo, ney, pipe, oboe, clarinet, bassoon, reed and woodwind, in the element names,
+the descriptions and the code. Four parts are woodwinds and changed:
+
+| Part (KEYS / Instrument mode the same) | What it plays now | Processed for its Place |
+|---|---|---|
+| Village **Recorder** | the VSCO flute without vibrato (`ww-flute`; sixteenths and shorter on `ww-flute-stac`), the piccolo above C7 | woody and folky: the top darker (4.5-11 kHz with Tone), a hollow wooden resonance (+3 dB at 1.5 kHz), the fipple's quick chiff of breath, a soft key click, the model's gentle vibrato (a third of its depth in pitch, as the model splits it; more at dawn) |
+| Forest **Flute** | the VSCO flute with its own recorded vibrato (`ww-flute-vib`) in Enchanted and Morning Glade; without vibrato (`ww-flute`) in Dark Woods | woody and folky, breathy: a wooden resonance (+2.5 dB at 900 Hz), breath around the note, darker and breathier in the dark woods, its low notes (down to C3) from the flute's lowest, played lower |
+| Desert **Ney Flute** | the VSCO flute without vibrato, an octave up as the model (`ww-flute`) | dark and very breathy (a wide band of breath at the note's pitch, strongest in the attack), a hollow tube (+2 dB at 750 Hz), no key click (finger holes), a slight bend up into each tongued note (0.3 semitone over 70 ms; with Scoop / Glide on, the ney's own 1.2-semitone scoop instead), a gentle breath vibrato |
+| Asteroid Mining **Beacon** (sci-fi) | the VSCO clarinet's hollow low register (`ww-clarinet`; its range C3-F#4 is below the flute's, and the clarinet's chalumeau is the "ocarina-like" pure tone the part was designed as) | made strange: a second player 16 cents sharp beating against it, a narrow resonance (+6 dB, Q 4) sweeping slowly over two and a half octaves, a slow wide vibrato, a swell in |
+
+Looked at and **not changed** (not woodwinds, or no VSCO woodwind matches them): the Tavern
+Squeezebox and the Sea Ship Concertina (free reeds: an accordion family, no VSCO match; a
+clarinet or oboe would change what the Places are), the Mining Grind Bass and the Megacity
+Glitch Stabs (synthesised "reed" voices: synth timbres, the Glitch Stabs are the developer's
+Minilogue recordings), the birds, gulls and wind "whistles" (Forest, Biodome, Beach, Sea Ship,
+Ruins, Desert wind: noise and whistle textures), and the brass (Castle Horns, Palace Fanfare,
+Military Bugle, Bridge Alert Brass). The Castle and the Palace have no woodwind, so nothing
+there to make "noble and clean"; no sci-fi Place but the Mining colony has one. The Drama
+layer's ostinatos (strings, pulse, bass, plucks, piano) have no woodwind either.
+
+**The five instruments.** All of VSCO 2 CE's woodwinds are prepared and ship in the bank:
+flute and piccolo (played by the four parts: the piccolo carries the flute instruments above
+C7, where the Village's recorder reaches C#7), clarinet (the beacon), oboe and bassoon. No
+part is an oboe or a bassoon, so those two sets are prepared, verified (in tune, loops, ends,
+dynamics: the `woodwinds` group) and ready, but nothing plays them yet (about 33 MB of the
+woodwinds' 64 MB). Dropping them from `vsco_woodwinds.py`'s `SETS` saves that memory if no
+part will take them.
+
+**Preparation** (`tools/sample-prep/vsco_woodwinds.py`, run by `vsco.py` after the
+percussion; the same pinned checkout, licence check and cache): thirteen sets, 394 zones, 64 MB
+in memory. VSCO names its woodwind files an octave below what they sound (all of them, found
+by measuring); each note's pitch comes from the audio (YIN near the name plus an octave, then
+where the first four harmonics carry the most energy, the tests' own measure). Sustains: a loop
+of 0.6-2.6 s in the steady part (the existing search, crossfaded and levelled), the rest of the
+sustain cut out, the recorded end (from where the player stops blowing, to 48 dB under the
+note, at most 1 s) joined 8 samples after the loop, which the sampler crosses into on release.
+Staccatos cut 48 dB under their peak (some takes' tails are gated to digital silence below).
+Ticks in a note's quiet end bridged (one take had one). The dynamics are velocity layers (p and
+f, or p, mf and f); a set recorded at one dynamic (the vibrato flute, the piccolo) gets a derived
+f layer: its takes again at the gain (+8.6 dB) and brightness (+9.3 dB above 2 kHz) the plain
+flute's f has over its p. One gain per instrument, its loudest note at -1 dBFS: the dynamics
+and articulations as recorded.
+
+**The sampler** (`SamplePart`, new patch fields; every existing part keeps its defaults, so
+nothing else changes):
+- *Expression*: the mod wheel raises each sounding note's dynamic from its velocity toward
+  full, the layers crossfading live (a layer coming in where the softer one has got to, a
+  derived layer in phase with its take, so in amplitude), the level and the tone following, in
+  30 ms glides. The whole range of dynamics now spans the layers (the softest dynamic the p
+  layer alone, full the f alone), so velocity and the wheel rise evenly. With expression the
+  wheel no longer adds vibrato (the woodwinds' vibrato is recorded or designed). Short notes
+  take one take (the nearer layer's) at a level between the layers.
+- *Breath and keys*: a band of breath tuned to the note (its level, band, Q, and how much
+  stronger in the attack, per Place), and a soft key click on tongued notes (a raised-cosine
+  thump of low noise, no edge), both subtle (the recordings' own breath does most of it).
+- *One line* (`mono`): as the synthesised flutes, a new note takes over from the one sounding,
+  slurred from it (it starts 0.3 s in, on its sustain; the old one lets go over 150 ms) also when
+  the old one has just been let go on the same beat (a note on a chunk's first sample: every
+  on-grid note at 120 BPM). Instrument mode plays chords, as the models do there.
+- *Articulations*: notes of a sixteenth or less on the staccatos, where those recorded the note
+  (within 4 semitones), else the sustain; live notes start on the sustain.
+- *A formant* (one resonant band over the part, which a Place may move) and *a bend-in* that is
+  part of an instrument's sound whatever Scoop / Glide says (the ney's lean into its notes).
+  Scoop / Glide's defaults are unchanged: the sampled parts report their stand-ins' designed
+  slides, and the `slide` group's table still matches.
+- *A second sample set*: `alternate` / `alternateShort` name bank ids that play instead where
+  the bank has them, levelled to the first set by their layers' measured loudness.
+
+**The developer's alto recorder and ocarina.** The Village's recorder looks for
+`recorder-alto` / `recorder-alto-short`, the Forest's flute for `ocarina` / `ocarina-short`.
+A manifest entry for each (as the violin's sustains: `"kind": "bowed"`, `"loop": true`, a
+layer per dynamic) and a `prepare.py` run is all it takes; the Places' processing, levels and
+patterns stay (`tools/sample-prep/README.md`). The `woodwinds` group checks the hand-over with
+a stand-in set (the oboe as the flute's second set: it plays, levelled within 3 dB).
+
+**Levels.** Each part's gain per Character is set so that alone (Activity 0.9) it measures what
+its synthesised stand-in measures (BS.1770 integrated, `--only wwaudit`); without the samples the
+stand-ins play exactly as before.

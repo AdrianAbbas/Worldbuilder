@@ -29,12 +29,16 @@ rest="instrument,frameregions,smoke,samples,recordings,balance,slide,arrangement
 "$tests" --only level > "$logs/9-level.txt" 2>&1 &
 wait
 "$tests" --only effects,realtime > "$logs/5-cpu.txt" 2>&1
+# The woodwinds pass: every woodwind set in tune and click-free, the parts level-matched, the
+# Places kept, the CPU (alone: it times four busy Places), the listening renders.
+"$tests" --only woodwinds > "$logs/10-woodwinds.txt" 2>&1
 # The 60-second editor stress test (the GarageBand freeze), alone so it is not starved.
 "$tests" --only stress > "$logs/6-stress.txt" 2>&1
 
 passed=0
 failed=0
-for log in "$logs"/[1-9]-*.txt; do
+for log in "$logs"/[0-9]-*.txt "$logs"/[0-9][0-9]-*.txt; do
+    [[ -f "$log" ]] || continue
     line=$(grep -E '^[0-9]+ passed, [0-9]+ failed' "$log" | tail -1)
     if [[ -z "$line" ]]; then
         echo "$log: did not finish"

@@ -169,6 +169,7 @@ public:
         strumCount = 0;
         trem = 1;
         gainNow = -1;
+        noiseAt = 0;   // the breath (the woodwinds) the same on every play
     }
     void setKey(uint32_t key, uint32_t salt) override {
         Part::setKey(key, salt);

@@ -551,6 +551,23 @@ Since Milestone 17 the developer's piano, voice, djembes and banjo play these:
 | Tavern | Frame Drum, Stomps | djembes' low strokes | the frame drum the large djembe's bass and muted bass; the stomps its muted bass pitched down and dulled (the clap stays synthesised) |
 | Desert | Frame Drums | djembes | the doum the large djembe's bass, the tek the small one's slap (the riq stays synthesised) |
 
+Since the woodwinds pass the woodwind parts play real woodwinds from VS Chamber Orchestra 2:
+Community Edition (CC0; see Credits), with the synthesised instrument as before in a build
+without them:
+
+| Place | Instrument | Recording | Fitted to the Place |
+|---|---|---|---|
+| Village | Recorder | flute, no vibrato (2 velocity layers, looped sustains, staccatos for the shortest notes), the piccolo above C7 | woody and folky: darker, a hollow wooden resonance, a fipple's quick chiff of breath, a gentle vibrato (more at dawn) |
+| Forest | Flute | flute with its recorded vibrato; without vibrato in the Dark Woods | woody, breathy; darker and breathier in the Dark Woods |
+| Desert | Ney Flute | flute, no vibrato | dark and very breathy, a hollow tube, a slight bend up into each note (with SCOOP/GLIDE on, the ney's full scoop) |
+| Asteroid Mining Colony | Beacon | clarinet, its hollow low register | strange: a second player beating against it, a slowly sweeping resonance, a slow wide vibrato |
+
+The woodwinds play one line (each note slurs into the next, as a player would), their
+dynamics from soft to full as crossfaded recordings, and from a keyboard the **mod wheel
+is expression**: it swells a held note toward full, through the recorded dynamics. The
+Village's recorder and the Forest's flute will play the developer's own alto recorder and
+ocarina once they are recorded.
+
 The **piano** is played like a piano: each key its own recording (88 keys, A0 to C8, at
 the piano's own stretch tuning, the whole instrument on A440), three velocity layers
 crossfaded, held notes that ring with their natural decay (no loop: past what was
@@ -600,7 +617,7 @@ older project keeps the target it had (none: notes do nothing).
   and brightness), **note length** (released keys stop; plucked strings are damped, struck
   bells and drums ring on), the **sustain pedal** (CC64), **pitch bend** (a tone; an octave
   for sirens, risers and gliding leads; none for drums) and the **mod wheel** (vibrato, or
-  brightness on instruments without vibrato). Bend and mod act on the whole instrument,
+  brightness on instruments without vibrato; expression on the woodwinds). Bend and mod act on the whole instrument,
   as on a synth.
 - Drum instruments: each key plays a drum of the kit (C the first, C# the second...).
 - **CHROMATIC** plays exactly what you press; **SNAP TO SCALE** moves wrong notes to the
@@ -1036,7 +1053,7 @@ never committed here. To build with them, prepare them and point CMake at the re
 ```
 pip install -r tools/sample-prep/requirements.txt
 python3 tools/sample-prep/prepare.py --source ../samples --out build/samples
-bash scripts/ci-fetch-vsco.sh build/vsco      # the orchestral percussion (CC0, public)
+bash scripts/ci-fetch-vsco.sh build/vsco      # the orchestral percussion and woodwinds (CC0, public)
 python3 tools/sample-prep/vsco.py --source build/vsco --out build/samples
 cmake -S . -B build -DWORLDBUILDER_SAMPLES_DIR=build/samples ...
 ```
@@ -1071,7 +1088,9 @@ The installable zip is uploaded only when every check passes.
 ## Credits
 
 - The Drama drums' orchestral percussion (bass drums, large drum, tenor drums, snare,
-  timpani, cymbals, gong) comes from **VS Chamber Orchestra 2: Community Edition** 1.1.0 by
+  timpani, cymbals, gong) and the woodwinds (flute, piccolo, oboe, clarinet, bassoon: the
+  Village's recorder, the Forest's flute, the Desert's ney and the Mining colony's beacon)
+  come from **VS Chamber Orchestra 2: Community Edition** 1.1.0 by
   Versilian Studios (Sam Gossner, Simon Dalzell; sample cutting by Elan Hickler /
   Soundemote), released under CC0 1.0: http://vis.versilstudios.net/vsco-community.html,
   https://github.com/sgossner/VSCO-2-CE. The samples are not sold on their own and are not
