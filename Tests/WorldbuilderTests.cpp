@@ -9448,6 +9448,7 @@ void testSamples(Suite& s) {
 
 #include "LevelProbe.inc"
 #include "LevelTests.inc"
+#include "WoodwindTests.inc"
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -9562,6 +9563,7 @@ int main(int argc, char** argv) {
     if (run("loudness")) testLoudness(s);
     if (run("orchestra")) testOrchestra(s);
     if (run("level")) testLevel(s);
+    if (run("woodwinds")) testWoodwinds(s);
     if (only.contains("dramatrims")) probeDramaTrims();
     if (only.contains("loudprobe")) probeLoudness();
     if (only.contains("hitprobe")) probeHits();
@@ -9573,6 +9575,8 @@ int main(int argc, char** argv) {
     if (only.contains("stress")) testStress(s);
     if (only.contains("levelprobe")) probeLevels();
     if (only.contains("prelevels")) probePlaceLevels();
+    if (only.contains("wwrange")) probeWoodwindRanges();
+    if (only.contains("wwaudit")) auditWoodwinds();
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }
