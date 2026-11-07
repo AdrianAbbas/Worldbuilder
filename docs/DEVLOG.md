@@ -5,7 +5,7 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
-**The Drama design pass is in progress / done** (the orchestra scoring arrangements live, the grid
+**The Drama design pass is done** (the orchestra scoring arrangements live, the grid
 showing what plays, risers and hits marking arrivals, the Drama percussion per world in the
 Place's space, the drums last, the Drama setting): checklist, diagnosis, decisions, results and
 handoff in [The Drama design pass](#the-drama-design-pass-2026-11-07).
@@ -8182,7 +8182,7 @@ plays as before the Drama patches). A resumed session continues from the first u
 - [x] 4. Percussion per world (electronic, natural), levelled; the drums in the Place's space
 - [x] 5. Gear order (drums from Action); Drama Off / On setting
 - [x] 6. Tests (`design` group) and the before / after renders; the existing groups updated
-- [ ] 7. DEVLOG results and handoff; final push; CI green
+- [x] 7. DEVLOG results and handoff; final push; CI green (run 42382073411: 5292 passed, macOS green)
 
 ### Decisions
 
@@ -8304,6 +8304,11 @@ last two runs, only where it missed by 0.5 dB or more).
 
 **CI, the fourth run** (42377107789): macOS green; Linux 5291 passed, 1 failed: the Instrument-mode
 level trims' spread, 8.17 dB (8 asked), now report only (below).
+
+**CI, the fifth run** (42382073411, the push of the report-only change): Linux 5292 passed, 0
+failed; macOS (universal build, smoke tests on arm64 and x86_64, bundle checks, a quarantined
+install, auval and the AU harness) green. Its log prints the `familytrim` and `dramatrims` tables
+measured with the recordings.
 
 **Report only** (added to the one above; the checks stay):
 - The Instrument-mode trims' spread (the middle 90 % of every instrument within 8 dB): 8.02, 8.17,
