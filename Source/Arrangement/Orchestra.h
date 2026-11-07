@@ -36,7 +36,26 @@ Budget budgetOf(int kind);
 // tiers and clips stay (a part left out keeps its clip, off). A part kept plays as its cell
 // said; one the orchestra brings in plays its kind's variant. The World Seed picks between
 // equal choices.
-Arrangement orchestrate(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed);
+// `live` (the Drama design pass: an arrangement scored live): every cell not set by hand is the
+// orchestra's to choose whatever its entry says (its entry and variant only say how it plays if
+// chosen), and the loudness it was written with is the section's refDb (a template's, while its
+// Places are the same) or every part of every Place. Cells set by hand (Cell::manual) are kept
+// as written, in every mode, and count in the budget and the voices.
+Arrangement orchestrate(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, bool live = false);
+// The loudness section `s` was written with (dB, its parts on as orchestrate() weighs them).
+float writtenDb(const Section& s, const std::array<int, placeSlots>& types);
+
+// The Drama design pass: what an arrangement plays. With autoOrchestra (and the project's Drama
+// setting on) the orchestra scores it live for the Places and the Seed; otherwise as written.
+struct OrchestraContext {
+    std::array<int, placeSlots> types {};
+    uint32_t seed = 0;
+    bool drama = true;   // the project's Drama setting (Off: as before the Drama patches)
+    bool operator==(const OrchestraContext& o) const { return types == o.types && seed == o.seed && drama == o.drama; }
+};
+Arrangement played(const Arrangement& a, const OrchestraContext& context);
+// A section kept to the budget for the Places (for ARRANGE's readout): its parts as played.
+int playedParts(const Section& s, const std::array<int, placeSlots>& types);
 
 // What sounds at a State after shape() (the Drama instruments only while their section plays
 // a tier above Calm and their slot's rank gives them notes): per slot and instrument.

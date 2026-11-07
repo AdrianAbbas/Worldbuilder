@@ -27,6 +27,10 @@ rest="instrument,frameregions,smoke,samples,recordings,balance,slide,arrangement
 # The level and drums pass: every Place against its level before the Drama tier, the Drama
 # dial moved, the recorded percussion against the main parts, the listening renders.
 "$tests" --only level > "$logs/9-level.txt" 2>&1 &
+# The Drama design pass: the orchestra scoring live, the risers and hits by rules, the
+# percussion per world in the Place's space, the before / after renders; then the kits' level
+# match measured with the recordings CI has (the table for Source/Places/FamilyTrim.inc).
+( "$tests" --only design > "$logs/11-design.txt" 2>&1; "$tests" --only familytrim > "$logs/familytrim.txt" 2>&1 ) &
 wait
 "$tests" --only effects,realtime > "$logs/5-cpu.txt" 2>&1
 # The woodwinds pass: every woodwind set in tune and click-free, the parts level-matched, the

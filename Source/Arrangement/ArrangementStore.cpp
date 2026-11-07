@@ -18,8 +18,36 @@ uint32_t ArrangementStore::revision() const {
 
 void ArrangementStore::publish() {
     model.revision = ++changes;
-    out.write() = model;
+    if (contextSource) contextNow = contextSource();
+    playing = arr::played(model, contextNow);
+    playing.revision = model.revision;
+    out.write() = playing;
     out.publish();
+}
+
+arr::Arrangement ArrangementStore::played() const {
+    const juce::ScopedLock sl(lock);
+    return playing;
+}
+
+void ArrangementStore::setContext(std::function<arr::OrchestraContext()> source) {
+    const juce::ScopedLock sl(lock);
+    contextSource = std::move(source);
+    publish();
+}
+
+bool ArrangementStore::refreshContext() {
+    const juce::ScopedLock sl(lock);
+    if (!contextSource) return false;
+    const auto now = contextSource();
+    if (now == contextNow) return false;
+    publish();
+    return true;
+}
+
+arr::OrchestraContext ArrangementStore::context() const {
+    const juce::ScopedLock sl(lock);
+    return contextNow;
 }
 
 void ArrangementStore::apply(const Arrangement& a, bool undoable) {
@@ -30,6 +58,8 @@ void ArrangementStore::apply(const Arrangement& a, bool undoable) {
     }
     model = a;
     model.count = std::clamp(model.count, 0, maxSections);
+    // (The Drama design pass: an empty arrangement has nothing to keep: scored live from its first section.)
+    if (model.count == 0) model.autoOrchestra = true;
     model.end = uint8_t(std::min<int>(model.end, EndCount - 1));
     model.loopTo = uint8_t(std::clamp<int>(model.loopTo, 0, std::max(model.count - 1, 0)));
     publish();
@@ -240,6 +270,17 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
     juce::ValueTree tree("Arrangement");
     tree.setProperty("end", int(a.end), nullptr);
     tree.setProperty("loopTo", int(a.loopTo), nullptr);
+    // The Drama design pass: written only when set (older readers ignore them).
+    if (a.autoOrchestra) tree.setProperty("auto", true, nullptr);
+    {
+        juce::StringArray types;
+        bool any = false;
+        for (auto t : a.refTypes) {
+            types.add(juce::String(int(t)));
+            any |= t >= 0;
+        }
+        if (any) tree.setProperty("refTypes", types.joinIntoString(","), nullptr);
+    }
     for (int i = 0; i < a.count; ++i) {
         const auto& s = a.sections[std::size_t(i)];
         juce::ValueTree x("Section");
@@ -257,6 +298,15 @@ juce::ValueTree ArrangementStore::toTree(const Arrangement& a) {
         if (s.orchestrated) x.setProperty("orchestrated", true, nullptr);
         if (s.lead >= 0) x.setProperty("lead", int(s.lead), nullptr);
         if (s.makeUpDb != 0.0f) x.setProperty("makeup", double(s.makeUpDb), nullptr);
+        if (s.refSet) x.setProperty("ref", double(s.refDb), nullptr);
+        {
+            // The cells set by hand: "slot.element" pairs.
+            juce::StringArray manual;
+            for (int slot = 0; slot < placeSlots; ++slot)
+                for (int e = 0; e < slotElements; ++e)
+                    if (s.cells[std::size_t(slot)][std::size_t(e)].manual) manual.add(juce::String(slot) + "." + juce::String(e));
+            if (!manual.isEmpty()) x.setProperty("manual", manual.joinIntoString(" "), nullptr);
+        }
         // Milestone 11b: written only when set, so older readers and files stay as they were.
         if (s.transition != TransCut) {
             x.setProperty("transition", int(s.transition), nullptr);
@@ -310,6 +360,14 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
         s.orchestrated = bool(x.getProperty("orchestrated", false));
         s.lead = int8_t(int(number(x, "lead", -1, -1, float(placeSlots - 1))));
         s.makeUpDb = number(x, "makeup", 0.0f, 0.0f, maxMakeUpDb);
+        if (x.hasProperty("ref")) {
+            s.refSet = true;
+            s.refDb = number(x, "ref", 0.0f, -200.0f, 200.0f);
+        }
+        for (const auto& pair : juce::StringArray::fromTokens(x.getProperty("manual").toString(), " ", "")) {
+            const int slot = pair.upToFirstOccurrenceOf(".", false, false).getIntValue(), e = pair.fromFirstOccurrenceOf(".", false, false).getIntValue();
+            if (slot >= 0 && slot < placeSlots && e >= 0 && e < slotElements && pair.containsChar('.')) s.cells[std::size_t(slot)][std::size_t(e)].manual = true;
+        }
         s.transition = uint8_t(int(number(x, "transition", 0, 0, float(TransitionCount - 1))));
         s.transitionLength = uint8_t(int(number(x, "transitionLength", 1, 1, float(maxTransitionLength))));
         s.location = int8_t(int(number(x, "location", -1, -1, 7)));
@@ -328,6 +386,11 @@ Arrangement ArrangementStore::fromTree(const juce::ValueTree& tree) {
     }
     a.end = uint8_t(int(number(tree, "end", 0, 0, float(EndCount - 1))));
     a.loopTo = uint8_t(int(number(tree, "loopTo", 0, 0, float(std::max(a.count - 1, 0)))));
+    // The Drama design pass: an arrangement saved with sections before it plays as saved; an empty
+    // one (or none) is scored live from its first section.
+    a.autoOrchestra = a.count == 0 || bool(tree.getProperty("auto", false));
+    const auto ref = juce::StringArray::fromTokens(tree.getProperty("refTypes").toString(), ",", "");
+    for (int i = 0; i < ref.size() && i < placeSlots; ++i) a.refTypes[std::size_t(i)] = int8_t(juce::jlimit(-1, PlaceTypeCount - 1, ref[i].getIntValue()));
     return a;
 }
 

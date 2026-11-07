@@ -228,7 +228,63 @@ Arrangement makeTemplate(int which, bool legacy) {
     return a;
 }
 
-Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
+namespace {
+// How big a kind of section is: the quiet ones, a wind-down, the driving ones, a climax.
+int sizeOf(int kind) {
+    switch (kind) {
+        case KindPeak: return 3;
+        case KindBuild: case KindLoop: case KindBridge: return 2;
+        case KindCalm: return 1;
+        default: return 0;
+    }
+}
+} // namespace
+
+bool biggerSection(const Arrangement& a, int from, int to) {
+    if (from < 0 || to < 0 || from >= a.count || to >= a.count || from == to) return false;
+    const int f = sizeOf(kindOf(a, from)), t = sizeOf(kindOf(a, to));
+    if (t != f) return t > f && t >= 2;
+    // The same kind: a higher tier (a second climax at Climax after one at Action).
+    const auto& x = a.sections[std::size_t(from)];
+    const auto& y = a.sections[std::size_t(to)];
+    return t >= 2 && x.drama >= 0 && y.drama > x.drama;
+}
+
+bool riserAllowed(const Arrangement& a, int i) {
+    if (i < 0 || i >= a.count || !a.transitionAfter(i)) return false;
+    const auto& s = a.sections[std::size_t(i)];
+    if (s.bars < 16) return false;
+    if (!biggerSection(a, i, a.nextOf(i))) return false;
+    // Never two in a row: not when the transition into this section was one.
+    const int previous = i > 0 ? i - 1 : (a.end == EndLoop && a.loopTarget() == 0 ? a.count - 1 : -1);
+    if (previous >= 0 && previous != i && a.nextOf(previous) == i && isRiser(a.sections[std::size_t(previous)].transition)) return false;
+    return true;
+}
+
+void disciplineRisers(Arrangement& a) {
+    for (int i = 0; i < a.count; ++i) {
+        auto& s = a.sections[std::size_t(i)];
+        if (!isRiser(s.transition)) continue;
+        if (riserAllowed(a, i)) {
+            s.transitionLength = uint8_t(std::clamp<int>(s.transitionLength, 1, riserMaxBars(s.bars)));
+            continue;
+        }
+        // Refused: into a climax the drums fill instead; otherwise the sections blend.
+        const int next = a.nextOf(i);
+        if (next >= 0 && kindOf(a, next) == KindPeak && kindOf(a, i) != KindPeak) {
+            s.transition = TransDrumFill;
+            s.transitionLength = 1;
+        } else {
+            s.transition = TransCrossfade;
+            s.transitionLength = 1;
+        }
+    }
+}
+
+namespace {
+// Auto-arrange's score before the orchestra chooses: every section evolving, the grid as
+// autoArrangeLegacy writes it, the Drama instruments in every section.
+Arrangement scoreSections(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
     // For scoring: every section evolving inside itself, its lengths as they are (the
     // orchestration pass: the Length control fits them before, by time).
     Arrangement a = in;
@@ -247,8 +303,15 @@ Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>
                 c.fill = e == DramaDrums && intoFight;
             }
     }
+    // The Drama design pass: risers only where they mark an arrival.
+    if (drama::designPass) disciplineRisers(a);
+    return a;
+}
+} // namespace
+
+Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
     // The orchestration pass: scored, not every instrument of every Place at once.
-    return orchestrate(a, types, seed);
+    return orchestrate(scoreSections(in, types, seed), types, seed);
 }
 
 Arrangement autoArrangeLegacy(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
@@ -516,6 +579,7 @@ void dramatize(Arrangement& a, uint32_t seed) {
         s.transition = t;
         s.transitionLength = length;
     }
+    if (drama::designPass) disciplineRisers(a);
 }
 
 //==============================================================================
@@ -549,6 +613,11 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
     const int index = st.at.section;
     const auto& s = a.sections[std::size_t(index)];
     const bool dramatic = sh.drama > 0.0f;
+    // The Drama design pass: an arrival (a bigger section than the one before; its first pass).
+    if (drama::designPass && st.at.pass == 0) {
+        const int before = index > 0 ? index - 1 : (st.at.looped ? a.count - 1 : -1);
+        st.bigArrival = before >= 0 && biggerSection(a, before, index);
+    }
     if (!dramatic && !s.evolve && !s.orchestrated) return;
     const int kind = kindOf(a, index);
     const double bars = double(std::max<int>(s.bars, 1));
@@ -612,13 +681,15 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
         for (int slot = 0; slot < placeSlots; ++slot) st.focus[std::size_t(slot)] = s.lead >= 0 && places > 1 && slot != s.lead ? 0.5f : 1.0f;
         const int tierNow = st.drama >= 0 ? st.drama : sectionTier(a, index, sh);
         const bool dramaNow = dramatic && tierNow > drama::Calm;
+        // (The Drama design pass: the drums come last, from Action; at Tension the Place changes gear.)
+        const bool drumsNow = dramatic && tierNow >= (drama::designPass ? int(drama::Action) : int(drama::Tension));
         // While the drama plays, the Drama drums take over from a Place's kit and the Drama
         // ostinato from a Place's ostinato: one kit, one ostinato.
         bool drums = false, ostinato = false;
         for (int slot = 0; slot < placeSlots && dramaNow; ++slot) {
             const int type = sh.types[std::size_t(slot)];
             if (type == NoPlace) continue;
-            drums |= rankOf[std::size_t(slot)] == 0 && st.gain[std::size_t(slot)][std::size_t(DramaDrums)] > 0.0f && patternInfo(type, DramaDrums).kind != NoPattern;
+            drums |= drumsNow && rankOf[std::size_t(slot)] == 0 && st.gain[std::size_t(slot)][std::size_t(DramaDrums)] > 0.0f && patternInfo(type, DramaDrums).kind != NoPattern;
             ostinato |= rankOf[std::size_t(slot)] <= 1 && st.gain[std::size_t(slot)][std::size_t(DramaOstinato)] > 0.0f && patternInfo(type, DramaOstinato).kind != NoPattern;
         }
         for (int slot = 0; slot < placeSlots; ++slot) {
@@ -629,6 +700,10 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
                 if (g <= 0.0f || patternInfo(type, e).kind == NoPattern) continue;
                 const int voice = voiceOf(type, e);
                 if (!isDramaElement(e) && ((drums && voice == VoiceKit) || (ostinato && voice == VoiceOstinato))) {
+                    g = 0.0f;
+                    continue;
+                }
+                if (e == DramaDrums && !drumsNow && drama::designPass) {
                     g = 0.0f;
                     continue;
                 }
@@ -673,7 +748,7 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
             if (dramatic && !drama) {
                 if (d < 0.0f) {
                     // Calm: the accents and the rhythm leave, then the melody; the bass turns sparse.
-                    if (e != keep && ((role == RoleAccent && d <= -0.25f) || (rhythm && d <= -0.5f) || (role == RoleMelody && d <= -0.75f)) && gain[ke] > 0.0f) {
+                    if (e != keep && !cell.manual && ((role == RoleAccent && d <= -0.25f) || (rhythm && d <= -0.5f) || (role == RoleMelody && d <= -0.75f)) && gain[ke] > 0.0f) {
                         // (Orchestrated: never below the section's budget.)
                         if (!orchestra) gain[ke] = 0.0f;
                         else if (parts > budget.low) {
@@ -687,7 +762,7 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
                     // Dramatic: the instruments resting enter in order of their role, the
                     // busier variants, the rhythm section driving, the parts doubling.
                     static constexpr std::array<float, RoleCount> enterAt { 0.25f, 1.0f, 0.25f, 0.5f, 0.75f, 1.25f };
-                    if (!dropping && !crossfading && cell.entry != EntryOn && cell.entry != EntryFadeOut && d >= enterAt[std::size_t(role)]
+                    if (!dropping && !crossfading && !cell.manual && cell.entry != EntryOn && cell.entry != EntryFadeOut && d >= enterAt[std::size_t(role)]
                         && (cell.entry == EntryOff || d >= 1.0f)) {
                         // (Orchestrated: only into a free voice, within the section's budget.)
                         const int voice = voiceOf(type, e);
@@ -722,7 +797,8 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
                         const double grid = s.bars >= 16 ? 4.0 : 1.0;
                         entry = std::floor(at / grid) * grid;
                     }
-                    if (b < entry) gain[ke] = 0.0f;
+                    // (The Drama design pass: an arrival's hits land on its first downbeat.)
+                    if (b < entry && !(drama::designPass && st.bigArrival && e == DramaHits)) gain[ke] = 0.0f;
                 }
                 if (falling && st.at.lastPass && e != keep && !drama) {
                     const double exit = role == RoleAccent ? 0.5 : (rhythm ? 0.625 : (role == RoleMelody ? 0.75 : 2.0));
@@ -743,6 +819,19 @@ void shape(State& st, const Arrangement& a, const Shaping& sh) {
             }
         }
     }
+}
+
+void markArrival(State& st, const Arrangement& a, const Shaping& sh) {
+    st.arrivalSlot = -1;
+    if (!drama::designPass || !st.active || st.at.ended || st.at.pass != 0 || st.at.section < 0) return;
+    const bool afterDrop = st.arrived == TransDrop;
+    if (!st.bigArrival && !afterDrop) return;
+    for (int slot = 0; slot < placeSlots; ++slot)
+        if (sh.types[std::size_t(slot)] != NoPlace && st.gain[std::size_t(slot)][std::size_t(DramaHits)] > 0.0f && patternInfo(sh.types[std::size_t(slot)], DramaHits).kind != NoPattern) {
+            st.arrivalSlot = slot;
+            return;
+        }
+    (void) a;
 }
 
 int sectionTier(const Arrangement& a, int k, const Shaping& sh) {
@@ -869,9 +958,8 @@ void shapeClip(pat::Clip& c, int kind, int role, bool kit, int scaleSize, uint64
     (void)bars;
 }
 
-Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& source) {
-    Arrangement a = autoArrange(in, types, seed);
-    if (!source.pattern) return a;
+void addSectionClips(Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& source) {
+    if (!source.pattern) return;
     for (int i = 0; i < a.count; ++i) {
         auto& s = a.sections[std::size_t(i)];
         const int kind = kindOf(a, i);
@@ -921,6 +1009,64 @@ Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>
                 cell.clip = clip;
             }
         }
+    }
+}
+
+Arrangement autoArrange(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& source) {
+    Arrangement a = autoArrange(in, types, seed);
+    addSectionClips(a, types, seed, source);
+    return a;
+}
+
+Arrangement autoArrangeLive(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& source) {
+    const Arrangement score = scoreSections(in, types, seed);
+    Arrangement chosen = orchestrate(score, types, seed);
+    addSectionClips(chosen, types, seed, source);
+    // What the composer's grid holds: the score's suggestions, the orchestra's choices (with their
+    // clips) where it chose, the loudness the score was written with.
+    Arrangement out = score;
+    out.autoOrchestra = true;
+    for (int slot = 0; slot < placeSlots; ++slot) out.refTypes[std::size_t(slot)] = int8_t(types[std::size_t(slot)]);
+    for (int i = 0; i < out.count; ++i) {
+        auto& s = out.sections[std::size_t(i)];
+        const auto& c = chosen.sections[std::size_t(i)];
+        s.refSet = true;
+        s.refDb = writtenDb(s, types);
+        s.orchestrated = c.orchestrated;
+        s.lead = c.lead;
+        s.makeUpDb = c.makeUpDb;
+        for (int slot = 0; slot < placeSlots; ++slot)
+            for (int e = 0; e < slotElements; ++e)
+                if (c.cells[std::size_t(slot)][std::size_t(e)].entry != EntryOff) s.cells[std::size_t(slot)][std::size_t(e)] = c.cells[std::size_t(slot)][std::size_t(e)];
+    }
+    return out;
+}
+
+Arrangement autoArrangeLegacy(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& source) {
+    Arrangement a = autoArrangeLegacy(in, types, seed);
+    addSectionClips(a, types, seed, source);
+    return a;
+}
+
+Arrangement liveFrom(const Arrangement& in, const std::array<int, placeSlots>& types) {
+    Arrangement a = in;
+    if (a.autoOrchestra) return a;
+    a.autoOrchestra = true;
+    for (int slot = 0; slot < placeSlots; ++slot) a.refTypes[std::size_t(slot)] = int8_t(types[std::size_t(slot)]);
+    for (int i = 0; i < a.count; ++i) {
+        auto& s = a.sections[std::size_t(i)];
+        if (s.orchestrated) {
+            // Scored once already: what it was written with is what it keeps plus its make-up.
+            s.refSet = true;
+            s.refDb = writtenDb(s, types) + std::clamp(s.makeUpDb, 0.0f, maxMakeUpDb) / 1.25f;
+            continue;
+        }
+        // Written by hand: the parts the composer turned off stay off (overrides).
+        for (int slot = 0; slot < placeSlots; ++slot)
+            for (int e = 0; e < slotElements; ++e) {
+                auto& c = s.cells[std::size_t(slot)][std::size_t(e)];
+                if (c.entry == EntryOff && types[std::size_t(slot)] != NoPlace && patternInfo(types[std::size_t(slot)], e).kind != NoPattern) c.manual = true;
+            }
     }
     return a;
 }

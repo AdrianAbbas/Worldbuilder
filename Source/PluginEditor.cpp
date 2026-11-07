@@ -397,6 +397,17 @@ WorldbuilderEditor::WorldbuilderEditor(WorldbuilderProcessor& p) : AudioProcesso
                              "Full, Subtle or Off. They never cover the controls.");
     overlayChoice.onChange = [this] { setOverlayMode(overlayChoice.getSelectedId() - 1); };
     addAndMakeVisible(overlayChoice);
+    // The Drama design pass: the whole Drama system Off (the world as before the Drama patches) or On.
+    dramaSystemChoice.addItem("Off", 1);
+    dramaSystemChoice.addItem("On", 2);
+    dramaSystemChoice.setTooltip("Drama: On (the Drama tier, its instruments and the orchestra scoring your arrangement live) or Off (the whole "
+                                 "Drama system off: the world and its arrangement play as written, as before the Drama tier). Saved with the project.");
+    dramaSystemChoice.setSelectedId(processor.dramaSystem() ? 2 : 1, juce::dontSendNotification);
+    dramaSystemChoice.onChange = [this] {
+        processor.setDramaSystem(dramaSystemChoice.getSelectedId() == 2);
+        if (arrange->isVisible()) arrange->refresh();
+    };
+    addAndMakeVisible(dramaSystemChoice);
     uiSize.addItemList({ "100%", "150%", "200%" }, 1);
     uiSize.setTooltip("UI size: 100, 150 or 200 %. The pixel art stays sharp at each (whole pixels).");
     uiSize.onChange = [this] { setUiSize(uiSize.getSelectedId() - 1); };
@@ -894,6 +905,9 @@ void WorldbuilderEditor::resized() {
         overlayChoice.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
         column.removeFromTop(4);
         placeOuts.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
+        f.removeFromLeft(10);
+        auto second = f.removeFromLeft(80);
+        dramaSystemChoice.setBounds(second.removeFromTop(40).withTrimmedTop(16).withHeight(22));
     }
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })
@@ -1072,7 +1086,7 @@ void WorldbuilderEditor::paint(juce::Graphics& g) {
 
     for (auto [component, text] : { std::pair<juce::Component*, const char*> { &root, "ROOT" }, { &mood, "MOOD" },
                                     { &quality, "QUALITY" }, { &playMode, "PLAY MODE" }, { &seed, "WORLD SEED" },
-                                    { &overlayChoice, "OVERLAYS" }, { &placeOuts, "PLACE OUTPUTS" }, { &uiSize, "UI SIZE" } })
+                                    { &overlayChoice, "OVERLAYS" }, { &placeOuts, "PLACE OUTPUTS" }, { &dramaSystemChoice, "DRAMA" }, { &uiSize, "UI SIZE" } })
         if (const auto label = component->getBounds().translated(0, -16).withHeight(14); g.clipRegionIntersects(label))
             pixel::drawText(g, text, label, p.heading, juce::Justification::centredLeft, pixel::Font::Small);
     if (const auto tempo = uiSize.getBounds().translated(uiSize.getWidth() + 10, 0).withWidth(80); g.clipRegionIntersects(tempo))
@@ -1552,7 +1566,7 @@ void WorldbuilderEditor::updateOverlayFrames() {
     std::vector<juce::Rectangle<int>> keep { headerTitle, headerSubtitle, intensityLabel };
     for (auto* c : getChildren())
         if (c != overlays.get() && c->isVisible()) keep.push_back(c->getBounds().expanded(2));
-    for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice, &placeOuts, &uiSize })
+    for (auto* c : std::initializer_list<juce::Component*> { &root, &mood, &quality, &playMode, &seed, &overlayChoice, &placeOuts, &dramaSystemChoice, &uiSize })
         keep.push_back(c->getBounds().translated(0, -16).withHeight(16));
     if (detail.slot < 0) keep.push_back(planetPlate);
     keep.push_back(uiSize.getBounds().translated(uiSize.getWidth() + 6, 0).withWidth(90));   // tempo
@@ -1782,6 +1796,8 @@ void WorldbuilderEditor::stepAnimation(float seconds) {
         if (sceneMenu.getButtonText() != name) sceneMenu.setButtonText(name);
         if (sceneUndo.isEnabled() != processor.canUndoScene()) sceneUndo.setEnabled(processor.canUndoScene());
     }
+    // (A project loaded by the host: the Drama setting follows.)
+    if (const int want = processor.dramaSystem() ? 2 : 1; dramaSystemChoice.getSelectedId() != want) dramaSystemChoice.setSelectedId(want, juce::dontSendNotification);
     refreshArrangementState();
     refreshMode();
     updateTheme(seconds, shownInstrument);   // (Instrument mode: the look changes in one step: stepping through sounds never fades)

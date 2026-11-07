@@ -31,6 +31,9 @@ struct EngineControls {
     // dramatic range at the top of Score Intensity; its style (drama::Style).
     float drama = 0;
     int dramaStyle = 0;
+    // The Drama design pass: the project's Drama setting (Off: the whole Drama system off, the
+    // world plays as before the Drama patches: no Drama layer, no shaping, no make-up).
+    bool dramaSystem = true;
     bool power = true;
     int root = 2, mood = 0, quality = 1;
     int planet = 0;                 // dsp::PlanetType

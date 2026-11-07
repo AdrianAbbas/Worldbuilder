@@ -152,10 +152,12 @@ ArrangeView::ArrangeView(WorldbuilderProcessor& p) : processor(p) {
     autoButton.onClick = [this] { autoArrange(); };
     addAndMakeVisible(autoButton);
     // The orchestration pass: Orchestrate and the Length control.
-    orchestrateButton.setTooltip("Orchestrate: keeps each section to a part budget across all Places (Intro 2-4, Build 4-7, Climax 7-10, "
-                                 "Wind-down 3-5, Outro 2-3) and chooses the parts by role: one lead (passing from Place to Place), one bass, "
-                                 "one kit (the Drama drums take over while the drama plays), pads and colour; the other Places' space thinned. "
-                                 "Your lengths and clips stay. Undoable.");
+    orchestrateButton.setTooltip("AUTO ORCHESTRA: the orchestra scores every section live, whenever you add sections or Places or edit the grid: "
+                                 "a part budget across all Places (Intro 2-4, Build 4-7, Climax 7-10, Wind-down 3-5, Outro 2-3), one lead "
+                                 "(passing from Place to Place), one bass, one kit (the Drama drums take over from Action), pads and colour; the "
+                                 "other Places rest or support. The grid shows what plays; cells you click are yours (marked). Off: every cell "
+                                 "plays as written. Undoable.");
+    orchestrateButton.setClickingTogglesState(false);
     orchestrateButton.onClick = [this] { orchestrate(); };
     addAndMakeVisible(orchestrateButton);
     cueLength.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -301,11 +303,26 @@ void ArrangeView::setCell(int section, int slot, int element, const arr::Cell& c
     repaint(gridArea);
 }
 
+arr::Cell ArrangeView::playedCell(int section, int slot, int element) const {
+    // What plays in the cell (the orchestra's choice), with the composer's clip.
+    auto cell = shown.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
+    const auto now = processor.arrangement.played();
+    if (now.autoOrchestra && section < now.count) {
+        const auto& p = now.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
+        cell.entry = p.entry;
+        cell.variant = p.variant;
+        cell.fill = p.fill;
+    }
+    return cell;
+}
+
 void ArrangeView::clickCell(int section, int slot, int element, bool shift) {
     if (section < 0 || section >= shown.count) return;
-    auto cell = shown.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
+    // The Drama design pass: a click overrides what plays (marked; "Back to automatic" undoes it).
+    auto cell = playedCell(section, slot, element);
     if (shift) cell.variant = uint8_t((cell.variant + 1) % 3);
     else cell.entry = uint8_t(cell.entry == arr::EntryOff ? arr::EntryOn : arr::EntryOff);
+    cell.manual = true;
     setCell(section, slot, element, cell);
 }
 
@@ -379,8 +396,8 @@ void ArrangeView::autoArrange() {
 }
 
 void ArrangeView::orchestrate() {
-    if (shown.count <= 0) return;
-    processor.orchestrateArrangement();
+    // The Drama design pass: AUTO on or off (one undo step).
+    processor.setAutoOrchestra(!processor.autoOrchestra());
     shown = processor.arrangement.get();
     shownRevision = processor.arrangement.revision();
     refreshInspector();
@@ -487,7 +504,9 @@ void ArrangeView::refreshInspector() {
                                                              &deleteButton, &transitionChoice, &transitionLengthChoice, &locationChoice, &planetChoice, &dramaChoice, &worldButton })
         c->setEnabled(any);
     autoButton.setEnabled(shown.count > 0);
-    orchestrateButton.setEnabled(shown.count > 0);
+    orchestrateButton.setEnabled(processor.dramaSystem());
+    orchestrateButton.setButtonText(shown.autoOrchestra ? "AUTO ORCH: ON" : "AUTO ORCH: OFF");
+    orchestrateButton.setToggleState(shown.autoOrchestra, juce::dontSendNotification);
     cueLengthText.setText(cueLengthLabel(), juce::dontSendNotification);
     if (any) {
         const auto& s = shown.sections[std::size_t(selectedIndex)];
@@ -741,7 +760,24 @@ void ArrangeView::resized() {
 }
 
 //==============================================================================
+void ArrangeView::updateLive() {
+    playing = processor.arrangement.played();
+    live = {};
+    if (playBar < 0.0 || playing.count <= 0) return;
+    auto st = playing.evaluate(playBar * double(arr::beatsPerBar));
+    if (!st.active || st.at.ended) return;
+    arr::Shaping sh;
+    sh.drama = processor.dramaSystem() ? processor.parameters.getRawParameterValue(specs[PDrama].id)->load() : 0.0f;
+    sh.intensityOffset = processor.parameters.getRawParameterValue(specs[PIntensity].id)->load() - 0.5f;
+    sh.types = shownTypes;
+    if (processor.dramaSystem()) arr::shape(st, playing, sh);
+    live.on = arr::sounding(st, playing, sh);
+    live.section = st.at.section;
+    live.valid = true;
+}
+
 void ArrangeView::paint(juce::Graphics& g) {
+    updateLive();
     // The timeline and the instrument grid on the art grid: sections as raised pixel
     // blocks in their colours, cells as pixel blocks, the ramp as a stepped line.
     const auto& pal = pixel::theme().colours;
@@ -926,7 +962,10 @@ void ArrangeView::paint(juce::Graphics& g) {
             else pixel::drawTinyText(g, juce::String(spec.name).toUpperCase(), label.withTrimmedLeft(22), pal.ink.withAlpha(0.9f));
             for (int i = 0; i < shown.count; ++i) {
                 const auto& s = shown.sections[std::size_t(i)];
-                const auto cell = s.cells[std::size_t(row.slot)][std::size_t(row.element)];
+                // The Drama design pass: the grid shows what plays (the orchestra's choice where it
+                // scores live), the composer's own cells marked.
+                const auto& written = s.cells[std::size_t(row.slot)][std::size_t(row.element)];
+                const auto cell = i < playing.count ? playing.sections[std::size_t(i)].cells[std::size_t(row.slot)][std::size_t(row.element)] : written;
                 const auto b = pixel::snapArt(cellBounds(i, row.slot, row.element).toFloat());
                 if (b.getWidth() <= u) continue;
                 const auto c = sectionColour(s);
@@ -987,8 +1026,18 @@ void ArrangeView::paint(juce::Graphics& g) {
                 } else if (cell.entry != arr::EntryOff && b.getWidth() >= 12 && b.getHeight() >= 10)
                     pixel::drawText(g, arr::variantNames[std::size_t(std::min<int>(cell.variant, 2))], b.withTrimmedLeft(4), pal.inkOn, juce::Justification::centredLeft,
                                     pixel::Font::Small, juce::Colours::transparentBlack, false);
+                // Set by hand (an override): a mark in the bottom-right corner.
+                if (written.manual && playing.autoOrchestra) {
+                    pixel::fillArt(g, { b.getRight() - 3 * u, b.getBottom() - u, 3 * u, u }, pal.accent);
+                    pixel::fillArt(g, { b.getRight() - u, b.getBottom() - 3 * u, u, 3 * u }, pal.accent);
+                }
+                // Playing now (after the Drama shaping): lit; on in the grid but resting now (the
+                // Place's kit handing over to the Drama drums, a part still to come in): dimmed.
+                const bool current = live.valid && i == live.section;
+                if (current && cell.entry != arr::EntryOff && !live.on[std::size_t(row.slot)][std::size_t(row.element)]) pixel::fillArt(g, b, pal.well.withAlpha(0.6f));
                 const bool hover = i == hoverCellSection && row.slot == hoverCellSlot && row.element == hoverCellElement;
-                pixel::frameArt(g, b, hover ? pal.glow : c.withAlpha(cell.entry == arr::EntryOff ? 0.3f : 0.7f));
+                const bool lit = current && live.on[std::size_t(row.slot)][std::size_t(row.element)];
+                pixel::frameArt(g, b, hover ? pal.glow : (lit ? pal.inkOn : c.withAlpha(cell.entry == arr::EntryOff ? 0.3f : 0.7f)));
             }
         }
         g.restoreState();
@@ -1007,6 +1056,9 @@ void ArrangeView::paint(juce::Graphics& g) {
     else if (mode != PlayArrangement) status = "Play Mode is " + juce::String(mode == PlayFree ? "Free" : "Transport") + ": set it to Arrangement for the host to play these sections. ";
     else status = "Play Mode Arrangement: the host's song position plays the section there. ";
     if (!processor.previewing()) status += "Click a cell: on/off. Shift-click: variant A/B/C. Right-click: enter halfway, fade, Fill.";
+    // The Drama design pass: what the grid shows.
+    if (shown.autoOrchestra && processor.dramaSystem() && shown.count > 0)
+        status += " AUTO: the orchestra chooses the parts (dim cells rest); your clicks are overrides (corner mark).";
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
     g.setColour(pal.inkDim);
     g.drawText(status, statusArea, juce::Justification::centredLeft, true);
@@ -1195,6 +1247,7 @@ void ArrangeView::showSectionMenu(int index) {
     m.addSeparator();
     m.addItem(4, "Every instrument on");
     m.addItem(5, "Every instrument off");
+    if (shown.autoOrchestra) m.addItem(11, "Every cell automatic (the orchestra chooses)");
     m.addItem(10, "Evolve inside the section", true, shown.sections[std::size_t(index)].evolve);
     m.addSeparator();
     m.addItem(6, "Copy its clips");
@@ -1222,7 +1275,15 @@ void ArrangeView::showSectionMenu(int index) {
         else if (r == 4 || r == 5)
             edit([r](arr::Section& s) {
                 for (auto& row : s.cells)
-                    for (auto& c : row) c.entry = uint8_t(r == 4 ? arr::EntryOn : arr::EntryOff);
+                    for (auto& c : row) {
+                        c.entry = uint8_t(r == 4 ? arr::EntryOn : arr::EntryOff);
+                        c.manual = true;
+                    }
+            });
+        else if (r == 11)
+            edit([](arr::Section& s) {
+                for (auto& row : s.cells)
+                    for (auto& c : row) c.manual = false;
             });
         else if (r == 10) edit([](arr::Section& s) { s.evolve = !s.evolve; });
         else if (r >= 100 && r < 100 + arr::colourCount) edit([r](arr::Section& s) { s.colour = uint8_t(r - 100); });
@@ -1231,7 +1292,8 @@ void ArrangeView::showSectionMenu(int index) {
 }
 
 void ArrangeView::showCellMenu(int section, int slot, int element) {
-    const auto cell = shown.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
+    const auto cell = playedCell(section, slot, element);
+    const bool manual = shown.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)].manual;
     juce::PopupMenu m;
     m.addSectionHeader(juce::String(elementSpec(shownTypes[std::size_t(slot)], element).name) + " in "
                        + juce::String::fromUTF8(shown.sections[std::size_t(section)].nameText()));
@@ -1241,6 +1303,8 @@ void ArrangeView::showCellMenu(int section, int slot, int element) {
     m.addItem(20, "Fill in the last bar", shown.changeAfter(section), cell.fill);
     m.addSeparator();
     m.addItem(30, "The same in every section");
+    // The Drama design pass: the orchestra chooses this cell again.
+    if (shown.autoOrchestra) m.addItem(31, "Back to automatic (the orchestra chooses)", manual, false);
     // Milestone 16: the section's clip.
     m.addSeparator();
     m.addItem(40, "Open the clip");
@@ -1262,14 +1326,18 @@ void ArrangeView::showCellMenu(int section, int slot, int element) {
             case 46: pasteClip(section, slot, element); return;
             default: break;
         }
+        c.manual = true;
         if (r >= 1 && r <= arr::EntryCount) c.entry = uint8_t(r - 1);
         else if (r >= 10 && r < 13) c.variant = uint8_t(r - 10);
         else if (r == 20) c.fill = !c.fill;
         else if (r == 30) {
             auto a = processor.arrangement.get();
-            for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].cells[std::size_t(slot)][std::size_t(element)] = cell;
+            for (int i = 0; i < a.count; ++i) a.sections[std::size_t(i)].cells[std::size_t(slot)][std::size_t(element)] = c;
             processor.arrangement.set(a);
             return;
+        } else if (r == 31) {
+            c = shown.sections[std::size_t(section)].cells[std::size_t(slot)][std::size_t(element)];
+            c.manual = false;
         } else return;
         setCell(section, slot, element, c);
     });
@@ -1281,11 +1349,17 @@ void ArrangeView::showRowMenu(int slot, int element) {
     m.addItem(1, "On in every section");
     m.addItem(2, "Off in every section");
     for (int v = 0; v < 3; ++v) m.addItem(10 + v, "Pattern " + juce::String(arr::variantNames[std::size_t(v)]) + " everywhere");
+    if (shown.autoOrchestra) m.addItem(20, "Automatic in every section (the orchestra chooses)");
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMousePosition(), [this, slot, element](int r) {
         if (r == 0) return;
         auto a = processor.arrangement.get();
         for (int i = 0; i < a.count; ++i) {
             auto& c = a.sections[std::size_t(i)].cells[std::size_t(slot)][std::size_t(element)];
+            if (r == 20) {
+                c.manual = false;
+                continue;
+            }
+            c.manual = true;
             if (r == 1) c.entry = arr::EntryOn;
             else if (r == 2) c.entry = arr::EntryOff;
             else c.variant = uint8_t(r - 10);

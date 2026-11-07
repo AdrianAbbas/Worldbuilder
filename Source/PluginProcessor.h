@@ -143,6 +143,17 @@ public:
     // ARRANGE's Orchestrate: the current arrangement within each section's part budget, by
     // voice (Orchestra.h), as one undoable step.
     void orchestrateArrangement();
+    // The Drama design pass: whether the orchestra scores the arrangement live (ARRANGE's AUTO;
+    // on for every arrangement made now, off for one loaded from an older project). Turning it
+    // on is one undoable step (an older arrangement's hand-set Off cells become overrides).
+    bool autoOrchestra() const { return arrangement.get().autoOrchestra; }
+    void setAutoOrchestra(bool on);
+    // The project's Drama setting (World options; saved with the session, default On). Off: the
+    // whole Drama system off, the world plays as before the Drama patches.
+    bool dramaSystem() const { return dramaSystemOn.load(std::memory_order_relaxed); }
+    void setDramaSystem(bool on);
+    // The orchestra's context now (the Places, the Seed, the Drama setting).
+    wb::arr::OrchestraContext orchestraContext() const;
 
     // KEYS (Milestone 14): the Play target and REC. Set on the message thread, read by
     // the audio thread each block; saved with the project (REC's arm is not).
@@ -269,6 +280,7 @@ private:
     void timerCallback() override {
         serviceLocations();
         patterns.syncTypes(slotTypes());
+        arrangement.refreshContext();   // the Drama design pass: a Place or the Seed changed
         serviceArrangement();
         serviceKeys();
     }
@@ -280,6 +292,7 @@ private:
     void setValue(int param, float value);
 
     std::array<std::atomic<float>*, wb::PCount> raw {};
+    std::atomic<bool> dramaSystemOn { true };
     double rate = 48000;
     int64_t expectedHostPosition = -1;
     bool hostWasPlaying = false, hostPlayingNow = false;

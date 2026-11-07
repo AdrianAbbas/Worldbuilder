@@ -327,6 +327,8 @@ struct Host {
     void set(const char* id, float value) {
         auto* parameter = p->parameters.getParameter(id);
         parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+        // (As the processor's timer does: a Place or the Seed changed, the orchestra scores again.)
+        p->arrangement.refreshContext();
     }
     void set(const std::string& id, float value) { set(id.c_str(), value); }
     float get(const char* id) const { return p->parameters.getRawParameterValue(id)->load(); }
@@ -9450,6 +9452,7 @@ void testSamples(Suite& s) {
 #include "LoudnessTests.inc"
 #include "MixProbe.inc"
 #include "OrchestraTests.inc"
+#include "DesignTests.inc"
 
 #include "LevelProbe.inc"
 #include "LevelTests.inc"
@@ -9568,6 +9571,9 @@ int main(int argc, char** argv) {
     if (run("loudness")) testLoudness(s);
     if (run("orchestra")) testOrchestra(s);
     if (run("level")) testLevel(s);
+    if (run("design")) testDesign(s);
+    if (only.contains("familytrim")) probeFamilyTrim();
+    if (only.contains("percparts")) probePercParts();
     if (run("woodwinds")) testWoodwinds(s);
     if (only.contains("dramatrims")) probeDramaTrims();
     if (only.contains("loudprobe")) probeLoudness();

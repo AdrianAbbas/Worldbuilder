@@ -42,6 +42,46 @@ const Theme& theme(int type) {
     return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
 }
 
+float familyTrimDb(int type) {
+    // Each Place's Drama percussion (an electronic or natural kit, the drums' room in its space)
+    // levelled to what it was before the design pass (the percussion alone at a Climax, BS.1770,
+    // measured by the design group's "familytrim" probe), so the calibrated balance of the level
+    // and drums pass holds.
+    static constexpr std::array<float, PlaceTypeCount> table {
+#include "FamilyTrim.inc"
+    };
+    return table[std::size_t(std::clamp(type, 0, PlaceTypeCount - 1))];
+}
+
+int familyOf(int type) {
+    switch (type) {
+        case Castle: case Village: case Temple: case Ruins: case SeaShip: case Palace: case Tavern: return FamilyOrchestral;
+        case Forest: case Desert: case Beach: case Cavern: return FamilyNatural;
+        case NoPlace: return FamilyOrchestral;
+        default: return FamilyElectronic;
+    }
+}
+
+DrumRoom drumRoom(int type) {
+    if (!designPass) return {};
+    // From the Place's own space (its theme's hall, 0.4 dry to 0.85 vast): the drums get a room
+    // about a third as long as the hall the layer's melodic parts play in, and a share of it.
+    const float h = clamp01((theme(type).hall - 0.4f) / 0.45f);
+    DrumRoom r;
+    r.size = lerp(0.15f, 0.55f, h);
+    r.decay = lerp(0.45f, 1.1f, h);
+    // (The wet level is the room's return: its input is high-passed, so the drums' low end stays
+    // dry and tight; measured (BS.1770), the room sits 6-14 LU under the dry drums.)
+    r.wet = lerp(0.45f, 0.75f, h);
+    switch (familyOf(type)) {
+        case FamilyElectronic: r.damp = 8000.0f; break;   // a bright, synthetic space
+        case FamilyNatural: r.damp = 5000.0f; break;      // soft, absorbent
+        default: r.damp = 6500.0f; break;
+    }
+    if (type == Cavern) r.damp = 3800.0f;   // stone, dark
+    return r;
+}
+
 // The balance per Place, style and tier (Tests "loudprobe --balance" writes the table).
 namespace {
 struct BalanceRow {
@@ -286,6 +326,15 @@ void generate(int placeType, int element, int variant, const GenInputs& in, pat:
                     if (pos == 0 && (bar & 1) == 0) put(RowLow, d.low[0], 1.0f);
                     continue;
                 }
+                if (fill && designPass && familyOf(placeType) == FamilyElectronic) {
+                    // An electronic kit's fill: the kick stuttering, a clap ratchet climbing, a
+                    // gap (the glitch) before the downbeat.
+                    if (pos == 0 || pos == 6 || pos == 8 || pos == 10 || pos == 11) put(RowLow, pos == 0 ? 'X' : 'x', 1.0f);
+                    if (pos >= 8 && pos <= 13) w.note(step, RowSnare, 1, (0.45f + 0.08f * float(pos - 8)) * 0.85f);
+                    if (pos == 4 || pos == 12) w.note(step, RowTomHigh, 1, 0.7f);
+                    if (pos == 13) w.note(step, RowTomLow, 1, 0.8f);
+                    continue;
+                }
                 if (fill) {
                     // A bar into the next section: the downbeats, a snare roll swelling over the
                     // second half, the toms over the last beat.
@@ -371,8 +420,9 @@ void generate(int placeType, int element, int variant, const GenInputs& in, pat:
     out.setGrid(pat::ThirtySecond, fill ? 1 : 8);
     out.followChords = false;
     if (fill) {
-        // A cymbal swell over the bar, a stab as the pickup.
-        if (in.rank == 0) w.note(0, RowSwell, 32, 0.8f);
+        // A cymbal swell over the bar, a stab as the pickup. (The Drama design pass: no swell;
+        // the arrivals bring their own, once.)
+        if (in.rank == 0 && !designPass) w.note(0, RowSwell, 32, 0.8f);
         w.note(28, RowStabA, 2, 0.8f);
         return;
     }
@@ -397,8 +447,9 @@ void generate(int placeType, int element, int variant, const GenInputs& in, pat:
             }
             // B at a climax: off-beat stabs pushing every bar.
             if (extra && (pos == 6 || pos == 10)) w.note(step, RowStabA, 3, 0.7f);
-            if (in.rank == 0) {
+            if (in.rank == 0 && !designPass) {
                 // The phrase line at a climax: an impact and a crash every four bars.
+                // (The Drama design pass: none; impacts and swells mark arrivals, not phrases.)
                 if (t == Climax && pos == 0 && (bar & 3) == 0) w.note(step, RowImpact, 16, 1.0f);
                 // A cymbal swell into the next phrase.
                 if (pos == 0 && ((t == Climax && (bar & 3) == 3) || (t == Action && (bar & 7) == 7))) w.note(step, RowSwell, 32, 0.75f);
@@ -945,10 +996,48 @@ void Layer::configure(int placeType, const WorldFrame& world, int style, float t
     brassOst.patch = brass.patch;
     pianoOst.patch = piano.patch;
     pianoOstSynth.patch = pianoSynth.patch;
+    // (The Drama design pass: the synthesised parts of the electronic and natural kits.)
+    family = designPass ? familyOf(placeType) : int(FamilyOrchestral);
+    percDrive = 0.0f;
+    percTrimGain = designPass ? dbToGain(familyTrimDb(placeType)) : 1.0f;
+    if (family != FamilyOrchestral) configureFamily(placeType, q);
     metalHit.patch = metal.patch;
     metalHit.patch.gain = 1.0f;
     impact.patch = perc.patch;
     configureRecorded(t, q);
+    if (family == FamilyNatural) {
+        // Natural kits: no orchestral snare, toms, concert bass drum or crash; the large drum (with
+        // mallets) under the hand drums where the Place is big, and as its impact.
+        percRec.patch.rows = {};
+        metalHitRec.patch.rows = {};
+        const float deep = placeType == Cavern ? -7.0f : (placeType == Forest ? -3.0f : -1.0f);
+        impactRec.patch.rows[3].stroke = orchperc::LargeDrumMallet;
+        impactRec.patch.rows[3].alt = placeType == Cavern ? int(orchperc::BassDrumMuted) : -1;
+        impactRec.patch.rows[3].semis = deep;
+        impactRec.patch.rows[3].decay = placeType == Cavern ? 2.2f : 1.6f;
+        impactRec.patch.rows[3].toneHz = placeType == Cavern ? 3500.0f : 6000.0f;
+        auto& o = drumsOrch.patch;
+        o.rows[1] = wb::HitRow {};
+        if (placeType == Beach) o.rows[0] = wb::HitRow {};
+        else {
+            o.rows[0].stroke = orchperc::LargeDrumMallet;
+            o.rows[0].alt = -1;
+            o.rows[0].semis = deep;
+            o.rows[0].gain = placeType == Cavern ? 0.8f : (placeType == Desert ? 0.3f : 0.45f);
+            o.rows[0].toneHz = placeType == Cavern ? 2800.0f : 4500.0f;
+            o.rows[0].decay = placeType == Cavern ? 1.2f : 0.7f;
+        }
+    } else if (family == FamilyElectronic) {
+        // Electronic kits: every row synthesised (no djembes, no orchestral drums), processed.
+        for (auto* p : { &percRec, &metalHitRec, &impactRec, &drumsOrch, &drums, &hands }) p->patch.rows = {};
+    }
+    // The drums' room in the Place's own space.
+    {
+        const auto r = drumRoom(placeType);
+        room.set(r.size, r.decay, r.damp);
+        roomWet = r.wet;
+        for (auto& f : roomCut) f.setCutoff(designPass ? 200.0f : 300.0f, rate);
+    }
     kitNow = t.kit;
     static constexpr int ostinatoParts[] { PStrings, PPulse, PBass, PPluck, PPianoOst };
     ostinatoPart = ostinatoParts[std::clamp(t.ostinato, 0, 4)];
@@ -964,6 +1053,111 @@ void Layer::configure(int placeType, const WorldFrame& world, int style, float t
 // (tight: the drums do not ring on under the music) and no pitch bend (natural drums). The
 // velocity layers (pp to ff, crossfaded) do the dynamics; every row's takes rotate without
 // repeating. The djembes (the drums and hands parts) stay: the war drums layer both.
+void Layer::configureFamily(int type, int q) {
+    const auto& t = theme(type);
+    const auto membrane = [](float semis, float bend, float decay, float tone, float noise, float noiseHz, float noiseDecay, float hardness, float pan) {
+        DrumRow r;
+        r.kind = dsp::DrumMembrane;
+        r.semis = semis;
+        r.bend = bend;
+        r.decay = decay;
+        r.tone = tone;
+        r.noise = noise;
+        r.noiseHz = noiseHz;
+        r.noiseDecay = noiseDecay;
+        r.hardness = hardness;
+        r.position = 0.2f;
+        r.pan = pan;
+        return r;
+    };
+    const auto struck = [](bool tuned, float pitch, float decay, float tone, float noise, float noiseHz, float noiseQ, float noiseDecay, float ratio, float partial,
+                           float pan) {
+        DrumRow r;
+        r.kind = dsp::DrumTwoTone;
+        r.tuned = tuned;
+        if (tuned) r.semis = pitch;
+        else r.hz = pitch;
+        r.bend = 1.0f;
+        r.decay = decay;
+        r.tone = tone;
+        r.noise = noise;
+        r.noiseHz = noiseHz;
+        r.noiseQ = noiseQ;
+        r.noiseDecay = noiseDecay;
+        r.ratio = ratio;
+        r.partial = partial;
+        r.hardness = 0.8f;
+        r.pan = pan;
+        return r;
+    };
+    auto& f = drumsSynth.patch;
+    auto& hs = handsSynth.patch;
+    auto& pc = perc.patch;
+    auto& m = metal.patch;
+    if (family == FamilyElectronic) {
+        // The Place's flavour: vast and dark (the Nebula, the alien ruins, the hive), industrial
+        // and metallic (the factory, the mining colony), tight and military, bright and punchy
+        // (the cities and malls), pulsed and clean (the ships and stations).
+        const bool vast = type == Nebula || type == AlienRuins || type == Hive;
+        const bool metallic = t.kit == KitMetal;
+        const bool bright = type == Megacity || type == City || type == Mall || type == Suburbs;
+        const bool march = t.kit == KitMarch;
+        const float sub = vast ? -31.0f : (bright ? -26.0f : -28.0f);
+        const float air = vast ? 0.7f : (bright ? 1.25f : 1.0f);   // the hats' and noises' brightness
+        // The sub kick (a membrane with a deep pitch drop and a click), a processed low tom.
+        f.rows[0] = membrane(sub, vast ? 2.4f : 2.0f, vast ? 0.5f : 0.3f, 0.9f, 0.4f, 3200.0f * air, 0.018f, 0.95f, 0.0f);
+        f.rows[1] = struck(true, sub + 14.0f, 0.2f, 0.6f, 0.3f, 1500.0f * air, 0.8f, 0.03f, metallic ? 2.4f : 1.6f, metallic ? 0.55f : 0.35f, 0.15f);
+        f.rows[1].bend = 1.35f;
+        f.rows[2] = struck(true, sub + 31.0f, 0.08f, 0.4f, 0.6f, 6000.0f * air, 1.0f, 0.02f, 2.9f, 0.6f, -0.25f);   // blips (an organic kit's hands)
+        f.rows[3] = struck(true, sub + 36.0f, 0.05f, 0.3f, 0.5f, 7500.0f * air, 1.0f, 0.015f, 3.3f, 0.5f, 0.3f);
+        f.voices = 8;
+        f.gain = 1.0f;
+        hs = f;
+        // A gated noise snare or clap (a tight processed snare for the military), synth toms with a
+        // pitch drop, and a sub hit as the impact.
+        if (march) {
+            pc.rows[0] = membrane(0.0f, 1.15f, 0.12f, 0.35f, 0.75f, 3200.0f, 0.09f, 1.0f, 0.1f);
+            pc.rows[0].tuned = false;
+            pc.rows[0].hz = 220.0f;
+            pc.rows[0].snare = 0.85f;
+        } else {
+            pc.rows[0] = struck(false, metallic ? 260.0f : 210.0f, 0.1f, 0.12f, 0.95f, (metallic ? 1600.0f : 2200.0f) * air, 0.6f, 0.11f, 1.5f, 0.2f, 0.1f);
+        }
+        pc.rows[1] = membrane(-14.0f, 1.6f, 0.32f, 0.85f, 0.06f, 1200.0f, 0.03f, 0.8f, -0.35f);
+        pc.rows[2] = membrane(-21.0f, 1.6f, 0.4f, 0.85f, 0.06f, 1000.0f, 0.03f, 0.8f, 0.3f);
+        pc.rows[3] = membrane(sub - 8.0f, 2.5f, vast ? 2.0f : 1.4f, 1.0f, 0.4f, 900.0f, 0.25f, 1.0f, 0.0f);
+        pc.voices = byQuality(q, 4, 5, 6);
+        // Metal: a filtered noise crash with a metallic ring, ring-like metal hits, a piston, a
+        // pulsed, filtered hat.
+        m.rows[0] = struck(false, 520.0f, vast ? 1.3f : 0.9f, 0.2f, 1.0f, 8000.0f * air, 0.5f, vast ? 1.1f : 0.8f, 1.41f, 0.5f, -0.2f);
+        m.rows[1] = struck(true, 19.0f, 0.25f, 0.7f, 0.2f, 5000.0f * air, 0.8f, 0.03f, 3.17f, 0.8f, 0.3f);
+        m.rows[2].ratio = metallic ? 2.4f : 2.1f;
+        m.rows[3] = struck(false, 8000.0f, 0.04f, 0.0f, 0.85f, 11000.0f * air, 1.2f, 0.025f, 1.5f, 0.0f, 0.25f);
+        m.gain = metallic ? 0.35f : 0.9f;
+        percDrive = vast ? 0.25f : 0.4f;
+    } else {
+        // Natural kits: the djembes stay (hand drums); wood, frame drums, shakers, stone.
+        const bool cavern = type == Cavern, desert = type == Desert, beach = type == Beach;
+        // The snare's row: a log drum (the Forest), a high slap (the Desert's tek), a clave (the
+        // Beach), a rock click (the Cavern).
+        if (cavern) pc.rows[0] = struck(false, 1800.0f, 0.03f, 0.5f, 0.6f, 4200.0f, 0.9f, 0.015f, 3.3f, 0.5f, 0.15f);
+        else if (desert) pc.rows[0] = struck(false, 900.0f, 0.06f, 0.4f, 0.5f, 5000.0f, 0.8f, 0.02f, 2.2f, 0.4f, 0.1f);
+        else if (beach) pc.rows[0] = struck(true, 19.0f, 0.05f, 0.9f, 0.05f, 4000.0f, 0.8f, 0.01f, 2.8f, 0.3f, 0.2f);
+        else pc.rows[0] = struck(true, 7.0f, 0.12f, 0.8f, 0.1f, 2500.0f, 0.8f, 0.02f, 2.3f, 0.4f, 0.1f);
+        // The toms: frame drums (soft beaters near the edge; deep stone booms in the Cavern).
+        pc.rows[1] = membrane(cavern ? -15.0f : -8.0f, 1.05f, cavern ? 0.9f : 0.5f, 0.6f, 0.1f, 1400.0f, 0.04f, 0.35f, -0.3f);
+        pc.rows[2] = membrane(cavern ? -20.0f : -13.0f, 1.05f, cavern ? 1.0f : 0.55f, 0.6f, 0.1f, 1200.0f, 0.04f, 0.35f, 0.3f);
+        for (int r = 1; r <= 2; ++r) pc.rows[std::size_t(r)].position = 0.6f;
+        pc.rows[3] = membrane(cavern ? -34.0f : -28.0f, 1.1f, cavern ? 2.4f : 1.6f, 0.9f, 0.3f, cavern ? 400.0f : 600.0f, 0.3f, 0.6f, 0.0f);
+        // A shaker swell or rattle (a finger cymbal in the Desert) as the crash; a shaker as the hat.
+        if (desert) m.rows[0] = struck(false, 2400.0f, 0.9f, 0.6f, 0.15f, 7000.0f, 0.8f, 0.05f, 2.76f, 0.8f, -0.2f);
+        else m.rows[0] = struck(false, 300.0f, 0.4f, 0.0f, 1.0f, cavern ? 3500.0f : 6000.0f, 0.9f, 0.35f, 1.5f, 0.0f, -0.2f);
+        m.rows[3] = struck(false, 6000.0f, 0.06f, 0.0f, 0.9f, 7000.0f, 0.9f, 0.06f, 1.5f, 0.0f, 0.25f);
+        hs.rows[2] = f.rows[2];
+        percDrive = 0.0f;
+    }
+}
+
 void Layer::configureRecorded(const Theme& t, int q) {
     namespace op = orchperc;
     if (!levelPass) {
@@ -1064,6 +1258,7 @@ void Layer::configureRecorded(const Theme& t, int q) {
 
 void Layer::add(int part, int offset, float semis, float velocity, double beat, double lengthBeats, int row, float pan, int live) {
     if (count >= maxNotes || velocity <= 0.0f) return;
+    if (live == 0 && (part == PImpact || part == PSwell)) moment(part == PImpact ? MomentImpact : MomentSwell, offset);
     Note& note = pending[std::size_t(count++)];
     note.offset = offset;
     note.part = part;
@@ -1239,16 +1434,26 @@ void Layer::stingers(int64_t step, int offset, int placeType, int style, const W
     // The section's start: a stinger lands there after a Riser, Drum fill, Drop or
     // Reverse swell.
     const double sectionStart = frame.beat - cue.sinceStart;
-    const bool landing = cue.arrived != arr::TransCut && cue.arrived != arr::TransCrossfade && cue.arrived != arr::TransFilter
-                         && std::abs(stepBeat - sectionStart) < 0.5 * stepLen;
+    const bool atStart = std::abs(stepBeat - sectionStart) < 0.5 * stepLen;
+    bool landing = cue.arrived != arr::TransCut && cue.arrived != arr::TransCrossfade && cue.arrived != arr::TransFilter && atStart;
+    bool geared = gearChange && bar == gearBar && t >= Action;
+    if (designPass) {
+        // The Drama design pass: the stinger marks arrivals only: the first downbeat of a bigger
+        // section, the beat dropping back in after a Drop's silence; in free play the arrival of a
+        // Climax, at most every 16 bars. A gear change inside an arranged section lands nothing.
+        landing = cue.arrivalHere && atStart && (cue.bigArrival || cue.arrived == arr::TransDrop);
+        geared = !cue.arranged && gearChange && bar == gearBar && t == Climax && previous < Climax && (lastStingerBar == INT64_MIN || bar - lastStingerBar >= 16);
+    }
     if (cue.transition == arr::TransDrop && cue.transitionT >= 0.0f) return;
     // Gear change (the tier rose on this bar) or an arrangement landing: impact, crash,
     // a big stab (the chromatic mediant into a climax), a braam (the hits).
-    if (hits && pos == 0 && ((gearChange && bar == gearBar && t >= Action) || (landing && t >= Tension))) {
+    if (hits && pos == 0 && (geared || (landing && t >= Tension))) {
+        lastStingerBar = bar;
+        moment(MomentStinger, offset);
         const bool big = t == Climax || landing;
         // (The Drama loudness pass: these land with the pattern's own hits on the same
         // downbeat, so each is a little softer than it would be alone.)
-        if (leads) {
+        if (leads || (designPass && landing)) {
             add(PImpact, offset, 0, loudnessPass ? (big ? 0.9f : 0.75f) : (big ? 1.1f : 0.85f), stepBeat, 2.0, 3);
             add(PMetalHit, offset, 0, loudnessPass ? (big ? 0.7f : 0.5f) : (big ? 0.9f : 0.6f), stepBeat, 2.0, 0);
         }
@@ -1275,7 +1480,8 @@ void Layer::stingers(int64_t step, int offset, int placeType, int style, const W
     // Fill).
     if (cue.transitionT >= 0.0f && (cue.transition == arr::TransRiser || cue.transition == arr::TransDrumFill || cue.transition == arr::TransReverse)) {
         const double remaining = cue.transitionLength * (1.0 - double(cue.transitionT)) - (stepBeat - frame.beat);
-        if (leads && hits && std::abs(remaining - cue.transitionLength) < 0.5 * stepLen) add(PSwell, offset, 0, loudnessPass ? 0.7f : 0.9f, stepBeat, cue.transitionLength, 0);
+        // (The Drama design pass: the transition's own riser is the one riser; no swell on top.)
+        if (leads && hits && !designPass && std::abs(remaining - cue.transitionLength) < 0.5 * stepLen) add(PSwell, offset, 0, loudnessPass ? 0.7f : 0.9f, stepBeat, cue.transitionLength, 0);
         if (leads && drums && cue.transition != arr::TransDrumFill && remaining <= 4.0 + 1.0e-6 && remaining > 0.0 && t >= Tension) {
             const float up = float(1.0 - remaining / 4.0) * (loudnessPass ? 0.8f : 1.0f);   // (the loudness pass: the roll builds less far)
             add(PPerc, offset, 0, 0.35f + 0.65f * up, stepBeat, stepLen, (step & 1) == 0 ? 0 : 1);
@@ -1326,6 +1532,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
     }
 
     count = 0;
+    clockNow = clock;
     const int mood = world.mood;
     const float heatV = 0.82f + 0.3f * heat;
     // A Drop's silence; the roll into a Riser or Reverse swell takes the leading slot's last bar.
@@ -1343,6 +1550,9 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         for (int k = 0; k < dramaElements; ++k) {
             const auto* play = el.play[std::size_t(k)];
             if (play == nullptr || !play->active() || !el.notes[std::size_t(k)] || el.gainTo[std::size_t(k)] <= 0.0f) continue;
+            // (The Drama design pass: a composer changes gear with the Place's own instruments first;
+            // the Drama drums come in from Action.)
+            if (designPass && k == 0 && latched < Action) continue;
             play->play(beat, span, [&](const pat::Event& ev) {
                 if (rolling(ev.beat)) return;
                 const int offset = std::clamp(int(std::ceil((ev.beat - beat) / beatsPerSample - 1.0e-9)), 0, n - 1);
@@ -1465,7 +1675,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         // orchestration pass: the drums drive without leading, the melodic parts a little back).
         const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow || k == PImpact || k == PMetalHit;
         const float climaxShape = latched == Climax ? (split ? (rhythm ? 1.0f : 0.9f) : (rhythm ? 1.12f : 0.8f)) : 1.0f;
-        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain : melodicTrim) : 1.0f;
+        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain * percTrimGain : melodicTrim) : 1.0f;
         const float g = tierGain * climaxShape * trim * dbToGain((loudnessPass ? trimDb : trimBeforeDb)[std::size_t(k)]);
         float& now = gainNow[std::size_t(k)];
         if (now < 0.0f) now = g;
@@ -1570,7 +1780,9 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
     // fullness) when the slot gives one.
     if (split && (percussion || percTail > 0)) {
         percTail = percussion ? int(0.6f * rate) : std::max(0, percTail - n);
-        const float roomWet = el.instrument ? 0.0f : (cue.rank == 0 ? 0.1f : 0.0f);
+        // (The Drama design pass: the room is the Place's (drumRoom()), for every slot whose drums play.)
+        const float roomWet = el.instrument ? 0.0f : (roomOff ? 0.0f : (designPass ? this->roomWet : (cue.rank == 0 ? 0.1f : 0.0f)));
+        const float drive = percDrive;
         float* outL = el.percL != nullptr ? el.percL : left;
         float* outR = el.percR != nullptr ? el.percR : right;
         for (int i = 0; i < n; ++i) {
@@ -1578,6 +1790,14 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
             float l = percHp[0].tick(percL[k]).hp, r = percHp[1].tick(percR[k]).hp;
             l -= 0.29f * percShelf[0].lp(l);
             r -= 0.29f * percShelf[1].lp(r);
+            if (drive > 0.0f) {
+                // Processed: a soft saturation (as a drum machine through a hot desk channel).
+                // (Unity gain well under the layer's ceiling: only the strokes' peaks are rounded
+                // as they near it, as a hot desk channel would.)
+                const float k2 = 1.0f + drive, c = std::max(percLimiter.ceiling, 0.05f);
+                l = c * std::tanh(l * k2 / c) / k2;
+                r = c * std::tanh(r * k2 / c) / k2;
+            }
             if (roomWet > 0.0f) {
                 float wl = 0, wr = 0;
                 room.process(roomCut[1].hp(roomCut[0].hp(l)), roomCut[3].hp(roomCut[2].hp(r)), wl, wr);

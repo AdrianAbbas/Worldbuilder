@@ -84,6 +84,14 @@ WorldbuilderProcessor::WorldbuilderProcessor()
       parameters(*this, nullptr, "WORLDBUILDER", makeLayout()) {
     for (std::size_t i = 0; i < specs.size(); ++i) raw[i] = parameters.getRawParameterValue(specs[i].id);
     patterns.syncTypes(slotTypes());
+    // The Drama design pass: the arrangement is scored live for the Places and the Seed (a new
+    // project's arrangement scores live from its first section).
+    arrangement.setContext([this] { return orchestraContext(); });
+    {
+        auto a = arrangement.get();
+        a.autoOrchestra = true;
+        arrangement.set(a, false);
+    }
     // The recorded instruments load in the background, once per process (Milestone 15).
     samples::Bank::get().load();
     startTimerHz(10);
@@ -110,6 +118,9 @@ EngineControls WorldbuilderProcessor::readControls() const noexcept { return con
 
 EngineControls WorldbuilderProcessor::controlsFor(const WorldValues& values) const noexcept {
     auto c = controlsFromValues(values);
+    // The Drama design pass: the project's Drama setting Off plays as before the Drama patches.
+    c.dramaSystem = dramaSystemOn.load(std::memory_order_relaxed);
+    if (!c.dramaSystem) c.drama = 0.0f;
     c.hostBpm = hostBpm.load(std::memory_order_relaxed);
     c.gate = gateOpen;
     // The Play target (KEYS).
@@ -993,7 +1004,12 @@ arr::Arrangement WorldbuilderProcessor::autoArrangeWithClips(const arr::Arrangem
     };
     const auto seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
     // The orchestration pass: by the Length control, at the host's tempo.
-    auto out = arr::autoArrange(arr::fitLength(a, arrangeSeconds(), arrangeTempo()), types, seed, source);
+    // The Drama design pass: the Drama setting Off arranges as before the Drama patches; on, the
+    // orchestra scores the result live (the grid keeps the suggestions it did not choose).
+    if (!dramaSystem()) return arr::autoArrangeLegacy(a, types, seed, source);
+    const auto fitted = arr::fitLength(a, arrangeSeconds(), arrangeTempo());
+    auto out = drama::designPass ? arr::autoArrangeLive(fitted, types, seed, source)
+                                : arr::autoArrange(fitted, types, seed, source);
     // With Drama above 0, Auto-arrange builds the cue's arcs on the Drama tiers.
     if (raw[PDrama]->load() > 0.0f) arr::dramatize(out, seed);
     return out;
@@ -1003,8 +1019,40 @@ void WorldbuilderProcessor::orchestrateArrangement() {
     const auto a = arrangement.get();
     if (a.count <= 0) return;
     const auto types = slotTypes();
+    // The Drama design pass: the orchestra scores it live from now on (AUTO).
+    if (drama::designPass) {
+        arrangement.set(arr::liveFrom(a, types), true);
+        return;
+    }
     const auto seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
     arrangement.set(arr::orchestrate(a, types, seed), true);
+}
+
+void WorldbuilderProcessor::setAutoOrchestra(bool on) {
+    auto a = arrangement.get();
+    if (a.autoOrchestra == on) return;
+    if (on) {
+        arrangement.set(arr::liveFrom(a, slotTypes()), true);
+        return;
+    }
+    // Off: the grid as it plays now becomes the composer's (every cell as written).
+    auto now = arrangement.played();
+    now.autoOrchestra = false;
+    arrangement.set(now, true);
+}
+
+arr::OrchestraContext WorldbuilderProcessor::orchestraContext() const {
+    arr::OrchestraContext c;
+    c.types = slotTypes();
+    c.seed = uint32_t(juce::roundToInt(raw[PSeed]->load()));
+    c.drama = dramaSystemOn.load(std::memory_order_relaxed);
+    return c;
+}
+
+void WorldbuilderProcessor::setDramaSystem(bool on) {
+    dramaSystemOn.store(on, std::memory_order_relaxed);
+    parameters.state.setProperty("dramasystem", on, nullptr);
+    arrangement.refreshContext();
 }
 
 bool WorldbuilderProcessor::makeClipUnique(int section, int slot, int element) {
@@ -1242,6 +1290,8 @@ void WorldbuilderProcessor::setStateInformation(const void* data, int sizeInByte
     // The orchestration pass: the Length control (older projects: Medium).
     if (state.hasProperty("arrangelength")) setArrangeLength(float(double(state.getProperty("arrangelength"))));
     else parameters.state.removeProperty("arrangelength", nullptr);
+    // The Drama design pass: the Drama setting (older projects: On, as they played).
+    setDramaSystem(bool(state.getProperty("dramasystem", true)));
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WorldbuilderProcessor(); }

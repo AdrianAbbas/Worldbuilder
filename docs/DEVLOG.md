@@ -8171,10 +8171,10 @@ plays as before the Drama patches). A resumed session continues from the first u
 ### Progress checklist
 
 - [x] 0. Diagnosis and plan (this section)
-- [ ] 1. Live orchestration: `autoOrchestra`, `Cell::manual`, the store publishing the played arrangement, templates / Auto-arrange raw cells, saving
-- [ ] 2. ARRANGE: the grid shows what plays (rest, manual mark, sounding now), overrides, AUTO switch
-- [ ] 3. Risers, impacts, swells and stingers by the rules
-- [ ] 4. Percussion per world (electronic, natural), levelled; the drums in the Place's space
-- [ ] 5. Gear order (drums from Action); Drama Off / On setting
+- [x] 1. Live orchestration: `autoOrchestra`, `Cell::manual`, the store publishing the played arrangement, templates / Auto-arrange raw cells, saving
+- [x] 2. ARRANGE: the grid shows what plays (rest, manual mark, sounding now), overrides, AUTO switch
+- [x] 3. Risers, impacts, swells and stingers by the rules
+- [x] 4. Percussion per world (electronic, natural), levelled; the drums in the Place's space
+- [x] 5. Gear order (drums from Action); Drama Off / On setting
 - [ ] 6. Tests (`design` group) and the before / after renders; the existing groups updated
 - [ ] 7. DEVLOG results and handoff; final push; CI green

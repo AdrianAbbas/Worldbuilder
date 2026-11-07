@@ -3,6 +3,8 @@
 // Every change is published to the audio thread through the engine's lock-free
 // buffer. It saves with the plugin state (and .world files) as compact text.
 #include "Arrangement.h"
+#include "Orchestra.h"
+#include <functional>
 #include "../Patterns/Pattern.h"
 #include <juce_data_structures/juce_data_structures.h>
 #include <vector>
@@ -14,6 +16,15 @@ public:
     explicit ArrangementStore(pat::TripleBuffer<arr::Arrangement>& audio) : out(audio) { publish(); }
 
     arr::Arrangement get() const;
+    // The Drama design pass: what plays (the arrangement as the orchestra scores it live for the
+    // current Places and Seed; as written when it does not score live). The audio thread gets
+    // this one.
+    arr::Arrangement played() const;
+    // Where the orchestra's context comes from (the Places, the Seed, the Drama setting), and a
+    // check that publishes again when it changed (the processor's timer; returns true then).
+    void setContext(std::function<arr::OrchestraContext()> source);
+    bool refreshContext();
+    arr::OrchestraContext context() const;
     // Replaces the arrangement and publishes it; `undoable` keeps the previous one for
     // undo (a drag passes false after its first step, so it undoes in one go).
     void set(const arr::Arrangement& a, bool undoable = true);
@@ -59,7 +70,9 @@ private:
 
     pat::TripleBuffer<arr::Arrangement>& out;
     juce::CriticalSection lock;
-    arr::Arrangement model {};
+    arr::Arrangement model {}, playing {};
+    std::function<arr::OrchestraContext()> contextSource;
+    arr::OrchestraContext contextNow {};
     std::vector<arr::Arrangement> undoStack, redoStack;
     uint32_t changes = 0;
     static constexpr std::size_t undoLimit = 100;

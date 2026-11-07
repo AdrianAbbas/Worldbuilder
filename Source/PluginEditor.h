@@ -252,6 +252,8 @@ private:
     int pixelDelights = 0;
     // Separate outputs (Milestone 12): Copy or Split.
     juce::ComboBox placeOuts;
+    // The Drama design pass: the project's Drama setting (Off / On).
+    juce::ComboBox dramaSystemChoice;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> placeOutsAttachment;
     // The Planet, by the globe (Milestone 10).
     juce::ComboBox planetChoice;

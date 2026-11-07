@@ -259,7 +259,8 @@ void testOrchestra(Suite& s) {
         const auto kept = h.p->arrangement.get();
         s.check(kept == mine, "an existing arrangement keeps its cells as set (nothing orchestrates it on its own)");
         arrange.orchestrate();
-        const auto done = h.p->arrangement.get();
+        // (The Drama design pass: ORCHESTRATE turns the live orchestra on; what plays is scored.)
+        const auto done = h.p->arrangement.played();
         const auto c = census(done, developerTypes, 1.0f);
         bool lengths = done.count == mine.count;
         for (int k = 0; k < done.count && lengths; ++k) lengths = done.sections[std::size_t(k)].bars == mine.sections[std::size_t(k)].bars;
@@ -279,6 +280,10 @@ void testOrchestra(Suite& s) {
         WorldEngine::probeLinear = true;
         bool tailOk = true, levelOk = true, dropOk = true;
         std::string text;
+        // (The orchestration pass's dry bus against its before. The Drama design pass puts the drums
+        // in the Place's own space at the developer's request; the "design" group checks that room.)
+        const bool designWas = drama::designPass;
+        drama::designPass = false;
         for (int type : { Palace, Desert, Beach, Castle, Spaceport, Factory }) {
             std::array<double, 2> tail {}, diff {}, sub {};
             for (int after = 0; after < 2; ++after) {
@@ -307,6 +312,7 @@ void testOrchestra(Suite& s) {
             s.metric(std::string("percussion ") + placeKeys[std::size_t(type)] + ": lower against the melodic parts than before by", diff[0] - diff[1], " dB");
         }
         WorldEngine::probeLinear = false;
+        drama::designPass = designWas;
         std::cout << "  [info] percussion: " << text << "\n";
         s.check(tailOk, "the Drama drums dry: their tail (250-900 ms against the first 120 ms) at most -10 dB and 6 dB under before", text);
         s.check(levelOk, "the Drama percussion under the melodic parts at Climax (1 to 9 dB under their sum)", text);

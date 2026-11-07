@@ -110,6 +110,16 @@ private:
 
     WorldbuilderProcessor& processor;
     arr::Arrangement shown;   // what was last read from the store
+    // The Drama design pass: what plays (the orchestra's choice) and, while the transport or the
+    // preview runs, which cells of the section under the playhead sound now.
+    arr::Arrangement playing;
+    struct Live {
+        bool valid = false;
+        int section = -1;
+        arr::Sounding on {};
+    } live;
+    void updateLive();
+    arr::Cell playedCell(int section, int slot, int element) const;
     uint32_t shownRevision = 0;
     int selectedIndex = -1, hoverSection = -1, hoverCellSection = -1, hoverCellSlot = -1, hoverCellElement = -1;
     std::array<int, placeSlots> shownTypes {};

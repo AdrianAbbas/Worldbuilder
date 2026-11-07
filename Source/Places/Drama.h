@@ -60,6 +60,10 @@ struct Cue {
     float transitionT = -1;
     double transitionLength = 0, sinceStart = 1.0e9;
     bool drumFill = false;
+    // The Drama design pass: the section is bigger than the one before it (an arrival).
+    bool bigArrival = false;
+    bool arranged = false;   // an arrangement plays (its arrivals mark the moments)
+    bool arrivalHere = false;   // this slot's hits land the arrival (one slot: the first whose hits play)
 };
 
 // Each Place's dramatic colour.
@@ -73,6 +77,22 @@ struct Theme {
     const char* text = "";
 };
 const Theme& theme(int placeType);
+// The Drama design pass: the percussion's family per world. Orchestral (fantasy and historical
+// Places: the orchestral and ethnic drums of the level and drums pass), Electronic (sci-fi and
+// modern Places: synthesised and processed drums: a sub kick with a pitch drop, gated noise snares
+// and claps, metallic and ring-like hits, pulsed and filtered hats, sub hits, glitched fills),
+// Natural (Forest, Desert, Beach, Cavern: hand and frame drums, wood, shakers, stone).
+enum Family { FamilyOrchestral, FamilyElectronic, FamilyNatural, FamilyCount };
+inline constexpr std::array<const char*, FamilyCount> familyNames { "orchestral", "electronic", "natural" };
+int familyOf(int placeType);
+// The drums' room in the Place's space (the Drama design pass): its wet share and decay (s),
+// shorter than the layer's hall and the Place's reverb, never washed out, never dry.
+struct DrumRoom {
+    float size = 0.12f, decay = 0.35f, damp = 6500.0f, wet = 0.1f;   // wet: the room's return level
+};
+DrumRoom drumRoom(int placeType);
+// An electronic or natural kit's level against the orchestral kit it replaced (dB, measured).
+float familyTrimDb(int placeType);
 // The style that plays for a Place with the Drama Style parameter at `style`.
 inline int styleFor(int placeType, int style) { return style > StyleAuto && style < StyleCount ? style : theme(placeType).style; }
 
@@ -140,6 +160,10 @@ inline bool loudnessPass = true;
 // a layer jumping to its unbalanced level when Drama goes to 0; no orchestration make-up):
 // the "before" of the listening renders.
 inline bool levelPass = true;
+// Tests only: false plays everything as it was before the Drama design pass (2026-11-07): no
+// live orchestration, the risers and hits as they were, one orchestral kit design everywhere in
+// one fixed short room, the Drama drums from Tension on: the "before" of the listening renders.
+inline bool designPass = true;
 
 // The Drama instruments' kit rows (the Drama tier rework). The drums: the low (war) drum,
 // the mid drum, a third voice that depends on the kit (slaps and their muted ghosts; a
@@ -238,6 +262,16 @@ public:
     static constexpr int logSize = 1024;
     uint32_t loggedCount() const { return logged; }
     const Logged& loggedAt(uint32_t i) const { return eventLog[std::size_t(i % logSize)]; }
+    // The Drama design pass, for the tests: the layer's big moments (an impact, a swell or riser,
+    // a stinger: the landing's stabs) with the sample they start on.
+    enum MomentKind { MomentImpact, MomentSwell, MomentStinger, MomentCount };
+    struct Moment {
+        uint64_t clock = 0;
+        int kind = 0;
+    };
+    static constexpr int momentSize = 256;
+    uint32_t momentCount() const { return moments; }
+    const Moment& momentAt(uint32_t i) const { return momentLog[std::size_t(i % momentSize)]; }
 
     enum PartId {
         PDrums, PPerc, PMetal, PSwell, PStrings, PPulse, PBass, PPluck, PLow, PBrass, PChoir, PPiano, PBraam, PSynth, PHands,
@@ -318,6 +352,11 @@ private:
     std::array<float, dsp::chunk> percL {}, percR {};
     std::array<std::array<float, dsp::chunk>, dramaElements> percElemL {}, percElemR {};
     dsp::SmallSpace room;
+    float roomWet = 0.1f;          // the drums' room for this Place (drumRoom())
+    float percDrive = 0.0f;        // electronic kits: the drums bus saturated (processed)
+    float percTrimGain = 1.0f;     // a family's kit levelled to the kit it replaces
+    int family = FamilyOrchestral;
+    void configureFamily(int placeType, int q);
     std::array<dsp::OnePole, 4> hallCut {}, roomCut {};
     std::array<dsp::Svf, 2> percHp {};
     std::array<dsp::OnePole, 2> percShelf {};
@@ -339,6 +378,11 @@ private:
     int idleSamples = 0;
     uint32_t startedCount = 0, logged = 0;
     std::array<Logged, logSize> eventLog {};
+    uint32_t moments = 0;
+    std::array<Moment, momentSize> momentLog {};
+    uint64_t clockNow = 0;
+    int64_t lastStingerBar = INT64_MIN;   // free play: a gear change's stinger at most every 16 bars
+    void moment(int kind, int offset) { momentLog[std::size_t(moments++ % momentSize)] = { clockNow + uint64_t(std::max(offset, 0)), kind }; }
     double lastBeat = -1.0e18;
     float heat = 0;   // x within its tier, for velocities
     uint64_t patchKey = 0;   // what the patches were last set for
@@ -352,6 +396,10 @@ private:
 public:
     // Tests only (the balance probe): the parts that sound (a bit per PartId).
     static inline uint32_t partMask = 0xffffffffu;
+    static inline bool roomOff = false;   // Tests only: the drums' room silent (its share measured)
+    // Tests only (the design group): the drums' room as configured for the Place now.
+    float drumRoomWet() const { return roomWet; }
+    int percussionFamily() const { return family; }
 };
 
 } // namespace wb::drama

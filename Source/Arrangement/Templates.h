@@ -68,6 +68,18 @@ struct ClipSource {
     int scaleSize = 7;   // notes per octave of the current Mood
 };
 Arrangement autoArrange(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& clips);
+// The Drama design pass: Auto-arrange for an arrangement the orchestra scores live
+// (Arrangement::autoOrchestra): the grid keeps the score's suggestions where the orchestra did not
+// choose and its choices (with their clips) where it did, and each section the loudness it was
+// written with (refDb), so that played() gives exactly what autoArrange() gives.
+Arrangement autoArrangeLive(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& clips);
+// Auto-arrange as before the Drama tier, with clips (the Drama setting Off).
+Arrangement autoArrangeLegacy(const Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& clips);
+void addSectionClips(Arrangement& a, const std::array<int, placeSlots>& types, uint32_t seed, const ClipSource& clips);
+// An arrangement from before the design pass scored live from now on (ARRANGE's AUTO): sections
+// written by hand keep the parts the composer turned off (as overrides); sections scored once
+// keep their loudness reference (what they kept plus their make-up).
+Arrangement liveFrom(const Arrangement& a, const std::array<int, placeSlots>& types);
 // The Drama tier (after the performance pass): an arrangement's arcs. Each section gets
 // its tier (intros and breaks calm, build-ups at Tension, the first climax at Action and
 // the later ones (or one after a build-up) at Climax, wind-downs back to Tension or
@@ -76,6 +88,15 @@ Arrangement autoArrange(const Arrangement& a, const std::array<int, placeSlots>&
 // fill from a break back into the fight, a Drop between two climaxes. Applied by
 // Auto-arrange when Drama is above 0, and by the dramatic scenes and Inspire.
 void dramatize(Arrangement& a, uint32_t seed);
+// The Drama design pass: risers by rules. biggerSection: `to` is a bigger section than `from`
+// (a climax after a build-up, a fight after a break; a higher tier of the same kind).
+// riserAllowed: section i may end in a Riser (or a Reverse swell): it is 16 bars or more, a
+// bigger section follows, and the transition into it was not one. disciplineRisers: every
+// Riser the rules refuse becomes a Drum fill (into a climax) or a Crossfade, the others at most
+// riserMaxBars long. Auto-arrange and dramatize() apply it.
+bool biggerSection(const Arrangement& a, int from, int to);
+bool riserAllowed(const Arrangement& a, int i);
+void disciplineRisers(Arrangement& a);
 
 // The Drama tier rework: how the Drama meter and a section's own evolution shape what the
 // arrangement plays at a song position (applied after Arrangement::evaluate; a pure
@@ -98,6 +119,9 @@ float gearOf(const Section& s, float sectionIntensity, const Shaping& shaping);
 // changing every 8 bars (16 in sections of 48 bars or more), small fills on the phrase
 // lines; calm and closing sections thin out towards their end instead.
 void shape(State& st, const Arrangement& a, const Shaping& shaping);
+// The Drama design pass: which slot lands an arrival (st.arrivalSlot: the first whose Drama hits
+// play at a bigger section's start or after a Drop), after shape().
+void markArrival(State& st, const Arrangement& a, const Shaping& shaping);
 // The Drama loudness pass (the engine's section balance, WorldEngine.cpp).
 // A section's Drama tier as the layer plays it (the gear rounded; or from its intensity).
 int sectionTier(const Arrangement& a, int section, const Shaping& shaping);

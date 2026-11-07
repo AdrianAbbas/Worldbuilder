@@ -150,6 +150,14 @@ bool WorldEngine::isRhythm(int type, int element) {
 void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineControls& controls) {
     // The Drama tier rework: the Drama meter and the sections' own evolution shape what the
     // arrangement plays (nothing at Drama 0 in an arrangement from before: as it was).
+    // (The Drama design pass: the project's Drama setting Off: the arrangement as written, as
+    // before the Drama patches: no shaping, no make-up, no swell.)
+    if (!controls.dramaSystem) {
+        writtenVariant = arranged.variant;
+        shapeDb.fill(0.0f);
+        layerShapeDb.fill(0.0f);
+        return;
+    }
     arr::Shaping shaping;
     shaping.drama = controls.instrument.on ? 0.0f : clamp01(finiteOr(controls.drama, 0.0f));
     shaping.intensityOffset = clamp01(finiteOr(controls.intensity, 0.5f)) - 0.5f;
@@ -157,6 +165,7 @@ void WorldEngine::shapeArrangement(const arr::Arrangement& a, const EngineContro
     const arr::State plain = arranged;
     writtenVariant = plain.variant;
     arr::shape(arranged, a, shaping);
+    arr::markArrival(arranged, a, shaping);
     // The Drama loudness pass: what drama's reshaping adds (instruments entering, busier
     // variants, doublings) or takes away (a calm section thinned), estimated from the
     // instruments' measured weights and levels and balanced back for 80 %: drama changes
@@ -768,6 +777,9 @@ void WorldEngine::renderChunk(float* left, float* right, int n, uint64_t clock, 
             pc.drama.arrived = arranged.arrived;
             pc.drama.sinceStart = arranged.sinceStart;
             pc.drama.drumFill = arranged.drumFill;
+            pc.drama.bigArrival = arranged.bigArrival;
+            pc.drama.arranged = true;
+            pc.drama.arrivalHere = arranged.arrivalSlot == int(si);
         }
         const bool keysHere = keysSlot == int(si);
         const bool audible = !pc.mute && (!anySolo || pc.solo) && (!keysOnly || keysHere);

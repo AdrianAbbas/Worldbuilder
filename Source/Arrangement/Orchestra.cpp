@@ -10,6 +10,9 @@ int voiceOf(int type, int element) {
     if (element == DramaHits) return VoiceHits;
     if (type <= NoPlace || type >= PlaceTypeCount || element < 0 || element >= placeElements) return VoiceColour;
     const auto& spec = elementSpec(type, element);
+    // (The Drama design pass: a Place's own risers and swells are effects, as the Drama hits:
+    // one at a time, never a riser bed under every section.)
+    if (drama::designPass && spec.icon == IconRiser) return VoiceHits;
     switch (roleOf(type, element)) {
         case RoleBass: return VoiceBass;
         case RoleRhythm: return spec.kind == Kit ? VoiceKit : VoiceOstinato;
@@ -62,7 +65,29 @@ struct Choice {
 
 } // namespace
 
-Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed) {
+namespace {
+// One part's power in a mix of Places (its Place's measured loudness times its share of it,
+// times its variant's weight).
+double partPower(int type, int e, int variant) {
+    static constexpr std::array<double, 4> variantPower { 1.0, 1.4, 0.7, 1.0 };
+    return std::pow(10.0, double(drama::placeLoudnessDb(type) + drama::elementShareDb(type, e)) / 10.0) * variantPower[std::size_t(std::min(variant, 3))];
+}
+} // namespace
+
+float writtenDb(const Section& s, const std::array<int, placeSlots>& types) {
+    double sum = 0;
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        const int type = types[std::size_t(slot)];
+        if (type == NoPlace) continue;
+        for (int e = 0; e < placeElements; ++e) {
+            const auto& c = s.cells[std::size_t(slot)][std::size_t(e)];
+            if (c.entry != EntryOff && patternInfo(type, e).kind != NoPattern) sum += partPower(type, e, c.variant);
+        }
+    }
+    return sum > 1.0e-12 ? float(10.0 * std::log10(sum)) : -120.0f;
+}
+
+Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>& types, uint32_t seed, bool live) {
     Arrangement a = in;
     std::array<int, placeSlots> active {};
     std::array<int, placeSlots> rankOf {};
@@ -83,16 +108,36 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
         const bool drama = dramaKind(kind);
         // The lead passes from Place to Place, section by section (the seed picks where it starts).
         const int leadPos = (leads++ + int(seed % uint32_t(n))) % n;
-        std::array<std::array<bool, slotElements>, placeSlots> chosen {};
+        std::array<std::array<bool, slotElements>, placeSlots> chosen {}, blocked {};
         std::array<int, VoiceCount> used {};
         int count = 0, leadSlot = -1;
+        // The Drama design pass: the cells set by hand first, as written (on: chosen, counted in
+        // the budget and their voice; off: never chosen).
+        for (int slot = 0; slot < placeSlots; ++slot) {
+            const int type = types[std::size_t(slot)];
+            if (type == NoPlace) continue;
+            for (int e = 0; e < slotElements; ++e) {
+                const auto& c = s.cells[std::size_t(slot)][std::size_t(e)];
+                if (!c.manual || !has(slot, e)) continue;
+                if (c.entry == EntryOff) {
+                    blocked[std::size_t(slot)][std::size_t(e)] = true;
+                    continue;
+                }
+                chosen[std::size_t(slot)][std::size_t(e)] = true;
+                const int voice = voiceOf(type, e);
+                if (isDramaElement(e) && (voice == VoiceKit || voice == VoiceOstinato)) continue;   // (they take over at runtime)
+                ++used[std::size_t(voice)];
+                ++count;
+                if (voice == VoiceLead && leadSlot < 0) leadSlot = slot;
+            }
+        }
         const auto pick = [&](int voice, bool counted) -> Choice {
             for (int k = 0; k < n; ++k) {
                 const int slot = active[std::size_t((leadPos + preferOffset[std::size_t(voice)] + k) % n)];
                 const int rank = rankOf[std::size_t(slot)];
                 const int type = types[std::size_t(slot)];
                 for (int e = 0; e < slotElements; ++e) {
-                    if (chosen[std::size_t(slot)][std::size_t(e)] || !has(slot, e) || voiceOf(type, e) != voice) continue;
+                    if (chosen[std::size_t(slot)][std::size_t(e)] || blocked[std::size_t(slot)][std::size_t(e)] || !has(slot, e) || voiceOf(type, e) != voice) continue;
                     if (isDramaElement(e)) {
                         // The Drama instruments where the drama may play, and where their slot has
                         // notes: the drums on the leading slot, the ostinato on the first two.
@@ -107,7 +152,7 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
             return {};
         };
         const auto take = [&](const Choice& c, bool counted) {
-            if (c.slot < 0) return false;
+            if (c.slot < 0 || blocked[std::size_t(c.slot)][std::size_t(c.element)]) return false;
             chosen[std::size_t(c.slot)][std::size_t(c.element)] = true;
             if (counted) {
                 ++used[std::size_t(voiceOf(types[std::size_t(c.slot)], c.element))];
@@ -126,7 +171,7 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
                     const int e = voice == VoiceKit ? int(DramaDrums) : int(DramaOstinato);
                     if (has(slot, e) && rankOf[std::size_t(slot)] <= (voice == VoiceKit ? 0 : 1)) c = { slot, e };
                 }
-            if (take(c, true) && voice == VoiceLead) leadSlot = c.slot;
+            if (take(c, true) && voice == VoiceLead && leadSlot < 0) leadSlot = c.slot;
         }
         // Below the budget (Places with few instruments): more colour, pads, an environment.
         for (int voice : { int(VoiceColour), int(VoicePad), int(VoiceEnvironment), int(VoiceOstinato), int(VoiceBass) }) {
@@ -156,14 +201,19 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
         // The level and drums pass: the power of the Place instruments the section was written
         // with (its cells before) and of those it keeps (each its Place's measured loudness times
         // its share of it); what is missing is made up.
+        // (Live: the section's own reference where it has one for these Places, else every part of
+        // every Place, as ARRANGE's "+" writes it, and the hand-set cells as written.)
+        bool sameTypes = true;
+        for (int slot = 0; slot < placeSlots; ++slot) sameTypes &= int(a.refTypes[std::size_t(slot)]) == types[std::size_t(slot)];
         const auto power = [&](bool after) {
+            if (!after && live && s.refSet && sameTypes) return std::pow(10.0, double(s.refDb) / 10.0);
             double sum = 0;
             for (int slot = 0; slot < placeSlots; ++slot) {
                 const int type = types[std::size_t(slot)];
                 if (type == NoPlace) continue;
                 for (int e = 0; e < placeElements; ++e) {
                     const auto& c = s.cells[std::size_t(slot)][std::size_t(e)];
-                    const bool on = after ? chosen[std::size_t(slot)][std::size_t(e)] : c.entry != EntryOff;
+                    const bool on = after ? chosen[std::size_t(slot)][std::size_t(e)] : (live && !c.manual ? true : c.entry != EntryOff);
                     if (!on || !has(slot, e)) continue;
                     static constexpr std::array<double, 4> variantPower { 1.0, 1.4, 0.7, 1.0 };
                     const double v = after && c.entry == EntryOff ? 1.0 : variantPower[std::size_t(std::min<int>(c.variant, 3))];
@@ -182,6 +232,7 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
             const int type = types[std::size_t(slot)];
             for (int e = 0; e < slotElements; ++e) {
                 auto& c = s.cells[std::size_t(slot)][std::size_t(e)];
+                if (c.manual) continue;   // as the composer set it
                 if (type == NoPlace || !chosen[std::size_t(slot)][std::size_t(e)]) {
                     c.entry = EntryOff;
                     continue;
@@ -219,6 +270,21 @@ Arrangement orchestrate(const Arrangement& in, const std::array<int, placeSlots>
     return a;
 }
 
+Arrangement played(const Arrangement& a, const OrchestraContext& context) {
+    if (!a.autoOrchestra || !context.drama || !drama::designPass || a.count <= 0) return a;
+    return orchestrate(a, context.types, context.seed, true);
+}
+
+int playedParts(const Section& s, const std::array<int, placeSlots>& types) {
+    int n = 0;
+    for (int slot = 0; slot < placeSlots; ++slot) {
+        const int type = types[std::size_t(slot)];
+        if (type == NoPlace) continue;
+        for (int e = 0; e < placeElements; ++e) n += s.cells[std::size_t(slot)][std::size_t(e)].entry != EntryOff && patternInfo(type, e).kind != NoPattern ? 1 : 0;
+    }
+    return n;
+}
+
 Sounding sounding(const State& st, const Arrangement& a, const Shaping& sh) {
     Sounding on {};
     if (!st.active || st.at.ended) return on;
@@ -231,6 +297,7 @@ Sounding sounding(const State& st, const Arrangement& a, const Shaping& sh) {
             if (patternInfo(type, e).kind == NoPattern || st.gain[std::size_t(slot)][std::size_t(e)] <= 0.0f) continue;
             if (isDramaElement(e)) {
                 if (sh.drama <= 0.0f || tier <= drama::Calm) continue;
+                if (e == DramaDrums && drama::designPass && tier < drama::Action) continue;
                 if ((e == DramaDrums && rank > 0) || (e == DramaOstinato && rank > 1)) continue;
             }
             on[std::size_t(slot)][std::size_t(e)] = true;

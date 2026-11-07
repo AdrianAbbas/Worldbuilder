@@ -52,6 +52,10 @@ enum End : uint8_t { EndStop, EndLoop, EndCount, EndRingOut = EndCount };
 enum Transition : uint8_t { TransCut, TransCrossfade, TransRiser, TransDrumFill, TransDrop, TransReverse, TransFilter, TransitionCount };
 inline constexpr std::array<const char*, TransitionCount> transitionNames { "Cut", "Crossfade", "Riser", "Drum fill", "Drop", "Reverse swell", "Filter sweep" };
 constexpr int maxTransitionLength = 4;
+// The Drama design pass: a Riser (or a Reverse swell) is shorter than about four bars: two bars,
+// three out of a section of 64 bars or more, whatever length it was given.
+inline int riserMaxBars(int sectionBars) { return sectionBars >= 64 ? 3 : 2; }
+inline bool isRiser(int kind) { return kind == TransRiser || kind == TransReverse; }
 // The transition's length in beats: bars, except a Drop (beats of silence).
 inline double transitionBeats(int kind, int length) {
     const double n = double(std::clamp(length, 1, maxTransitionLength));
@@ -114,8 +118,13 @@ struct Cell {
     // The section's own clip (unique), or nullptr: linked to the variant, which plays
     // as it does everywhere it is linked (edits to the variant show up here).
     ClipRef clip;
+    // The Drama design pass: the composer set this cell by hand (an override). In an arrangement
+    // the orchestra scores live (Arrangement::autoOrchestra) a manual cell plays exactly as written
+    // (and counts in the part budget and the voices); the other cells are the orchestra's to
+    // choose. Saved (only when set); ARRANGE marks it.
+    bool manual = false;
     bool unique() const { return clip != nullptr; }
-    bool operator==(const Cell& o) const { return entry == o.entry && variant == o.variant && fill == o.fill && sameClip(clip, o.clip); }
+    bool operator==(const Cell& o) const { return entry == o.entry && variant == o.variant && fill == o.fill && manual == o.manual && sameClip(clip, o.clip); }
 };
 
 // Every instrument of every slot: the Place's six, then the three Drama instruments.
@@ -158,6 +167,12 @@ struct Section {
     // 0 to maxMakeUpDb; set by orchestrate(), saved only when set). The section sounds as full as it was
     // written, with fewer parts: thinner, not quieter.
     float makeUpDb = 0;
+    // The Drama design pass: the loudness the section was written with, as orchestrate()
+    // measures it (10 log10 of the power sum of the parts its cells had on, before scoring), for
+    // a template scored live: its make-up stays what it was when it was made. Unset (refSet
+    // false): the section was written with every part of every Place (ARRANGE's "+").
+    bool refSet = false;
+    float refDb = 0;
 
     void setName(const char* text) {
         name.fill(0);
@@ -171,7 +186,7 @@ struct Section {
         return std::strncmp(name.data(), o.name.data(), std::size_t(nameLength)) == 0 && colour == o.colour && bars == o.bars
                && repeats == o.repeats && curve == o.curve && intensityStart == o.intensityStart && intensityEnd == o.intensityEnd
                && cells == o.cells && transition == o.transition && transitionLength == o.transitionLength && location == o.location
-               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve && orchestrated == o.orchestrated && lead == o.lead && makeUpDb == o.makeUpDb;
+               && planet == o.planet && world == o.world && drama == o.drama && evolve == o.evolve && orchestrated == o.orchestrated && lead == o.lead && makeUpDb == o.makeUpDb && refSet == o.refSet && refDb == o.refDb;
     }
 };
 
@@ -254,6 +269,10 @@ struct State {
     // in a rising section; 0 otherwise).
     float swellDb = 0;
     float makeUpDb = 0;   // the section's orchestration make-up (Section::makeUpDb)
+    // The Drama design pass: this section is bigger than the one before it (an arrival: the
+    // impacts and the stinger land on its first downbeat; set by arr::shape()).
+    bool bigArrival = false;
+    int arrivalSlot = -1;   // the slot whose hits land it (the first whose Drama hits play; arr::markArrival)
     // The orchestration pass: how much of each Place's environment plays (its World Space
     // and reverb sends): 1, less for the Places that do not lead an orchestrated section.
     std::array<float, placeSlots> focus { 1, 1, 1, 1 };
@@ -265,9 +284,16 @@ struct Arrangement {
     uint8_t end = EndStop;
     uint8_t loopTo = 0;        // End: loop, back to this section
     uint32_t revision = 0;
+    // The Drama design pass: the orchestra scores the arrangement live (the part budget and the
+    // voices applied whenever sections, cells, Places or the Seed change; Orchestra.h:
+    // played()). Every arrangement made in this version has it; one loaded from an older
+    // project has not (it plays as saved) until ARRANGE's AUTO switch turns it on. The Places
+    // the sections' refDb were measured for (refDb applies only while they are the same).
+    bool autoOrchestra = false;
+    std::array<int8_t, placeSlots> refTypes { -1, -1, -1, -1 };
 
     bool operator==(const Arrangement& o) const {
-        if (count != o.count || end != o.end || loopTo != o.loopTo) return false;
+        if (count != o.count || end != o.end || loopTo != o.loopTo || autoOrchestra != o.autoOrchestra || refTypes != o.refTypes) return false;
         for (int i = 0; i < count; ++i)
             if (!(sections[std::size_t(i)] == o.sections[std::size_t(i)])) return false;
         return true;
@@ -461,7 +487,9 @@ struct Arrangement {
         st.clipOrigin = std::round(beat - (double(st.at.pass) * bars + st.at.bar) * beatsPerBar);
         // The transition into the next section, over its last beats.
         if (st.at.lastPass && s.transition != TransCut && transitionAfter(st.at.section)) {
-            const double length = std::min(transitionBeats(s.transition, s.transitionLength), bars * beatsPerBar);
+            int given = s.transitionLength;
+            if (drama::designPass && autoOrchestra && isRiser(s.transition)) given = std::min(given, riserMaxBars(s.bars));
+            const double length = std::min(transitionBeats(s.transition, given), bars * beatsPerBar);
             const double remaining = (bars - st.at.bar) * beatsPerBar;
             if (remaining <= length) {
                 st.transition = s.transition;
