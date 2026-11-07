@@ -8062,3 +8062,119 @@ staccatos.
   regenerates it after a sound change); the levels were set by measurement, not by ear.
 - The developer's alto recorder and ocarina: see `tools/sample-prep/README.md` (bank ids
   `recorder-alto`, `recorder-alto-short`, `ocarina`, `ocarina-short`).
+
+## The Drama design pass (2026-11-07)
+
+The developer's report after five passes on the Drama system: (1) in a multi-Place arrangement
+(Palace + Temple + City, five sections made by hand with "+ Section" and by adding Places)
+every instrument of every Place still plays in every section: orchestration must be automatic
+(whenever Places or sections are added, an arrangement is made or edited, or Drama / Score
+Intensity changes: one lead, one bass, one kit at a time across all Places, harmony and colour
+within the budget, the other Places resting or supporting), ARRANGE's grid must show which cells
+really play, manual cell edits are overrides (marked); (2) risers are spammy: at most one per
+section transition, only into a bigger section, never two in a row, none in sections under 16
+bars, each shorter than about 4 bars; impacts, swells and stingers mark arrivals only (keep the
+silence-then-drop); (3) Drama percussion per world (fantasy / historical orchestral and ethnic as
+now; sci-fi and modern hybrid / electronic; natural Places their own), sitting in the Place's
+space (some of its reverb, shorter than the melodic parts); (4) Drama should feel like a
+composer changing gear (density, rhythm, register, more of the Place's own instruments, then
+drums), not loops layered on top. Plus a Drama Off / On setting per project (default On; Off
+plays as before the Drama patches). A resumed session continues from the first unticked line.
+
+### What is going wrong (diagnosis, before any change)
+
+1. **Orchestration is a one-off edit, not a property of the arrangement.** `arr::orchestrate()`
+   rewrites the cells once, and only templates, Auto-arrange, Inspire, the dramatic scenes and
+   the ORCHESTRATE button call it. "+ Section" (`ArrangeView::addSection`) makes a section with
+   every `Cell` at its default (`EntryOn`), and adding a Place to a slot gives that slot's cells
+   their defaults (on) in every section; neither orchestrates, and `Section::orchestrated` stays
+   false. At playback `arr::shape()` keeps to a budget only in orchestrated sections, so a
+   hand-made arrangement plays all six instruments of all three Places, every Place's own kit at
+   once, and (from Tension on) the Drama drums on top. The orchestration pass's tests built "the
+   default arrangement" as "+" five times *then Auto-arrange* (`orchTest::plusDefault`), so they
+   never saw the path the developer uses. The grid draws the stored cells, so it shows "all on"
+   even where shaping would change what plays: nothing shows what really sounds.
+2. **Risers and hits are written into loops.** The Drama hits pattern (`drama::generate`, the hits)
+   puts a cymbal swell into every fourth bar at a Climax and every eighth at Action, and an
+   impact with a crash every four bars at a Climax, whatever the section's length or position;
+   the gear-change stinger fires on every rise of the tier (bar lines inside a section as Score
+   Intensity moves), the transition swell plays on every Riser / Drum fill / Reverse swell
+   transition; Auto-arrange and `dramatize()` choose Risers by coin flips (an intro into a
+   climax, a break into a fight) without looking at the transition before or the section's
+   length, and a Riser may be 4 bars. Result: several swells per section and impacts on most
+   phrase lines; the arrivals are no longer special.
+3. **One drum kit design everywhere.** Since the level and drums pass every kit (the hybrid
+   and metal ones too) is the orchestral bass drum, tenor drums, snare, toms and crash under the
+   djembes; the sci-fi Places only differ by a synthesised clap and a hat. The percussion leaves
+   on a dry bus with one fixed short room (0.35 s, 10 %) for the leading slot only: in a hall-like
+   Place (Temple, Nebula, Cavern) the drums sound pasted on, in a dry one the same room again.
+4. **Drama adds a layer rather than changing gear.** From Tension on the Drama drums and ostinato
+   loop under the Place in every section; the Place's own changes (busier variants, entries,
+   doubling) come after. The drums are the first thing heard rising, so it reads as "loops on
+   top".
+
+### Plan
+
+- **Live orchestration** (the core fix). An arrangement carries `autoOrchestra` (new
+  arrangements and every arrangement made in this version: on; arrangements loaded from older
+  projects: off, so they play exactly as saved, with an AUTO switch in ARRANGE to turn it on as
+  one undo step). Each cell carries `manual` (a composer's edit: saved, marked in the grid). The
+  ArrangementStore keeps what the composer wrote and publishes to the audio thread what plays:
+  `orchestrate()` of it for the current Places and Seed (manual cells kept as written and counted
+  in the budget and the voices; the other cells chosen by voice and budget, as the templates are
+  now). It is recomputed whenever the arrangement changes (any edit, "+", delete, duplicate,
+  undo) and whenever a slot's Place or the Seed changes (the processor's timer and every set()),
+  so it can never go stale; Drama and Score Intensity act at playback through `shape()`, which in
+  an orchestrated section only enters into free voices within the budget (as now). Templates
+  and Auto-arrange store their raw cells (before orchestration) so the played result is what
+  they produce now (their levels and make-up unchanged). A cell click sets a manual override to
+  the opposite of what *plays*; a cell's menu has "Back to automatic", the section's "All cells
+  automatic".
+- **The grid shows what plays**: each cell drawn from the published (played) arrangement, a
+  resting cell dimmed, a manual one with a corner mark, and while the transport or preview runs,
+  the cells sounding now (after the Drama shaping, e.g. the Place's kit handing over to the Drama
+  drums) lit; a "parts n / budget" readout per section.
+- **One kit, one bass, one lead** in every section at every Drama setting, also counting the
+  Drama drums (the leading slot's only) and the Place's own riser instruments (they take the
+  hits' voice).
+- **Risers and hits by rules** (`arr::riserAllowed` and the Drama layer): a Riser only into a
+  bigger section (by kind and tier), never on two transitions in a row, none out of a section
+  under 16 bars, at most 2 bars (3 for a section of 64 bars or more); Auto-arrange, dramatize and
+  the layer all follow it (a riser the rules refuse becomes a Drum fill or a Cut; a Riser the
+  composer chose by hand plays, its length clamped). The Drama hits pattern loses its per-phrase
+  swells and impacts (stabs stay with the rhythm); impacts, swells and stingers come from the
+  arrangement's arrivals: the downbeat of a bigger section (one impact, its stinger), the end of a
+  Drop (the silence, then the beat drops: kept), the first Climax bar of free play; at most one
+  swell per transition (the Riser's), none in free play except on a tier change upwards at most
+  every 16 bars.
+- **Percussion per world.** The theme gets a family: Orchestral (Castle, Village, Temple, Ruins,
+  Sea Ship, Palace, Tavern: the kits as now), Electronic (Spaceport, Factory, City, Hive,
+  Spaceship, Biodome, Suburbs, Mall, Military, Station, Megacity, Bridge, Mining, Alien Ruins,
+  Nebula: synthesised drums processed: a sub kick with a pitch drop, a gated noise snare / clap,
+  metallic and ring-modulated hits, pulsed and filtered hats, glitch repeats on fills, sub hits as
+  impacts, a filtered downlifter; per Place flavour), Natural (Forest, Desert, Beach, Cavern: frame
+  and hand drums, woods, shakers, stone; the djembes and the library's large drum where they fit,
+  no orchestral snare and crash). Each family's kit is levelled to the kit it replaces (measured
+  percussion bus loudness, so the calibrated balance stays as in the last pass).
+- **The drums in the Place's space**: the layer's percussion room takes its size and amount from
+  the Place (its theme's hall: decay 0.45-1.1 s, about 0.4 of the Place's own reverb time, wet 12-
+  24 %), for every slot that plays drums; checked against a per-Place range.
+- **Gear order**: at Tension the Place changes gear first (busier variants, entries, register),
+  the Drama ostinato may enter; the Drama drums only from Action (a Place's own kit keeps playing
+  at Tension); at a Climax the drums drive and the doubling comes in.
+- **Drama Off / On** (World options, saved with the session, default On): Off plays as before
+  the Drama patches (no Drama layer, no shaping or make-up, the cells as written, the legacy
+  templates and Auto-arrange).
+- Every new behaviour behind a tests-only switch (`drama::designPass`), so the same build
+  renders "before" and "after". Drama 0 in free play and old projects stay bit for bit.
+
+### Progress checklist
+
+- [x] 0. Diagnosis and plan (this section)
+- [ ] 1. Live orchestration: `autoOrchestra`, `Cell::manual`, the store publishing the played arrangement, templates / Auto-arrange raw cells, saving
+- [ ] 2. ARRANGE: the grid shows what plays (rest, manual mark, sounding now), overrides, AUTO switch
+- [ ] 3. Risers, impacts, swells and stingers by the rules
+- [ ] 4. Percussion per world (electronic, natural), levelled; the drums in the Place's space
+- [ ] 5. Gear order (drums from Action); Drama Off / On setting
+- [ ] 6. Tests (`design` group) and the before / after renders; the existing groups updated
+- [ ] 7. DEVLOG results and handoff; final push; CI green
