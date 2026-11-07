@@ -317,7 +317,7 @@ void MiningPlace::configure(const PlaceContext& c) {
         p = woodwindPatch("ww-clarinet", "ww-clarinet-stac");
         const double t = double(c.clock) / rate;
         p.toneHz = lerpExp(2500.0f, 7000.0f, tone);
-        p.toneTrack = 2.5f;   // pure, like the model: the clarinet's upper odd harmonics rolled off
+        p.toneTrack = 1.8f;   // pure, like the model: the clarinet's upper odd harmonics rolled off
         p.velocityTone = 0.3f;
         p.breath = 0.008f;
         p.keyNoise = 0.0f;

@@ -101,7 +101,7 @@ private:
     // The recorder (the woodwinds pass): VSCO 2 CE's flute, woody and folky (the developer's
     // alto recorder takes over once recorded); the model plays without the samples.
     SamplePart recorderRec { recorder };
-    static constexpr std::array<float, 3> recorderGain { 4.215f, 6.169f, 5.201f };   // per Character, level-matched (Tests "woodwinds")
+    static constexpr std::array<float, 3> recorderGain { 5.326f, 8.428f, 6.111f };   // per Character, level-matched (Tests "woodwinds")
     dsp::SmallSpace room;
     dsp::Warmth warmth;
     float roomSend = 0;
@@ -940,7 +940,7 @@ private:
     // made strange (a second player beating against it, a slowly sweeping resonance); the
     // model plays without the samples.
     SamplePart beaconRec { beacon };
-    static constexpr std::array<float, 3> beaconGain { 8.513f, 8.438f, 9.19f };   // per Character, the whole Mining colony level-matched (the part alone 0.6 LU over; Tests "woodwinds")
+    static constexpr std::array<float, 3> beaconGain { 9.681f, 9.742f, 10.47f };   // per Character, the whole Mining colony level-matched (the part alone 0.6 LU over; Tests "woodwinds")
     ChoirPart hymn;
     // The worker hymn (Milestone 17): the developer's voice, mostly hummed, gritty, low.
     VoicePart hymnRec { hymn, &hymn };

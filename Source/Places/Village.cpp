@@ -447,6 +447,7 @@ void VillagePlace::configure(const PlaceContext& c) {
         p.alternateShort = "recorder-alto-short";
         p.toneHz = lerpExp(4500.0f, 11000.0f, tone);
         p.velocityTone = 0.6f;
+        p.layerSpan = 0.6f;   // a recorder's narrow dynamics: from soft to about half-way to the flute's f
         p.formantHz = 1500.0f;
         p.formantQ = 1.3f;
         p.formantDb = 3.0f;

@@ -121,6 +121,9 @@ struct SamplePatch {
     // > 0: the voice's low-pass also at most this many times the note's pitch (a pure tone:
     // the upper harmonics of every note rolled off alike).
     float toneTrack = 0;
+    // Expression: how far toward the loudest layer full dynamics go (1: all the way; less, a
+    // narrower range for a soft folk instrument, as its model plays).
+    float layerSpan = 1;
 };
 
 class SamplePart final : public Part {
@@ -237,10 +240,10 @@ private:
     }
     // Expression: the whole range of dynamics crossfades across the layers (the softest
     // dynamic the softest layer alone, full the loudest alone), so the level rises evenly.
-    static float spreadOver(const samples::Instrument& inst, float dynamic) {
+    float spreadOver(const samples::Instrument& inst, float dynamic) const {
         if (inst.layers < 2) return dynamic;
         const float lo = inst.layerCentre[0], hi = inst.layerCentre[std::size_t(std::min(inst.layers, int(inst.layerCentre.size())) - 1)];
-        return lo + dsp::clamp01(dynamic) * (hi - lo);
+        return lo + dsp::clamp01(dynamic) * dsp::clamp01(patch.layerSpan) * (hi - lo);
     }
     float levelOf(float dynamic) const { return 1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(dynamic), 1.3f); }
     float cutoffOf(float dynamic) const {
