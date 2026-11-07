@@ -249,16 +249,29 @@ their hits only, so a world of four never stacks four drum kits.
   fact: no ducking, no catch-up. Turning **Drama** down (or automating it) never jumps: the
   Drama instruments stop starting notes at once and what rings dies away at the level it
   played; turning it up, they start on the next bar line at their level.
-- **The Drama drums** are recorded orchestral percussion: concert bass drums, a large drum
-  played with mallets and sticks, tenor drums as toms, a snare, timpani, crash and clash
+- **The Drama drums fit the world.** Fantasy and historical Places (Castle, Village, Temple,
+  Ruins, Sea Ship, Palace, Tavern) play recorded orchestral percussion: concert bass drums, a
+  large drum with mallets and sticks, tenor drums as toms, a snare, timpani, crash and clash
   cymbals and a gong (from VS Chamber Orchestra 2: Community Edition, CC0; see Credits),
-  layered with the developer's djembes (the djembes lead the hand-drum kits, the orchestral
-  drums the war and march kits). Four velocity layers, and the recorded takes rotate so no
-  stroke repeats the one before. Tight and dry: short decays, a short room, low-cut sends,
-  no World Space reverb, the low end held. At a Climax the drums drive the track at about
-  the level of the Place's main parts (measured: 1-4 dB under its loudest instrument, the
-  melody or harmony, or level with its second where one instrument dominates), never above
-  the loudest; the impacts, cymbals, braams and stabs the same.
+  layered with the developer's djembes. Sci-fi and modern Places (Spaceport, Spaceship,
+  Station, Megacity, Bridge, Mining, Nebula, Alien Ruins, City, Mall, Military, Factory, Hive,
+  Biodome, Suburbs) play synthesised, processed drums: a sub kick with a pitch drop, gated
+  noise snares and claps, metallic and ring-like hits, pulsed and filtered hats, sub hits as
+  impacts, glitched fills (vast and dark in the Nebula, metallic in the Factory and the mining
+  colony, tight in the military camp, bright in the cities). Natural Places (Forest, Desert,
+  Beach, Cavern) play hand and frame drums, wood (a log drum, a clave, a desert tek), shakers
+  and stone, the large drum underneath where the Place is big. The drums sit in the Place's
+  own space: a room sized from the Place (0.45-1.1 s, about a third of the hall its melodic
+  parts play in, measured 6-14 LU under the dry drums), the low end kept dry and tight. Each
+  kit is levelled to the kit the Place had before. At a Climax the drums drive the track at
+  about the level of the Place's main parts, never above the loudest.
+- **Drama changes gear like a composer**: the Place's own instruments first (busier
+  variants, more of its parts, the register), the Drama ostinato at Tension, the Drama drums
+  only from Action, the doubling at a Climax. Impacts, swells and stingers mark arrivals (the
+  first downbeat of a bigger section, the beat back after a Drop), never every phrase.
+- **DRAMA: Off / On** (footer, beside PLACE OUTPUTS; saved with the project, On for a new
+  one): Off switches the whole Drama system off: no Drama instruments, no gear changes, the
+  arrangement plays as written, as before the Drama tier.
 - The safety limiters only catch real peaks: at a Climax the master limiter does not act at
   all on any single Place (each Place's Drama instruments also pass a transparent
   look-ahead limiter that rarely engages).
@@ -267,9 +280,10 @@ their hits only, so a world of four never stacks four drum kits.
 ### The Drama instruments
 
 Each Place slot has three **Drama instruments** beside its six: the **drums** (war,
-tribal, metal, hybrid or march, by Place), the **ostinato** (spiccato strings, a synth
+tribal, metal, hybrid or march, orchestral, electronic or natural by Place), the **ostinato** (spiccato strings, a synth
 pulse, a pulse bass, plucked strings or a piano) and the **hits** (the Place's two stabs,
-an impact with a crash, a cymbal swell). They are instruments like the others:
+an impact with a crash, a cymbal swell; the impacts and swells now come from the
+arrangement's arrivals, not the hits' own patterns). They are instruments like the others:
 
 - **Pattern Editor**: three red tabs after the six. Their starting patterns are written by
   the tier playing and the Drama Style (A the tier's own bars, **B** busier, **C** sparser,
@@ -322,19 +336,34 @@ Arrangements you made keep their lengths and do not evolve until you ask.
 
 ### Orchestration: several Places in one cue
 
-With several Places, a template, **Auto** or INSPIRE no longer plays every instrument of
-every Place at once: each section has a **part budget** across all Places (Intro 2-4,
+With several Places the orchestra scores the arrangement **live**: whenever you add a
+section (**+ SECTION**) or a Place, apply a template, Auto-arrange, edit the grid, or move
+Drama and Score Intensity, each section keeps a **part budget** across all Places (Intro 2-4,
 Build 4-7, Climax 7-10, Wind-down 3-5, Outro 2-3) and its parts are chosen by their role:
-one lead melody, one bass, one kit (a Place's drum kit, or the Drama drums while the drama
-plays: never two kits), one ostinato, up to two pads, one environment bed, and colour
-(accents, the Drama hits). The lead passes from Place to Place across the sections; the
-other Places fill the other roles or rest, and keep only half of their space (World Space
-and reverb sends), so several Places do not stack into mud. **ORCHESTRATE** (ARRANGE's
-toolbar) does the same for an arrangement you made: one click, your lengths and clips
-kept, one undo. A section orchestrated this way plays as loud as it was written: what the
-parts left out carried is given back to the parts that play (up to 7.5 dB, saved with the
-session), so a cue of several Places is thinner, not quieter. A climax is at its level from
-its first bar (it grows denser and harder as it goes); build-ups still swell into theirs.
+one lead melody, one bass, one kit (a Place's drum kit, or the Drama drums from Action: never
+two kits), one ostinato, up to two pads, one environment bed, and colour (accents, the Drama
+hits; a Place's own risers count as hits). The lead passes from Place to Place across the
+sections; the other Places fill the other roles or rest, and keep only half of their space
+(World Space and reverb sends), so several Places do not stack into mud.
+
+**The grid shows what plays**: cells the orchestra rests are dim, those that play are lit,
+and while the host or the preview plays, the cells sounding at that moment (after Drama's
+gear changes, e.g. the Place's kit handing over to the Drama drums) are outlined. **Click a
+cell** to override the orchestra (it plays as you set it, marked with a corner); right-click
+it for **Back to automatic**, a row for *Automatic in every section*, a section for *Every
+cell automatic*. **AUTO ORCH: ON / OFF** (ARRANGE's toolbar): on for every arrangement made
+now; an arrangement from an older project opens with it off (it plays exactly as saved) and
+one click scores it (the parts you had turned off stay off; one undo). A section scored this
+way plays as loud as it was written: what the parts left out carried is given back to the
+parts that play (up to 7.5 dB), so a cue of several Places is thinner, not quieter. A climax
+is at its level from its first bar (it grows denser and harder as it goes); build-ups still
+swell into theirs.
+
+**Risers by rules**: at most one per section change, only into a bigger section (a build-up
+into a climax, a break into a fight), never on two changes in a row, none out of a section
+under 16 bars, each at most 2 bars (3 out of a section of 64 bars or more). A Riser the rules
+refuse becomes a Drum fill (into a climax) or a Crossfade. The silence of a Drop and the beat
+dropping back in stay.
 
 ## Separate outputs in Logic Pro
 
