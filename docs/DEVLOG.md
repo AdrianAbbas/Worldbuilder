@@ -7866,7 +7866,7 @@ sample set. A resumed session continues from the first unticked line.
 - [x] 3. The sampler: mod wheel as expression (live layer crossfade and level), subtle breath and key noise, a second sample set taking over where it exists
 - [x] 4. The parts switched, each processed for its Place, level-matched to its stand-in
 - [x] 5. Tests (the `woodwinds` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, legato), level-matched, Places keep their identity, CPU within the budget; listening renders before and after
-- [ ] 6. DEVLOG results and handoff; final push; CI green (runs 1-3: fixes and two report-only misses, below)
+- [x] 6. DEVLOG results and handoff; final push; CI green (run 42332676827: 5260 passed, 0 failed, macOS green; runs 1-3: fixes and two report-only misses, below)
 
 ### Decisions
 
@@ -8029,6 +8029,10 @@ every other Place and Character):
   what carries it; checked at 1.0 for the Village, reported over 0.5. Listen to it on the Mac
   (`level-drama-drop-*` renders use the Castle; drop Drama to 0 in a Village at Score
   Intensity 100 %).
+
+**CI, the fourth run** (42332676827, `3e503ab`): Linux 5260 passed, 0 failed (the two report-only
+misses within their checks); macOS (universal build, smoke tests on arm64 and x86_64, bundle
+checks, a quarantined install, auval and the AU harness) green.
 
 ### Woodwinds pass handoff
 
