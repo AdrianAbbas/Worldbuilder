@@ -73,10 +73,18 @@ DrumRoom drumRoom(int type) {
     // (The wet level is the room's return: its input is high-passed, so the drums' low end stays
     // dry and tight; measured (BS.1770), the room sits 6-14 LU under the dry drums.)
     r.wet = lerp(0.45f, 0.75f, h);
+    // (The recorded kits, hand drums and orchestral drums, carry more of their energy above the
+    // room's low cut than the synthesised ones: their room a little lower, measured with them.)
     switch (familyOf(type)) {
         case FamilyElectronic: r.damp = 8000.0f; break;   // a bright, synthetic space
-        case FamilyNatural: r.damp = 5000.0f; break;      // soft, absorbent
-        default: r.damp = 6500.0f; break;
+        case FamilyNatural:
+            r.damp = 5000.0f;   // soft, absorbent
+            r.wet *= 0.5f;
+            break;
+        default:
+            r.damp = 6500.0f;
+            r.wet *= 0.6f;
+            break;
     }
     if (type == Cavern) r.damp = 3800.0f;   // stone, dark
     return r;
@@ -1675,7 +1683,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         // orchestration pass: the drums drive without leading, the melodic parts a little back).
         const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow || k == PImpact || k == PMetalHit;
         const float climaxShape = latched == Climax ? (split ? (rhythm ? 1.0f : 0.9f) : (rhythm ? 1.12f : 0.8f)) : 1.0f;
-        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain * percTrimGain : melodicTrim) : 1.0f;
+        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain * percTrimGain : melodicTrim) : (isPercussion(k) ? percTrimGain : 1.0f);
         const float g = tierGain * climaxShape * trim * dbToGain((loudnessPass ? trimDb : trimBeforeDb)[std::size_t(k)]);
         float& now = gainNow[std::size_t(k)];
         if (now < 0.0f) now = g;

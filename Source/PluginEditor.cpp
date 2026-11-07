@@ -887,13 +887,16 @@ void WorldbuilderEditor::resized() {
     auto top = settings.removeFromTop(40).withTrimmedTop(16).withHeight(22);
     settings.removeFromTop(4);
     auto bottom = settings.removeFromTop(40).withTrimmedTop(16).withHeight(22);
-    root.setBounds(top.removeFromLeft(80).withSizeKeepingCentre(80, 22));
-    top.removeFromLeft(10);
-    mood.setBounds(top.removeFromLeft(140).withSizeKeepingCentre(140, 22));
-    top.removeFromLeft(10);
-    quality.setBounds(top.removeFromLeft(120).withSizeKeepingCentre(120, 22));
-    top.removeFromLeft(10);
-    playMode.setBounds(top.removeFromLeft(100).withSizeKeepingCentre(100, 22));
+    root.setBounds(top.removeFromLeft(72).withSizeKeepingCentre(72, 22));
+    top.removeFromLeft(8);
+    mood.setBounds(top.removeFromLeft(122).withSizeKeepingCentre(122, 22));
+    top.removeFromLeft(8);
+    quality.setBounds(top.removeFromLeft(104).withSizeKeepingCentre(104, 22));
+    top.removeFromLeft(8);
+    playMode.setBounds(top.removeFromLeft(96).withSizeKeepingCentre(96, 22));
+    // (The Drama design pass: the project's Drama setting, Off / On.)
+    top.removeFromLeft(8);
+    dramaSystemChoice.setBounds(top.removeFromLeft(48).withSizeKeepingCentre(48, 22));
     seed.setBounds(bottom.removeFromLeft(170).withSizeKeepingCentre(170, 20));
     bottom.removeFromLeft(10);
     dice.setBounds(bottom.removeFromLeft(104).withSizeKeepingCentre(104, 22));
@@ -905,9 +908,6 @@ void WorldbuilderEditor::resized() {
         overlayChoice.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
         column.removeFromTop(4);
         placeOuts.setBounds(column.removeFromTop(40).withTrimmedTop(16).withHeight(22));
-        f.removeFromLeft(10);
-        auto second = f.removeFromLeft(80);
-        dramaSystemChoice.setBounds(second.removeFromTop(40).withTrimmedTop(16).withHeight(22));
     }
     f.removeFromRight(40);   // master meter
     for (int param : { PMaster, PWidth, PSpaceMix })

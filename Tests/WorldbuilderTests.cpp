@@ -4684,11 +4684,17 @@ void testArrangement(Suite& s) {
         const auto cell = arrange.cellBounds(1, 1, 2);
         s.check(!cell.isEmpty() && std::abs(cell.getCentreX() - b1.getCentreX()) <= 2 && arrange.cellBounds(0, 2, 0).isEmpty(),
                 "the grid has a row per instrument of each active Place, a cell under each section");
+        // (The Drama design pass: a click overrides what plays, the orchestra's choice where it
+        // scores the arrangement live; Shift-click steps the variant that plays.)
+        const auto playedBefore = h.p->arrangement.played();
+        const bool wasOn = playedBefore.sections[1].cells[1][2].entry != arr::EntryOff;
+        const int variantWas = playedBefore.sections[1].cells[1][3].variant;
         arrange.clickCell(1, 1, 2);
         arrange.clickCell(1, 1, 3, true);
-        a = h.p->arrangement.get();
-        s.check(a.sections[1].cells[1][2].entry == arr::EntryOff && a.sections[1].cells[1][3].variant == pat::VariantB,
-                "a click switches an instrument off in a section; Shift-click steps its variant");
+        a = h.p->arrangement.played();
+        s.check((a.sections[1].cells[1][2].entry != arr::EntryOff) != wasOn && a.sections[1].cells[1][2].manual
+                    && a.sections[1].cells[1][3].variant == (variantWas + 1) % 3 && a.sections[1].cells[1][3].manual,
+                "a click switches what plays in a cell (an override, marked); Shift-click steps its variant");
         h.p->arrangement.undo();
         s.check(h.p->arrangement.get().sections[1].cells[1][3].variant == pat::VariantA, "and it undoes");
         arrange.select(0);

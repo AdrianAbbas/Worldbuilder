@@ -53,5 +53,7 @@ for log in "$logs"/[0-9]-*.txt "$logs"/[0-9][0-9]-*.txt; do
     failed=$((failed + $(echo "$line" | cut -d' ' -f3)))
     grep '^FAIL' "$log"
 done
+# The kits' level match as CI measures it (with the recordings), for Source/Places/FamilyTrim.inc.
+if [[ -f "$logs/familytrim.txt" ]]; then sed -n '/familytrim/,$p' "$logs/familytrim.txt" | head -60; fi
 echo "$passed passed, $failed failed"
 [[ "$failed" -eq 0 ]]

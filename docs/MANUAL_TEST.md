@@ -1028,3 +1028,29 @@ singer to eight; every changed part before (the synthesised one) and after.
 6. **Banjo**: the Temple Zither. Does it read as a zither or temple lute in the shimmer,
    or as a banjo out of place? (If out of place: tell me, and it goes back to the model.)
 7. Levels against the other parts of each Place, by ear.
+
+## Drama design pass check (live orchestration, risers, percussion per world)
+
+Listen first to the renders the CI keeps (the Linux job's test logs, `renders/design-*`), each
+before and after: the hand-made Palace + Temple + City arrangement, the Megacity and the Castle
+at Drama 0 / 50 / 100 %, the Battle template at 3:00. The log `11-design.txt` prints the parts
+per section, the one kit, and the risers, impacts and stingers with their bar numbers.
+
+1. **Hand-made arrangement**: a new project, Palace in slot 1; ARRANGE, **+** twice; add a
+   Temple; **+** twice; add a City; **+** once. The grid should never show every cell lit:
+   about 3 parts in the Intro, 6-7 in the Build, 8-10 in the Climax, one kit, one bass, one
+   lead; the dim cells rest. Play it (PREVIEW): the outlined cells are what sounds now.
+2. **Overrides**: click a dim cell: it plays and gets a corner mark; right-click it, *Back to
+   automatic*. UNDO undoes each. **AUTO ORCH: OFF** plays every cell as written.
+3. **Drama** from 0 to 100 % on the Climax: the Place's own parts get busier first, the Drama
+   drums take over from the Palace timpani from Action, never two kits.
+4. **Risers**: one into the Climax at most (a Battle template: one Riser, into the first
+   fight), no swell on every phrase; impacts and a stinger land on the fights' first
+   downbeats; a Drop's silence, then the beat drops.
+5. **Percussion per world**: the Megacity, Spaceport, Factory at Drama 100 %: synthesised,
+   processed drums (sub kick, gated claps, metallic hits, pulsed hats, glitched fills); the
+   Forest, Desert, Beach, Cavern: hand and frame drums, wood, shakers, stone; the Castle, Temple,
+   Palace: orchestral as before. In each, the drums sit in the Place's space (a short room),
+   neither dry nor washed out.
+6. **DRAMA: Off** (footer): the world and the arrangement play as before the Drama tier;
+   save, reopen: still Off. An older project: AUTO ORCH off, exactly as it was.
