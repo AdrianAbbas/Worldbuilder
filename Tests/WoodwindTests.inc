@@ -471,6 +471,21 @@ void testWoodwinds(Suite& s) {
         s.check(near, std::string(w.name) + ": level-matched to its synthesised stand-in (within 1.5 LU, LUFS) in every Character", levels);
     }
 
+    s.section("woodwinds: each part plays in the key (its notes' harmonics included)");
+    for (const auto& w : woodwinds()) {
+        std::string line;
+        bool ok = true;
+        for (int c = 0; c < placeCharacters; ++c) {
+            const auto with = keyFit(chroma(partAudio(w.type, c, w.element, true, 24.0), 2.0, 100.0, 5000.0), 2, 0);
+            const auto without = keyFit(chroma(partAudio(w.type, c, w.element, false, 24.0), 2.0, 100.0, 5000.0), 2, 0);
+            // As clearly in D minor as the Places are asked to be (5 dB), or as its stand-in.
+            ok = ok && (with.meanGap > 5.0 || with.meanGap > without.meanGap - 1.0) && with.maxGap > 3.0;
+            line += (c > 0 ? ", " : "") + std::string(placeInfo(w.type).characters[std::size_t(c)]) + " " + fmt(with.meanGap) + " / " + fmt(with.maxGap) + " dB (stand-in " +
+                    fmt(without.meanGap) + ")";
+        }
+        s.check(ok, std::string(w.name) + ": in D minor in every Character (the in-scale classes 5 dB or more over the rest on average)", line);
+    }
+
     s.section("woodwinds: each Place at its level with the other parts, and still itself");
     {
         // The whole Place at its defaults (every instrument): as loud as with the stand-in,

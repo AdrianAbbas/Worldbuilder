@@ -7956,7 +7956,7 @@ retunes a sounding flute (the `locations` group's click check found it).
 
 ### Results
 
-The `woodwinds` group (`--only woodwinds`, 38 checks; in `scripts/run-tests-parallel.sh` after
+The `woodwinds` group (`--only woodwinds`, 42 checks; in `scripts/run-tests-parallel.sh` after
 the CPU groups, alone, as `10-woodwinds.txt`), here with VSCO 2 CE prepared (the developer's
 private recordings are not in this container; CI has both):
 
@@ -7969,8 +7969,9 @@ private recordings are not in this container; CI has both):
 | A velocity sweep rises evenly | no dip over 0.75 dB (staccatos 2 dB), no step over 4 dB, at least 4 dB soft to full: 21 of 21 |
 | The mod wheel (expression) on a held note | 5-15 dB louder through the layers, no rise over 1.5 dB per 50 ms, no dip, no click: 10 of 10; every part live: 4 dB or more louder, no click |
 | No clicks: held 6 s through the loops; released notes; legato; staccato ends | all (held: no step 6 dB sharper than the take's own; released: 40 dB down within 1.5 s; legato: never 3 dB under the quieter note) |
-| Each part against its stand-in, per Character (BS.1770, alone) | within 0.25 LU (checked within 1.5) |
+| Each part against its stand-in, per Character (BS.1770, alone) | within 0.25 LU (the beacon 0.6 over, so its Place matches; checked within 1.5) |
 | Each whole Place at its defaults against the same with the stand-in | within 0.75 LU in every Character |
+| Each part in D minor in every Character (out-of-key harmonics included) | 5 dB or more, or as its stand-in |
 | Each Place keeps its identity | nearer to itself with the stand-in than to any other Place (fingerprints) |
 | A second sample set takes over, levelled | plays, within 3 dB over three notes |
 | CPU, four busy woodwind Places (Standard quality) | 11.4 % of one core with the woodwinds, 11.0 % with the stand-ins (budget 15 %, added under 2 %) |
@@ -7989,6 +7990,23 @@ Instrument mode measures the effect on a near-sine: it now runs on the Forest fl
 Characters, 10 s each: the synthesised stand-in, then the recordings), and
 `woodwinds-<place>-place-before-after.wav` (the whole Place, first Character, 16 s before, then
 after): village-recorder, forest-flute, desert-ney-flute, mining-beacon.
+
+**CI, the first run** (42309856744, `8eda0ff`): macOS green; Linux 5252 passed, 4 failed, all
+from this pass, fixed:
+- The Mining colony in D minor (Cave-in 3.3, Night Shift 1.0 dB against the 5 dB the Places
+  are asked for): the clarinet's strong odd harmonics (the fifth harmonic of D is F#) carried
+  out-of-key energy, and the beacon is the colony's loudest part. The beacon's low-pass now
+  follows each note (2.5 times its pitch, `toneTrack`: pure, as the model was designed), its
+  resonance gentler (+4 dB, Q 2.5). The `woodwinds` group now checks every woodwind part in the
+  key in every Character.
+- The Instrument-mode level trims (90 % within 8.17 dB, the limit 8): the four woodwind parts'
+  trims re-measured (`--only insttrims`: the recorder +12, the ney +11, the flute -2, the
+  beacon -4.5 dB; the recorder's A3 is its soft lowest note, below the flute).
+- Drama dropped to 0 in the Village: its loudest 400 ms 0.91 dB over the steady Drama 100 %
+  (limit 0.5): the real flute's register makes its loud moments louder than the model's at
+  the same integrated loudness. The woodwinds even their notes more toward the layer's median
+  (`even` 0.75, was 0.5); every part re-levelled (`--only wwaudit`); the beacon 0.6 dB over
+  its stand-in alone so the whole colony matches (within 0.75 LU).
 
 ### Woodwinds pass handoff
 

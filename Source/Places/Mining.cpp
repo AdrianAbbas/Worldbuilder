@@ -317,6 +317,7 @@ void MiningPlace::configure(const PlaceContext& c) {
         p = woodwindPatch("ww-clarinet", "ww-clarinet-stac");
         const double t = double(c.clock) / rate;
         p.toneHz = lerpExp(2500.0f, 7000.0f, tone);
+        p.toneTrack = 2.5f;   // pure, like the model: the clarinet's upper odd harmonics rolled off
         p.velocityTone = 0.3f;
         p.breath = 0.008f;
         p.keyNoise = 0.0f;
@@ -325,8 +326,8 @@ void MiningPlace::configure(const PlaceContext& c) {
         p.courseLevel = 0.45f;
         p.courseMs = 30.0f;
         p.formantHz = 700.0f * std::exp2(1.2f * std::sin(float(t) * twoPi * 0.07f));
-        p.formantQ = 4.0f;
-        p.formantDb = 6.0f;
+        p.formantQ = 2.5f;
+        p.formantDb = 4.0f;
         p.attack = w.attack;
         p.vibratoHz = w.vibratoHz;
         p.vibratoDepth = 0.6f * w.vibratoDepth;

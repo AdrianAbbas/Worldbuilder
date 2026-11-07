@@ -5,7 +5,8 @@
 // 300 ms of one held note at velocity 100 (A3; A2 for basses; C3 for kits), dry, brought
 // toward -28 dB, at most 12 dB either way. Regenerate with
 //   WorldbuilderTests --only insttrims
-// and paste its table here. Unlisted: 0.
+// and paste its table here. Unlisted: 0. (The woodwinds pass re-measured only its four woodwind
+// parts: the Village's recorder, the Forest's flute, the Desert's ney, the Mining beacon.)
 #include <array>
 
 namespace wb::inst {
@@ -14,11 +15,11 @@ namespace wb::inst {
 inline constexpr std::array<std::array<float, 6>, 27> levelTrimDb { {
     { 0, 0, 0, 0, 0, 0 },
     { -11.0f, -8.0f, -2.0f, -7.5f, -2.5f, 1.0f },   // Castle
-    { 6.0f, 11.5f, -2.0f, -9.0f, -4.0f, 0.0f },   // Village
+    { 6.0f, 11.5f, -2.0f, -9.0f, 12.0f, 0.0f },   // Village
     { 3.5f, 6.5f, -7.0f, -5.5f, 4.5f, 5.5f },   // Spaceport
     { -5.0f, 0.0f, 1.0f, 4.0f, 8.5f, -4.5f },   // Factory
     { -11.5f, -5.0f, 1.0f, 8.0f, -3.5f, 10.5f },   // City
-    { -3.0f, -1.0f, 1.0f, 0.0f, 4.5f, 12.0f },   // Forest
+    { -2.0f, -1.0f, 1.0f, 0.0f, 4.5f, 12.0f },   // Forest
     { 1.5f, 0.0f, 12.0f, -7.5f, 12.0f, 12.0f },   // Alien Hive
     { 5.5f, -5.5f, -8.0f, 3.0f, -4.5f, 2.5f },   // Temple
     { -2.5f, 8.0f, -5.5f, -10.0f, -4.5f, -7.0f },   // Cavern
@@ -30,13 +31,13 @@ inline constexpr std::array<std::array<float, 6>, 27> levelTrimDb { {
     { -1.0f, -0.5f, -7.0f, 5.0f, 11.5f, -2.5f },   // Mall
     { 3.5f, -5.0f, -0.5f, 10.0f, 5.0f, -2.5f },   // Military Camp
     { 8.0f, -2.5f, 4.0f, 12.0f, 9.0f, 2.0f },   // Beach
-    { -2.5f, 0.5f, 1.0f, 4.5f, 12.0f, 0.5f },   // Desert
+    { -2.5f, 0.5f, 11.0f, 4.5f, 12.0f, 0.5f },   // Desert
     { 8.5f, 10.5f, -4.5f, 0.5f, 3.5f, 7.0f },   // Palace
     { 5.0f, 1.5f, 4.0f, 3.0f, -3.0f, 2.0f },   // Tavern
     { -3.5f, -3.5f, 0.5f, 1.0f, -0.5f, -3.5f },   // Space Station
     { 0.0f, -0.5f, -3.0f, -5.0f, 3.0f, 6.0f },   // Cyberpunk Megacity
     { -0.5f, 8.5f, 3.0f, -1.5f, 2.0f, -8.0f },   // Starship Bridge
-    { 3.0f, -5.5f, 1.0f, 8.0f, 9.5f, -1.5f },   // Asteroid Mining Colony
+    { 3.0f, -5.5f, 1.0f, 8.0f, 9.5f, -4.5f },   // Asteroid Mining Colony
     { -4.0f, 1.5f, 10.5f, 5.0f, -0.5f, 6.0f },   // Alien Ruins
     { -1.0f, 12.0f, -2.5f, 3.0f, 0.0f, -2.5f },   // Nebula
 } };

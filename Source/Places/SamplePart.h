@@ -118,6 +118,9 @@ struct SamplePatch {
     // Off: a held note keeps its pitch to its end when the chords (or the Root or Mood) move
     // under it, as a melody instrument's model does.
     bool followChords = true;
+    // > 0: the voice's low-pass also at most this many times the note's pitch (a pure tone:
+    // the upper harmonics of every note rolled off alike).
+    float toneTrack = 0;
 };
 
 class SamplePart final : public Part {
@@ -379,7 +382,8 @@ private:
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
         v.fadeMul = patch.decay > 0.0f ? std::exp(-6.9078f / (patch.decay * weight::ring * n.decay * rate)) : 1.0f;
         v.pan = dsp::panGains(n.hasPan ? n.pan : spreadPan(patch.pan, patch.spread, n.random));
-        v.filter.set(std::min(cutoffOf(patch.expression ? dynamicOf(velocity) : velocity), 0.45f * rate), 0.6f, rate);
+        v.trackHz = patch.toneTrack > 0.0f ? patch.toneTrack * 440.0f * std::exp2((midi - 69.0f) / 12.0f) : 1.0e9f;
+        v.filter.set(std::min({ cutoffOf(patch.expression ? dynamicOf(velocity) : velocity), v.trackHz, 0.45f * rate }), 0.6f, rate);
         if (v.noisy) {
             // The player's breath, tuned to the note (a band around a harmonic), strongest in
             // the attack; a slurred note has no new attack (and no key click).
@@ -488,7 +492,7 @@ public:
             }
             v.midi = v.target + (v.midi - v.target) * glide;
             if (patch.expression && !v.releasing) express(v);
-            else if (patch.liveTone) v.filter.set(std::min(cutoffOf(v.velocity), 0.45f * rate), 0.6f, rate);
+            else if (patch.liveTone) v.filter.set(std::min({ cutoffOf(v.velocity), v.trackHz, 0.45f * rate }), 0.6f, rate);
             v.scoop *= v.scoopMul;
             v.vibratoAge += float(dsp::chunk) / rate;
             if (v.breathAge < 1.0f) v.breathAge = std::min(1.0f, v.breathAge + float(dsp::chunk) / (std::max(patch.breathAttack, 0.005f) * rate));
@@ -601,7 +605,7 @@ private:
         bool expressive = false, noisy = false;
         const samples::Instrument* inst = nullptr;
         int key = 60;
-        float pick = 0.5f, dyn = 1, evenGain = 1;
+        float pick = 0.5f, dyn = 1, evenGain = 1, trackHz = 1.0e9f;
         // Breath and the key click.
         dsp::Svf breathBand;
         dsp::OnePole keyLp;
@@ -760,7 +764,7 @@ private:
         if (std::abs(target - v.dyn) < 1.0e-4f) v.dyn = target;
         if (v.dyn == before) return;
         v.gain = levelOf(v.dyn) * v.evenGain;
-        v.filter.set(std::min(cutoffOf(v.dyn), 0.45f * rate), 0.6f, rate);
+        v.filter.set(std::min({ cutoffOf(v.dyn), v.trackHz, 0.45f * rate }), 0.6f, rate);
         if (!v.expressive || v.inst == nullptr || v.tailPos >= 0.0 || v.tailPosB >= 0.0) return;
         const auto pair = v.inst->findPair(v.key, spreadOver(*v.inst, v.dyn), v.pick);
         if (pair.a == nullptr) return;
@@ -967,7 +971,7 @@ inline SamplePatch woodwindPatch(const char* sustain, const char* staccato) {
     p.expression = true;
     p.velocityGain = 0.25f;     // the layers carry most of the dynamics
     p.velocityTone = 0.5f;
-    p.even = 0.5f;
+    p.even = 0.75f;             // the registers' loudness evened toward the models' (the dynamics kept)
     p.toneHz = 16000;
     p.legatoSeconds = 0.025f;
     p.legatoSkip = 0.3f;        // a slurred note starts on its sustain, past the attack
