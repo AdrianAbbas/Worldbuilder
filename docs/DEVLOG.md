@@ -8178,3 +8178,121 @@ plays as before the Drama patches). A resumed session continues from the first u
 - [x] 5. Gear order (drums from Action); Drama Off / On setting
 - [ ] 6. Tests (`design` group) and the before / after renders; the existing groups updated
 - [ ] 7. DEVLOG results and handoff; final push; CI green
+
+### Decisions
+
+**Orchestration is a property of the arrangement, not an edit.** `ArrangementStore` keeps what
+the composer wrote and publishes what plays: `arr::played()` = `orchestrate(…, live)` for the
+current Places, Seed and Drama setting, recomputed on every edit, undo and redo, and (the
+processor's timer, `refreshContext()`) whenever a slot's Place or the Seed changes. In live mode
+every cell not set by hand is the orchestra's whatever its entry says; `Cell::manual` cells play
+as written and count in the budget and the voices; the make-up reference is the section's
+`refDb` (a template's written loudness, while its Places are the same) or every part of every
+Place (what "+" writes). `autoArrangeLive()` stores the score's suggestions plus the orchestra's
+choices with their clips and `refDb`, so a template plays exactly what `autoArrange()` gave
+(its make-up unchanged). An arrangement saved before this pass loads with `autoOrchestra` off and
+plays as saved (bit for bit at Drama 0, checked); AUTO ORCH (the old ORCHESTRATE button) turns it
+on in one undo step (`liveFrom()`: hand-made Off cells become overrides, once-orchestrated
+sections keep their loudness reference). An empty arrangement always scores live, so a new
+project's or an old project's first "+" is scored.
+
+**The grid draws `played()`** (resting cells dim), marks overrides (corner), and outlines the
+cells sounding now under the playhead (`arr::shape` + `arr::sounding` on the message thread).
+A click overrides what plays; *Back to automatic* per cell, row and section.
+
+**Risers and hits by rules.** `riserAllowed()` / `disciplineRisers()` (Auto-arrange and
+`dramatize()`): a Riser or Reverse swell only out of a section of 16 bars or more into a bigger
+one (`biggerSection()`: intro / break / outro < wind-down < build / loop / bridge < climax, or a
+higher tier of the same kind), never after another; otherwise a Drum fill into a climax or a
+Crossfade; at most 2 bars (3 out of 64 or more), also clamped at playback in live arrangements. The
+Drama hits' patterns lose their impacts and swells on the phrase lines and their Fill's swell; the
+Drama layer adds no swell on top of a transition's own riser; the stinger (impact, crash, stabs)
+lands once per arrival, on the first slot whose hits play (`arr::markArrival`): a bigger section's
+first downbeat or the beat after a Drop; in free play only a rise into Climax, at most every 16
+bars. The Drop's silence and its sub hit are unchanged.
+
+**Percussion per world** (`drama::familyOf`): orchestral (Castle, Village, Temple, Ruins, Sea
+Ship, Palace, Tavern) as the level and drums pass made it; electronic (the 15 sci-fi and modern
+Places) every row synthesised: a sub kick with a pitch drop and click, a processed low tom, gated
+noise snares / claps (a tight processed snare for the Military), synth toms with a pitch drop, a
+sub-hit impact, a filtered metallic crash, ring-like metal hits, pulsed filtered hats, a soft clip
+near the layer's ceiling, glitched fills (kick stutter, clap ratchet, a gap before the downbeat),
+flavoured per Place (vast and dark, metallic, bright, clean); natural (Forest, Desert, Beach,
+Cavern): the djembes with a log drum / tek / clave / rock click, frame-drum toms, a shaker (a finger
+cymbal in the Desert), the library's large drum (with mallets) underneath and as the impact, no
+orchestral snare or crash. Each kit is levelled to the kit it replaced (`FamilyTrim.inc`,
+`--only familytrim`, measured on CI with the recordings: the synthesised kits are peaky and push
+the slot's safety limiting, so a trim step moves them by only about 25 %; the table converges over
+runs). **The drums' room** (`drama::drumRoom`) is sized from the Place's hall: 0.45-1.1 s (under
+half the hall its melodic parts play in), its input high-passed at 200 Hz (the low end stays dry),
+for every slot whose drums play; measured on CI 6-14 LU under the dry drums.
+
+**Gear order**: the Drama drums start no notes below Action (free play and arrangements; the
+shaping keeps the Place's own kit at Tension); Tension changes the Place first.
+
+**DRAMA: Off / On** (footer, beside PLAY MODE; the session property `dramasystem`, On for a new
+or older project): Off forces Drama 0, skips the shaping (no make-up, swell, focus), plays the
+cells as written and Auto-arranges as before the Drama tier (`autoArrangeLegacy`).
+
+Every new behaviour is behind `drama::designPass` (tests only), so one build renders before and
+after.
+
+### Results
+
+The `design` group (`Tests/DesignTests.inc`, CI shard `11-design.txt`; listening renders
+`renders/design-*-before.flac` / `-after.flac`):
+
+| | before the pass | after |
+|---|---|---|
+| Hand-made Palace + Temple + City ("+" ×5, Places added), parts at once | Intro 13, Build 24, Climax 24, Wind-down 18, Outro 13 | Intro 3, Build 7, Climax 10, Wind-down 5, Outro 3 (within every budget, at every step of building it) |
+| the same, kits / basses / leads at once | 2 kits (Palace timpani + Drama war drums), 2 basses-and-leads in every section | 1 / 1 / 1 at Drama 0, 50 and 100 % |
+| the same, risers / impacts / stingers (Drama 100 %) | 10 swells (every 4 bars, 40-76), 12 impacts (35-77), 6 stingers (3 slots at bars 35 and 38) | 0 risers, 1 impact and 1 stinger (bar 37, the Climax's downbeat) |
+| Battle template at 3:00, Palace + Temple + City | 5 risers (the transition's at 19, swells at 32, 36, 40, 44), 4 impacts (29, 33, 37, 41), 0 stingers | 1 riser (bar 19, into Combat), impacts and stingers at 21 and 53 (the two fights' downbeats) |
+| Megacity at Drama 50 / 100 % (16 s, Score Intensity 100 %) | 1 impact, 1 swell, 1 stinger / 3 impacts, 2 swells, 1 stinger | none / 1 impact, 1 stinger (the Climax's arrival) |
+| Castle at Drama 50 / 100 % | the same as the Megacity | the same as the Megacity |
+| Every template at 120 and 180 BPM | | every riser out of 16+ bars, into a bigger section, never two in a row, at most 3 bars |
+| Percussion family per Place | one orchestral design everywhere | 7 orchestral, 15 electronic, 4 natural (checked) |
+| Drama drums at Tension | playing | none (from Action) |
+| Drama 0, every Place, free play | | bit for bit as before |
+| An older project's arrangement at Drama 0 | | bit for bit as before (AUTO off) |
+| Levels (hand-made cue, RMS of the whole render) | -23.1 dBFS | -22.9 dBFS |
+| Levels (Battle cue) | -25.1 dBFS | -25.1 dBFS |
+
+Parts per section, after, Drama 100 % (from the log): Intro: Palace Strings (pad), Temple Bowls
+(lead), City Crowd (environment). Build: Palace Glockenspiel (colour), Timpani (kit), Spiccato
+Strings (ostinato); Temple Choir (pad); City Synth Bass (bass), E-Piano (lead), Crowd. Climax:
+Palace Harpsichord (lead), Strings (pad), War Drums (kit: the Drama drums take over from the
+timpani), Spiccato Strings, Brass & Choir Hits; Temple Gongs, Temple Bells (colour); City Synth
+Bass, Crowd, Traffic Hum. Wind-down: Palace Strings; Temple Bowls; City Chimes, Synth Bass, Crowd.
+Outro: Temple Choir; City E-Piano, Crowd (the Palace rests).
+
+**CI, the first run** (42359768632): macOS green; Linux 5278 passed, 14 failed: the electronic
+kits' level match (measured in this container without the developer's djembes) 1-4 dB hot on CI
+(Military, Megacity, Suburbs, also tripping the loudness windows); the drum room too wet with the
+real recordings (-3.4 to -5 LU for the orchestral and natural kits); the Palace's Climax
+transients; the footer (the new DRAMA combo squeezed CAPTURE); the ARRANGE click test (written
+for clicks on the stored cell); the Instrument-mode trim spread 8.02 dB (8 asked). Fixed: the
+recorded kits' room lower (orchestral 0.6, natural 0.5 of the electronic's), DRAMA moved beside
+PLAY MODE, the click test on overrides, the kits re-levelled from CI's numbers.
+
+**CI, the second run** (42365521564): macOS green; Linux 5285 passed, 7 failed: the kits' level
+(still 1-2.6 dB on four electronic Places: the trims respond at about 25 %, see above), the Palace
+transients again, the Instrument-mode spread 8.17 dB. Fixed: the trims stepped from CI's
+`familytrim` output (×3 for the electronic kits), the level match kept out of Instrument mode and
+the electronic Drama drums' Instrument-mode trims measured again (`--only dramatrims`; their kits
+are synthesised, so this container measures what CI plays).
+
+**Report only** (small misses after two attempts; the checks stay for every other Place):
+- The Palace's transients at a Climax: 1.30 times Calm (1.4 asked; 10.29 against 7.90 per second,
+  twice). They came from the impacts and crashes the hits wrote on every fourth bar, which the pass
+  removes at the developer's request (measured: restoring them gives the transients back; driving
+  eighths on the kit's high voice did not). Its notes per second are still checked (6.3 times Calm).
+
+**CI, the third run** (42371246789): macOS green; Linux 5289 passed, 3 failed: the Instrument-mode
+spread 8.83 dB (the Instrument mode also plays through the layer's percussion bus, so every step
+of the mix's level match moved it: now kept out of Instrument mode, and the electronic Drama drums'
+trims measured without it: Spaceport 1.0, Suburbs -5.5, Military -2.0 dB, near their values
+before the pass); the drums' room on the Nebula -5.5 LU (the electronic kits' room 15 % lower);
+the level group's percussion against the main parts at a Climax (Suburbs, Mall, Spaceship, too
+quiet after the ×3 step: each kit's trim now stepped by its own measured response between the
+last two runs, only where it missed by 0.5 dB or more).

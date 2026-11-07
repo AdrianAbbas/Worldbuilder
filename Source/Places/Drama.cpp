@@ -76,7 +76,10 @@ DrumRoom drumRoom(int type) {
     // (The recorded kits, hand drums and orchestral drums, carry more of their energy above the
     // room's low cut than the synthesised ones: their room a little lower, measured with them.)
     switch (familyOf(type)) {
-        case FamilyElectronic: r.damp = 8000.0f; break;   // a bright, synthetic space
+        case FamilyElectronic:
+            r.damp = 8000.0f;   // a bright, synthetic space
+            r.wet *= 0.85f;
+            break;
         case FamilyNatural:
             r.damp = 5000.0f;   // soft, absorbent
             r.wet *= 0.5f;
@@ -1683,7 +1686,7 @@ bool Layer::render(int placeType, const WorldFrame& world, const Cue& cue, float
         // orchestration pass: the drums drive without leading, the melodic parts a little back).
         const bool rhythm = k == PDrums || k == PPerc || k == PMetal || k == PLow || k == PImpact || k == PMetalHit;
         const float climaxShape = latched == Climax ? (split ? (rhythm ? 1.0f : 0.9f) : (rhythm ? 1.12f : 0.8f)) : 1.0f;
-        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain * percTrimGain : melodicTrim) : 1.0f;   // (Instrument mode: the Drama instruments' own trims, Trims.h)
+        const float trim = split ? (isPercussion(k) ? percussionTrim * el.percGain * (el.instrument ? 1.0f : percTrimGain) : melodicTrim) : 1.0f;   // (Instrument mode: the Drama instruments' own trims, Trims.h)
         const float g = tierGain * climaxShape * trim * dbToGain((loudnessPass ? trimDb : trimBeforeDb)[std::size_t(k)]);
         float& now = gainNow[std::size_t(k)];
         if (now < 0.0f) now = g;
