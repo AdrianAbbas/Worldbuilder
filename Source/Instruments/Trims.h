@@ -43,36 +43,37 @@ inline constexpr std::array<std::array<float, 6>, 27> levelTrimDb { {
 } };
 // clang-format on
 // The Drama instruments (the Drama tier rework: drums, ostinato, hits), per Place, measured
-// the same way (WorldbuilderTests --only dramatrims prints this table).
+// the same way (WorldbuilderTests --only dramatrims prints this table). The Drama design pass:
+// the electronic Places' drums (synthesised now) measured again.
 // clang-format off
 inline constexpr std::array<std::array<float, 3>, 27> dramaTrimDb { {
     { 0, 0, 0 },
     { -8.0f, -9.5f, 3.5f },   // Castle
     { -2.5f, -1.0f, 3.5f },   // Village
-    { 0.5f, 0.0f, -4.0f },   // Spaceport
-    { 0.0f, -4.0f, -10.0f },   // Factory
+    { 2.5f, 0.0f, -4.0f },   // Spaceport
+    { 3.0f, -4.0f, -10.0f },   // Factory
     { 1.0f, -4.0f, -6.0f },   // City
     { -3.0f, -9.5f, -4.5f },   // Forest
     { 0.5f, 0.0f, -4.0f },   // Alien Hive
     { -8.5f, -9.5f, -4.0f },   // Temple
     { -9.5f, -4.0f, -8.5f },   // Cavern
     { -8.5f, -9.5f, -8.5f },   // Ruins
-    { 0.5f, 0.0f, -4.0f },   // Spaceship
-    { -2.5f, 0.0f, -6.0f },   // Biodome
+    { 3.0f, 0.0f, -4.0f },   // Spaceship
+    { 4.0f, 0.0f, -6.0f },   // Biodome
     { -8.0f, -9.5f, 3.5f },   // Sea Ship
-    { -4.5f, -6.5f, -8.5f },   // Suburbs
-    { 1.0f, 0.0f, -6.0f },   // Mall
-    { -4.5f, -9.5f, 3.5f },   // Military Camp
+    { 10.5f, -6.5f, -8.5f },   // Suburbs
+    { 2.0f, 0.0f, -6.0f },   // Mall
+    { 6.0f, -9.5f, 3.5f },   // Military Camp
     { -2.5f, -1.0f, 3.5f },   // Beach
     { -2.5f, -1.0f, 3.5f },   // Desert
     { -8.0f, -9.5f, 3.5f },   // Palace
     { -2.0f, -1.0f, 3.5f },   // Tavern
-    { 0.5f, 0.0f, -4.0f },   // Space Station
-    { 0.5f, -4.0f, -6.0f },   // Cyberpunk Megacity
-    { 0.5f, 0.0f, 3.5f },   // Starship Bridge
-    { -0.5f, -4.0f, -10.0f },   // Asteroid Mining Colony
-    { -9.5f, 0.0f, -4.0f },   // Alien Ruins
-    { 0.5f, 0.0f, -4.0f },   // Nebula
+    { 2.0f, 0.0f, -4.0f },   // Space Station
+    { 2.5f, -4.0f, -6.0f },   // Cyberpunk Megacity
+    { 2.5f, 0.0f, 3.5f },   // Starship Bridge
+    { 3.5f, -4.0f, -10.0f },   // Asteroid Mining Colony
+    { 5.5f, 0.0f, -4.0f },   // Alien Ruins
+    { 1.5f, 0.0f, -4.0f },   // Nebula
 } };
 // clang-format on
 inline constexpr float levelTrim(int type, int element) {

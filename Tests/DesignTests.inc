@@ -615,3 +615,20 @@ void probePercParts() {
         std::cout << "\n";
     }
 }
+
+// Development probe: a Place's Climax transients before / after the pass, and after without the
+// drums' room (--only climaxfeel).
+void probeClimaxFeel() {
+    using namespace designTest;
+    for (int type : { Palace, Castle, Temple }) {
+        double t[3] {};
+        for (int k = 0; k < 3; ++k) {
+            Pass pass(k > 0);
+            drama::Layer::roomOff = k == 2;
+            auto h = dramaTest::placeHost(type, 1.0f, 1.0f);
+            t[k] = dramaTest::feel(h).onsets;
+            drama::Layer::roomOff = false;
+        }
+        std::cout << placeKeys[std::size_t(type)] << " climax transients: before " << f2(t[0]) << " after " << f2(t[1]) << " after without the room " << f2(t[2]) << "\n";
+    }
+}

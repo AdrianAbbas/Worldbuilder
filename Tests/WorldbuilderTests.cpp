@@ -9580,6 +9580,7 @@ int main(int argc, char** argv) {
     if (run("design")) testDesign(s);
     if (only.contains("familytrim")) probeFamilyTrim();
     if (only.contains("percparts")) probePercParts();
+    if (only.contains("climaxfeel")) probeClimaxFeel();
     if (run("woodwinds")) testWoodwinds(s);
     if (only.contains("dramatrims")) probeDramaTrims();
     if (only.contains("loudprobe")) probeLoudness();
