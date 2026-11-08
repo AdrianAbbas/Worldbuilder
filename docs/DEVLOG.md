@@ -8401,8 +8401,9 @@ projects and presets saved before still load.
   saved by the build before the rename (commit 4c81d33, `--write-old-session`), with what that
   build saves after loading it (`old-session.wbstate.expected.xml`; loading adds properties a
   fresh session had not set, so the file itself is not the comparison). The `rename` group
-  (Linux suite and both macOS smoke runs) loads it and compares the state saved again with that,
-  character for character (without the diagnostic `samples` count); checks every parameter ID
+  (Linux suite and both macOS smoke runs) loads it and compares the state saved again with that: the same text, numbers in
+  attribute values within 1e-5 (the parameters' float maths differ in the last digits between
+  Linux and macOS, arm64 and x86_64), without the diagnostic `samples` count; checks every parameter ID
   exists with its saved value; and that the same session made now saves the same state.
 - **The AU harness** (`--expect-name`, `--old-session`): the registry's name for the component
   must be "Windward Audio: WORLDBUILDER", and the old session, set through

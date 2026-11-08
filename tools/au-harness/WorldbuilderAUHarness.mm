@@ -546,6 +546,45 @@ std::string stateXml(const UInt8* bytes, size_t length) {
     return xml;
 }
 
+// Two saved states are the same: the same text, except that a number in an attribute value
+// may differ in its last float digits (the parameters' float maths on another platform or
+// architecture: 0.8999998569 for 0.9000000954). `where`: the first difference.
+bool sameState(const std::string& a, const std::string& b, std::size_t* where = nullptr) {
+    const auto split = [](const std::string& s) {
+        std::vector<std::string> parts;
+        std::size_t start = 0;
+        for (;;) {
+            const auto quote = s.find('"', start);
+            if (quote == std::string::npos) { parts.push_back(s.substr(start)); break; }
+            parts.push_back(s.substr(start, quote - start));
+            start = quote + 1;
+        }
+        return parts;
+    };
+    const auto number = [](const std::string& s, double& value) {
+        if (s.empty()) return false;
+        char* end = nullptr;
+        value = std::strtod(s.c_str(), &end);
+        return end == s.c_str() + s.size();
+    };
+    const auto x = split(a), y = split(b);
+    std::size_t offset = 0;
+    for (std::size_t i = 0; i < std::max(x.size(), y.size()); ++i) {
+        if (i >= x.size() || i >= y.size()) { if (where != nullptr) *where = offset; return false; }
+        double u = 0, v = 0;
+        const bool same = x[i] == y[i]
+                          || (i % 2 == 1 && number(x[i], u) && number(y[i], v) && std::abs(u - v) <= 1.0e-5 * std::max(1.0, std::abs(u)));
+        if (!same) {
+            std::size_t k = 0;
+            while (k < x[i].size() && k < y[i].size() && x[i][k] == y[i][k]) ++k;
+            if (where != nullptr) *where = offset + k;
+            return false;
+        }
+        offset += x[i].size() + 1;
+    }
+    return true;
+}
+
 // Loads the old session into a fresh instance through kAudioUnitProperty_ClassInfo (as a
 // host opening an old project does) and reads it back: the state must be the same.
 void oldSessionCheck(Report& r, AudioComponent component, bool outOfProcess) {
@@ -580,9 +619,9 @@ void oldSessionCheck(Report& r, AudioComponent component, bool outOfProcess) {
     }
     if (back != nullptr) CFRelease(back);
     size_t differ = 0;
-    while (differ < expected.size() && differ < got.size() && expected[differ] == got[differ]) ++differ;
-    r.check(got == expected, "the old session loads unchanged (its saved state compared with the state read back)",
-            got == expected ? strf("%zu characters", expected.size())
+    const bool same = !got.empty() && sameState(expected, got, &differ);
+    r.check(same, "the old session loads unchanged (its saved state compared with the state read back)",
+            same ? strf("%zu characters", expected.size())
                             : strf("first difference at character %zu: expected '%s', got '%s'", differ,
                                    expected.substr(differ > 40 ? differ - 40 : 0, 120).c_str(), got.substr(differ > 40 ? differ - 40 : 0, 120).c_str()));
     AudioComponentInstanceDispose(unit);

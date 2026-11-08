@@ -1,5 +1,6 @@
 //==============================================================================
 #include <cstring>
+#include <cstdlib>
 // An old session (the company rename): a session saved by the build before the rename
 // (commit 4c81d33, Tests/fixtures/old-session.wbstate, written by --write-old-session
 // with that build) must load unchanged: the AU codes, the parameter IDs and the state
@@ -64,6 +65,45 @@ juce::String xmlOf(Host& h) {
     return xmlOf(state);
 }
 
+// Two saved states are the same: the same text, except that a number in an attribute value
+// may differ in its last float digits (the parameters' float maths on another platform or
+// architecture: 0.8999998569 for 0.9000000954). `where`: the first difference.
+bool sameState(const std::string& a, const std::string& b, std::size_t* where = nullptr) {
+    const auto split = [](const std::string& s) {
+        std::vector<std::string> parts;
+        std::size_t start = 0;
+        for (;;) {
+            const auto quote = s.find('"', start);
+            if (quote == std::string::npos) { parts.push_back(s.substr(start)); break; }
+            parts.push_back(s.substr(start, quote - start));
+            start = quote + 1;
+        }
+        return parts;
+    };
+    const auto number = [](const std::string& s, double& value) {
+        if (s.empty()) return false;
+        char* end = nullptr;
+        value = std::strtod(s.c_str(), &end);
+        return end == s.c_str() + s.size();
+    };
+    const auto x = split(a), y = split(b);
+    std::size_t offset = 0;
+    for (std::size_t i = 0; i < std::max(x.size(), y.size()); ++i) {
+        if (i >= x.size() || i >= y.size()) { if (where != nullptr) *where = offset; return false; }
+        double u = 0, v = 0;
+        const bool same = x[i] == y[i]
+                          || (i % 2 == 1 && number(x[i], u) && number(y[i], v) && std::abs(u - v) <= 1.0e-5 * std::max(1.0, std::abs(u)));
+        if (!same) {
+            std::size_t k = 0;
+            while (k < x[i].size() && k < y[i].size() && x[i][k] == y[i][k]) ++k;
+            if (where != nullptr) *where = offset + k;
+            return false;
+        }
+        offset += x[i].size() + 1;
+    }
+    return true;
+}
+
 int write(const juce::String& path) {
     Host h;
     make(h);
@@ -105,10 +145,9 @@ void test(Suite& s) {
     Host b;
     b.p->setStateInformation(old.getData(), int(old.getSize()));
     const auto back = xmlOf(b);
-    int differ = 0;
-    while (differ < expected.length() && differ < back.length() && expected[differ] == back[differ]) ++differ;
-    s.check(expected.isNotEmpty() && back == expected, "an old session loads unchanged (its state compared with the state saved again)",
-            "first difference at character " + std::to_string(differ) + ": " + back.substring(std::max(0, differ - 60), differ + 60).toStdString());
+    std::size_t differ = 0;
+    s.check(expected.isNotEmpty() && sameState(expected.toStdString(), back.toStdString(), &differ), "an old session loads unchanged (its state compared with the state saved again)",
+            "first difference at character " + std::to_string(differ) + ": " + back.substring(std::max(0, int(differ) - 60), int(differ) + 60).toStdString());
     int mismatches = 0, found = 0;
     std::string first;
     if (const auto xml = juce::AudioProcessor::getXmlFromBinary(old.getData(), int(old.getSize())))
@@ -116,14 +155,14 @@ void test(Suite& s) {
             const auto id = param->getStringAttribute("id");
             if (b.p->parameters.getParameter(id) == nullptr) { if (mismatches++ == 0) first = id.toStdString() + " (no such parameter)"; continue; }
             ++found;
-            if (std::abs(b.get(id.toRawUTF8()) - float(param->getDoubleAttribute("value"))) > 1.0e-5f && mismatches++ == 0) first = id.toStdString();
+            if (const float saved = float(param->getDoubleAttribute("value")); std::abs(b.get(id.toRawUTF8()) - saved) > 1.0e-5f * std::max(1.0f, std::abs(saved)) && mismatches++ == 0) first = id.toStdString();
         }
     s.check(found > 0 && found == int(specs.size()) && mismatches == 0, "every parameter ID of the old session exists and has its saved value",
             std::to_string(found) + " of " + std::to_string(specs.size()) + ", " + std::to_string(mismatches) + " differ " + first);
     // The same session made with this build saves the same state (the format did not change).
     Host now;
     make(now);
-    s.check(xmlOf(now) == xmlOf(old), "the same session made with this build saves the same state as the build before the rename");
+    s.check(sameState(xmlOf(now).toStdString(), xmlOf(old).toStdString()), "the same session made with this build saves the same state as the build before the rename");
     s.check(measure(b.render(2.0), 0.5).rmsDb > -60.0, "the old session plays");
 
     // The user's files: copied once from the old folders, the originals kept.
