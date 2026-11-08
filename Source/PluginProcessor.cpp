@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "Samples/SampleBank.h"
 #include "Instruments/Trims.h"
+#include "UserData.h"
 
 using namespace wb;
 
@@ -94,6 +95,9 @@ WorldbuilderProcessor::WorldbuilderProcessor()
     }
     // The recorded instruments load in the background, once per process (Milestone 15).
     samples::Bank::get().load();
+    // The user's files move to ~/Library/Windward Audio/WORLDBUILDER: copied once from the
+    // folders older versions used (Source/UserData.h).
+    userdata::migrateOnce();
     startTimerHz(10);
 }
 

@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Install WORLDBUILDER for the current user and make sure macOS will load it.
 #
-# Run it from the unzipped WORLDBUILDER-macOS-Universal folder:
+# Run it from the unzipped WindwardAudio-WORLDBUILDER-macOS-Universal folder:
 #     bash install-mac.sh
 # (Tip: type "bash " in Terminal, then drag install-mac.sh into the window.)
 #
 # What it does:
+#   0. removes copies installed under the earlier company name (found by their
+#      earlier bundle ID), so hosts do not list WORLDBUILDER twice
 #   1. copies WORLDBUILDER.component to ~/Library/Audio/Plug-Ins/Components and
 #      WORLDBUILDER.vst3 to ~/Library/Audio/Plug-Ins/VST3
 #   2. removes the com.apple.quarantine flag your browser added. Without this,
 #      macOS refuses to load the plug-in and GarageBand shows a silent slot
 #   3. re-signs both bundles (ad hoc) and verifies the signatures
-#   4. restarts the Audio Unit registrar so hosts see the new copy
+#   4. restarts the Audio Unit registrar and clears the hosts' Audio Unit cache so
+#      they see the new copy under its new company name, once
 #   5. runs Apple's Audio Unit validator (auval) and prints PASS or FAIL
 #   6. prints the next steps for GarageBand and Logic
 #
@@ -29,7 +32,7 @@ for arg in "$@"; do
     case "$arg" in
         --ci) ci=1 ;;
         --out-of-process) out_of_process=1 ;;
-        -h|--help) /usr/bin/sed -n '2,23p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -h|--help) /usr/bin/sed -n '2,26p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 64 ;;
     esac
 done
@@ -48,7 +51,7 @@ component_src="$here/WORLDBUILDER.component"
 vst3_src="$here/WORLDBUILDER.vst3"
 if [[ ! -d "$component_src" ]]; then
     echo "WORLDBUILDER.component was not found next to this script ($here)." >&2
-    echo "Unzip WORLDBUILDER-macOS-Universal.zip first and run the script from that folder." >&2
+    echo "Unzip WindwardAudio-WORLDBUILDER-macOS-Universal.zip first and run the script from that folder." >&2
     exit 1
 fi
 
@@ -75,6 +78,38 @@ for system_copy in "/Library/Audio/Plug-Ins/Components/WORLDBUILDER.component" "
         warn "Remove it so hosts load the new one:  sudo rm -rf \"$system_copy\""
     fi
 done
+
+# The bundle IDs WORLDBUILDER had before the company rename. A copy with one of these
+# (under any file name) is removed; its Audio Unit codes are the same as the new one's,
+# so leaving it would list WORLDBUILDER twice.
+old_ids="audio.veil.worldbuilder"
+remove_old_copies() {
+    local dir bundle id
+    for dir in "$components" "$vst3"; do
+        for bundle in "$dir"/*.component "$dir"/*.vst3; do
+            [[ -d "$bundle" ]] || continue
+            id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$bundle/Contents/Info.plist" 2>/dev/null || true)
+            for old in $old_ids; do
+                if [[ "$id" == "$old" ]]; then
+                    rm -rf "$bundle"
+                    ok "removed the copy under the earlier company name: $bundle"
+                fi
+            done
+        done
+    done
+    for dir in /Library/Audio/Plug-Ins/Components /Library/Audio/Plug-Ins/VST3; do
+        for bundle in "$dir"/*.component "$dir"/*.vst3; do
+            [[ -d "$bundle" ]] || continue
+            id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$bundle/Contents/Info.plist" 2>/dev/null || true)
+            for old in $old_ids; do
+                if [[ "$id" == "$old" ]]; then
+                    warn "A system-wide copy under the earlier company name exists: $bundle"
+                    warn "Remove it so hosts list WORLDBUILDER once:  sudo rm -rf \"$bundle\""
+                fi
+            done
+        done
+    done
+}
 
 install_bundle() {
     local src="$1" dest="$2" binary
@@ -113,6 +148,9 @@ install_bundle() {
     fi
 }
 
+bold "0. Removing copies under the old company name"
+remove_old_copies
+
 bold "1-3. Copying, removing quarantine, signing"
 install_bundle "$component_src" "$components/WORLDBUILDER.component"
 if [[ -d "$vst3_src" ]]; then
@@ -122,16 +160,33 @@ else
 fi
 
 bold "4. Resetting the Audio Unit registry"
+# GarageBand and Logic keep a cache of the Audio Units they scanned (with their names);
+# it is rebuilt at their next launch, so they show the new company name.
+rm -f "$HOME/Library/Caches/AudioUnitCache/com.apple.audiounits.cache" 2>/dev/null || true
 /usr/bin/killall -9 AudioComponentRegistrar 2>/dev/null || true
 registered=0
+listing=""
 for _ in $(seq 1 30); do
-    if /usr/bin/auval -a 2>/dev/null | /usr/bin/grep -Eq '^[[:space:]]*aumu[[:space:]]+Wbld[[:space:]]+Veil'; then
+    listing=$(/usr/bin/auval -a 2>/dev/null | /usr/bin/grep -E '^[[:space:]]*aumu[[:space:]]+Wbld[[:space:]]+Veil' || true)
+    if [[ -n "$listing" ]]; then
         registered=1
         break
     fi
     sleep 1
 done
-if [[ $registered == 1 ]]; then ok "macOS lists aumu Wbld Veil (Veil Audio: WORLDBUILDER)"; else fail "WORLDBUILDER is not listed by the Audio Unit registry after 30 s"; fi
+printf '%s\n' "$listing" > "$logs/install-registry.txt"
+entries=$(printf '%s\n' "$listing" | /usr/bin/grep -c . || true)
+if [[ $registered == 0 ]]; then
+    fail "WORLDBUILDER is not listed by the Audio Unit registry after 30 s"
+elif [[ $entries != 1 ]]; then
+    fail "the Audio Unit registry lists WORLDBUILDER $entries times (see $logs/install-registry.txt)"
+    result_registry=1
+elif ! printf '%s\n' "$listing" | /usr/bin/grep -q 'Windward Audio: WORLDBUILDER'; then
+    fail "the Audio Unit registry lists WORLDBUILDER under another name: $listing"
+    result_registry=1
+else
+    ok "macOS lists WORLDBUILDER once, as Windward Audio: WORLDBUILDER"
+fi
 
 bold "5. Validating with Apple's auval"
 auval_log="$logs/install-auval.txt"
@@ -141,7 +196,7 @@ auval_exit=$?
 set -e
 if [[ $auval_exit == 0 ]] && /usr/bin/grep -q "AU VALIDATION SUCCEEDED" "$auval_log"; then
     ok "auval: PASS ($(uname -m))"
-    result=0
+    result=${result_registry:-0}
 else
     fail "auval: FAIL ($(uname -m), exit $auval_exit). Full log: $auval_log"
     /usr/bin/grep -E "FATAL|ERROR|Cannot open" "$auval_log" | /usr/bin/head -5 | /usr/bin/sed 's/^/       /'
@@ -162,15 +217,15 @@ cat <<'NEXT'
     2. Quit and reopen GarageBand.
     3. Create a Software Instrument track (Track > New Track > Software Instrument).
        Open Smart Controls (B), click Plug-ins, click the Instrument slot (the top
-       slot): AU Instruments > Veil Audio > WORLDBUILDER.
+       slot): AU Instruments > Windward Audio > WORLDBUILDER.
     4. It plays straight away while the track is selected. No MIDI is needed.
     5. If the window shows sliders instead of the WORLDBUILDER interface, use the view menu
        at the top of the plug-in window to switch from "Controls" to "Editor".
   Logic Pro
-    1. Logic Pro > Settings > Plug-in Manager, find Veil Audio > WORLDBUILDER.
+    1. Logic Pro > Settings > Plug-in Manager, find Windward Audio > WORLDBUILDER.
        If it shows as failed, select it and click "Reset & Rescan Selection".
     2. On a Software Instrument track, click the Instrument slot:
-       AU Instruments > Veil Audio > WORLDBUILDER.
+       AU Instruments > Windward Audio > WORLDBUILDER.
 NEXT
 if [[ $result == 0 ]]; then
     bold "WORLDBUILDER is installed and validated."

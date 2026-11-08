@@ -47,4 +47,29 @@ check subtype Wbld
 check manufacturer Veil
 check factoryFunction WORLDBUILDERAUFactory
 check sandboxSafe true
+# The company rename: hosts show "Windward Audio: WORLDBUILDER" (AU) and the vendor
+# Windward Audio (VST3); the bundle IDs are new; the codes above stay.
+check name "Windward Audio: WORLDBUILDER"
+for bundle in "$artefacts/AU/WORLDBUILDER.component" "$artefacts/VST3/WORLDBUILDER.vst3" "$artefacts/Standalone/WORLDBUILDER.app"; do
+    id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$bundle/Contents/Info.plist" 2>/dev/null || echo "(absent)")
+    if [[ "$id" == "com.windwardaudio.worldbuilder" ]]; then
+        printf '%-60s CFBundleIdentifier %s\n' "$bundle" "$id"
+    else
+        echo "::error::$bundle CFBundleIdentifier expected 'com.windwardaudio.worldbuilder', got '$id'"; status=1
+    fi
+    if /usr/bin/grep -rqi 'veil audio\|elsewhere audio' "$bundle/Contents/Info.plist"; then
+        echo "::error::$bundle/Contents/Info.plist still names the old company"; status=1
+    fi
+done
+moduleinfo="$artefacts/VST3/WORLDBUILDER.vst3/Contents/Resources/moduleinfo.json"
+if [[ -f "$moduleinfo" ]]; then
+    vendors=$(/usr/bin/grep -E '"Vendor"' "$moduleinfo" || true)
+    if [[ -n "$vendors" ]] && ! printf '%s\n' "$vendors" | /usr/bin/grep -vq 'Windward Audio' && ! /usr/bin/grep -qi 'veil audio' "$moduleinfo"; then
+        echo "VST3 moduleinfo.json vendor: Windward Audio"
+    else
+        echo "::error::VST3 moduleinfo.json does not name the vendor Windward Audio"; /usr/bin/grep -i vendor "$moduleinfo" || true; status=1
+    fi
+else
+    echo "VST3 moduleinfo.json: not generated (the vendor comes from the plug-in's factory, checked by the tests)"
+fi
 exit $status

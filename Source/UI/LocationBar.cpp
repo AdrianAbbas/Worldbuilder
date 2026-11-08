@@ -2,6 +2,7 @@
 #include "Pixel.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
+#include "UserData.h"
 
 namespace wb::ui {
 
@@ -267,7 +268,7 @@ void LocationBar::mouseExit(const juce::MouseEvent&) {
 }
 
 juce::File LocationBar::worldFolder() {
-    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("WORLDBUILDER").getChildFile("Worlds");
+    auto folder = userdata::worlds();
     folder.createDirectory();
     return folder;
 }

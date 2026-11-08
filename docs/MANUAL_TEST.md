@@ -2,14 +2,14 @@
 
 ## Milestone 1 gate (passed)
 
-1. Download `WORLDBUILDER-macOS-Universal` from the latest green CI run (Actions →
+1. Download `WindwardAudio-WORLDBUILDER-macOS-Universal` from the latest green CI run (Actions →
    Native build → Artifacts) and unzip it, then unzip the zip inside it.
 2. Quit GarageBand. In Terminal type `bash ` (with a space), drag `install-mac.sh`
    from the folder into the window and press Return. Wait for
    "WORLDBUILDER is installed and validated."
 3. Open GarageBand, make a new empty project and add a **Software Instrument** track.
 4. Press **B** (Smart Controls), click **Plug-ins**, then click the **Instrument**
-   slot (the top slot): **AU Instruments → Veil Audio → WORLDBUILDER**.
+   slot (the top slot): **AU Instruments → Windward Audio → WORLDBUILDER**.
 5. Check, and report each one:
    - [ ] Within about 2 seconds you hear wind and a soft drone, **without playing
      any notes**.
@@ -1054,3 +1054,28 @@ per section, the one kit, and the risers, impacts and stingers with their bar nu
    neither dry nor washed out.
 6. **DRAMA: Off** (footer): the world and the arrangement play as before the Drama tier;
    save, reopen: still Off. An older project: AUTO ORCH off, exactly as it was.
+
+## Company rename check (Windward Audio)
+
+On a Mac where an earlier WORLDBUILDER is installed (listed under the earlier company name),
+with a project and some presets made with it:
+
+1. Before updating, note one saved world (SAVE .world) and one instrument preset you made, and
+   save one host preset (GarageBand: the plug-in window's preset menu > Save As).
+2. Quit GarageBand. Install the new package with `bash install-mac.sh`.
+   - [ ] It reports "removed the copy under the earlier company name" if one was installed
+     under another file name, and "macOS lists WORLDBUILDER once, as Windward Audio: WORLDBUILDER".
+3. Open GarageBand (it rescans its Audio Units once, which can take a moment).
+   - [ ] A new Software Instrument track's Instrument slot lists **AU Instruments → Windward
+     Audio → WORLDBUILDER**, once; nothing is listed under the earlier company name.
+   - [ ] The plug-in window and every text in it show no earlier company name.
+4. Open the project made with the earlier version.
+   - [ ] WORLDBUILDER loads in its slot (no "missing plug-in" message) and sounds as before:
+     the same Places, Locations, arrangement and settings.
+5. Presets and files:
+   - [ ] LOAD .world opens in `~/Library/Windward Audio/WORLDBUILDER/Worlds` and lists the
+     world you saved before; the instrument PRESET menu lists your instrument preset.
+   - [ ] The plug-in window's preset menu (GarageBand's) lists the host preset you saved.
+   - [ ] Your earlier files are still where they were (Documents/WORLDBUILDER).
+6. Logic Pro (if installed): Settings > Plug-in Manager lists WORLDBUILDER once, under
+   Windward Audio; an older project opens with it loaded.

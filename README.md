@@ -371,7 +371,7 @@ WORLDBUILDER has a main stereo output and one stereo output per Place slot (Plac
 so each Place can have its own channel strip, effects and bounce.
 
 1. Insert WORLDBUILDER on a software instrument track as **Multi Output (5xStereo)**
-   (in the instrument slot: AU Instruments → Veil Audio → WORLDBUILDER → Multi Output).
+   (in the instrument slot: AU Instruments → Windward Audio → WORLDBUILDER → Multi Output).
 2. In the mixer, click the **+** under the instrument's channel strip to add aux
    channels for outputs 3-4, 5-6, 7-8 and 9-10: those are Place 1, 2, 3 and 4.
 3. Choose **PLACE OUTPUTS** in the footer:
@@ -425,7 +425,7 @@ Inspire result and render.
   from each other (save, change, save the next) so the Places that should stay keep
   their slots.
 - **.world files:** SAVE .world writes the whole world and its eight Locations to a
-  file (in Documents/WORLDBUILDER/Worlds by default); LOAD .world brings one back.
+  file (in ~/Library/Windward Audio/WORLDBUILDER/Worlds by default); LOAD .world brings one back.
   Locations are also saved with the project.
 
 ## Arrangement: a cue in sections
@@ -834,7 +834,7 @@ can be (up to six or eight voices; a wind or a hurdy-gurdy fewer), and responds 
   fiddle, oud, kalimba and violin, the piano, voice choir, monk chant, alien voices and
   djembes, the Minilogue pads, basses and leads, choirs, bells,
   bowls, harpsichord, strings, keys, mallets and drums) are one click each. **SAVE**
-  writes your own as a .wbinst file (in Documents/WORLDBUILDER/Instrument Presets, where
+  writes your own as a .wbinst file (in ~/Library/Windward Audio/WORLDBUILDER/Instrument Presets, where
   the PRESET menu lists them); **LOAD** opens one from anywhere.
 - **KEYBOARD**: lights up the notes arriving (bright while held, dimmer while the pedal
   holds them), with the pitch bend, mod wheel and pedal beside it. Click a key to hear the
@@ -847,7 +847,7 @@ parameter ("Instrument Tone", "Instrument Reverb"...), so it can be automated.
 ### One instrument per track in Logic Pro
 
 1. Create a software-instrument track (Track > New Software Instrument Track) and choose
-   **AU Instruments > Veil Audio > WORLDBUILDER** in its Instrument slot.
+   **AU Instruments > Windward Audio > WORLDBUILDER** in its Instrument slot.
 2. Click **INSTRUMENT** in WORLDBUILDER's top bar and choose an instrument (or a factory
    preset).
 3. Play it from your keyboard, record a region, or draw notes in the piano roll (select
@@ -861,7 +861,7 @@ parameter ("Instrument Tone", "Instrument Reverb"...), so it can be automated.
 ### One instrument per track in GarageBand
 
 1. Create a Software Instrument track and choose **Plug-ins > Instrument slot > AU
-   Instruments > Veil Audio > WORLDBUILDER** in Smart Controls (B).
+   Instruments > Windward Audio > WORLDBUILDER** in Smart Controls (B).
 2. Click **INSTRUMENT** in WORLDBUILDER's top bar and choose an instrument.
 3. Play it, record a region, or edit the notes in the Piano Roll editor (E).
 4. Repeat on more tracks. **Save each as a patch** (Library (Y) > **Save...**): the patch
@@ -892,7 +892,7 @@ the scene stays silent.
    drag it out). Drag the file onto GarageBand's tracks area: one track per instrument,
    each named "Place - Instrument".
 2. On the first new track, open Smart Controls (B) → Plug-ins → Instrument slot → AU
-   Instruments → Veil Audio → WORLDBUILDER. Load the same scene
+   Instruments → Windward Audio → WORLDBUILDER. Load the same scene
    (the scene browser, or copy the world with SAVE .WORLD / LOAD .WORLD).
 3. Open the Place's **EDIT > PATTERNS**, click the tab of the instrument the track is
    named after (e.g. Spaceport > Pads) and switch **SINGLE** on in the KEYS row. The top
@@ -1055,16 +1055,25 @@ On Windows and Linux (the standalone app), Cmd is Ctrl.
 
 ## Install (macOS)
 
-1. Download `WORLDBUILDER-macOS-Universal` from the latest green
+1. Download `WindwardAudio-WORLDBUILDER-macOS-Universal` from the latest green
    [CI run](../../actions) and unzip it.
 2. In Terminal: `bash install-mac.sh` from the unzipped folder. It removes the
    download quarantine, re-signs the plug-in for your Mac, refreshes the Audio Unit
    list and runs Apple's validator. See `INSTALL.txt` inside the package for why
    this is needed.
 3. GarageBand: on a Software Instrument track, open Smart Controls (B) → Plug-ins →
-   Instrument slot → AU Instruments → Veil Audio → WORLDBUILDER. Press play: in the
+   Instrument slot → AU Instruments → Windward Audio → WORLDBUILDER. Press play: in the
    default Transport mode it plays while the song plays; no MIDI is needed. (Choose
    Play Mode Free in the footer to hear it with the song stopped.)
+
+Updating from a version made before the company name changed to Windward Audio: the
+installer removes the earlier copy, so hosts list WORLDBUILDER once, under Windward Audio.
+Your projects and presets keep working (the plug-in's identity codes and parameters are
+unchanged). On its first launch WORLDBUILDER copies your saved worlds, instrument presets
+and host presets from the folders earlier versions used (Documents/WORLDBUILDER and the
+host's preset folder under the earlier company name) to ~/Library/Windward Audio/WORLDBUILDER
+(and the host presets to ~/Library/Audio/Presets/Windward Audio/WORLDBUILDER, where the
+host's preset menu finds them). The originals are kept.
 
 Uninstall with `bash uninstall-mac.sh`.
 
@@ -1115,6 +1124,8 @@ CI (`.github/workflows/build.yml`) runs on every push:
 The installable zip is uploaded only when every check passes.
 
 ## Credits
+
+- WORLDBUILDER is made by Windward Audio.
 
 - The Drama drums' orchestral percussion (bass drums, large drum, tenor drums, snare,
   timpani, cymbals, gong) and the woodwinds (flute, piccolo, oboe, clarinet, bassoon: the

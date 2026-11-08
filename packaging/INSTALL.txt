@@ -16,15 +16,22 @@ INSTALL
 GARAGEBAND
   Settings > Audio/MIDI: tick "Audio Units". Restart GarageBand.
   Track > New Track > Software Instrument. Smart Controls (B) > Plug-ins >
-  Instrument slot (top) > AU Instruments > Veil Audio > WORLDBUILDER.
+  Instrument slot (top) > AU Instruments > Windward Audio > WORLDBUILDER.
   The world plays straight away while the track is selected; no MIDI is needed.
   If you see sliders instead of the WORLDBUILDER interface, switch the plug-in
   window's view menu from "Controls" to "Editor".
 
 LOGIC PRO
-  Settings > Plug-in Manager > Veil Audio > WORLDBUILDER. If it is marked failed,
+  Settings > Plug-in Manager > Windward Audio > WORLDBUILDER. If it is marked failed,
   select it and click "Reset & Rescan Selection". Insert it in the Instrument slot
-  of a Software Instrument track: AU Instruments > Veil Audio > WORLDBUILDER.
+  of a Software Instrument track: AU Instruments > Windward Audio > WORLDBUILDER.
+
+UPDATING FROM AN EARLIER VERSION
+  The company name is now Windward Audio. The script removes the copy installed under
+  the earlier name, so GarageBand and Logic list WORLDBUILDER once, under Windward Audio.
+  Projects and presets made with the earlier version still load. On its first launch
+  WORLDBUILDER copies your saved worlds and presets to
+  ~/Library/Windward Audio/WORLDBUILDER (the originals are kept).
 
 UNINSTALL
   bash uninstall-mac.sh            (add --purge to also delete saved presets)

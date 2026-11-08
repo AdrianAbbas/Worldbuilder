@@ -59,9 +59,12 @@ for dir in "$HOME/Library/Audio/Plug-Ins/Components" "/Library/Audio/Plug-Ins/Co
            "$HOME/Library/Audio/Plug-Ins/VST3" "/Library/Audio/Plug-Ins/VST3"; do
     [[ -d "$dir" ]] || continue
     while IFS= read -r -d '' bundle; do
-        printf '%s  (modified %s)\n' "$bundle" "$(/usr/bin/stat -f '%Sm' "$bundle")"
+        # The bundle ID tells a current copy (com.windwardaudio.worldbuilder) from one
+        # installed before the company rename.
+        printf '%s  (modified %s, %s)\n' "$bundle" "$(/usr/bin/stat -f '%Sm' "$bundle")" \
+            "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Contents/Info.plist" 2>/dev/null)"
         [[ "$bundle" == *.component ]] && components+=("$bundle")
-    done < <(/usr/bin/find "$dir" -maxdepth 1 -iname 'veil*' -print0 2>/dev/null)
+    done < <(/usr/bin/find "$dir" -maxdepth 1 -iname '*worldbuilder*' -print0 2>/dev/null)
 done
 [[ ${#components[@]} -gt 0 ]] || echo "No WORLDBUILDER.component found in either Components folder."
 echo "Other copies Spotlight knows about (e.g. in Downloads):"

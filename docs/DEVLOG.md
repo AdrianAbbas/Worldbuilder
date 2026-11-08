@@ -8356,3 +8356,81 @@ busier first, the drums from Action.
   design, not by ear: listen to the renders first.
 - A Riser the composer picks by hand keeps playing (its length clamped to the rules' 2-3 bars in a
   live arrangement); the rules choose the automatic ones.
+
+## The company rename: Windward Audio (2026-11-08)
+
+The company brand is now **Windward Audio**. Hosts listed WORLDBUILDER under the earlier
+company name (bundle ID `audio.veil.worldbuilder`). Only what users see changes; the AU
+type/subtype/manufacturer codes (`aumu` / `Wbld` / `Veil`) and every parameter ID stay, so
+projects and presets saved before still load.
+
+### What changed
+
+- **Identity** (`CMakeLists.txt`): `COMPANY_NAME "Windward Audio"` (the AU's name is now
+  "Windward Audio: WORLDBUILDER", the VST3 vendor Windward Audio), `BUNDLE_ID
+  com.windwardaudio.worldbuilder`. `PLUGIN_MANUFACTURER_CODE Veil` and `PLUGIN_CODE Wbld`
+  unchanged.
+- **The user's files** (`Source/UserData.h`): saved worlds, instrument presets and a copy of
+  the host's presets live in `~/Library/Windward Audio/WORLDBUILDER/` (`Worlds`, `Instrument
+  Presets`, `Host Presets`). The first instance in a process copies (never moves) what the
+  earlier version left in `~/Documents/WORLDBUILDER/{Worlds,Instrument Presets}` and in the
+  host's preset folder under the earlier company name
+  (`~/Library/Audio/Presets/<earlier name>/WORLDBUILDER`): the host presets also go to
+  `~/Library/Audio/Presets/Windward Audio/WORLDBUILDER`, where GarageBand and Logic look for
+  the new name. Files already there are kept; a `.migrated` marker makes it once only. Inside
+  sandboxed GarageBand these paths resolve in its container, as the earlier ones did.
+- **Install / uninstall**: `install-mac.sh` first removes any bundle in the user's Components
+  and VST3 folders whose bundle ID is the earlier one (whatever its file name; a system-wide
+  one is reported with the `sudo rm` command), clears the hosts' Audio Unit cache
+  (`~/Library/Caches/AudioUnitCache/com.apple.audiounits.cache`, rebuilt at their next
+  launch) and then requires the registry to list `aumu Wbld Veil` once, as "Windward Audio:
+  WORLDBUILDER". `uninstall-mac.sh` removes either bundle ID; `--purge` removes the new
+  folders and the earlier host presets.
+- **Text**: README (install, the update note, paths, Credits), MANUAL_TEST, `INSTALL.txt`,
+  the installer's next steps; no user-facing text names the earlier company. The package and
+  CI artifacts are `WindwardAudio-WORLDBUILDER-macOS-Universal(.zip)`,
+  `WindwardAudio-WORLDBUILDER-macOS-diagnostics` and `WindwardAudio-WORLDBUILDER-linux-test-logs`.
+  WORLDBUILDER has no About screen in the plug-in; the README's Credits name the company.
+  `diagnose-mac.sh` lists installed WORLDBUILDER bundles with their bundle IDs (it searched
+  for the earlier product's file names).
+
+### Tests
+
+- **An old session** (`Tests/fixtures/old-session.wbstate`): a varied session (World and Place
+  parameters, edited patterns, a named Location, a Classic Arc arrangement, a KEYS target)
+  saved by the build before the rename (commit 4c81d33, `--write-old-session`), with what that
+  build saves after loading it (`old-session.wbstate.expected.xml`; loading adds properties a
+  fresh session had not set, so the file itself is not the comparison). The `rename` group
+  (Linux suite and both macOS smoke runs) loads it and compares the state saved again with that,
+  character for character (without the diagnostic `samples` count); checks every parameter ID
+  exists with its saved value; and that the same session made now saves the same state.
+- **The AU harness** (`--expect-name`, `--old-session`): the registry's name for the component
+  must be "Windward Audio: WORLDBUILDER", and the old session, set through
+  `kAudioUnitProperty_ClassInfo` with the codes `aumu Wbld Veil` on a fresh instance (in-process
+  and out-of-process, arm64 and x86_64), must read back as the expected state.
+- **The user's install** (`ci-user-install-test.sh`): before installing, a copy as the earlier
+  version installed it (its bundle ID and AU name, under another file name) and the user's files
+  in the earlier folders. After `install-mac.sh`: the earlier copy is gone, `auval -a` lists
+  WORLDBUILDER once, as "Windward Audio: WORLDBUILDER"; after auval and the harness (the first
+  launch): the files are in `~/Library/Windward Audio/WORLDBUILDER` and the host's new folder,
+  the originals kept.
+- **The bundles** (`ci-check-bundles.sh`): the AU's name, the bundle IDs of the AU, VST3 and
+  app, the VST3 vendor in `moduleinfo.json`, and no earlier company name in the Info.plists.
+- The migration itself (`rename` group, a temporary folder): copied once, nothing overwritten,
+  originals kept, the folders SAVE .world and the instrument presets use.
+
+### Rename handoff
+
+**Done**: the name hosts list, the bundle ID, the user's files and their one-time copy, the
+installer removing the earlier copy, the text, the artifact names; the tests above.
+
+**The GarageBand check** (needs the developer, on a Mac that has the earlier version
+installed; `docs/MANUAL_TEST.md`, "Company rename check"): install over the earlier version;
+GarageBand lists AU Instruments → Windward Audio → WORLDBUILDER once and nothing under the
+earlier name; an older project opens with WORLDBUILDER loaded and sounding as before; the saved
+worlds, instrument presets and GarageBand's own presets are listed; the earlier files are still
+in place.
+
+**Known limits**: GarageBand and Logic rescan their Audio Units once after the install (the
+cache is cleared). A copy installed system-wide under the earlier name cannot be removed
+without `sudo`: the installer prints the command. Nothing here has been seen on a Mac yet.

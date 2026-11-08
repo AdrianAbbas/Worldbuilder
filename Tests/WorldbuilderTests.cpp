@@ -9463,6 +9463,8 @@ void testSamples(Suite& s) {
 #include "LevelProbe.inc"
 #include "LevelTests.inc"
 #include "WoodwindTests.inc"
+#include "UserData.h"
+#include "OldSession.inc"
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -9485,6 +9487,7 @@ int main(int argc, char** argv) {
         else if (juce::String(argv[i]) == "--snapshot-scenes" && i + 1 < argc) return writeSceneSnapshots(argv[i + 1]);
         else if (juce::String(argv[i]) == "--snapshot-pixel" && i + 1 < argc) return writePixelSnapshots(argv[i + 1]);
         else if (juce::String(argv[i]) == "--snapshot-planets" && i + 1 < argc) return writePlanetSnapshots(argv[i + 1]);
+        else if (juce::String(argv[i]) == "--write-old-session" && i + 1 < argc) return oldSession::write(argv[i + 1]);
         else if (juce::String(argv[i]) == "--probe") return probe();
         else if (juce::String(argv[i]) == "--probe-places") return probePlaces();
         else if (juce::String(argv[i]) == "--render" && i + 2 < argc) {
@@ -9519,6 +9522,7 @@ int main(int argc, char** argv) {
     if (run("power")) testPowerAndMaster(s);
     if (run("tonal")) testTonalChanges(s);
     if (run("state")) testState(s);
+    if (run("rename")) oldSession::test(s);
     if (run("models")) testModels(s);
     if (run("distinct")) testDistinct(s);
     if (run("effects")) testEffects(s);

@@ -3,6 +3,7 @@
 #include "Pixel.h"
 #include "Style.h"
 #include "WorldLookAndFeel.h"
+#include "UserData.h"
 
 namespace wb::ui {
 
@@ -334,7 +335,7 @@ InstrumentView::InstrumentView(WorldbuilderProcessor& p) : processor(p) {
     // Presets.
     presetPrev.setTooltip("The previous preset");
     presetNext.setTooltip("The next preset");
-    presetMenu.setTooltip("Instrument presets: the factory set and yours (Documents/WORLDBUILDER/Instrument Presets). Separate from world presets.");
+    presetMenu.setTooltip("Instrument presets: the factory set and yours (~/Library/Windward Audio/WORLDBUILDER/Instrument Presets). Separate from world presets.");
     presetSave.setTooltip("Save the instrument, its Character, effects and controls as a preset");
     presetLoad.setTooltip("Load an instrument preset file (.wbinst)");
     presetPrev.onClick = [this] { stepPreset(-1); };
@@ -436,7 +437,7 @@ juce::String InstrumentView::macroLabel(int which) const {
 }
 
 juce::File InstrumentView::presetFolder() {
-    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("WORLDBUILDER").getChildFile("Instrument Presets");
+    return userdata::instrumentPresets();
 }
 
 void InstrumentView::rescanPresets() {

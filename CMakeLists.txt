@@ -25,8 +25,8 @@ if(APPLE)
     list(APPEND WORLDBUILDER_FORMATS AU)
 endif()
 juce_add_plugin(WORLDBUILDER
-    COMPANY_NAME "Veil Audio"
-    BUNDLE_ID "audio.veil.worldbuilder"
+    COMPANY_NAME "Windward Audio"
+    BUNDLE_ID "com.windwardaudio.worldbuilder"
     PLUGIN_MANUFACTURER_CODE Veil
     PLUGIN_CODE Wbld
     PRODUCT_NAME "WORLDBUILDER"

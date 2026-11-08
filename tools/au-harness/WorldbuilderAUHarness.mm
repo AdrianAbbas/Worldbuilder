@@ -16,6 +16,8 @@
 // Usage:
 //   WorldbuilderAUHarness [--strict] [--no-window] [--component aumu:Wbld:Veil]
 //                 [--only v2-oop|v2-inproc|auaudiounit]
+//                 [--expect-name "Windward Audio: NAME"]  (the name the registry must list)
+//                 [--old-session FILE]  (a state saved before the company rename: it must load unchanged)
 //
 // Without --strict the harness reports and exits 0 (used to characterise an
 // old build). With --strict any FAIL gives exit code 1. Exit code 2 means the
@@ -514,6 +516,79 @@ void requestViewControllerTest(Report& r, AudioUnit unit, bool useWindow, bool r
 }
 
 //==============================================================================
+// The company rename: the name hosts list (--expect-name) and an old session
+// (--old-session: a state saved by the build before the rename) that must load unchanged:
+// read back, it is the state that build saved after loading it (<file>.expected.xml).
+std::string expectedName;
+std::string oldSessionPath;
+
+std::string fourCCText(OSType code) {
+    std::string s(4, ' ');
+    for (int i = 0; i < 4; ++i) s[std::size_t(i)] = char((code >> (24 - 8 * i)) & 0xff);
+    return s;
+}
+
+// The XML text of JUCE's binary state (a magic number, the text's size, the text),
+// without the diagnostic `samples` count (which depends on the build's recordings).
+std::string stateXml(const UInt8* bytes, size_t length) {
+    if (length <= 8) return {};
+    uint32_t magic = 0, size = 0;
+    std::memcpy(&magic, bytes, 4);
+    std::memcpy(&size, bytes + 4, 4);
+    if (magic != 0x21324356u || size_t(size) + 8 > length) return {};
+    std::string xml(reinterpret_cast<const char*>(bytes + 8), size);
+    while (!xml.empty() && xml.back() == '\0') xml.pop_back();
+    const auto at = xml.find(" samples=\"");
+    if (at != std::string::npos) {
+        const auto end = xml.find('"', at + 10);
+        if (end != std::string::npos) xml.erase(at, end + 1 - at);
+    }
+    return xml;
+}
+
+// Loads the old session into a fresh instance through kAudioUnitProperty_ClassInfo (as a
+// host opening an old project does) and reads it back: the state must be the same.
+void oldSessionCheck(Report& r, AudioComponent component, bool outOfProcess) {
+    if (oldSessionPath.empty()) return;
+    NSData* file = [NSData dataWithContentsOfFile: [NSString stringWithUTF8String: oldSessionPath.c_str()]];
+    if (!r.check(file != nil && file.length > 8, "old session file readable", oldSessionPath)) return;
+    NSString* expectedText = [NSString stringWithContentsOfFile: [NSString stringWithUTF8String: (oldSessionPath + ".expected.xml").c_str()]
+                                                       encoding: NSUTF8StringEncoding error: nil];
+    const std::string expected = expectedText != nil ? std::string(expectedText.UTF8String) : std::string();
+    if (!r.check(!expected.empty() && !stateXml(static_cast<const UInt8*>(file.bytes), file.length).empty(),
+                 "old session file holds a state, and its expected state is there", oldSessionPath)) return;
+    AudioComponentDescription d {};
+    AudioComponentGetDescription(component, &d);
+    NSDictionary* info = @{ @"version": @0, @"type": @(d.componentType), @"subtype": @(d.componentSubType),
+                            @"manufacturer": @(d.componentManufacturer), @"name": @"Old session",
+                            @"jucePluginState": file };
+    OSStatus s = noErr;
+    AudioComponentInstance unit = instantiate(component, outOfProcess, s);
+    if (!r.check(unit != nullptr, "instance for the old session", statusText(s))) return;
+    CFPropertyListRef in = (__bridge CFPropertyListRef) info;
+    s = AudioUnitSetProperty(unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &in, sizeof(in));
+    r.check(s == noErr, "an old session (saved before the rename, codes " + fourCCText(d.componentType) + " " + fourCCText(d.componentSubType) + " "
+            + fourCCText(d.componentManufacturer) + ") is accepted", statusText(s));
+    pump(0.3);
+    CFPropertyListRef back = nullptr;
+    UInt32 size = sizeof(back);
+    std::string got;
+    if (AudioUnitGetProperty(unit, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &back, &size) == noErr && back != nullptr
+        && CFGetTypeID(back) == CFDictionaryGetTypeID()) {
+        const auto data = static_cast<CFDataRef>(CFDictionaryGetValue(static_cast<CFDictionaryRef>(back), CFSTR("jucePluginState")));
+        if (data != nullptr && CFGetTypeID(data) == CFDataGetTypeID()) got = stateXml(CFDataGetBytePtr(data), size_t(CFDataGetLength(data)));
+    }
+    if (back != nullptr) CFRelease(back);
+    size_t differ = 0;
+    while (differ < expected.size() && differ < got.size() && expected[differ] == got[differ]) ++differ;
+    r.check(got == expected, "the old session loads unchanged (its saved state compared with the state read back)",
+            got == expected ? strf("%zu characters", expected.size())
+                            : strf("first difference at character %zu: expected '%s', got '%s'", differ,
+                                   expected.substr(differ > 40 ? differ - 40 : 0, 120).c_str(), got.substr(differ > 40 ? differ - 40 : 0, 120).c_str()));
+    AudioComponentInstanceDispose(unit);
+}
+
+//==============================================================================
 // Common AUv2 render/parameter/preset/state checks for one instance.
 void v2Suite(Report& r, AudioComponent component, bool outOfProcess, bool useWindow) {
     r.scope = outOfProcess ? "v2 out-of-process" : "v2 in-process";
@@ -753,6 +828,8 @@ void v2Suite(Report& r, AudioComponent component, bool outOfProcess, bool useWin
         }
         if (state != nullptr) CFRelease(state);
         for (const auto& [id, original] : changed) setParameter(unit, id, original);
+        // 6b. An old session (saved before the company rename) in a fresh instance.
+        oldSessionCheck(r, component, outOfProcess);
     }
     host.report = &r;
 
@@ -941,6 +1018,8 @@ int main(int argc, const char* argv[]) {
             else if (a == "--no-window") useWindow = false;
             else if (a == "--only" && i + 1 < argc) only = argv[++i];
             else if (a == "--component" && i + 1 < argc) componentText = argv[++i];
+            else if (a == "--expect-name" && i + 1 < argc) expectedName = argv[++i];
+            else if (a == "--old-session" && i + 1 < argc) oldSessionPath = argv[++i];
             else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 64; }
         }
         if (componentText.size() != 14 || componentText[4] != ':' || componentText[9] != ':') {
@@ -976,6 +1055,13 @@ int main(int argc, const char* argv[]) {
         for (AudioComponent c = nullptr; (c = AudioComponentFindNext(c, &description)) != nullptr;) ++matches;
         r.check(matches == 1, "exactly one registered component matches", strf("%d", matches));
         describeComponent(r, component);
+        if (!expectedName.empty()) {
+            CFStringRef name = nullptr;
+            AudioComponentCopyName(component, &name);
+            const std::string listed = toString(name);
+            if (name != nullptr) CFRelease(name);
+            r.check(listed == expectedName, "the registry lists it as '" + expectedName + "'", "'" + listed + "'");
+        }
 
         // Out-of-process first, before the in-process load maps the plug-in into this process.
         if (only.empty() || only == "v2-oop") v2Suite(r, component, true, useWindow);

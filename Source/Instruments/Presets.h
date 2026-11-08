@@ -5,7 +5,7 @@
 //
 // A preset stores the instrument and the inst_* parameters it sets; anything it does not
 // set takes the instrument's own default. The composer's are .wbinst files (XML) in
-// Documents/WORLDBUILDER/Instrument Presets; the factory set is below.
+// ~/Library/Windward Audio/WORLDBUILDER/Instrument Presets (Source/UserData.h); the factory set is below.
 #include "Catalog.h"
 #include <juce_core/juce_core.h>
 #include <vector>
