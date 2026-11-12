@@ -718,3 +718,4 @@ void testBrass(Suite& s) {
                 std::to_string(written) + " of " + std::to_string(wanted) + " files in " + rendersFolder().getFullPathName().toStdString());
     }
 }
+

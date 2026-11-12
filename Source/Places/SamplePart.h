@@ -183,6 +183,10 @@ public:
         // away below the middle (as recorded above it), and their damping when released.
         patch.attack = patch.attack * timeScale(a) + swell(a);
         patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
+        // (The brass pass.) A long Release on a looped, expressive instrument (the woodwinds, the
+        // brass): the note fades over its loop for as long as asked, instead of ending with its
+        // recorded release (at most a second).
+        if (patch.held && patch.expression && r > 0.25f) patch.recordedTail = false;
         if (!patch.held && r < 0.0f) patch.decay = (patch.decay > 0.0f ? patch.decay : 6.0f) * timeScale(r);
         patch.voices = maxVoices;
         patch.mono = false;
@@ -1245,7 +1249,9 @@ inline SamplePatch brassPatch(const char* sustain, const char* staccato) {
     p.expression = true;
     p.velocityGain = 0.25f;     // the layers carry most of the dynamics
     p.velocityTone = 0.6f;      // brass darkens a lot when soft
-    p.even = 0.6f;
+    // Only a little evening of the registers: a brass part climbing into its loud top (a
+    // fanfare at a Climax) gets louder, as the players and the models do.
+    p.even = 0.25f;
     p.toneHz = 16000;
     p.legatoSeconds = 0.03f;
     p.legatoSkip = 0.3f;        // a slurred note starts on its sustain, past its swell
