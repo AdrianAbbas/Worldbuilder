@@ -345,13 +345,13 @@ void CastlePlace::configure(const PlaceContext& c) {
         // and presence above it, none at the default.)
         // As the model's spectrum (measured: its weight in the lows, dark above 1 kHz): a low,
         // dark section over a strong tuba pedal, opening with Tension.
-        p.toneHz = lerpExp(800.0f, 3000.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
+        p.toneHz = lerpExp(1200.0f, 4500.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
         // The model's balance: the trombones' strong low middle (their 2nd to 4th harmonics,
         // 0.4-0.9 kHz) scooped; the hall's body is the pedal's and the fundamentals'.
-        p.formantHz = 600.0f;
-        p.formantQ = 0.8f;
-        p.formantDb = -5.0f;
+        p.formantHz = 550.0f;
+        p.formantQ = 1.0f;
+        p.formantDb = -10.0f;
         // The model's quiet, broad air above (its breath): matched to its spectrum's top.
         p.breath = 0.004f;
         p.breathRatio = 30.0f;
