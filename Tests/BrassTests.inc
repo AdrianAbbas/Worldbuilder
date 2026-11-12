@@ -736,3 +736,17 @@ void probeBrassCastle() {
         }
     }
 }
+void probeBrassSpectrum() {
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    for (const char* hide : { "", "br-" }) {
+        samples::Bank::hideForTests(*hide ? hide : nullptr);
+        auto d = instrumentHost(Castle, 0, CastlePlace::Drone, {});
+        const auto a = d.render(24.0);
+        samples::Bank::hideForTests(nullptr);
+        juce::File f(std::string("/tmp/claude-0/drone-") + (*hide ? "synth" : "brass") + ".raw");
+        f.deleteFile();
+        juce::FileOutputStream o { f };
+        for (std::size_t i = std::size_t(4 * a.rate); i < a.l.size(); ++i) o.writeFloat(0.5f * (a.l[i] + a.r[i]));
+    }
+}

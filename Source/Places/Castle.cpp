@@ -343,23 +343,23 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.courseMs = 15;
         // (A futuristic Era brighter: the low-pass 0.8 octaves over the dial, from its default,
         // and presence above it, none at the default.)
-        // A low section, opening with Tension.
-        p.toneHz = lerpExp(1100.0f, 4500.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
+        // As the model's spectrum (measured: its weight in the lows, dark above 1 kHz): a low,
+        // dark section over a strong tuba pedal, opening with Tension.
+        p.toneHz = lerpExp(800.0f, 3000.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
         // The model's balance: the trombones' strong low middle (their 2nd to 4th harmonics,
         // 0.4-0.9 kHz) scooped; the hall's body is the pedal's and the fundamentals'.
         p.formantHz = 600.0f;
         p.formantQ = 0.8f;
-        p.formantDb = -8.0f;
-        // The players' air, high and broad (as the model's breath): what of the drone sits
-        // above its dark tone is breath, not its harmonics.
-        p.breath = 0.03f;   // the model's own breath level
+        p.formantDb = -5.0f;
+        // The model's quiet, broad air above (its breath): matched to its spectrum's top.
+        p.breath = 0.004f;
         p.breathRatio = 30.0f;
         p.breathQ = 0.5f;
         p.breathBurst = 0.5f;
         p.tremoloPerBeat = w.tremoloPerBeat;
         p.tremoloDepth = w.tremoloDepth;
-        p.pedal = 0.15f;   // the tuba is heavier than the model's pedal voice: further under
+        p.pedal = 0.6f;   // the model's weight below 125 Hz is its pedal and sub   // the tuba is heavier than the model's pedal voice: further under
         p.pedalSemis = w.pedalSemis;
         p.pedalInstrument = "br-tuba";
         p.scoopSemis = -0.35f;   // the model's designed lip (Scoop / Glide)

@@ -53,7 +53,7 @@ private:
     // The brass (the brass pass): VSCO 2 CE's tenor trombones holding the drone over a tuba
     // pedal, and its horns calling; the synthesised brass without the samples.
     SamplePart droneRec { drone }, hornsRec { horns };
-    static constexpr std::array<float, 3> droneGain { 26.2639f, 25.1212f, 25.4253f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> droneGain { 16.3390f, 16.6599f, 15.8019f };   // per Character, level-matched (Tests "brass")
     static constexpr std::array<float, 3> hornsGain { 5.0191f, 6.4154f, 11.2998f };
     ModalPart bells;
     DrumPart timpani;
