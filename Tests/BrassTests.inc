@@ -486,7 +486,7 @@ void testBrass(Suite& s) {
         for (float v : dry) dk = std::max(dk, double(std::abs(v)));
         // (The test sums the two channels: each is under the ceiling, so the sum is under twice it.)
         const double ceiling = 2.0 * double(p.punchCeiling);
-        s.check(pk <= std::max(ceiling, dk) * 1.01 && lowest < 1.0f, "an eight-note stab stacked at full velocity stays under the ceiling (Punch's limiter takes back only what Punch added)",
+        s.check(pk <= std::max(ceiling, dk) * 1.01 && lowest < 1.0f, "an eight-note stab stacked at full velocity, driven past the ceiling: Punch adds no peak (its limiter takes back what Punch added above the ceiling, nothing else)",
                 "peak " + fmt(20.0 * std::log10(pk / 2.0)) + " dBFS per channel (without Punch " + fmt(20.0 * std::log10(dk / 2.0)) + "), limiter down to " + fmt(20.0 * std::log10(lowest)) + " dB");
         // At a Climax every Place with brass stabs plays under full scale (the whole mix).
         std::string line;

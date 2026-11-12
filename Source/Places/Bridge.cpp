@@ -312,12 +312,14 @@ void BridgePlace::configure(const PlaceContext& c) {
         p.courseCents = 12.0f;
         p.courseLevel = 0.7f;
         p.courseMs = 20;
-        p.toneHz = lerpExp(1200.0f, 4000.0f, tone) * (1.0f + 0.5f * tension);
+        // (Brighter with Tension through the console resonance below: the low-pass tracks each
+        // note's pitch, and opening it with Tension made the section louder, not brighter.)
+        p.toneHz = lerpExp(2500.0f, 6000.0f, tone);
         p.liveTone = true;
         p.velocityTone = 0.3f;
         p.formantHz = 1100.0f;
         p.formantQ = 2.5f;
-        p.formantDb = 2.0f;
+        p.formantDb = 1.0f + 3.0f * tension;
         // Pure, as the model: the low-pass 1.5 times each note's pitch (a section's strong
         // third and fifth harmonics would carry the chord out of the key).
         p.toneTrack = 1.5f;
