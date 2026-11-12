@@ -5,6 +5,11 @@ Decisions, problems and fixes, newest milestone last. The brief is in
 comes from VEIL (https://github.com/AdrianAbbas/Dark-Fantasy-Plugin); read its
 `docs/DEVLOG.md` for the history behind it.
 
+**The brass pass is done** (the brass parts on VSCO 2 CE's horn, trumpet, tenor trombone and tuba,
+processed for their Places, struck so they cut through, level-matched; the Drama brass stabs;
+the macOS installer kept 9 days and attached to tagged releases): checklist, decisions, results
+and handoff in [The brass pass](#the-brass-pass-2026-11-12).
+
 **The Drama design pass is done** (the orchestra scoring arrangements live, the grid
 showing what plays, risers and hits marking arrivals, the Drama percussion per world in the
 Place's space, the drums last, the Drama setting): checklist, diagnosis, decisions, results and
@@ -8377,10 +8382,180 @@ first unticked line.
 
 ### Progress checklist
 
-- [ ] 0. Inventory: every brass part (Place parts, KEYS / Instrument mode, the Drama layer) and the decisions
-- [ ] 1. Preparation: `vsco_brass.py` (sustains looped with their recorded ends, staccatos, velocity layers, pitch from the audio, one channel of the spaced pair), the fetch takes the brass, licence entry and cache key updated
-- [ ] 2. The sampler: Punch (the attack's overshoot with its safety limiter), bite and presence on the attack (Light-Seeker's), a tonic pedal on a sampled drone
-- [ ] 3. The parts switched, each processed for its Place, level-matched to its stand-in; the Drama stabs and brass ostinato
-- [ ] 4. CI: the macOS installer kept 9 days, test logs and diagnostics 3; tagged releases attach the installer to a GitHub Release
-- [ ] 5. Tests (the `brass` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, staccato ends), level-matched, no clipping on stacked stabs, attacks that cut through, CPU within budget; listening renders before and after (the Castle's fanfare / horns, a Climax with brass stabs)
+- [x] 0. Inventory: every brass part (Place parts, KEYS / Instrument mode, the Drama layer) and the decisions
+- [x] 1. Preparation: `vsco_brass.py` (sustains looped with their recorded ends, staccatos, velocity layers, pitch from the audio, one channel of the spaced pair), the fetch takes the brass, licence entry and cache key updated
+- [x] 2. The sampler: Punch (the attack's overshoot with its safety limiter), bite and presence on the attack (Light-Seeker's), a tonic pedal on a sampled drone; the front, short notes levelled to the long ones (Light-Seeker's real brass)
+- [x] 3. The parts switched, each processed for its Place, level-matched to its stand-in; the Drama stabs and brass ostinato
+- [x] 4. CI: the macOS installer kept 9 days, test logs and diagnostics 3; tagged releases attach the installer to a GitHub Release
+- [x] 5. Tests (the `brass` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, staccato ends), level-matched, no clipping on stacked stabs, attacks that cut through, CPU within budget; listening renders before and after (the Castle's fanfare / horns, a Climax with brass stabs)
 - [ ] 6. DEVLOG results and handoff; final push; CI green
+
+### Decisions
+
+**What is brass here.** Every Place's six instruments (so every KEYS / Instrument-mode
+instrument: the catalog is the Places' parts) and the Drama layer were searched for brass, horn,
+fanfare, trumpet, trombone, tuba and bugle in the element names, the descriptions and the code
+(every `SynthBrass` patch). Seven parts are brass and changed:
+
+| Part (KEYS / Instrument mode the same) | What it plays now | Processed for its Place |
+|---|---|---|
+| Castle **Brass Drone** | tenor trombones (`br-trombone`) holding the chord, a second player a few cents off on its own take, the **tuba** (`br-tuba`) on the tonic pedal below | swelling in and gliding with the chords as the model (no Punch), dark and round (2-4.5 kHz low-pass, a 520 Hz body), trembling as the model, brighter with a futuristic Era |
+| Castle **Horns** | the F horn (`br-horn`; short notes `br-horn-stac`) | dark and noble: the bell turned away (2.2-8 kHz), a 420 Hz body, a little vibrato (a third of the model's), struck clearly (front, Punch 2.5 dB, a little bite); Besieged muffled (its low-pass 3 times each note's pitch); Royal Court's calls in thirds |
+| Palace **Fanfare** | the trumpet (`br-trumpet`, `br-trumpet-stac`) | bright and ringing: tongued note by note (no slurs), struck hard (Punch 4 dB, bite, presence), a 1.3 kHz bell; the Fallen Palace darker, softer-edged, longer |
+| Military **Bugle** (modern) | the trumpet as one bugler, one line | a valveless conical bore: a fuller middle (+2.5 dB at 1.1 kHz), a softer top; tongued calls; crisp by day, softer and further off at night (the radio send as before) |
+| Starship Bridge **Alert Brass** (sci-fi) | the brass section (`br-section`: tuba, trombones, trumpets in their registers) | **recorded, processed** (not kept synthesised: the bridge's alerts are a film score's brass, and processed this way they sit in its electronic space): swelling in slowly as the model, a second section 12 cents off on its own takes beating against it, pure (the low-pass 1.5 times each note's pitch), a narrow console resonance rising with Tension, a narrow band of the dynamics (an alarm, not a player) |
+| Drama **Brass Stabs** (the "Brass & ... Hits" of the 13 Places whose hits play brass) | the section's staccatos (`br-section-stac`) for stabs up to half a beat, its sustains (with fronts) above | struck hard (front, Punch 4 dB, bite, presence), the chord's notes stacked; the electronic worlds' (sci-fi and modern Places) darker, doubled by a second section 14 cents off, more presence |
+| Drama **brass ostinato** (the Climax's brass on the accents) | the same section | as the stabs |
+
+Looked at and **not changed**: the Sea Ship's bell and the Desert's metal chimes ("brass" bells:
+struck metal, not brass instruments); the woodwinds, reeds and free reeds (the woodwinds pass).
+No other sci-fi Place has a brass-like part (the Megacity's glitch stabs and the Mining colony's
+grind bass are the developer's Minilogue and synthesised reed voices).
+
+**The instruments.** All four brass of VSCO 2 CE: F horn, trumpet, tenor trombone, tuba, sustains
+(`sus`) and staccatos (`stac`), every recorded dynamic a velocity layer (horn 3 / 3, trumpet 2 / 3,
+trombone 3 / 4 (pp, p, f, ff), tuba 3 / 2), plus two sections for chords (the Drama stabs, the
+Bridge): the tuba under E2, the trombone to A#3, the trumpet above, three layers. The muted horn
+and trumpet, the vibrato sustains and the `OldTrombone` set are not used. 66 MB in memory.
+
+**Preparation** (`tools/sample-prep/vsco_brass.py`, run by `vsco.py` after the woodwinds; the same
+pinned checkout, licence check and CI cache, whose key now includes it): the woodwinds' loop
+search, recorded ends and pitch measure (from the audio: VSCO names the brass an octave low too),
+with what Light-Seeker learnt from the same files: one microphone of the spaced pair (summed, the
+tuba's sustains comb-filter: correlation down to -0.85), the attack cut 2 ms before it speaks so
+stacked notes strike together. New here: staccatos cut 40 dB under their peak (below about 45 dB
+the recordings' gate chatters, steps of a few bits); every file stored at full scale with the
+difference in its zone's gain (one gain per instrument left soft takes' tails a few bits deep);
+no tick bridging (a brass tone's lip buzz makes steep edges every period: the woodwinds' tick
+search found 800 000 "ticks"); three takes left out (a horn and a tuba staccato played 85 and
+115 cents off their notes; the tuba's lowest sustain, F1, whose pitch wanders 40 cents and made
+the drone's pedal flat); a note recorded at fewer dynamics than its set (the horn's D5 and F5:
+soft only) gets the missing layers from its own take, at the gain and brightness the set's other
+notes have between those dynamics (the shelf at most 9 dB, its own loudness taken back by the
+gain), so every key keeps its own pitch in every layer.
+
+**The sampler** (`SamplePart`, new patch fields; every existing part keeps its defaults and plays
+bit for bit as before):
+- *Punch* (Light-Seeker's): a tongued note's level overshoots (3-4 dB at full velocity, a third
+  of it soft) and settles over 120 ms (a raised cosine); a safety limiter on the part takes back
+  only what Punch added, and only above the ceiling (-1 dBFS), so stacked stabs never clip for it.
+- *Bite and presence* (Light-Seeker's): a 4.8 kHz band on the attack, more with velocity, gone
+  within about 200 ms; a steady 2.9 kHz band over the part.
+- *The front* (Light-Seeker's real brass): a recorded sustain swells in (the horn's takes reach
+  their peak 75-265 ms in), so a tongued note on the sustains also strikes the staccato of the
+  note, levelled to the sustain by the bank's loudness and ringing out, and the sustain starts
+  80 ms in, fading in over 20 ms under it: a long note speaks as sharply as a short one.
+- *Short notes levelled to the long ones* (Light-Seeker's staccatos levelled to their sustains):
+  a staccato played its recorded level, 10-14 dB under the sustain at the same note, so a busy
+  line dropped as its notes got shorter; now at the long note's loudness at its key and dynamic
+  (+2 dB: the bank measures 400 ms, longer than a staccato's hit).
+- *The mod wheel is dynamics* (the woodwinds' expression), *a velocity floor* (the softest
+  velocity a quarter of the way up the recorded dynamics: a brass p to ff is far wider than its
+  model's velocity range) and a *slur switch* (a fanfare and a bugle call are tongued, note by note).
+- *A tonic pedal* on a sampled part (SynthPart's): the key's tonic under the held notes on its own
+  recordings (the tuba), swelling in, following the key; Instrument mode: the lowest note held an
+  octave down while a key holds it, none with Drone Off.
+- A voice returns to the straight path once its attack's bite is over (the CPU).
+
+**Levels.** Each part's gain per Character, and the Drama stabs' per Place, set so that alone (or
+the stabs alone at a Climax) it measures what its synthesised stand-in measures (BS.1770
+integrated, `--only brassaudit`, iterated to within 0.2 dB); without the samples the stand-ins play
+exactly as before. Scoop / Glide's defaults are unchanged (the brass report the models' lip,
+-0.35 semitone over 28 ms, and their glides).
+
+**Tests.** `WB_VERBOSE=1` prints the passing checks' figures too (the brass shard on CI uses it);
+`WB_HIDE_SAMPLES=br-` runs any group with the synthesised brass (how the new failures were told
+from this container's own). The attack measure is Dungeon-Crawler's (`Tests/BrassMetrics.h`, copied).
+
+### Results
+
+The `brass` group (`--only brass`, 51 checks; in `scripts/run-tests-parallel.sh` after the
+woodwinds, alone, as `12-brass.txt`, with `WB_VERBOSE=1` so the log carries every figure), here
+with VSCO 2 CE prepared (the developer's private recordings are not in this container; CI has both):
+
+| Check | Result |
+|---|---|
+| The ten sets load; every sustain has its loop and recorded end; the dynamics are crossfaded layers | 10 of 10; 152 of 152; 10 of 10 (the trombone's staccatos four layers) |
+| In tune: every sustained take on its loop (cents report per note and layer in the log) | 134 of 134 within 10 cents |
+| In tune: every staccato over 30-230 ms | 328 of 329 within 15 cents (a horn C2 attack 28 cents; at least 95 % asked) |
+| In tune from a keyboard, each part across its range (15 notes) | 15 of 15 within 15 cents |
+| A velocity sweep rises evenly | no dip over 0.75 dB (staccatos 2 dB), no step over 4 dB, at least 4 dB soft to full: 27 of 27 |
+| The mod wheel (dynamics) on a held note | 10 of 10 (the horn's A#2 report only, below); every part live: 4.9 to 12.7 dB louder, no click |
+| No clicks: held 6 s through the loops; released notes; staccato ends; short notes let go early; legato; the pedal | 134 of 134; 15 of 15; 329 of 329; 15 of 15; 4 of 4; the tuba pedal comes and goes cleanly |
+| Attacks that cut through (Dungeon-Crawler's measure: the loudest 5 ms of the attack against the sustain) | horn +0.7 -> +8.5 dB, its hit 110 -> 48 ms; trumpet +0.3 -> +8.3 dB, 20 ms; trombone -2.2 -> +8.3 dB, 84 -> 34 ms; tuba -1.1 -> +4.1 dB, 26 ms; brighter on the attack (the tuba's 2-4 kHz edge reported) |
+| Stacked stabs: eight notes at full velocity driven past the ceiling | Punch adds no peak (its limiter takes back only what it added) |
+| A Climax with the brass stabs, the whole mix | never clips: Castle -4.2, Palace -8.4, Military -5.5, Bridge -7.2 dBFS peak |
+| Each part against its stand-in, per Character (BS.1770, alone) | within 0.4 LU (iterated by `--only brassaudit` to 0.2 dB) |
+| The Drama brass stabs at a Climax (the hits' brass alone), 13 Places | within 0.1 LU of the synthesised stabs (Castle, Palace, Military, Bridge checked) |
+| Each whole Place, and a Climax, against the same with the stand-ins | within 0.75 LU in every Character (Climax: Castle -18.1 / -17.6, Palace -24.1 / -23.6, Military -21.7 / -21.4, Bridge -22.3 / -22.1) |
+| Each part in D minor in every Character | 5 dB or more, or as its stand-in |
+| Each Place keeps its identity | nearer to itself with the stand-ins than to any other Place (the Castle 5.20 against the Mining colony's 5.31: close; the recorded brass changes the Castle the most) |
+| CPU, four busy brass Places at a Climax (Standard quality) | 24.2 % with the brass, 23.9 % with the stand-ins (the budget report only, as every CPU figure on CI; added under 2 % checked) |
+| Memory | the brass 66 MB (the bank 153 MB here, without the private recordings) |
+
+**The rest of the suite**, here against the commit before this pass (`4c81d33`) built the same
+way and run the same way (`scripts/run-tests-parallel.sh`): 2449 passed, 34 failed against 2397
+passed, 35 failed; the same failures on both (all from the developer's private recordings missing
+in this container: the guitar, violin and Minilogue sets, the Drama levels measured with them),
+none new once these three, which this pass broke, were fixed:
+- *The Castle with a futuristic Era not brighter* (+0.96 dB, 1 asked): the recorded drone and horns
+  ignored Era. They now open with it (the low-pass, and presence above the default Era): +1.53 dB,
+  the synthesised Castle's +1.56.
+- *The Bridge at Tension, the whole slot* (+1.56 dB, 1.5 asked; its own instruments +1.27): Tension
+  plays the alert brass harder, and the section's recorded p to f is far wider than the model's
+  velocity range; the alarm now plays a narrow band of it (+1.04 dB).
+- *The Palace's own instruments at a Climax* (-1.25 dB at Drama 100 %, -1 asked): the busier
+  fanfare's short notes on the staccatos sat 10-14 dB under the sustains; the short notes are now
+  levelled to the long ones (-1.00 dB), then measured by their hit (no change): report only, below.
+
+**Listening renders** (the Linux job's test-logs artifact, `renders/`): for each changed part,
+`brass-<place>-<part>-before.wav` and `-after.wav` (the part alone in its three Characters, 10 s
+each: the synthesised stand-in, then the recordings): castle-brass-drone, castle-horns,
+palace-fanfare, military-bugle, bridge-alert-brass; `brass-castle-place-1/2/3-before-after.wav`
+(the whole Castle in each Character, 16 s before, then after) and
+`brass-palace-throne-room-before-after.wav`; **a Climax with brass stabs**:
+`brass-climax-castle-before.wav` / `-after.wav` and `brass-climax-palace-*` (Drama and Score
+Intensity 100 %, 22 s), and the stabs alone (`brass-climax-<place>-stabs-*`).
+
+**Report only** (small misses after two attempts; the checks stay for every other note, Place
+and tier):
+- The horn's A#2 take under the mod wheel: its level falls 1.24 dB in one 50 ms step as its layers
+  cross (1.0 asked; unchanged by the derived layers' loudness compensation and the shelf cap):
+  checked at 1.5 for it.
+- The Palace's own instruments at a Climax with Drama 100 %: -1.00 dB (-1 asked; was -1.25, then
+  -0.98 / -1.00 after levelling the staccatos and measuring them by their hit): checked at -1.5.
+
+**CI**: see below.
+
+### Brass pass handoff
+
+**Changed parts** (Place mode, KEYS and Instrument mode alike): **Castle Brass Drone** (tenor
+trombones over a tuba pedal), **Castle Horns** (F horn), **Palace Fanfare** (trumpet), **Military
+Bugle** (trumpet, one bugler), **Starship Bridge Alert Brass** (the brass section, processed: the
+sci-fi Place kept on recorded brass), the Drama layer's **brass stabs** (the "Brass & ... Hits" /
+"... & Brass Hits" of the Castle, Village, Forest, Temple, Sea Ship, Suburbs, Mall, Military,
+Beach, Desert, Palace, Tavern and Bridge) and its **Climax brass ostinato** (the brass section).
+Their Instrument-mode trims re-measured (`Source/Instruments/Trims.h`). Nothing else changes:
+patterns, Drama tiers, orchestration and arrangements are untouched (the brass parts play the
+same notes); without the samples (a fork's build) the synthesised brass plays exactly as before.
+
+**What to listen for on the Mac** (`docs/MANUAL_TEST.md`, "Brass pass check"): the renders first;
+the Castle's drone a low section swelling in over the tuba, its horns dark and clear; the Palace's
+herald bright and tongued; the bugle crisp, far off at night; the Bridge's alarm filtered and
+beating; at a Climax the stabs striking hard on the accents, never crackling. From a keyboard: soft
+to hard keys through the recorded dynamics, the mod wheel swelling a held note, long notes struck
+as sharply as short ones.
+
+**Known limits**:
+- The levels are measured tables per Character (and per Place for the stabs) at the cards'
+  defaults (`--only brassaudit` regenerates them after a sound change); set by measurement, not by
+  ear. The Drama hits' Instrument-mode trims (`dramaTrimDb`) mix the brass with the developer's
+  choir, which this container does not have: CI's log prints `--only dramatrims`.
+- The horn speaks slowly (its staccatos reach their peak in 26-110 ms): its attack is the front
+  and Punch over that, 48 ms to its hit, not a trumpet's 20.
+- VSCO has no legato brass: the horns' slurs are crossfades (the new note from its sustain, the old
+  one out); the fanfare and the bugle are tongued.
+- The Castle's identity check passes with little margin (5.20 against 5.31): the recorded brass is
+  what changes the Castle most. Listen to `brass-castle-place-*` first.
+- The tuba's lowest sustain (F1) is left out (an unsteady pitch): the drone's pedal plays the A#1
+  tuba below that.

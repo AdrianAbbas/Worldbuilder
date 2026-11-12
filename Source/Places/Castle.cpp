@@ -332,7 +332,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         p = brassPatch("br-trombone", nullptr);
         p.punchDb = 0;
         p.bite = 0;
-        p.presence = 0;
+        p.presence = 1.2f * std::max(0.0f, s.era - 0.3f);
         p.voices = 4;
         p.attack = w.attack;
         p.release = w.release;
@@ -341,7 +341,8 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.courseCents = w.detune;
         p.courseLevel = 0.6f;
         p.courseMs = 15;
-        // (A futuristic Era brighter, as the model's filter: 0.8 octaves over the dial, from its default.)
+        // (A futuristic Era brighter: the low-pass 0.8 octaves over the dial, from its default,
+        // and presence above it, none at the default.)
         p.toneHz = lerpExp(1100.0f, 4500.0f, tone) * lerp(0.9f, 1.3f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
         p.formantHz = 520.0f;
@@ -369,7 +370,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.voices = 4;   // the Royal Court's horns call in thirds
         p.punchDb = 2.5f;
         p.bite = 0.2f;
-        p.presence = 0.05f;
+        p.presence = 0.05f + 1.2f * std::max(0.0f, s.era - 0.3f);   // brighter with a futuristic Era
         p.toneHz = lerpExp(2200.0f, 8000.0f, tone) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.7f;
         // Besieged: the low, uneasy call muffled (the low-pass 3 times each note's pitch), so
