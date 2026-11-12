@@ -183,10 +183,14 @@ public:
         // away below the middle (as recorded above it), and their damping when released.
         patch.attack = patch.attack * timeScale(a) + swell(a);
         patch.release = std::min(patch.release, instrumentRelease) * timeScale(r);
-        // (The brass pass.) A long Release on a looped, expressive instrument (the woodwinds, the
-        // brass): the note fades over its loop for as long as asked, instead of ending with its
-        // recorded release (at most a second).
-        if (patch.held && patch.expression && r > 0.25f) patch.recordedTail = false;
+        // (The brass pass.) Release away from its middle on a looped, expressive instrument (the
+        // woodwinds, the brass): the note fades over its loop for as long as asked (a long one
+        // three times as long: a sampled fade falls 60 dB in its time, steeper than a model's
+        // envelope), not through its recorded release (the same whatever Release says).
+        if (patch.held && patch.expression && std::abs(r) > 0.25f) {
+            patch.recordedTail = false;
+            if (r > 0.0f) patch.release *= 3.0f;
+        }
         if (!patch.held && r < 0.0f) patch.decay = (patch.decay > 0.0f ? patch.decay : 6.0f) * timeScale(r);
         patch.voices = maxVoices;
         patch.mono = false;
@@ -523,9 +527,7 @@ private:
         v.note = n;
         pitch(v, 0);
         if (startingFront) {
-            held[std::size_t(k)].on = false;   // it rings out as recorded
-            held[std::size_t(k)].live = 0;
-            v.upgrade = false;
+            v.upgrade = false;   // (it lets go with its note: Release shapes the whole note)
         } else if (fronted) {
             frontRefDb = noteDb;
             startingFront = true;

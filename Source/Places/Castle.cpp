@@ -343,16 +343,24 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.courseMs = 15;
         // (A futuristic Era brighter: the low-pass 0.8 octaves over the dial, from its default,
         // and presence above it, none at the default.)
-        // Dark, as the model (a low section filling the hall, not a bright bed: 0.6-2.4 kHz),
-        // opening with Tension.
-        p.toneHz = lerpExp(600.0f, 2400.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
+        // A low, dark section (as the model: its brightness 550-1100), opening with Tension.
+        p.toneHz = lerpExp(350.0f, 1300.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
-        p.formantHz = 520.0f;
-        p.formantQ = 1.2f;
-        p.formantDb = 2.0f;
+        // The model's balance: the trombones' strong middle (their 0.5-1.5 kHz, 8 dB over the
+        // model's there) scooped, so the drone fills the hall low and leaves the middle to the
+        // horns, bells and harp.
+        p.formantHz = 900.0f;
+        p.formantQ = 0.7f;
+        p.formantDb = -8.0f;
+        // The players' air, high and broad (as the model's breath): what of the drone sits
+        // above its dark tone is breath, not its harmonics.
+        p.breath = 0.02f;
+        p.breathRatio = 30.0f;
+        p.breathQ = 0.5f;
+        p.breathBurst = 0.5f;
         p.tremoloPerBeat = w.tremoloPerBeat;
         p.tremoloDepth = w.tremoloDepth;
-        p.pedal = 0.6f;
+        p.pedal = 0.2f;   // the tuba is heavier than the model's pedal voice: further under
         p.pedalSemis = w.pedalSemis;
         p.pedalInstrument = "br-tuba";
         p.scoopSemis = -0.35f;   // the model's designed lip (Scoop / Glide)
@@ -372,15 +380,17 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.voices = 4;   // the Royal Court's horns call in thirds
         p.punchDb = 2.5f;
         p.bite = 0.2f;
-        p.presence = 0.05f + 1.2f * std::max(0.0f, s.era - 0.3f);   // brighter with a futuristic Era
-        p.toneHz = lerpExp(1500.0f, 11000.0f, tone) * std::exp2(0.8f * (s.era - 0.3f));
+        p.presence = 0.5f + 1.2f * std::max(0.0f, s.era - 0.3f);   // brighter with a futuristic Era
+        p.toneHz = lerpExp(4000.0f, 14000.0f, tone) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.7f;
         // Besieged: the low, uneasy call muffled (the low-pass 3 times each note's pitch), so
         // its semitone clash is the call's, not its upper harmonics'.
         if (s.character == 2) p.toneTrack = 3.0f;
-        p.formantHz = 420.0f;
-        p.formantQ = 1.0f;
-        p.formantDb = 1.5f;
+        // Dark and noble with a ringing top: the horn's thick middle scooped (its 1 kHz, where the
+        // model has little), its fundamental and its brass edge left.
+        p.formantHz = 1000.0f;
+        p.formantQ = 0.7f;
+        p.formantDb = -5.0f;
         p.vibratoHz = w.vibratoHz;
         p.vibratoDepth = 0.3f * w.vibratoDepth;
         p.vibratoDelay = w.vibratoDelay;

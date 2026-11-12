@@ -343,7 +343,7 @@ private:
     // without the samples.
     SamplePart brassRec { brass }, brassOstRec { brassOst };
     // Per Place, level-matched to the synthesised stabs at a Climax (Tests "brass", --only brassaudit).
-    static constexpr std::array<float, 27> brassRecGain { 2.3000f, 1.1414f, 1.1105f, 2.3000f, 2.3000f, 2.3000f, 1.0225f, 2.3000f, 1.2302f, 2.3000f, 2.3000f, 2.3000f, 2.3000f, 1.3496f, 0.8541f, 0.8602f, 0.9343f, 1.0807f, 1.1603f, 1.3530f, 1.1845f, 2.3000f, 2.3000f, 0.9885f, 2.3000f, 2.3000f, 2.3000f };
+    static constexpr std::array<float, 27> brassRecGain { 2.3000f, 1.2679f, 1.2269f, 2.3000f, 2.3000f, 2.3000f, 1.1078f, 2.3000f, 1.3677f, 2.3000f, 2.3000f, 2.3000f, 2.3000f, 1.4503f, 0.9525f, 0.9689f, 1.0435f, 1.1838f, 1.2791f, 1.4668f, 1.3034f, 2.3000f, 2.3000f, 1.0982f, 2.3000f, 2.3000f, 2.3000f };
     std::array<Part*, PartCount> parts {};
     std::array<float, PartCount> gainNow {};
     std::array<int, PartCount> quiet {};   // samples since the part's last note

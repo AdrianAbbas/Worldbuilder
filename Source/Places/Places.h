@@ -53,8 +53,8 @@ private:
     // The brass (the brass pass): VSCO 2 CE's tenor trombones holding the drone over a tuba
     // pedal, and its horns calling; the synthesised brass without the samples.
     SamplePart droneRec { drone }, hornsRec { horns };
-    static constexpr std::array<float, 3> droneGain { 10.9541f, 11.7110f, 10.5579f };   // per Character, level-matched (Tests "brass")
-    static constexpr std::array<float, 3> hornsGain { 3.9738f, 5.5401f, 9.1636f };
+    static constexpr std::array<float, 3> droneGain { 41.9802f, 38.3629f, 40.9012f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> hornsGain { 3.8262f, 5.1079f, 9.1132f };
     ModalPart bells;
     DrumPart timpani;
     PluckPart harp;
@@ -634,7 +634,7 @@ private:
     SynthPart bugle;
     // The bugle (the brass pass): VSCO 2 CE's trumpet as one bugler; the model without the samples.
     SamplePart bugleRec { bugle };
-    static constexpr std::array<float, 3> bugleGain { 2.5177f, 3.0318f, 2.6840f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> bugleGain { 1.9568f, 2.5225f, 3.0494f };   // per Character, level-matched (Tests "brass")
     FmPart radio;
     BowedPart strings;
     dsp::SmallSpace room;
@@ -748,7 +748,7 @@ private:
     SynthPart brass;
     // The fanfare (the brass pass): VSCO 2 CE's trumpets; the model without the samples.
     SamplePart brassRec { brass };
-    static constexpr std::array<float, 3> brassGain { 3.0498f, 3.6766f, 3.0643f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> brassGain { 2.5916f, 2.9385f, 2.5260f };   // per Character, level-matched (Tests "brass")
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;
@@ -904,7 +904,7 @@ private:
     // The alert brass (the brass pass): VSCO 2 CE's trombones and horns, processed into a
     // swelling, filtered alarm section; the synthesised brass without the samples.
     SamplePart brassRec { brass };
-    static constexpr std::array<float, 3> brassGain { 62.1932f, 38.5042f, 33.1018f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> brassGain { 131.8603f, 51.3808f, 49.2098f };   // per Character, level-matched (Tests "brass")
     // The warp core is the developer's Minilogue pulsating patch, held (Milestone 15b).
     SamplePart coreRec { core };
     DrumPart tactical;
