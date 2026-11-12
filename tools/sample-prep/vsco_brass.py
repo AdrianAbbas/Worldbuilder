@@ -287,7 +287,10 @@ def prepare_brass(source, out):
                         pairs.append((b[0]["loudness"] - a[0]["loudness"], b[0]["bright"] - a[0]["bright"]))
                 gain = float(np.median([q[0] for q in pairs])) if pairs else 6.0 * (want - src_layer)
                 shelf = float(np.median([q[1] for q in pairs])) if pairs else 3.0 * (want - src_layer)
-                shelf = max(0.0, shelf) if want > src_layer else min(0.0, shelf)
+                # (At most 9 dB, about the woodwinds' derived f: the horn's real fortissimo is
+                # 18 dB brighter than its piano, and a shelf that steep on a soft take is a hiss
+                # and crossfades unevenly.)
+                shelf = min(9.0, max(0.0, shelf)) if want > src_layer else max(-9.0, min(0.0, shelf))
                 for z in [z for z in zones if round(z["take"]["label"]) == label and z["layer"] == src_layer and not z.get("derived")]:
                     # The shelf (as the sampler plays it: a one-pole split at 2 kHz) adds loudness
                     # of its own: the gain takes it back, so the layer steps by the measured gain.

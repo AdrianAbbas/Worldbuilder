@@ -145,6 +145,9 @@ struct SamplePatch {
     // as recorded, at this level (0: none). A recorded sustain swells in; the front is the
     // player's tongue, so a long note speaks as sharply as a short one.
     float front = 0;
+    // With a front, the sustain starts this far into its recording (past its swell; seconds),
+    // fading in over 20 ms under the front: the note's peak is its tongue, not its swell.
+    float frontSkip = 0.08f;
 };
 
 class SamplePart final : public Part {
@@ -386,7 +389,13 @@ private:
         v.midi = v.target = midi;
         v.rateRatio = inst->rate / rate;
         const bool quick = patch.held && n.live == 0 && n.seconds < patch.quickBelow;
-        const float skip = skipOver >= 0.0f ? skipOver : (quick ? patch.quickSeconds : (legato ? patch.legatoSkip : patch.startSeconds));
+        // A tongued note on the sustains that a front will strike (see the end).
+        const bool fronted = !legato && !startingPedal && !startingFront && attackOver < 0.0f && skipOver < 0.0f && patch.front > 0.0f && inst == main &&
+                             shortOne != nullptr && zone->loops() && midi >= shortOne->lowRoot - patch.shortRange - 0.5f &&
+                             midi <= shortOne->highRoot + patch.shortRange + 0.5f;
+        const float skip = skipOver >= 0.0f ? skipOver
+                                            : (fronted ? std::max(patch.startSeconds, patch.frontSkip)
+                                                       : (quick ? patch.quickSeconds : (legato ? patch.legatoSkip : patch.startSeconds)));
         v.pos = double(std::min(skip * inst->rate, float(zone->length) * 0.25f));
         if (zone->loops() && v.pos >= double(zone->loopStart)) v.pos = double(zone->loopStart);
         v.posB = v.pos;
@@ -434,7 +443,7 @@ private:
         const float noteDb = (picked ? pair.a->loudnessDb + pickedGainDb
                                      : (pair.b != nullptr ? dsp::lerp(pair.a->loudnessDb, pair.b->loudnessDb, pair.mix) : pair.a->loudnessDb));
         if (startingFront) v.gain *= patch.front * dsp::dbToGain(std::clamp(frontRefDb - noteDb, -12.0f, 12.0f));
-        const float attack = attackOver >= 0.0f ? attackOver : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack));
+        const float attack = attackOver >= 0.0f ? attackOver : (fronted ? std::max(patch.attack, 0.02f) : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack)));
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
         v.fadeMul = patch.decay > 0.0f ? std::exp(-6.9078f / (patch.decay * weight::ring * n.decay * rate)) : 1.0f;
@@ -490,8 +499,7 @@ private:
             held[std::size_t(k)].on = false;   // it rings out as recorded
             held[std::size_t(k)].live = 0;
             v.upgrade = false;
-        } else if (tongued && patch.front > 0.0f && inst == main && shortOne != nullptr && zone->loops() &&
-                   midi >= shortOne->lowRoot - patch.shortRange - 0.5f && midi <= shortOne->highRoot + patch.shortRange + 0.5f) {
+        } else if (fronted) {
             frontRefDb = noteDb;
             startingFront = true;
             startWith(f, n, shortOne, -1.0f, -1.0f);
