@@ -28,7 +28,7 @@ const std::vector<Brass>& parts() {
         { Castle, CastlePlace::Horns, "Castle Horns", true },
         { Palace, PalacePlace::Fanfare, "Palace Fanfare", true },
         { Military, MilitaryPlace::Bugle, "Military Bugle", true },
-        { Bridge, BridgePlace::Brass, "Starship Bridge Alert Brass", false },
+        { Bridge, BridgePlace::Alerts, "Starship Bridge Alert Brass", false },
     };
     return list;
 }
@@ -58,6 +58,7 @@ SamplePatch neutral(const char* id, bool held) {
     p.punchDb = 0;
     p.bite = 0;
     p.presence = 0;
+    p.front = 0;
     p.mono = false;
     return p;
 }
@@ -144,10 +145,12 @@ void auditBrass() {
         std::cout << line << std::endl;
     }
     std::string line = "Drama brass stabs (Climax, hits and ostinato brass alone):";
-    for (int type : stabPlaces()) {
+    for (int type : builtPlaces()) {
+        const auto& th = drama::theme(type);
+        if (th.hitA != drama::HitBrass && th.hitB != drama::HitBrass) continue;
         const double with = loudness(climaxAudio(type, true, 24.0, DramaHits, stabMask), 2.0);
         const double without = loudness(climaxAudio(type, false, 24.0, DramaHits, stabMask), 2.0);
-        line += "  " + std::string(placeNames[std::size_t(type)]) + " " + fmt(with) + " vs " + fmt(without) + " (gain x" +
+        line += "  " + std::string(placeNames[std::size_t(type)]) + " (" + std::to_string(type) + ") " + fmt(with) + " vs " + fmt(without) + " (gain x" +
                 juce::String(std::pow(10.0, (without - with) / 20.0), 4).toStdString() + ")";
     }
     std::cout << line << std::endl;
@@ -431,8 +434,9 @@ void testBrass(Suite& s) {
 
     s.section("brass: attacks that cut through, stacked stabs that never clip");
     {
-        // Each struck instrument's attack against its sustain (Dungeon-Crawler's measure): Punch
-        // and bite on, against the same note without them; the hit arrives within 40 ms.
+        // Each struck instrument's attack against its sustain (Dungeon-Crawler's measure): the
+        // front (its staccato struck with the sustain), Punch and bite on, against the same
+        // note without them; the hit arrives within 40 ms.
         int sharp = 0, total = 0;
         std::string detail;
         for (const char* id : { "br-horn", "br-trumpet", "br-trombone", "br-tuba" }) {
@@ -440,18 +444,24 @@ void testBrass(Suite& s) {
             if (inst == nullptr) continue;
             const int key = int(std::lround(inst->lowRoot + 0.6f * (inst->highRoot - inst->lowRoot)));
             auto plain = neutral(id, true);
-            auto struck = brassPatch(id, nullptr);
+            const std::string stac = std::string(id) + "-stac";
+            auto struck = brassPatch(id, stac.c_str());
             struck.even = 0;
             struck.spread = 0;
             const auto a = hitOf(wwTest::playNotes(plain, { { { double(key), 0.0, 4.0, 0.9 } } }, 1.6));
             const auto b = hitOf(wwTest::playNotes(struck, { { { double(key), 0.0, 4.0, 0.9 } } }, 1.6));
-            const bool ok = b.attackToSustainDb > a.attackToSustainDb + 1.5 && b.hitMs <= 40.0 && b.edgeDb >= a.edgeDb;
+            // (The horn speaks slowly: its own staccatos reach their peak in 26-110 ms, so its hit
+            // is asked to come no later than the plain note's and within 130 ms. The tuba has
+            // almost nothing at 2-4 kHz: its edge is reported, not compared.)
+            const bool horn = std::string(id) == "br-horn", tuba = std::string(id) == "br-tuba";
+            const bool fast = horn ? b.hitMs <= std::min(130.0, a.hitMs) : b.hitMs <= 40.0;
+            const bool ok = b.attackToSustainDb > a.attackToSustainDb + 1.5 && fast && (tuba || b.edgeDb >= a.edgeDb);
             ++total;
             sharp += ok ? 1 : 0;
             detail += " " + std::string(id) + " " + noteName(key) + " attack/sustain " + fmt(a.attackToSustainDb) + " -> " + fmt(b.attackToSustainDb) + " dB, hit " + fmt(b.hitMs) +
                       " ms, edge " + fmt(a.edgeDb) + " -> " + fmt(b.edgeDb) + " dB;";
         }
-        s.check(total > 0 && sharp == total, "every struck brass note hits harder than its sustain with Punch and bite (1.5 dB or more over the plain note), within 40 ms, as bright",
+        s.check(total > 0 && sharp == total, "every struck brass note hits harder than its sustain with its front, Punch and bite (1.5 dB or more over the plain note), within 40 ms (the horn: sooner than plain, 130 ms), as bright",
                 std::to_string(sharp) + " of " + std::to_string(total) + detail);
         // Stacked stabs: an eight-note chord at full velocity, loud enough to need it: Punch's
         // limiter keeps the part under its ceiling and takes back only what Punch added.
@@ -583,7 +593,7 @@ void testBrass(Suite& s) {
         struct Range { int type, element; std::array<int, 3> keys; };
         const std::vector<Range> ranges { { Castle, CastlePlace::Drone, { 43, 50, 57 } }, { Castle, CastlePlace::Horns, { 50, 62, 72 } },
                                           { Palace, PalacePlace::Fanfare, { 58, 67, 79 } }, { Military, MilitaryPlace::Bugle, { 58, 67, 79 } },
-                                          { Bridge, BridgePlace::Brass, { 45, 55, 64 } } };
+                                          { Bridge, BridgePlace::Alerts, { 45, 55, 64 } } };
         int tuned = 0, total = 0, expressive = 0;
         std::string detail, report, ex;
         for (const auto& r : ranges) {
@@ -703,4 +713,25 @@ void testBrass(Suite& s) {
         s.check(written == wanted, "listening renders written (each brass part before and after in its three Characters; the Castle and the Palace before then after; a Climax with brass stabs before and after)",
                 std::to_string(written) + " of " + std::to_string(wanted) + " files in " + rendersFolder().getFullPathName().toStdString());
     }
+}
+
+// --only brassprobe: the Castle drone's tuning from a keyboard, over time and with its pedal off.
+void probeBrass() {
+    using namespace instTest;
+    using namespace recTest;
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    for (int key : { 41, 43, 45, 50 })
+        for (int drone : { 0, 1 }) {
+            auto h = ihost(Castle, CastlePlace::Drone);
+            if (drone == 0) h.set("inst_drone", 0.0f);
+            note(h, key, 90);
+            const auto a = h.render(4.0);
+            std::string line = "key " + std::to_string(key) + (drone ? " drone default" : " drone 0") + ":";
+            for (double t : { 0.4, 1.2, 2.4 }) {
+                const auto m = mono(a, t, 1.2);
+                line += " @" + fmt(t) + " " + fmt(harmonicCents(m, 0, m.size(), key)) + "/" + fmt(harmonicCents(m, 0, m.size(), key - 12));
+            }
+            std::cout << line << std::endl;
+        }
 }

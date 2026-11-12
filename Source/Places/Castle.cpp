@@ -371,6 +371,9 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.presence = 0.05f;
         p.toneHz = lerpExp(2200.0f, 8000.0f, tone);
         p.velocityTone = 0.7f;
+        // Besieged: the low, uneasy call muffled (the low-pass 3 times each note's pitch), so
+        // its semitone clash is the call's, not its upper harmonics'.
+        if (s.character == 2) p.toneTrack = 3.0f;
         p.formantHz = 420.0f;
         p.formantQ = 1.0f;
         p.formantDb = 1.5f;

@@ -1031,7 +1031,7 @@ void Layer::configure(int placeType, const WorldFrame& world, int style, float t
         p.scoopSemis = -0.35f;
         p.scoopSeconds = 0.028f;
         p.spread = brass.patch.spread;
-        p.gain = brassRecGain;
+        p.gain = brassRecGain[std::size_t(std::clamp(placeType, 0, 26))];
         if (family == FamilyElectronic) {
             p.toneHz *= 0.7f;
             p.courseLoops = true;

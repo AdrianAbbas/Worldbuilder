@@ -317,7 +317,10 @@ void BridgePlace::configure(const PlaceContext& c) {
         p.velocityTone = 0.3f;
         p.formantHz = 1100.0f;
         p.formantQ = 2.5f;
-        p.formantDb = 4.0f;
+        p.formantDb = 2.0f;
+        // Pure, as the model: the low-pass 1.5 times each note's pitch (a section's strong
+        // third and fifth harmonics would carry the chord out of the key).
+        p.toneTrack = 1.5f;
         p.vibratoDepth = w.vibratoDepth;
         p.glide = w.glide;
         p.scoopSemis = -0.35f;

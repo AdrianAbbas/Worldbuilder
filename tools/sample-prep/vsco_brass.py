@@ -29,11 +29,16 @@ loop, the pitch measure, the tick bridging), except:
   the woodwinds' tick search reads as hundreds of thousands of ticks in the quiet releases
   (smoothing them dulls the note). The tests check the notes for clicks instead.
 Levels: one gain per instrument (sustains and staccatos alike), its loudest note at -1 dBFS:
-the dynamics and articulations keep their recorded levels.
+the dynamics and articulations keep their recorded levels. Each file is then stored at full
+scale with the difference in its zone's gain (the played levels unchanged), so soft takes keep
+their resolution. A take played more than 60 cents off its note is left out; a note recorded at
+fewer dynamics than its set gets the missing layers from its nearest recorded one (the gain and
+brightness the set's other notes have between those dynamics).
 """
 
 import glob
 import json
+import math
 import os
 import re
 
@@ -60,7 +65,10 @@ SETS = [
     {"id": "br-trombone-stac", "family": "trombone", "glob": "Brass/Tenor Trombone/stac/tenortbn_stac_*.wav", "held": False,
      "dyn": r"_v(\d)_", "layers": {"1": 0, "2": 1, "3": 2, "4": 3}, "names": ["pp", "p", "f", "ff"]},
     {"id": "br-tuba", "family": "tuba", "glob": "Brass/Tuba/sus/Tuba3_sus_*.wav", "held": True,
-     "dyn": r"_v(\d)_", "layers": {"1": 0, "2": 1, "3": 2}, "names": ["p", "mf", "f"]},
+     "dyn": r"_v(\d)_", "layers": {"1": 0, "2": 1, "3": 2}, "names": ["p", "mf", "f"],
+     # Its lowest take (F1, one soft take) wanders 40 cents over its first seconds: as a drone's
+     # pedal it sounded flat. A#1 covers the keys below.
+     "skip": {29}},
     {"id": "br-tuba-stac", "family": "tuba", "glob": "Brass/Tuba/stac/Tuba3_stac_*.wav", "held": False,
      "dyn": r"_v(\d)_", "layers": {"1": 0, "2": 1}, "names": ["p", "f"]},
 ]
@@ -110,9 +118,19 @@ def prepare_held(x, label):
     return W.prepare_held(attack_trim(x), label)
 
 
+def tail_end(y, below, longest):
+    """Where y has fallen `below` dB under its peak for good (10 ms windows), at most `longest` s."""
+    env, win = W.envelope(y, 10.0)
+    loud = np.nonzero(env > env.max() * 10 ** (-below / 20))[0]
+    return min((int(loud[-1]) + 1) * win if len(loud) else len(y), int(longest * RATE), len(y))
+
+
 def prepare_short(x, label):
     y = attack_trim(x)
-    end = W.tail_end(y, 0, 1.4)
+    # Cut 40 dB under the peak (the woodwinds' 48): below about 45 dB the recordings' gate
+    # chatters on and off, steps of a few bits the ear (and the tests) hear as ticks; the
+    # 120 ms fade ends the note before it.
+    end = tail_end(y, 40.0, 1.4)
     y = W.fade_end(y[:end].copy())
     root, _ = W.measure_pitch(y, label, int(0.03 * RATE), min(len(y), int(0.23 * RATE)))
     if root is None:
@@ -126,25 +144,31 @@ def write_set(out, sid, family, names, zones, report):
     os.makedirs(os.path.join(out, sid), exist_ok=True)
     vel = velocity_ranges(len(names))
     W.key_ranges(zones)
-    written, mapping_zones = {}, []
+    written, mapping_zones, lift = {}, [], {}
     for z in zones:
         t = z["take"]
         key = id(t)
         if key not in written:
+            # Each file at full scale (its loudest sample at -1 dBFS), the difference back in the
+            # zone's gain: a soft take's quiet end keeps its resolution (one gain per instrument
+            # left soft staccatos' tails a few bits deep, steps the ear hears as grit).
+            lift[key] = float(np.clip(-1.0 - P.db(np.abs(t["audio"]).max()), 0.0, 40.0))
             base = f"{P.name_of(int(round(t['root']))).replace('#', 's')}-{t['dynName']}-{z['rr'] + 1}"
             name = f"{sid}/{base}.flac"
             n = 2
             while name in written.values():
                 name = f"{sid}/{base}-{n}.flac"
                 n += 1
-            sf.write(os.path.join(out, name), t["audio"].astype(np.float32), RATE, subtype="PCM_16", format="FLAC")
+            sf.write(os.path.join(out, name), (t["audio"] * 10 ** (lift[key] / 20)).astype(np.float32), RATE, subtype="PCM_16", format="FLAC")
             written[key] = name
         mz = {"file": written[key], "label": P.name_of(int(round(t["label"]))), "root": z["root"], "loKey": z["loKey"], "hiKey": z["hiKey"],
               "loVel": vel[z["layer"]][0], "hiVel": vel[z["layer"]][1], "layer": z["layer"], "rr": z["rr"], "length": int(len(t["audio"])),
-              "rms": round(P.db(np.sqrt(np.mean(t["audio"][: int(0.3 * RATE)] ** 2))), 2), "loudness": round(t["loudness"] + z["gainDb"], 2),
+              "rms": round(P.db(np.sqrt(np.mean(t["audio"][: int(0.3 * RATE)] ** 2))), 2), "loudness": round(t["loudness"] + z["gainDb"] + z.get("shelfLoud", 0.0), 2),
               "peak": round(P.db(np.abs(t["audio"]).max()), 2), "source": t["source"]}
-        if z["gainDb"] != 0.0:
-            mz["gainDb"] = z["gainDb"]
+        if round(z["gainDb"] - lift[key], 2) != 0.0:
+            mz["gainDb"] = round(z["gainDb"] - lift[key], 2)
+        if z.get("shelfDb", 0.0) != 0.0:
+            mz["shelfDb"], mz["shelfHz"] = z["shelfDb"], 2000.0
         if t["loop"]:
             mz["loopStart"], mz["loopEnd"] = int(t["loop"][0]), int(t["loop"][1])
             mz["release"] = int(t["release"])
@@ -177,6 +201,9 @@ def prepare_brass(source, out):
             if label is None:
                 problems.append(f"{s['id']}: {os.path.basename(f)} has no note name")
                 continue
+            if label in s.get("skip", ()):
+                problems.append(f"{s['id']}: {os.path.basename(f)} left out (an unsteady pitch)")
+                continue
             m = re.search(s["dyn"], os.path.basename(f))
             dyn = m.group(1) if m else None
             if dyn not in s["layers"]:
@@ -203,7 +230,10 @@ def prepare_brass(source, out):
             y, root, loop, release, notes = got
             ticks = 0   # no tick bridging: see the module's notes
             if abs(root - label) > 0.6:
-                problems.append(f"{s['id']}: {os.path.basename(f)} sounds {100 * (root - label):+.0f} cents from its note (kept at its own pitch)")
+                # A take that far off its note (the horn's G1 p staccato, a tuba A#0 take) was
+                # played off it: left out (its neighbours cover the key).
+                problems.append(f"{s['id']}: {os.path.basename(f)} sounds {100 * (root - label):+.0f} cents from its note (left out)")
+                continue
             layer = s["layers"][dyn]
             takes.append({"layer": layer, "dyn": dyn, "dynName": s["names"][layer], "audio": y, "root": root, "label": label, "loop": loop,
                           "release": release, "source": os.path.relpath(f, source), "notes": notes, "ticks": ticks})
@@ -218,6 +248,7 @@ def prepare_brass(source, out):
         for t in raw.get(s["id"], []):
             t["audio"] = t["audio"] * g
             t["loudness"] = W.loudness(t["audio"])
+            t["bright"] = W.brightness(t["audio"])
     ids, total = [], 0
     chosen_by_set = {}
     for s in SETS:
@@ -238,6 +269,37 @@ def prepare_brass(source, out):
             k = (t["layer"], round(t["root"]))
             rr[k] = rr.get(k, 0) + 1
             zones.append({"take": t, "layer": t["layer"], "root": round(t["root"], 3), "rr": rr[k] - 1, "gainDb": 0.0, "shelfDb": 0.0})
+        # A note recorded at fewer dynamics than the set (the horn's D5 and F5: soft only): its
+        # missing layers derived from its nearest recorded one, at the gain and brightness the
+        # set's notes recorded at both have between them (medians), so every key keeps its own
+        # pitch in every layer instead of borrowing a note far off.
+        filled = 0
+        layers = range(len(s["names"]))
+        for label in sorted({round(t["label"]) for t in chosen}):
+            have = {t["layer"] for t in chosen if round(t["label"]) == label}
+            for want in [l for l in layers if l not in have]:
+                src_layer = min(have, key=lambda l: (abs(l - want), -l))
+                pairs = []
+                for other in {round(t["label"]) for t in chosen}:
+                    a = [t for t in chosen if round(t["label"]) == other and t["layer"] == src_layer]
+                    b = [t for t in chosen if round(t["label"]) == other and t["layer"] == want]
+                    if a and b:
+                        pairs.append((b[0]["loudness"] - a[0]["loudness"], b[0]["bright"] - a[0]["bright"]))
+                gain = float(np.median([q[0] for q in pairs])) if pairs else 6.0 * (want - src_layer)
+                shelf = float(np.median([q[1] for q in pairs])) if pairs else 3.0 * (want - src_layer)
+                shelf = max(0.0, shelf) if want > src_layer else min(0.0, shelf)
+                for z in [z for z in zones if round(z["take"]["label"]) == label and z["layer"] == src_layer and not z.get("derived")]:
+                    # The shelf (as the sampler plays it: a one-pole split at 2 kHz) adds loudness
+                    # of its own: the gain takes it back, so the layer steps by the measured gain.
+                    y = z["take"]["audio"]
+                    k = 1.0 - math.exp(-2 * math.pi * 2000.0 / RATE)
+                    lo = signal.lfilter([k], [1.0, k - 1.0], y)
+                    extra = W.loudness(lo + 10 ** (shelf / 20) * (y - lo)) - z["take"]["loudness"]
+                    zones.append({**z, "layer": want, "gainDb": round(gain - extra, 2), "shelfDb": round(shelf, 2), "derived": True,
+                                  "shelfLoud": extra})
+                    filled += 1
+        if filled:
+            report[s["id"] + " derived"] = f"{filled} zones of a dynamic a note was not recorded at (from its nearest recorded one)"
         total += write_set(out, s["id"], s["family"], s["names"], zones, report)
         ids.append(s["id"])
     # The sections (the Drama layer's chords): each instrument in its register, three layers.

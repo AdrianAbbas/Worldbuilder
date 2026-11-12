@@ -140,6 +140,11 @@ struct SamplePatch {
     // Drone Off).
     float pedal = 0, pedalSemis = -12;
     const char* pedalInstrument = nullptr;
+    // The front (Light-Seeker's real brass): a tongued note on the sustains also strikes the
+    // staccato of the note (the short articulation), levelled to the sustain and ringing out
+    // as recorded, at this level (0: none). A recorded sustain swells in; the front is the
+    // player's tongue, so a long note speaks as sharply as a short one.
+    float front = 0;
 };
 
 class SamplePart final : public Part {
@@ -303,12 +308,12 @@ private:
         const auto* zone = pair.a;
         if (zone == nullptr) return;
 
-        const int limit = std::clamp(patch.voices, 1, maxVoices);
+        const int limit = startingFront ? maxVoices : std::clamp(patch.voices, 1, maxVoices);
         // A held note whose predecessor ends here is played legato: the old note lets go
         // quickly and the new one comes in without its full attack. (Not a short hit: it is
         // all attack.)
         bool legato = false;
-        if (patch.held && n.live == 0 && inst != shortOne && !patch.damper && !startingPedal)
+        if (patch.held && n.live == 0 && inst != shortOne && !patch.damper && !startingPedal && !startingFront)
             for (int i = 0; i < limit; ++i) {
                 const auto& h = held[std::size_t(i)];
                 auto& old = voice[std::size_t(i)];
@@ -318,7 +323,7 @@ private:
                     legato = true;
                 }
             }
-        if (patch.mono && !startingPedal)
+        if (patch.mono && !startingPedal && !startingFront)
             for (int i = 0; i < maxVoices; ++i) {
                 auto& old = voice[std::size_t(i)];
                 auto& h = held[std::size_t(i)];
@@ -418,12 +423,17 @@ private:
             v.biteDecay = std::exp(-1.0f / (std::max(patch.biteSeconds, 0.005f) * rate));
         }
         v.pedal = startingPedal;
-        v.plain = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0 && !v.expressive && !v.noisy && v.biteNow <= 0.0f;
+        v.plainable = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0 && !v.expressive && !v.noisy;
+        v.plain = v.plainable && v.biteNow <= 0.0f;
         // Level: velocity (the layers already differ), evened toward the median loudness
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
         v.evenGain = dsp::dbToGain(even);
         v.gain = levelOf(patch.expression ? dynamicOf(velocity) : velocity) * v.evenGain * (startingPedal ? patch.pedal : 1.0f);
+        // Its loudness as the bank measured it (the layers' mix), for the front's level.
+        const float noteDb = (picked ? pair.a->loudnessDb + pickedGainDb
+                                     : (pair.b != nullptr ? dsp::lerp(pair.a->loudnessDb, pair.b->loudnessDb, pair.mix) : pair.a->loudnessDb));
+        if (startingFront) v.gain *= patch.front * dsp::dbToGain(std::clamp(frontRefDb - noteDb, -12.0f, 12.0f));
         const float attack = attackOver >= 0.0f ? attackOver : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack));
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
@@ -476,6 +486,17 @@ private:
         v.age = 0;
         v.note = n;
         pitch(v, 0);
+        if (startingFront) {
+            held[std::size_t(k)].on = false;   // it rings out as recorded
+            held[std::size_t(k)].live = 0;
+            v.upgrade = false;
+        } else if (tongued && patch.front > 0.0f && inst == main && shortOne != nullptr && zone->loops() &&
+                   midi >= shortOne->lowRoot - patch.shortRange - 0.5f && midi <= shortOne->highRoot + patch.shortRange + 0.5f) {
+            frontRefDb = noteDb;
+            startingFront = true;
+            startWith(f, n, shortOne, -1.0f, -1.0f);
+            startingFront = false;
+        }
     }
 
 public:
@@ -728,7 +749,7 @@ private:
         int punchPos = 0, punchLength = 0;
         dsp::Svf biteBand;
         float biteNow = 0, biteDecay = 1;
-        bool pedal = false;
+        bool pedal = false, plainable = true;
     };
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -837,9 +858,13 @@ private:
         if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
         v.fade *= v.fadeMul * v.releaseMul;
         float shaped = v.filter.tick(y).lp;
-        if (v.biteNow > 1.0e-4f) {
+        if (v.biteNow > 0.0f) {
             shaped += v.biteNow * v.biteBand.bandpass(shaped);
             v.biteNow *= v.biteDecay;
+            if (v.biteNow < 1.0e-4f) {
+                v.biteNow = 0;
+                v.plain = v.plainable;   // the attack over: back on the straight path
+            }
         }
         float out = shaped * v.amp * v.fade * v.gain;
         if (v.noisy) out += breathOf(v) * v.amp * v.fade * v.gain;
@@ -1074,7 +1099,8 @@ private:
     // The brass pass: the pedal's voice (-1: none), a note being started as the pedal, Punch's
     // safety limiter (its gain and release per sample), the presence band.
     int pedalVoice = -1;
-    bool startingPedal = false;
+    bool startingPedal = false, startingFront = false;
+    float frontRefDb = 0;
     float limiterGain = 1, limiterLowest = 1, limiterRelease = 0;
     std::array<dsp::Svf, 2> presenceBand;
     bool alternateOn = false;
@@ -1191,8 +1217,8 @@ inline SamplePatch brassPatch(const char* sustain, const char* staccato) {
     p.even = 0.6f;
     p.toneHz = 16000;
     p.legatoSeconds = 0.03f;
-    p.legatoSkip = 0.12f;       // a slurred note starts past its tongued attack
-    p.legatoOverlap = 4.0f;
+    p.legatoSkip = 0.3f;        // a slurred note starts on its sustain, past its swell
+    p.legatoOverlap = 6.0f;
     p.release = 0.15f;
     p.voices = 4;
     p.spread = 0.25f;
@@ -1200,6 +1226,7 @@ inline SamplePatch brassPatch(const char* sustain, const char* staccato) {
     p.punchSeconds = 0.12f;
     p.bite = 0.25f;
     p.presence = 0.1f;
+    p.front = 1.0f;             // a long note's tongue: its staccato struck with it
     return p;
 }
 

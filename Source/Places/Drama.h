@@ -342,7 +342,8 @@ private:
     // tuba, the tenor trombones and the trumpets in their registers); the synthesised brass
     // without the samples.
     SamplePart brassRec { brass }, brassOstRec { brassOst };
-    static constexpr float brassRecGain = 1.0f;   // level-matched to the synthesised stabs (Tests "brass")
+    // Per Place, level-matched to the synthesised stabs at a Climax (Tests "brass", --only brassaudit).
+    static constexpr std::array<float, 27> brassRecGain { 2.3000f, 3.2746f, 3.2002f, 2.3000f, 2.3000f, 2.3000f, 2.6767f, 2.3000f, 1.2252f, 2.3000f, 2.3000f, 2.3000f, 2.3000f, 1.1934f, 2.2461f, 2.2582f, 2.7799f, 3.1247f, 3.3537f, 1.1899f, 3.4119f, 2.3000f, 2.3000f, 2.9014f, 2.3000f, 2.3000f, 2.3000f };
     std::array<Part*, PartCount> parts {};
     std::array<float, PartCount> gainNow {};
     std::array<int, PartCount> quiet {};   // samples since the part's last note
