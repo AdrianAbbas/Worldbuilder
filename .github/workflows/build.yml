@@ -34,15 +34,15 @@ jobs:
         env:
           SAMPLES_TOKEN: ${{ secrets.SAMPLES_TOKEN }}
         run: bash scripts/ci-fetch-samples.sh "${{ runner.temp }}/samples-src" "${{ runner.temp }}/samples"
-      # The Drama drums' orchestral percussion and the woodwind parts: VSCO 2 Community Edition (Versilian Studios,
+      # The Drama drums' orchestral percussion, the woodwind and the brass parts: VSCO 2 Community Edition (Versilian Studios,
       # CC0 1.0, docs/LICENSES/VSCO-2-CE.md), fetched from its official repository at a pinned
       # commit (the licence checked), cached, prepared next to the recordings. Never committed.
-      - name: VSCO 2 CE percussion and woodwinds cache
+      - name: VSCO 2 CE percussion, woodwinds and brass cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/vsco
-          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'tools/sample-prep/vsco_woodwinds.py', 'scripts/ci-fetch-vsco.sh') }}
-      - name: Fetch and prepare the orchestral percussion and woodwinds (VSCO 2 CE, CC0)
+          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'tools/sample-prep/vsco_woodwinds.py', 'tools/sample-prep/vsco_brass.py', 'scripts/ci-fetch-vsco.sh') }}
+      - name: Fetch and prepare the orchestral percussion, woodwinds and brass (VSCO 2 CE, CC0)
         run: |
           bash scripts/ci-fetch-vsco.sh "${{ runner.temp }}/vsco"
           python3 tools/sample-prep/vsco.py --source "${{ runner.temp }}/vsco" --out "${{ runner.temp }}/samples" | tee "${{ runner.temp }}/vsco.log"
@@ -108,12 +108,15 @@ jobs:
             if [[ -f "$f" ]]; then tail -25 "$f" > "$f.tail"; fi
           done
           bash scripts/ci-annotate.sh --condense build/ci-logs/harness-x86_64-*.txt build/ci-logs/control-*.txt build/ci-logs/crashes.txt build/ci-logs/auval-*.txt.tail
+      # The installer is kept 9 days (a tagged release's is also attached to its GitHub
+      # Release, which never expires); logs and renders 3.
       - name: Upload installable package (only when every check passed)
         uses: actions/upload-artifact@v4
         with:
           name: WORLDBUILDER-macOS-Universal
           path: dist/WORLDBUILDER-macOS-Universal.zip
           if-no-files-found: error
+          retention-days: 9
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -122,6 +125,7 @@ jobs:
           path: |
             build/ci-logs/
           if-no-files-found: warn
+          retention-days: 3
   linux:
     runs-on: ubuntu-24.04
     # The full suite (eight shards since the orchestration pass) took 58 minutes before it.
@@ -141,15 +145,15 @@ jobs:
         env:
           SAMPLES_TOKEN: ${{ secrets.SAMPLES_TOKEN }}
         run: bash scripts/ci-fetch-samples.sh "${{ runner.temp }}/samples-src" "${{ runner.temp }}/samples"
-      # The Drama drums' orchestral percussion and the woodwind parts: VSCO 2 Community Edition (Versilian Studios,
+      # The Drama drums' orchestral percussion, the woodwind and the brass parts: VSCO 2 Community Edition (Versilian Studios,
       # CC0 1.0, docs/LICENSES/VSCO-2-CE.md), fetched from its official repository at a pinned
       # commit (the licence checked), cached, prepared next to the recordings. Never committed.
-      - name: VSCO 2 CE percussion and woodwinds cache
+      - name: VSCO 2 CE percussion, woodwinds and brass cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/vsco
-          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'tools/sample-prep/vsco_woodwinds.py', 'scripts/ci-fetch-vsco.sh') }}
-      - name: Fetch and prepare the orchestral percussion and woodwinds (VSCO 2 CE, CC0)
+          key: vsco-2-ce-4403009-${{ hashFiles('tools/sample-prep/vsco.py', 'tools/sample-prep/vsco_woodwinds.py', 'tools/sample-prep/vsco_brass.py', 'scripts/ci-fetch-vsco.sh') }}
+      - name: Fetch and prepare the orchestral percussion, woodwinds and brass (VSCO 2 CE, CC0)
         run: |
           bash scripts/ci-fetch-vsco.sh "${{ runner.temp }}/vsco"
           python3 tools/sample-prep/vsco.py --source "${{ runner.temp }}/vsco" --out "${{ runner.temp }}/samples" | tee "${{ runner.temp }}/vsco.log"
@@ -189,8 +193,11 @@ jobs:
           name: WORLDBUILDER-linux-test-logs
           path: build/test-logs/
           if-no-files-found: warn
+          retention-days: 3
   release:
-    # Tagged commits (v*) publish the same package as a GitHub Release.
+    # Tagged commits (v*) publish the same package as a GitHub Release (its assets never
+    # expire, unlike the 9-day build artifact); a release made by hand for the tag first gets
+    # the installer attached (replaced if it is already there).
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [macos, linux]
     runs-on: ubuntu-24.04
@@ -200,7 +207,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: WORLDBUILDER-macOS-Universal
-      - name: Create release
+      - name: Create the release and attach the installer
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" WORLDBUILDER-macOS-Universal.zip --repo "$GITHUB_REPOSITORY" --title "WORLDBUILDER $GITHUB_REF_NAME" --generate-notes
+        run: |
+          test -f WORLDBUILDER-macOS-Universal.zip
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" WORLDBUILDER-macOS-Universal.zip --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" WORLDBUILDER-macOS-Universal.zip --repo "$GITHUB_REPOSITORY" --title "WORLDBUILDER $GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx WORLDBUILDER-macOS-Universal.zip

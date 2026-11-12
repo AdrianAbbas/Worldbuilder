@@ -1,5 +1,5 @@
-"""Orchestral percussion and woodwinds from VSCO 2: Community Edition (the level and drums pass,
-the woodwinds pass: vsco_woodwinds.py).
+"""Orchestral percussion, woodwinds and brass from VSCO 2: Community Edition (the level and drums
+pass, the woodwinds pass: vsco_woodwinds.py, the brass pass: vsco_brass.py).
 
 VSCO 2 CE (Versilian Studios, https://github.com/sgossner/VSCO-2-CE, 1.1.0) is CC0 1.0
 (docs/LICENSES/VSCO-2-CE.md). CI fetches the files below from the official repository at a
@@ -42,6 +42,7 @@ from scipy import signal
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import prepare as P  # noqa: E402
 import vsco_woodwinds as W  # noqa: E402
+import vsco_brass as B  # noqa: E402
 
 RATE = P.RATE
 LAYERS = ["pp", "mp", "mf", "ff"]
@@ -86,8 +87,9 @@ for n in range(1, 6):
 
 # What scripts/ci-fetch-vsco.sh checks out (sparse, non-cone patterns): the licence and
 # readmes, and every glob above.
-# The woodwinds (the woodwinds pass, vsco_woodwinds.py) with them.
-FETCH = ["/LICENSE", "/README.md", "/Readme.txt"] + sorted("/" + s["glob"] for s in SOUNDS) + W.FETCH
+# The woodwinds (the woodwinds pass, vsco_woodwinds.py) and the brass (the brass pass,
+# vsco_brass.py) with them.
+FETCH = ["/LICENSE", "/README.md", "/Readme.txt"] + sorted("/" + s["glob"] for s in SOUNDS) + W.FETCH + B.FETCH
 
 
 def load(path, hp):
@@ -223,12 +225,21 @@ def main():
     for i in ww_ids:
         if i not in index["instruments"]:
             index["instruments"].append(i)
+    # The brass (the brass pass).
+    print("Brass:")
+    br_ids, br_notes, br_problems = B.prepare_brass(args.source, args.out)
+    for i in br_ids:
+        if i not in index["instruments"]:
+            index["instruments"].append(i)
     with open(index_path, "w") as f:
         json.dump(index, f, indent=1)
-    for p in problems + ww_problems:
+    for p in problems + ww_problems + br_problems:
         print(" - " + p)
     print(f"Prepared: {len(zones)} notes (vsco: {out_id})")
     print(f"Prepared: {ww_notes} notes (vsco: {', '.join(ww_ids)})")
+    print(f"Prepared: {br_notes} notes (vsco: {', '.join(br_ids)})")
+    if len(br_ids) < len(B.SETS) + len(B.SECTIONS):
+        raise SystemExit(f"only {len(br_ids)} of {len(B.SETS) + len(B.SECTIONS)} brass sets were prepared")
     if len(ww_ids) < len(W.SETS):
         raise SystemExit(f"only {len(ww_ids)} of {len(W.SETS)} woodwind sets were prepared")
     if len(strokes) < len(SOUNDS):

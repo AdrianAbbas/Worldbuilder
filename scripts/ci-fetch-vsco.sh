@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Fetches the orchestral percussion WORLDBUILDER's Drama drums use, and the woodwinds its
-# woodwind parts play, from VSCO 2: Community
+# Fetches the orchestral percussion WORLDBUILDER's Drama drums use, and the woodwinds and the
+# brass its woodwind and brass parts play, from VSCO 2: Community
 # Edition (Versilian Studios, CC0 1.0: docs/LICENSES/VSCO-2-CE.md) at a pinned commit of
 # its official repository, only the files tools/sample-prep/vsco.py maps (a sparse,
-# blob-filtered checkout, about 460 MB), and checks the licence before anything is used.
+# blob-filtered checkout, about 650 MB), and checks the licence before anything is used.
 # CI caches the checkout. The samples are never committed to this repository.
 # Usage: scripts/ci-fetch-vsco.sh <checkout dir>
 set -euo pipefail

@@ -1,7 +1,8 @@
-# VS Chamber Orchestra 2: Community Edition (percussion and woodwinds)
+# VS Chamber Orchestra 2: Community Edition (percussion, woodwinds and brass)
 
-WORLDBUILDER's Drama percussion plays orchestral percussion recordings, and its woodwind parts
-(the woodwinds pass) woodwind recordings, from **VSCO 2:
+WORLDBUILDER's Drama percussion plays orchestral percussion recordings, its woodwind parts
+(the woodwinds pass) woodwind recordings and its brass parts (the brass pass) brass recordings,
+from **VSCO 2:
 Community Edition** by Versilian Studios (recorded by Sam Gossner and Simon Dalzell;
 sample cutting by Elan Hickler / Soundemote).
 
@@ -36,6 +37,13 @@ sample cutting by Elan Hickler / Soundemote).
   `Oboe/Vib`, `Oboe/Stacc`), clarinet (`Clarinet/susLong`, `Clarinet/stac`) and bassoon
   (`Bassoon/sus`, `Bassoon/vib`, `Bassoon/stac`), 380 files. How each is prepared and mapped
   is in `tools/sample-prep/vsco_woodwinds.py`. (The flute's `expvib` takes are not used.)
+- **Brass** (the brass pass, 2026-11-12; the same repository, commit and licence, checked again
+  before use: the `LICENSE` file's SHA-256 still the one `scripts/ci-fetch-vsco.sh` pins): the
+  repository's `Brass/` folder: F horn (`F Horn/sus`, `F Horn/stac`), trumpet (`Trumpet/sus`,
+  `Trumpet/stac`), tenor trombone (`Tenor Trombone/sus`, `Tenor Trombone/stac`) and tuba
+  (`Tuba/sus`, `Tuba/stac`), 343 files. How each is prepared and mapped is in
+  `tools/sample-prep/vsco_brass.py`. (The muted horn and trumpets, the vibrato sustains and the
+  `OldTrombone` set are not used.)
 
 ## The licence text (the repository's LICENSE, verbatim)
 
