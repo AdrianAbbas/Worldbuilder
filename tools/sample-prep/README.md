@@ -148,6 +148,18 @@ at the gain and brightness (a shelf above 2 kHz) the plain flute's f has over it
 instruments carry the piccolo's notes above C7. One gain per instrument, its loudest note at
 -1 dBFS.
 
+**Brass** (`vsco_brass.py`, the brass pass): VSCO 2 CE's F horn, trumpet, tenor trombone and
+tuba, sustains and staccatos (`br-horn`, `br-horn-stac`, `br-trumpet`, `br-trumpet-stac`,
+`br-trombone`, `br-trombone-stac`, `br-tuba`, `br-tuba-stac`), every recorded dynamic a
+velocity layer, and two sections for chords (`br-section`, `br-section-stac`: the tuba under
+E2, the trombone to A#3, the trumpet above). As the woodwinds (the loop search, the recorded
+ends, the pitch from the audio), except: one microphone of the spaced pair (the louder over a
+set: summed they comb-filter), the attack cut 2 ms before the note speaks, staccatos cut 40 dB
+under their peak (below that the recordings' gate chatters), each file at full scale with the
+difference in its zone's gain, no tick bridging (a brass tone's lip buzz is steep by nature),
+three unsteady takes left out, and a note recorded at fewer dynamics than its set given the
+missing layers from its own take. Check with `--only brass` and `--only brassaudit`.
+
 **The developer's own folk flutes** (planned): the Village's recorder looks for the bank ids
 `recorder-alto` (held notes, looped) and `recorder-alto-short` (short notes), the Forest's
 flute for `ocarina` and `ocarina-short`. Where the bank has them they play instead of the VSCO

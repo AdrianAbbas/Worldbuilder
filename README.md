@@ -597,6 +597,22 @@ is expression**: it swells a held note toward full, through the recorded dynamic
 Village's recorder and the Forest's flute will play the developer's own alto recorder and
 ocarina once they are recorded.
 
+Since the brass pass the brass parts play real brass from the same library (horn, trumpet,
+tenor trombone, tuba), again with the synthesised instrument in a build without them:
+
+| Place | Instrument | Recording | Fitted to the Place |
+|---|---|---|---|
+| Castle | Brass Drone | tenor trombones holding the chord, the tuba on the tonic pedal below | swelling in and gliding with the chords, dark and round, trembling under siege |
+| Castle | Horns | F horn | dark and noble, struck clearly; muffled and uneasy when Besieged |
+| Palace | Fanfare | trumpet | bright and ringing, tongued note by note, struck hard; darker in the Fallen Palace |
+| Military Camp | Bugle | trumpet as one bugler | a fuller middle and softer top (a valveless bugle), crisp calls, far off at night |
+| Starship Bridge | Alert Brass | a brass section (tuba, trombones, trumpets) | an alarm: swelling in, a second section beating against it, pure and filtered, a resonance rising with Tension |
+| Drama layer | Brass Stabs, the Climax's brass ostinato | the brass section's staccatos (and sustains for longer stabs) | struck hard so they cut through, stacked chords that never clip; darker and doubled in the sci-fi and modern Places |
+
+A brass note is struck: its staccato speaks with its sustain (the player's tongue), with a
+short overshoot (Punch) and a bright bite on the attack; every recorded dynamic is a velocity
+layer, and from a keyboard the **mod wheel is dynamics**, swelling a held note through them.
+
 The **piano** is played like a piano: each key its own recording (88 keys, A0 to C8, at
 the piano's own stretch tuning, the whole instrument on A440), three velocity layers
 crossfaded, held notes that ring with their natural decay (no loop: past what was
@@ -1082,7 +1098,7 @@ never committed here. To build with them, prepare them and point CMake at the re
 ```
 pip install -r tools/sample-prep/requirements.txt
 python3 tools/sample-prep/prepare.py --source ../samples --out build/samples
-bash scripts/ci-fetch-vsco.sh build/vsco      # the orchestral percussion and woodwinds (CC0, public)
+bash scripts/ci-fetch-vsco.sh build/vsco      # the orchestral percussion, woodwinds and brass (CC0, public)
 python3 tools/sample-prep/vsco.py --source build/vsco --out build/samples
 cmake -S . -B build -DWORLDBUILDER_SAMPLES_DIR=build/samples ...
 ```
@@ -1118,8 +1134,9 @@ The installable zip is uploaded only when every check passes.
 
 - The Drama drums' orchestral percussion (bass drums, large drum, tenor drums, snare,
   timpani, cymbals, gong) and the woodwinds (flute, piccolo, oboe, clarinet, bassoon: the
-  Village's recorder, the Forest's flute, the Desert's ney and the Mining colony's beacon)
-  come from **VS Chamber Orchestra 2: Community Edition** 1.1.0 by
+  Village's recorder, the Forest's flute, the Desert's ney and the Mining colony's beacon) and
+  the brass (horn, trumpet, tenor trombone, tuba: the Castle's drone and horns, the Palace's
+  fanfare, the Military's bugle, the Bridge's alert brass, the Drama brass stabs) come from **VS Chamber Orchestra 2: Community Edition** 1.1.0 by
   Versilian Studios (Sam Gossner, Simon Dalzell; sample cutting by Elan Hickler /
   Soundemote), released under CC0 1.0: http://vis.versilstudios.net/vsco-community.html,
   https://github.com/sgossner/VSCO-2-CE. The samples are not sold on their own and are not

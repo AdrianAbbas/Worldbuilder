@@ -1054,3 +1054,28 @@ per section, the one kit, and the risers, impacts and stingers with their bar nu
    neither dry nor washed out.
 6. **DRAMA: Off** (footer): the world and the arrangement play as before the Drama tier;
    save, reopen: still Off. An older project: AUTO ORCH off, exactly as it was.
+
+## Brass pass check (the brass parts on recorded brass)
+
+Listen first to the Linux job's renders (`renders/brass-*`): each brass part before (the
+synthesised stand-in) and after in its three Characters, the Castle in each Character and the
+Palace's Throne Room before then after, and a Climax (Drama and Score Intensity 100 %) at the
+Castle and the Palace with its brass stabs, before and after (`brass-climax-*`, and the stabs
+alone, `-stabs-`). Then on the Mac:
+
+1. A Castle at its defaults: the drone a low trombone section swelling in over a tuba pedal,
+   the horn calls dark and clear over it. Royal Court: the calls in thirds. Besieged: muffled,
+   trembling. Move Era to the future: the brass brighter.
+2. A Palace, Throne Room: the herald's fanfare bright, every note tongued, cutting through the
+   harpsichord and strings; the Fallen Palace darker and softer.
+3. A Military Camp: the bugle crisp in the morning, far off and soft at Night Watch.
+4. A Starship Bridge, Battle Stations: the alert brass swelling as a filtered alarm, beating,
+   brighter with Tension.
+5. Drama to 100 % in a Castle at Score Intensity 100 %: the brass stabs strike hard on the
+   accents, the chords never crackle or clip; the same in a Megacity or a Military Camp (the
+   electronic worlds' stabs darker and doubled).
+6. KEYS or Instrument mode on each brass part: soft to hard keys through the dynamics, the mod
+   wheel swelling a held note, short notes on the staccatos, long notes struck as sharply; the
+   Castle drone with Drone Root plays the tuba an octave under the lowest key held.
+7. A build without the samples (a fork): every brass part plays its synthesised brass as before.
+
