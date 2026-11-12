@@ -529,8 +529,8 @@ const ElementSpec& dramaElementSpec(int type, int element) {
 namespace wb::drama {
 
 Layer::Layer() {
-    parts = { &drums, &percRec, &metal, &swell, &strings, &pulse, &bass, &pluck, &low, &brass, &choir, &piano, &braam, &synthStab, &hands,
-              &brassOst, &pianoOst, &metalHitRec, &impactRec, &drumsOrch };
+    parts = { &drums, &percRec, &metal, &swell, &strings, &pulse, &bass, &pluck, &low, &brassRec, &choir, &piano, &braam, &synthStab, &hands,
+              &brassOstRec, &pianoOst, &metalHitRec, &impactRec, &drumsOrch };
     for (auto* p : { &percRec, &metalHitRec, &impactRec, &drumsOrch }) p->patch.instrument = "orchperc";
     orchSynth.patch.gain = 0.0f;
     // The recordings each part plays (resolved once, when the bank is ready).
@@ -1009,6 +1009,39 @@ void Layer::configure(int placeType, const WorldFrame& world, int style, float t
     pianoOstSynth.patch = pianoSynth.patch;
     // (The Drama design pass: the synthesised parts of the electronic and natural kits.)
     family = designPass ? familyOf(placeType) : int(FamilyOrchestral);
+    // The recorded brass stabs and ostinato (the brass pass): the section struck hard (Punch,
+    // bite, presence) so a stab cuts through the drums, the short stabs on the staccatos, the
+    // chord's notes stacked (its safety limiter keeps them from clipping), brighter as the heat
+    // rises. The electronic worlds' stabs (sci-fi and modern Places) made hybrid: darker, a
+    // second section 14 cents off beating against the first, more presence.
+    {
+        auto& p = brassRec.patch;
+        p = brassPatch("br-section", "br-section-stac");
+        p.shortBeats = 0.5f;
+        p.shortRange = 3.0f;
+        p.liveLong = false;   // a stab played live strikes on the staccatos, its long note after
+        p.voices = byQuality(q, 4, 6, 8);
+        p.punchDb = 4.0f;
+        p.bite = 0.4f;
+        p.presence = 0.15f;
+        p.toneHz = lerpExp(3500.0f, 12000.0f, tone) * lerp(0.9f, 1.2f, heat);
+        p.velocityTone = 0.6f;
+        p.release = 0.2f;
+        p.glide = brass.patch.glide;
+        p.scoopSemis = -0.35f;
+        p.scoopSeconds = 0.028f;
+        p.spread = brass.patch.spread;
+        p.gain = brassRecGain;
+        if (family == FamilyElectronic) {
+            p.toneHz *= 0.7f;
+            p.courseLoops = true;
+            p.courseCents = 14.0f;
+            p.courseLevel = 0.5f;
+            p.courseMs = 6;
+            p.presence = 0.25f;
+        }
+        brassOstRec.patch = p;
+    }
     percDrive = 0.0f;
     percTrimGain = designPass ? dbToGain(familyTrimDb(placeType)) : 1.0f;
     if (family != FamilyOrchestral) configureFamily(placeType, q);

@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-MilitaryPlace::MilitaryPlace() : EnsemblePlace(2600) { setParts({ &snare, &bugle, &drums, &radio, &clanks, &strings }); }
+MilitaryPlace::MilitaryPlace() : EnsemblePlace(2600) { setParts({ &snare, &bugleRec, &drums, &radio, &clanks, &strings }); }
 
 void MilitaryPlace::prepareFx() {
     room.prepare(rate);
@@ -287,6 +287,34 @@ void MilitaryPlace::configure(const PlaceContext& c) {
         p.formantLevel = 0.7f;
         p.breath = 0.05f;
         p.gain = 1.0f;
+    }
+    // The recorded bugle (the brass pass): VSCO 2 CE's trumpet as one bugler, one line, a
+    // little darker than a trumpet (a valveless conical bore: a fuller middle, a softer top);
+    // crisp calls on the parade ground, softer and further off at night.
+    {
+        const auto& w = bugle.patch;
+        auto& p = bugleRec.patch;
+        p = brassPatch("br-trumpet", "br-trumpet-stac");
+        p.mono = true;
+        p.voices = 2;
+        p.punchDb = night ? 1.5f : 3.5f;
+        p.bite = night ? 0.1f : 0.3f;
+        p.presence = night ? 0.0f : 0.1f;
+        p.toneHz = lerpExp(3000.0f, 10000.0f, tone) * (night ? 0.7f : 1.0f);
+        p.formantHz = 1100.0f;
+        p.formantQ = 1.0f;
+        p.formantDb = 2.5f;
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = 0.3f * w.vibratoDepth;
+        p.vibratoDelay = w.vibratoDelay;
+        p.release = w.release;
+        p.glide = w.glide;
+        p.scoopSemis = -0.35f;
+        p.scoopSeconds = 0.028f;
+        p.spread = w.spread;
+        p.pan = w.pan;
+        p.transpose = w.transpose;
+        p.gain = bugleGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // A bass drum on the root and a low tom on the fifth.
     {

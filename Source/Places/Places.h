@@ -50,6 +50,11 @@ private:
     void mix(const PlaceContext& c, float* left, float* right, int n) override;
 
     SynthPart drone, horns;
+    // The brass (the brass pass): VSCO 2 CE's tenor trombones holding the drone over a tuba
+    // pedal, and its horns calling; the synthesised brass without the samples.
+    SamplePart droneRec { drone }, hornsRec { horns };
+    static constexpr std::array<float, 3> droneGain { 1.0f, 1.0f, 1.0f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> hornsGain { 1.0f, 1.0f, 1.0f };
     ModalPart bells;
     DrumPart timpani;
     PluckPart harp;
@@ -627,6 +632,9 @@ private:
 
     DrumPart snare, drums, clanks;
     SynthPart bugle;
+    // The bugle (the brass pass): VSCO 2 CE's trumpet as one bugler; the model without the samples.
+    SamplePart bugleRec { bugle };
+    static constexpr std::array<float, 3> bugleGain { 1.0f, 1.0f, 1.0f };   // per Character, level-matched (Tests "brass")
     FmPart radio;
     BowedPart strings;
     dsp::SmallSpace room;
@@ -738,6 +746,9 @@ private:
     PluckPart harpsichord;
     BowedPart strings;
     SynthPart brass;
+    // The fanfare (the brass pass): VSCO 2 CE's trumpets; the model without the samples.
+    SamplePart brassRec { brass };
+    static constexpr std::array<float, 3> brassGain { 1.0f, 1.0f, 1.0f };   // per Character, level-matched (Tests "brass")
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;
@@ -890,6 +901,10 @@ private:
 
     FmPart consoles;
     SynthPart core, brass;
+    // The alert brass (the brass pass): VSCO 2 CE's trombones and horns, processed into a
+    // swelling, filtered alarm section; the synthesised brass without the samples.
+    SamplePart brassRec { brass };
+    static constexpr std::array<float, 3> brassGain { 1.0f, 1.0f, 1.0f };   // per Character, level-matched (Tests "brass")
     // The warp core is the developer's Minilogue pulsating patch, held (Milestone 15b).
     SamplePart coreRec { core };
     DrumPart tactical;

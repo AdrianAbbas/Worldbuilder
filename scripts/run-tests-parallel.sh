@@ -36,6 +36,9 @@ wait
 # The woodwinds pass: every woodwind set in tune and click-free, the parts level-matched, the
 # Places kept, the CPU (alone: it times four busy Places), the listening renders.
 "$tests" --only woodwinds > "$logs/10-woodwinds.txt" 2>&1
+# The brass pass: every brass set in tune and click-free, the attacks and stacked stabs, the
+# parts and the Drama stabs level-matched, the Places kept, the CPU (alone), the renders.
+"$tests" --only brass > "$logs/12-brass.txt" 2>&1
 # The 60-second editor stress test (the GarageBand freeze), alone so it is not starved.
 "$tests" --only stress > "$logs/6-stress.txt" 2>&1
 

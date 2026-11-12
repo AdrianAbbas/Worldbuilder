@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-PalacePlace::PalacePlace() : EnsemblePlace(2900) { setParts({ &harpsichord, &strings, &brass, &glock, &timpani, &choirRec }); }
+PalacePlace::PalacePlace() : EnsemblePlace(2900) { setParts({ &harpsichord, &strings, &brassRec, &glock, &timpani, &choirRec }); }
 
 void PalacePlace::prepareFx() { hall.prepare(rate); }
 
@@ -265,6 +265,34 @@ void PalacePlace::configure(const PlaceContext& c) {
         p.formantLevel = 0.6f;
         p.breath = 0.04f;
         p.gain = 1.0f;
+    }
+    // The recorded fanfare (the brass pass, VSCO 2 CE's trumpet): bright and ringing in the
+    // grand hall, the dotted rhythms on the staccatos, struck hard (Punch, bite) so the herald
+    // cuts through; the Fallen Palace's darker, softer-edged and longer.
+    {
+        const auto& w = brass.patch;
+        auto& p = brassRec.patch;
+        p = brassPatch("br-trumpet", "br-trumpet-stac");
+        p.voices = 4;
+        p.punchDb = fallen ? 1.5f : 4.0f;
+        p.bite = fallen ? 0.1f : 0.35f;
+        p.presence = fallen ? 0.0f : 0.15f;
+        p.toneHz = lerpExp(4000.0f, 14000.0f, tone) * (fallen ? 0.55f : 1.0f);
+        p.velocityTone = 0.6f;
+        p.formantHz = 1300.0f;
+        p.formantQ = 1.0f;
+        p.formantDb = fallen ? 0.0f : 1.5f;
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = 0.3f * w.vibratoDepth;
+        p.vibratoDelay = w.vibratoDelay;
+        p.release = fallen ? 0.6f : 0.15f;
+        p.glide = w.glide;
+        p.scoopSemis = -0.35f;
+        p.scoopSeconds = 0.028f;
+        p.spread = w.spread;
+        p.pan = w.pan;
+        p.transpose = w.transpose;
+        p.gain = brassGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Glockenspiel: hard steel bars, the second partial a quarter-tone off any note.
     {

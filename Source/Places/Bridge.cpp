@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-BridgePlace::BridgePlace() : EnsemblePlace(2900) { setParts({ &consoles, &coreRec, &tactical, &brass, &chatterRec, &pings }); }
+BridgePlace::BridgePlace() : EnsemblePlace(2900) { setParts({ &consoles, &coreRec, &tactical, &brassRec, &chatterRec, &pings }); }
 
 void BridgePlace::prepareFx() {
     hall.prepare(rate);
@@ -290,6 +290,42 @@ void BridgePlace::configure(const PlaceContext& c) {
         p.spread = 0.5f;
         p.voices = 4;
         p.gain = 1.0f;
+    }
+    // The recorded alert brass (the brass pass, sci-fi): VSCO 2 CE's brass section (trombones,
+    // the trumpets on top) made into the ship's alarm: swelling in slowly as the model (no
+    // struck attack), a second section 12 cents off on its own takes beating against it, the
+    // tone low-passed and opening with Tension while it sounds, a narrow console resonance.
+    // (Kept recorded, not synthesised: the bridge's alerts are a film score's brass, and
+    // processed this way they sit in its electronic space.)
+    {
+        const auto& w = brass.patch;
+        auto& p = brassRec.patch;
+        p = brassPatch("br-section", nullptr);
+        p.punchDb = 0;
+        p.bite = 0;
+        p.presence = 0;
+        p.voices = 4;
+        p.attack = w.attack;
+        p.release = w.release;
+        p.recordedTail = false;
+        p.courseLoops = true;
+        p.courseCents = 12.0f;
+        p.courseLevel = 0.7f;
+        p.courseMs = 20;
+        p.toneHz = lerpExp(1200.0f, 4000.0f, tone) * (1.0f + 0.5f * tension);
+        p.liveTone = true;
+        p.velocityTone = 0.3f;
+        p.formantHz = 1100.0f;
+        p.formantQ = 2.5f;
+        p.formantDb = 4.0f;
+        p.vibratoDepth = w.vibratoDepth;
+        p.glide = w.glide;
+        p.scoopSemis = -0.35f;
+        p.scoopSeconds = 0.028f;
+        p.spread = w.spread;
+        p.pan = w.pan;
+        p.transpose = w.transpose;
+        p.gain = brassGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Crew chatter: a murmuring group through the intercom (no words).
     {

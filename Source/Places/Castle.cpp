@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-CastlePlace::CastlePlace() : EnsemblePlace(1100) { setParts({ &drone, &bells, &horns, &timpani, &harp, &choirRec }); }
+CastlePlace::CastlePlace() : EnsemblePlace(1100) { setParts({ &droneRec, &bells, &hornsRec, &timpani, &harp, &choirRec }); }
 
 void CastlePlace::prepareFx() {
     hall.prepare(rate);
@@ -321,6 +321,70 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.formantLevel = 0.7f;
         p.breath = 0.04f;
         p.gain = 0.5f;
+    }
+    // The recorded brass (the brass pass, VSCO 2 CE). The drone: tenor trombones holding the
+    // chord (a second player a few cents off on its own take), swelling in and gliding with the
+    // chords as the model, the tuba on the tonic pedal below; dark and round in the stone hall,
+    // trembling as the model does. No Punch: it swells.
+    {
+        const auto& w = drone.patch;
+        auto& p = droneRec.patch;
+        p = brassPatch("br-trombone", nullptr);
+        p.punchDb = 0;
+        p.bite = 0;
+        p.presence = 0;
+        p.voices = 4;
+        p.attack = w.attack;
+        p.release = w.release;
+        p.glide = w.glide;
+        p.courseLoops = true;
+        p.courseCents = w.detune;
+        p.courseLevel = 0.6f;
+        p.courseMs = 15;
+        p.toneHz = lerpExp(1100.0f, 4500.0f, tone) * lerp(0.9f, 1.3f, tension) * (s.character == 1 ? 1.15f : 1.0f);
+        p.velocityTone = 0.3f;
+        p.formantHz = 520.0f;
+        p.formantQ = 1.2f;
+        p.formantDb = 2.0f;
+        p.tremoloPerBeat = w.tremoloPerBeat;
+        p.tremoloDepth = w.tremoloDepth;
+        p.pedal = 0.8f;
+        p.pedalSemis = w.pedalSemis;
+        p.pedalInstrument = "br-tuba";
+        p.scoopSemis = -0.35f;   // the model's designed lip (Scoop / Glide)
+        p.scoopSeconds = 0.028f;
+        p.spread = w.spread;
+        p.pan = w.pan;
+        p.transpose = w.transpose;
+        p.gain = droneGain[std::size_t(std::clamp(s.character, 0, 2))];
+    }
+    // The horns: VSCO 2 CE's F horn, its calls on the sustains (slurred where they join) and
+    // the short notes on the staccatos; dark and noble (the bell turned away), struck clearly
+    // enough to carry over the drone, a little vibrato (a third of the model's).
+    {
+        const auto& w = horns.patch;
+        auto& p = hornsRec.patch;
+        p = brassPatch("br-horn", "br-horn-stac");
+        p.voices = 4;   // the Royal Court's horns call in thirds
+        p.punchDb = 2.5f;
+        p.bite = 0.2f;
+        p.presence = 0.05f;
+        p.toneHz = lerpExp(2200.0f, 8000.0f, tone);
+        p.velocityTone = 0.7f;
+        p.formantHz = 420.0f;
+        p.formantQ = 1.0f;
+        p.formantDb = 1.5f;
+        p.vibratoHz = w.vibratoHz;
+        p.vibratoDepth = 0.3f * w.vibratoDepth;
+        p.vibratoDelay = w.vibratoDelay;
+        p.release = 0.3f;
+        p.glide = w.glide;
+        p.scoopSemis = -0.35f;
+        p.scoopSeconds = 0.028f;
+        p.spread = w.spread;
+        p.pan = w.pan;
+        p.transpose = w.transpose;
+        p.gain = hornsGain[std::size_t(std::clamp(s.character, 0, 2))];
     }
     // Timpani tuned to the root and the fifth below (tighter with Tension), a side drum,
     // and with Machinery an anvil-like ring on the firm hits.

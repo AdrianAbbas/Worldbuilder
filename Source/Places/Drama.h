@@ -338,6 +338,11 @@ private:
     SamplePart strings { stringsSynth }, pulse { pulseSynth }, bass { bassSynth }, pluck { pluckSynth }, piano { pianoSynth }, pianoOst { pianoOstSynth },
         braam { braamSynth }, synthStab { synthStabSynth };
     VoicePart choir { choirSynth, &choirSynth };
+    // The brass pass: the brass stabs and the brass ostinato on VSCO 2 CE's brass section (the
+    // tuba, the tenor trombones and the trumpets in their registers); the synthesised brass
+    // without the samples.
+    SamplePart brassRec { brass }, brassOstRec { brassOst };
+    static constexpr float brassRecGain = 1.0f;   // level-matched to the synthesised stabs (Tests "brass")
     std::array<Part*, PartCount> parts {};
     std::array<float, PartCount> gainNow {};
     std::array<int, PartCount> quiet {};   // samples since the part's last note

@@ -124,6 +124,22 @@ struct SamplePatch {
     // Expression: how far toward the loudest layer full dynamics go (1: all the way; less, a
     // narrower range for a soft folk instrument, as its model plays).
     float layerSpan = 1;
+
+    // The brass pass (Light-Seeker's brass shaping, copied).
+    // Punch: each tongued note's level overshoots by this much at its start (dB at full
+    // velocity, about a third of it on the softest) and settles back to its own level over
+    // `punchSeconds` (a raised cosine). A safety limiter on the part's output takes back only
+    // what Punch added, and only above `punchCeiling`: stacked stabs never clip.
+    float punchDb = 0, punchSeconds = 0.12f, punchCeiling = 0.89f;
+    // Bite: a bright band (4.8 kHz) on the attack, more with velocity, gone within about
+    // 200 ms (`biteSeconds` to fall 9 dB); presence: a steady band at 2.9 kHz over the part.
+    float bite = 0, biteSeconds = 0.07f, presence = 0;
+    // A tonic pedal under the held notes (a drone's low brass, as SynthPatch::pedal): its level
+    // and pitch (semitones from the key's root), and the recordings it plays (nullptr: the
+    // part's own). Instrument mode: the lowest note held, an octave down, while held (none with
+    // Drone Off).
+    float pedal = 0, pedalSemis = -12;
+    const char* pedalInstrument = nullptr;
 };
 
 class SamplePart final : public Part {
@@ -160,6 +176,8 @@ public:
         for (auto& f : dc) f.setCutoff(20.0f, rate);
         for (auto& o : open) o.prepare(std::size_t(rate / 30.0f) + 8);
         for (auto& f : openDamp) f.setCutoff(2500.0f, rate);
+        for (auto& f : presenceBand) f.set(std::min(2900.0f, 0.42f * r), 0.9f, r);
+        limiterRelease = 1.0f - std::exp(-1.0f / (0.06f * r));
         resolve();
         reset();
     }
@@ -179,6 +197,16 @@ public:
         trem = 1;
         gainNow = -1;
         noiseAt = 0;   // the breath (the woodwinds) the same on every play
+        pedalVoice = -1;
+        startingPedal = false;
+        limiterGain = limiterLowest = 1;
+        for (auto& f : presenceBand) f.reset();
+    }
+    // Punch's safety limiter: the lowest gain it has taken since the last call (tests).
+    float punchLimiterLowest() {
+        const float g = limiterLowest;
+        limiterLowest = 1;
+        return g;
     }
     void setKey(uint32_t key, uint32_t salt) override {
         Part::setKey(key, salt);
@@ -280,7 +308,7 @@ private:
         // quickly and the new one comes in without its full attack. (Not a short hit: it is
         // all attack.)
         bool legato = false;
-        if (patch.held && n.live == 0 && inst != shortOne && !patch.damper)
+        if (patch.held && n.live == 0 && inst != shortOne && !patch.damper && !startingPedal)
             for (int i = 0; i < limit; ++i) {
                 const auto& h = held[std::size_t(i)];
                 auto& old = voice[std::size_t(i)];
@@ -290,11 +318,11 @@ private:
                     legato = true;
                 }
             }
-        if (patch.mono)
+        if (patch.mono && !startingPedal)
             for (int i = 0; i < maxVoices; ++i) {
                 auto& old = voice[std::size_t(i)];
                 auto& h = held[std::size_t(i)];
-                if (!old.on) continue;
+                if (!old.on || old.pedal) continue;
                 // Still sounding, or let go just now (its written end is this note's start):
                 // the new note slurs on from it (a held one, not a short hit), and it goes.
                 const bool justEnded = old.releasing && h.until >= n.beat - 0.07 && h.until <= n.beat + 1.0e-6;
@@ -374,12 +402,28 @@ private:
         v.pick = n.random2;
         v.dyn = layerVelocity;
         v.noisy = patch.breath > 0.0f || patch.keyNoise > 0.0f;
-        v.plain = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0 && !v.expressive && !v.noisy;
+        // Punch and bite on a tongued note (not slurred, not the pedal swelling in).
+        const bool tongued = !legato && !startingPedal && attackOver < 0.0f;
+        if (tongued && patch.punchDb > 0.05f) {
+            v.punchDb = patch.punchDb * (0.35f + 0.65f * std::pow(dsp::clamp01(dynamicOf(velocity)), 1.3f));
+            v.punchLength = std::max(1, int(patch.punchSeconds * rate));
+            v.punchPos = 0;
+            v.punchGain = dsp::dbToGain(v.punchDb);
+            v.punchStep = 0;
+        }
+        if (tongued && patch.bite > 0.0f) {
+            v.biteBand.set(std::min(4800.0f, 0.4f * rate), 0.7f, rate);
+            v.biteBand.reset();
+            v.biteNow = patch.bite * (0.4f + 0.9f * dsp::clamp01(dynamicOf(velocity))) * 1.8f;
+            v.biteDecay = std::exp(-1.0f / (std::max(patch.biteSeconds, 0.005f) * rate));
+        }
+        v.pedal = startingPedal;
+        v.plain = v.zoneB == nullptr && !v.shelf && !v.backwards && v.limit < 0 && !v.expressive && !v.noisy && v.biteNow <= 0.0f;
         // Level: velocity (the layers already differ), evened toward the median loudness
         // of the note's own layer (the layers keep their steps), the patch.
         const float even = std::clamp(patch.even * (inst->medianDb(zone->layer) - zone->loudnessDb), -12.0f, 12.0f);
         v.evenGain = dsp::dbToGain(even);
-        v.gain = levelOf(patch.expression ? dynamicOf(velocity) : velocity) * v.evenGain;
+        v.gain = levelOf(patch.expression ? dynamicOf(velocity) : velocity) * v.evenGain * (startingPedal ? patch.pedal : 1.0f);
         const float attack = attackOver >= 0.0f ? attackOver : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack));
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
@@ -437,7 +481,9 @@ private:
 public:
 
     void update(const PartFrame& f) override {
-        if ((main == nullptr || patch.instrument != resolvedId || patch.shortInstrument != resolvedShort) && samples::Bank::get().ready()) resolve();
+        if ((main == nullptr || patch.instrument != resolvedId || patch.shortInstrument != resolvedShort || patch.pedalInstrument != resolvedPedal) &&
+            samples::Bank::get().ready())
+            resolve();
         if (!sampled() || fallbackAge < fallbackRings) {
             fallback.bend = bend;
             fallback.mod = mod;
@@ -494,13 +540,15 @@ public:
                 v.target = 69.0f + 12.0f * std::log2(hz / 440.0f);
             }
             v.midi = v.target + (v.midi - v.target) * glide;
-            if (patch.expression && !v.releasing) express(v);
-            else if (patch.liveTone) v.filter.set(std::min({ cutoffOf(v.velocity), v.trackHz, 0.45f * rate }), 0.6f, rate);
+            const bool expressing = patch.expression && !v.releasing && !v.pedal;
+            if (expressing) express(v);
+            if (patch.liveTone) v.filter.set(std::min({ cutoffOf(expressing ? v.dyn : v.velocity), v.trackHz, 0.45f * rate }), 0.6f, rate);
             v.scoop *= v.scoopMul;
             v.vibratoAge += float(dsp::chunk) / rate;
             if (v.breathAge < 1.0f) v.breathAge = std::min(1.0f, v.breathAge + float(dsp::chunk) / (std::max(patch.breathAttack, 0.005f) * rate));
             pitch(v, float(dsp::chunk) / rate);
         }
+        if (patch.pedal > 0.0f || pedalVoice >= 0) updatePedal(f);
     }
 
     void render(float* left, float* right, int n) override {
@@ -522,18 +570,51 @@ public:
         const float follow = 1.0f - std::exp(-1.0f / (0.02f * rate));
         // The voices one after another over each chunk (the same sums in the same order as
         // sample by sample across them: bit for bit the same output, in tight loops).
-        std::array<float, dsp::chunk> sumL {}, sumR {};
+        std::array<float, dsp::chunk> sumL {}, sumR {}, dryL {}, dryR {};
+        const float presence = patch.presence * 1.6f;
+        bool punched = false;   // in this chunk: a voice with Punch (dry: the sum without it)
         for (int i = 0; i < n; ++i) {
             if (i % dsp::chunk == 0) {
                 const int m = std::min(dsp::chunk, n - i);
                 std::fill(sumL.begin(), sumL.end(), 0.0f);
                 std::fill(sumR.begin(), sumR.end(), 0.0f);
-                for (auto& v : voice)
+                punched = false;
+                for (auto& v : voice) {
+                    if (!v.on) continue;
+                    if (v.punchLength > 0) {
+                        if (!punched) {
+                            dryL = sumL;
+                            dryR = sumR;
+                            punched = true;
+                        }
+                        // Punch: the gain at the end of this chunk (a raised cosine from the
+                        // overshoot back to 0 dB), reached linearly over it.
+                        v.punchPos += m;
+                        const float t = std::min(1.0f, float(v.punchPos) / float(v.punchLength));
+                        const float next = t >= 1.0f ? 1.0f : dsp::dbToGain(v.punchDb * 0.5f * (1.0f + std::cos(3.14159265f * t)));
+                        v.punchStep = (next - v.punchGain) / float(m);
+                        for (int k = 0; k < m && v.on; ++k) {
+                            const float y = (v.plain && v.wait <= 0) ? tickPlain(v, *v.zone) : tick(v);
+                            dryL[std::size_t(k)] += y * v.pan.l;
+                            dryR[std::size_t(k)] += y * v.pan.r;
+                            const float yp = y * v.punchGain;
+                            v.punchGain += v.punchStep;
+                            sumL[std::size_t(k)] += yp * v.pan.l;
+                            sumR[std::size_t(k)] += yp * v.pan.r;
+                        }
+                        if (t >= 1.0f) v.punchLength = 0, v.punchGain = 1, v.punchStep = 0;
+                        continue;
+                    }
                     for (int k = 0; k < m && v.on; ++k) {
                         const float y = (v.plain && v.wait <= 0) ? tickPlain(v, *v.zone) : tick(v);
                         sumL[std::size_t(k)] += y * v.pan.l;
                         sumR[std::size_t(k)] += y * v.pan.r;
+                        if (punched) {
+                            dryL[std::size_t(k)] += y * v.pan.l;
+                            dryR[std::size_t(k)] += y * v.pan.r;
+                        }
                     }
+                }
             }
             gainNow += (target - gainNow) * follow;
             const float g = gainNow;
@@ -551,6 +632,10 @@ public:
                 l += boost * formant[0].bandpass(l);
                 r += boost * formant[1].bandpass(r);
             }
+            if (presence > 0.0f) {
+                l += presence * presenceBand[0].bandpass(l);
+                r += presence * presenceBand[1].bandpass(r);
+            }
             if (sym > 0.0f) {
                 const float drive = 0.04f * (l + r);
                 float ring = 0;
@@ -562,8 +647,26 @@ public:
                 l += sym * ring;
                 r += sym * ring;
             }
-            left[i] += dc[0].hp(l) * g;
-            right[i] += dc[1].hp(r) * g;
+            float outL = dc[0].hp(l) * g, outR = dc[1].hp(r) * g;
+            if (punched || limiterGain < 1.0f) {
+                // Punch's safety limiter (instant attack, 60 ms release): only what Punch added is
+                // ever taken back, and only above the ceiling.
+                const std::size_t c = std::size_t(i % dsp::chunk);
+                const float peak = std::max(std::abs(outL), std::abs(outR));
+                const float dry = punched ? std::max(std::abs(dryL[c]), std::abs(dryR[c])) * std::abs(g) : 0.0f;
+                const float floorLevel = std::max(patch.punchCeiling, dry);
+                const float needed = peak > floorLevel ? floorLevel / peak : 1.0f;
+                if (needed < limiterGain) limiterGain = needed;
+                else {
+                    limiterGain = std::min(needed, limiterGain + limiterRelease * (1.0f - limiterGain));
+                    if (limiterGain > 0.99999f) limiterGain = 1.0f;
+                }
+                limiterLowest = std::min(limiterLowest, limiterGain);
+                outL *= limiterGain;
+                outR *= limiterGain;
+            }
+            left[i] += outL;
+            right[i] += outR;
         }
     }
 
@@ -619,6 +722,13 @@ private:
         bool upgrade = false;
         float age = 0;
         NoteOn note {};
+        // The brass pass: Punch (the gain now, its step per sample, where it is in its
+        // settling), bite (its band, its amount now, its decay per sample), the pedal note.
+        float punchDb = 0, punchGain = 1, punchStep = 0;
+        int punchPos = 0, punchLength = 0;
+        dsp::Svf biteBand;
+        float biteNow = 0, biteDecay = 1;
+        bool pedal = false;
     };
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -726,7 +836,12 @@ private:
         }
         if (v.amp < 1.0f) v.amp = std::min(1.0f, v.amp + v.attackStep);
         v.fade *= v.fadeMul * v.releaseMul;
-        float out = v.filter.tick(y).lp * v.amp * v.fade * v.gain;
+        float shaped = v.filter.tick(y).lp;
+        if (v.biteNow > 1.0e-4f) {
+            shaped += v.biteNow * v.biteBand.bandpass(shaped);
+            v.biteNow *= v.biteDecay;
+        }
+        float out = shaped * v.amp * v.fade * v.gain;
         if (v.noisy) out += breathOf(v) * v.amp * v.fade * v.gain;
         const bool endA = v.backwards ? v.pos <= 1.0 : v.pos >= double(z.length - 1);
         if (endA || v.fade < 1.0e-4f) v.on = false;
@@ -806,6 +921,54 @@ private:
         }
     }
 
+    // The pedal (the brass pass, as SynthPart's): the key's tonic under the held notes, on the
+    // pedal's recordings, swelling in; Instrument mode: the lowest note held, an octave down,
+    // while a key holds it (none with Drone Off).
+    void updatePedal(const PartFrame& f) {
+        bool any = false;
+        float lowest = 1.0e9f;
+        for (std::size_t k = 0; k < voice.size(); ++k)
+            if (voice[k].on && !voice[k].pedal && held[k].on) {
+                any = true;
+                lowest = std::min(lowest, held[k].semis);
+            }
+        const float semis = instrumentMode ? lowest - 12.0f : patch.pedalSemis;
+        const bool on = patch.pedal > 0.0f && any && (!instrumentMode || (drone != DroneOff && lowest < 1.0e8f));
+        Voice* pv = nullptr;
+        if (pedalVoice >= 0) {
+            auto& v = voice[std::size_t(pedalVoice)];
+            if (v.on && v.pedal && !v.releasing) pv = &v;
+            else pedalVoice = -1;
+        }
+        if (on && pv == nullptr) {
+            NoteOn n;
+            n.semis = semis;
+            n.beat = f.beat;
+            n.length = 1.0e9;
+            n.seconds = 1.0e9f;
+            n.velocity = 0.8f;
+            n.random = 0.5f;
+            n.random2 = 0.5f;
+            startingPedal = true;
+            startWith(f, n, pedalInst != nullptr ? pedalInst : main, -1.0f, std::max(patch.attack, instrumentMode ? 0.05f : 0.5f));
+            startingPedal = false;
+            for (std::size_t k = 0; k < voice.size(); ++k)
+                if (voice[k].on && voice[k].pedal && !voice[k].releasing && voice[k].age == 0.0f && held[k].on) {
+                    pedalVoice = int(k);
+                    held[k].follow = false;
+                }
+        } else if (on) {
+            // It follows the key (the Root, a Location's far point), gliding as the drone does.
+            NoteOn n;
+            n.semis = semis;
+            pv->target = keyOf(f, n);
+        } else if (pv != nullptr) {
+            held[std::size_t(pedalVoice)].on = false;
+            release(*pv, instrumentMode ? patch.release * weight::release : std::max(patch.release * weight::release, 0.5f));
+            pedalVoice = -1;
+        }
+    }
+
     // A voice already letting go (in its recorded end) goes within `seconds`, as a slurred
     // note takes over from it.
     void hurry(Voice& v, float seconds) {
@@ -880,6 +1043,8 @@ private:
         main = bank.instrument(patch.instrument);
         shortOne = patch.shortInstrument != nullptr ? bank.instrument(patch.shortInstrument) : nullptr;
         tiny = patch.tinyInstrument != nullptr ? bank.instrument(patch.tinyInstrument) : nullptr;
+        pedalInst = patch.pedalInstrument != nullptr ? bank.instrument(patch.pedalInstrument) : nullptr;
+        resolvedPedal = patch.pedalInstrument;
         // The second sample set, where the bank has it: levelled to the first by their
         // layers' measured loudness (each note keeps its own dynamics).
         alternateOn = false;
@@ -904,7 +1069,14 @@ private:
     Part& fallback;
     SamplePatch designedPatch {};
     bool shaped = false;
-    const samples::Instrument *main = nullptr, *shortOne = nullptr, *tiny = nullptr;
+    const samples::Instrument *main = nullptr, *shortOne = nullptr, *tiny = nullptr, *pedalInst = nullptr;
+    const char* resolvedPedal = nullptr;
+    // The brass pass: the pedal's voice (-1: none), a note being started as the pedal, Punch's
+    // safety limiter (its gain and release per sample), the presence band.
+    int pedalVoice = -1;
+    bool startingPedal = false;
+    float limiterGain = 1, limiterLowest = 1, limiterRelease = 0;
+    std::array<dsp::Svf, 2> presenceBand;
     bool alternateOn = false;
     float matchGain = 1;
     const char* resolvedId = nullptr;
@@ -991,6 +1163,43 @@ inline SamplePatch woodwindPatch(const char* sustain, const char* staccato) {
     p.keyNoise = 0.006f;
     p.mono = true;
     p.followChords = false;     // a melody: each note keeps its pitch, as the models do
+    return p;
+}
+
+// A brass instrument (the brass pass: VSCO 2 Community Edition's horn, trumpet, tenor trombone
+// and tuba), as every part that plays one starts from: held notes on the looped sustains
+// (slurred from one to the next where the part plays one line), short notes on the staccatos
+// (where they recorded the note, else the sustain), every recorded dynamic a crossfaded velocity
+// layer and the mod wheel as dynamics (expression), live notes on the sustain, the recorded
+// ends on release. The attack is struck: Punch (an overshoot settling over 120 ms, its safety
+// limiter on the part), bite on the attack and a little presence, so it cuts through. A part
+// then sets its tone, level, vibrato, slide and colour.
+inline SamplePatch brassPatch(const char* sustain, const char* staccato) {
+    SamplePatch p;
+    p.instrument = sustain;
+    p.shortInstrument = staccato;
+    p.shortBeats = 0.25f;
+    p.shortRange = 4.0f;
+    p.shortRings = false;
+    p.liveLong = true;
+    p.held = true;
+    p.recordedTail = true;
+    p.crossfade = true;
+    p.expression = true;
+    p.velocityGain = 0.25f;     // the layers carry most of the dynamics
+    p.velocityTone = 0.6f;      // brass darkens a lot when soft
+    p.even = 0.6f;
+    p.toneHz = 16000;
+    p.legatoSeconds = 0.03f;
+    p.legatoSkip = 0.12f;       // a slurred note starts past its tongued attack
+    p.legatoOverlap = 4.0f;
+    p.release = 0.15f;
+    p.voices = 4;
+    p.spread = 0.25f;
+    p.punchDb = 3.0f;
+    p.punchSeconds = 0.12f;
+    p.bite = 0.25f;
+    p.presence = 0.1f;
     return p;
 }
 
