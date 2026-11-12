@@ -8356,3 +8356,31 @@ busier first, the drums from Action.
   design, not by ear: listen to the renders first.
 - A Riser the composer picks by hand keeps playing (its length clamped to the rules' 2-3 bars in a
   live arrangement); the rules choose the automatic ones.
+
+## The brass pass (2026-11-12)
+
+The developer's request: the brass parts on real brass from the CC0 VSCO 2 Community Edition
+(Versilian Studios), reusing the percussion's and woodwinds' setup (licence entry, pinned commit
+`4403009`, CI fetch and cache, never committed): horn, trumpet, tenor trombone and tuba, sustains
+and staccatos, every recorded dynamic as a velocity layer, the mod wheel as dynamics /
+expression. Every Place part and KEYS / Instrument-mode instrument that is brass switched to the
+recordings, processed for its Place (the Castle's Brass Drone and Horns, the Palace's Fanfare,
+every other brass part found), and the Drama layer's brass stabs ("Brass & ... Hits") and brass
+ostinato; sci-fi brass processed to fit, or kept synthesised where that fits better (said
+which). Sharp, punchy attacks that cut through, level-matched with the other parts by the
+realistic loudness test, no clipping on stacked stabs. Patterns, Drama tiers, orchestration and
+arrangements exactly as they are: only the sound changes; each part's synthesised stand-in stays
+for builds without the samples. Useful brass code from Light-Seeker / Dungeon-Crawler (read only)
+copied. Also: the installable macOS artifact kept 9 days (test logs and renders short), each
+tagged release's installer attached to a GitHub Release. A resumed session continues from the
+first unticked line.
+
+### Progress checklist
+
+- [ ] 0. Inventory: every brass part (Place parts, KEYS / Instrument mode, the Drama layer) and the decisions
+- [ ] 1. Preparation: `vsco_brass.py` (sustains looped with their recorded ends, staccatos, velocity layers, pitch from the audio, one channel of the spaced pair), the fetch takes the brass, licence entry and cache key updated
+- [ ] 2. The sampler: Punch (the attack's overshoot with its safety limiter), bite and presence on the attack (Light-Seeker's), a tonic pedal on a sampled drone
+- [ ] 3. The parts switched, each processed for its Place, level-matched to its stand-in; the Drama stabs and brass ostinato
+- [ ] 4. CI: the macOS installer kept 9 days, test logs and diagnostics 3; tagged releases attach the installer to a GitHub Release
+- [ ] 5. Tests (the `brass` group): in tune (cents report), dynamics smooth, no clicks (loops, note-offs, staccato ends), level-matched, no clipping on stacked stabs, attacks that cut through, CPU within budget; listening renders before and after (the Castle's fanfare / horns, a Climax with brass stabs)
+- [ ] 6. DEVLOG results and handoff; final push; CI green
