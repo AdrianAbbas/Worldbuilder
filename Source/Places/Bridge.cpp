@@ -324,6 +324,7 @@ void BridgePlace::configure(const PlaceContext& c) {
         // the way from its p to its f), so Tension's harder notes rise as the model's did.
         p.layerFloor = 0.3f;
         p.layerSpan = 0.65f;
+        p.even = 0.6f;   // its registers evened as an alarm's (Tension's higher notes no louder)
         // Pure, as the model: the low-pass 1.5 times each note's pitch (a section's strong
         // third and fifth harmonics would carry the chord out of the key).
         p.toneTrack = 1.5f;

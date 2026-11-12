@@ -53,8 +53,8 @@ private:
     // The brass (the brass pass): VSCO 2 CE's tenor trombones holding the drone over a tuba
     // pedal, and its horns calling; the synthesised brass without the samples.
     SamplePart droneRec { drone }, hornsRec { horns };
-    static constexpr std::array<float, 3> droneGain { 41.9802f, 38.3629f, 40.9012f };   // per Character, level-matched (Tests "brass")
-    static constexpr std::array<float, 3> hornsGain { 3.8262f, 5.1079f, 9.1132f };
+    static constexpr std::array<float, 3> droneGain { 14.4968f, 14.6562f, 14.5281f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> hornsGain { 5.0191f, 6.4154f, 11.2998f };
     ModalPart bells;
     DrumPart timpani;
     PluckPart harp;
@@ -904,7 +904,7 @@ private:
     // The alert brass (the brass pass): VSCO 2 CE's trombones and horns, processed into a
     // swelling, filtered alarm section; the synthesised brass without the samples.
     SamplePart brassRec { brass };
-    static constexpr std::array<float, 3> brassGain { 131.8603f, 51.3808f, 49.2098f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> brassGain { 62.1930f, 38.5060f, 33.1032f };   // per Character, level-matched (Tests "brass")
     // The warp core is the developer's Minilogue pulsating patch, held (Milestone 15b).
     SamplePart coreRec { core };
     DrumPart tactical;

@@ -718,3 +718,14 @@ void testBrass(Suite& s) {
                 std::to_string(written) + " of " + std::to_string(wanted) + " files in " + rendersFolder().getFullPathName().toStdString());
     }
 }
+void probeBrassCastle() {
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    for (const char* hide : { "", "br-", "br-horn", "br-t" }) {
+        samples::Bank::hideForTests(*hide ? hide : nullptr);
+        auto h = placeHost(Castle, 0);
+        const double l = loudness(h.render(24.0), 4.0);
+        samples::Bank::hideForTests(nullptr);
+        std::cout << "castle hide '" << hide << "': " << fmt(l) << "\n";
+    }
+}
