@@ -719,36 +719,3 @@ void testBrass(Suite& s) {
     }
 }
 
-// --only brassprobe: the Castle drone's tuning from a keyboard, over time and with its pedal off.
-void probeBrass() {
-    using namespace instTest;
-    using namespace recTest;
-    samples::Bank::get().load();
-    samples::Bank::get().waitUntilLoaded(60000);
-    for (int key : { 41, 43, 45, 50 })
-        for (int drone : { 0, 1 }) {
-            auto h = ihost(Castle, CastlePlace::Drone);
-            if (drone == 0) h.set("inst_drone", 0.0f);
-            note(h, key, 90);
-            const auto a = h.render(4.0);
-            std::string line = "key " + std::to_string(key) + (drone ? " drone default" : " drone 0") + ":";
-            for (double t : { 0.4, 1.2, 2.4 }) {
-                const auto m = mono(a, t, 1.2);
-                line += " @" + fmt(t) + " " + fmt(harmonicCents(m, 0, m.size(), key)) + "/" + fmt(harmonicCents(m, 0, m.size(), key - 12));
-            }
-            std::cout << line << std::endl;
-        }
-}
-void probeBrassSweep() {
-    samples::Bank::get().load();
-    samples::Bank::get().waitUntilLoaded(60000);
-    const auto* inst = samples::Bank::get().instrument("br-horn");
-    for (const auto& z : inst->zones)
-        if (z.loKey <= 68 && z.hiKey >= 68) std::cout << "zone root " << z.root << " layer " << z.layer << " vel " << z.loVel << "-" << z.hiVel << " loud " << z.loudnessDb << " gain " << z.gainDb << " shelf " << z.shelfDb << "\n";
-    for (int k = 0; k <= 10; ++k) {
-        const double v = 0.05 + 0.095 * k;
-        const auto y = wwTest::playNotes(brassTest::neutral("br-horn", true), { { { 68.0, 0.0, 4.0, v } } }, 1.6);
-        Audio a; a.rate = 48000; a.l = y; a.r = y;
-        std::cout << "v " << v << " " << loudness(a, 0.0, true) << "\n";
-    }
-}

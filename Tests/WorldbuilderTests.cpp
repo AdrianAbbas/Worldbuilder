@@ -74,6 +74,9 @@ struct Suite {
     void check(bool okay, const std::string& name, const std::string& detail = {}) {
         okay ? ++passed : ++failed;
         if (!okay) std::cout << "FAIL: " << name << (detail.empty() ? "" : " :: " + detail) << "\n";
+        // WB_VERBOSE=1: the passing checks' figures too (the brass pass: its results table).
+        static const bool verbose = juce::SystemStats::getEnvironmentVariable("WB_VERBOSE", {}).isNotEmpty();
+        if (okay && verbose) std::cout << "ok: " << name << (detail.empty() ? "" : " :: " + detail) << "\n";
     }
     void section(const char* title) { std::cout << "[test] " << title << std::endl; }
     void metric(const std::string& name, double value, const char* unit = "") { std::cout << "  [metric] " << name << " = " << value << unit << "\n"; }
@@ -9598,8 +9601,6 @@ int main(int argc, char** argv) {
     if (only.contains("wwrange")) probeWoodwindRanges();
     if (only.contains("wwaudit")) auditWoodwinds();
     if (only.contains("brassaudit")) auditBrass();
-    if (only.contains("brassprobe")) probeBrass();
-    if (only.contains("brasssweep")) probeBrassSweep();
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }
