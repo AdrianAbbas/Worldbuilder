@@ -320,6 +320,10 @@ void BridgePlace::configure(const PlaceContext& c) {
         p.formantHz = 1100.0f;
         p.formantQ = 2.5f;
         p.formantDb = 1.0f + 3.0f * tension;
+        // An alarm, not a player: a narrow band of the section's dynamics (from 30 % to 65 % of
+        // the way from its p to its f), so Tension's harder notes rise as the model's did.
+        p.layerFloor = 0.3f;
+        p.layerSpan = 0.65f;
         // Pure, as the model: the low-pass 1.5 times each note's pitch (a section's strong
         // third and fifth harmonics would carry the chord out of the key).
         p.toneTrack = 1.5f;

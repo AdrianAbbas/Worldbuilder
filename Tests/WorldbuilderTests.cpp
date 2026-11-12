@@ -9497,6 +9497,11 @@ int main(int argc, char** argv) {
             return renderToFile(argv[i + 1], juce::String(argv[i + 2]).getDoubleValue(), settings);
         }
 
+    // WB_HIDE_SAMPLES=prefix: the bank's instruments with that id prefix hidden for the whole run
+    // (e.g. "br-": every group as it plays with the synthesised brass; a group that hides and
+    // restores instruments itself puts them back).
+    static const std::string hiddenSamples = juce::SystemStats::getEnvironmentVariable("WB_HIDE_SAMPLES", {}).toStdString();
+    if (!hiddenSamples.empty()) samples::Bank::hideForTests(hiddenSamples.c_str());
     // --only name[,name]: run only those groups; --place key[,key]: only those Places in
     // the Place groups (development aids).
     juce::StringArray only;
