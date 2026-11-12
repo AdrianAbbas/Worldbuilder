@@ -341,7 +341,8 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.courseCents = w.detune;
         p.courseLevel = 0.6f;
         p.courseMs = 15;
-        p.toneHz = lerpExp(1100.0f, 4500.0f, tone) * lerp(0.9f, 1.3f, tension) * (s.character == 1 ? 1.15f : 1.0f);
+        // (A futuristic Era brighter, as the model's filter: 0.8 octaves over the dial, from its default.)
+        p.toneHz = lerpExp(1100.0f, 4500.0f, tone) * lerp(0.9f, 1.3f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
         p.formantHz = 520.0f;
         p.formantQ = 1.2f;
@@ -369,7 +370,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.punchDb = 2.5f;
         p.bite = 0.2f;
         p.presence = 0.05f;
-        p.toneHz = lerpExp(2200.0f, 8000.0f, tone);
+        p.toneHz = lerpExp(2200.0f, 8000.0f, tone) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.7f;
         // Besieged: the low, uneasy call muffled (the low-pass 3 times each note's pitch), so
         // its semitone clash is the call's, not its upper harmonics'.

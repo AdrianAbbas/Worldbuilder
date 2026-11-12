@@ -296,6 +296,7 @@ void MilitaryPlace::configure(const PlaceContext& c) {
         auto& p = bugleRec.patch;
         p = brassPatch("br-trumpet", "br-trumpet-stac");
         p.mono = true;
+        p.slur = false;   // a bugle call is tongued: each note takes over from the last with its own attack
         p.voices = 2;
         p.punchDb = night ? 1.5f : 3.5f;
         p.bite = night ? 0.1f : 0.3f;

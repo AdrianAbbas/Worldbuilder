@@ -719,3 +719,50 @@ void testBrass(Suite& s) {
     }
 }
 
+void probeBrassPalace() {
+    using namespace loud;
+    using namespace mixprobe;
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    WorldEngine::probeLinear = true;
+    for (bool brass : { true, false }) {
+        samples::Bank::hideForTests(brass ? nullptr : "br-");
+        for (int t = 0; t < 3; ++t) {
+            const float i = loud::tierIntensity[std::size_t(t)];
+            const double d0 = integrated(renderWith(Palace, i, 0.0f, 0xffffffffu, 20.0), 4.0);
+            const double main = integrated(renderWith(Palace, i, 1.0f, 0u, 20.0), 4.0);
+            samples::Bank::hideForTests(nullptr);
+            samples::Bank::hideForTests(brass ? nullptr : "br-");
+            std::cout << (brass ? "brass" : "synth") << " t" << t + 1 << " d0 " << fmt(d0) << " main@100 " << fmt(main) << " diff " << fmt(main - d0) << "\n";
+            // The fanfare alone at both.
+            auto el = [&](float drama) {
+                auto h = instrumentHost(Palace, 0, PalacePlace::Fanfare, { { "intensity", i }, { "drama", drama } });
+                return loudness(h.render(20.0), 4.0);
+            };
+            std::cout << "   fanfare alone d0 " << fmt(el(0.0f)) << " d100 " << fmt(el(1.0f)) << "\n";
+            for (float drama : { 0.0f, 1.0f }) {
+                auto h = instrumentHost(Palace, 0, PalacePlace::Fanfare, { { "intensity", i }, { "drama", drama } });
+                const auto au = h.render(20.0);
+                if (t == 2) recTest::writeWav(juce::String("probe-") + (brass ? "brass" : "synth") + "-d" + juce::String(int(drama * 100)) + ".wav", au.l, au.r, 48000);
+                const auto log = placeLog(h, PalacePlace::Fanfare);
+                double vel = 0, lo = 99, hi = -99;
+                for (const auto& e : log) vel += e.velocity, lo = std::min(lo, double(e.pitch)), hi = std::max(hi, double(e.pitch));
+                std::cout << "   drama " << drama << ": " << log.size() << " notes, mean velocity " << fmt(vel / std::max<std::size_t>(1, log.size())) << ", pitch " << fmt(lo) << ".." << fmt(hi) << "\n";
+            }
+        }
+        samples::Bank::hideForTests(nullptr);
+    }
+    WorldEngine::probeLinear = false;
+}
+void probeBrassRegister() {
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    for (const char* id : { "br-trumpet", "br-trumpet-stac" })
+        for (int key : { 67, 72, 76, 79, 84, 86, 88, 91 }) {
+            auto p = brassPatch("br-trumpet", "br-trumpet-stac");
+            const bool held = std::string(id) == "br-trumpet";
+            const auto y = wwTest::playNotes(p, { { { double(key), 0.0, held ? 2.0 : 0.25, 0.45 } } }, 1.2);
+            Audio a; a.rate = 48000; a.l = y; a.r = y;
+            std::cout << id << " " << key << " " << fmt(loudness(a, 0.0, true)) << "\n";
+        }
+}

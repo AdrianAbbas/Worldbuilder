@@ -274,10 +274,12 @@ void PalacePlace::configure(const PlaceContext& c) {
         auto& p = brassRec.patch;
         p = brassPatch("br-trumpet", "br-trumpet-stac");
         p.voices = 4;
+        p.slur = false;   // a herald's fanfare is tongued, note by note
         p.punchDb = fallen ? 1.5f : 4.0f;
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
-        p.toneHz = lerpExp(4000.0f, 14000.0f, tone) * (fallen ? 0.55f : 1.0f);
+        // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)
+        p.toneHz = lerpExp(6000.0f, 10500.0f, tone) * (fallen ? 0.55f : 1.0f);
         p.velocityTone = 0.6f;
         p.formantHz = 1300.0f;
         p.formantQ = 1.0f;

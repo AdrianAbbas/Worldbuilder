@@ -9601,6 +9601,8 @@ int main(int argc, char** argv) {
     if (only.contains("wwrange")) probeWoodwindRanges();
     if (only.contains("wwaudit")) auditWoodwinds();
     if (only.contains("brassaudit")) auditBrass();
+    if (only.contains("brasspalace")) probeBrassPalace();
+    if (only.contains("brassreg")) probeBrassRegister();
     std::cout << "\n" << s.passed << " passed, " << s.failed << " failed" << std::endl;
     return s.failed == 0 ? 0 : 1;
 }

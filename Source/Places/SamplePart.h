@@ -148,6 +148,17 @@ struct SamplePatch {
     // With a front, the sustain starts this far into its recording (past its swell; seconds),
     // fading in over 20 ms under the front: the note's peak is its tongue, not its swell.
     float frontSkip = 0.08f;
+    // Expression: where the softest velocity starts on the way from the softest layer to the
+    // loudest (0: the softest layer itself). A brass section's recorded p to ff is far wider than
+    // its model's velocity range: a line played a little softer would drop several dB.
+    float layerFloor = 0;
+    // Off: a held note starting where the last one ends is tongued, not slurred (a fanfare's,
+    // a bugle call's repeated notes): it gets its own attack and front.
+    bool slur = true;
+    // A short note (on the short articulation) levelled to the long one at its key and dynamic
+    // (the bank's measured loudness: Light-Seeker's staccatos levelled to their sustains), so
+    // a line keeps its level as its notes get shorter.
+    bool shortMatch = false;
 };
 
 class SamplePart final : public Part {
@@ -279,7 +290,8 @@ private:
     float spreadOver(const samples::Instrument& inst, float dynamic) const {
         if (inst.layers < 2) return dynamic;
         const float lo = inst.layerCentre[0], hi = inst.layerCentre[std::size_t(std::min(inst.layers, int(inst.layerCentre.size())) - 1)];
-        return lo + dsp::clamp01(dynamic) * dsp::clamp01(patch.layerSpan) * (hi - lo);
+        const float floor = dsp::clamp01(patch.layerFloor), span = std::max(floor, dsp::clamp01(patch.layerSpan));
+        return lo + (floor + dsp::clamp01(dynamic) * (span - floor)) * (hi - lo);
     }
     float levelOf(float dynamic) const { return 1.0f - patch.velocityGain + patch.velocityGain * std::pow(dsp::clamp01(dynamic), 1.3f); }
     float cutoffOf(float dynamic) const {
@@ -316,7 +328,7 @@ private:
         // quickly and the new one comes in without its full attack. (Not a short hit: it is
         // all attack.)
         bool legato = false;
-        if (patch.held && n.live == 0 && inst != shortOne && !patch.damper && !startingPedal && !startingFront)
+        if (patch.held && patch.slur && n.live == 0 && inst != shortOne && !patch.damper && !startingPedal && !startingFront)
             for (int i = 0; i < limit; ++i) {
                 const auto& h = held[std::size_t(i)];
                 auto& old = voice[std::size_t(i)];
@@ -335,7 +347,7 @@ private:
                 // the new note slurs on from it (a held one, not a short hit), and it goes.
                 const bool justEnded = old.releasing && h.until >= n.beat - 0.07 && h.until <= n.beat + 1.0e-6;
                 if (old.releasing && !justEnded) continue;
-                if (patch.held && inst != shortOne && !patch.damper) legato = true;
+                if (patch.held && patch.slur && inst != shortOne && !patch.damper) legato = true;
                 h.on = false;
                 old.upgrade = false;
                 if (old.releasing && (old.tailPos >= 0.0 || old.tailPosB >= 0.0)) {
@@ -443,6 +455,13 @@ private:
         const float noteDb = (picked ? pair.a->loudnessDb + pickedGainDb
                                      : (pair.b != nullptr ? dsp::lerp(pair.a->loudnessDb, pair.b->loudnessDb, pair.mix) : pair.a->loudnessDb));
         if (startingFront) v.gain *= patch.front * dsp::dbToGain(std::clamp(frontRefDb - noteDb, -12.0f, 12.0f));
+        else if (patch.shortMatch && inst == shortOne && main != nullptr && inst != main) {
+            const auto lp = main->findPair(int(std::lround(midi)), patch.expression ? spreadOver(*main, layerVelocity) : layerVelocity, n.random2);
+            if (lp.a != nullptr) {
+                const float longDb = lp.b != nullptr ? dsp::lerp(lp.a->loudnessDb, lp.b->loudnessDb, lp.mix) : lp.a->loudnessDb;
+                v.gain *= dsp::dbToGain(std::clamp(longDb - noteDb, -12.0f, 12.0f));
+            }
+        }
         const float attack = attackOver >= 0.0f ? attackOver : (fronted ? std::max(patch.attack, 0.02f) : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack)));
         v.amp = attack > 0.0005f ? 0.0f : 1.0f;
         v.attackStep = attack > 0.0005f ? 1.0f / (attack * rate) : 1.0f;
@@ -1235,6 +1254,8 @@ inline SamplePatch brassPatch(const char* sustain, const char* staccato) {
     p.bite = 0.25f;
     p.presence = 0.1f;
     p.front = 1.0f;             // a long note's tongue: its staccato struck with it
+    p.layerFloor = 0.25f;       // the softest velocity a quarter of the way up the recorded dynamics
+    p.shortMatch = true;        // the staccatos as loud as the sustains at the note's dynamic
     return p;
 }
 
