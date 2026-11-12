@@ -346,18 +346,20 @@ void CastlePlace::configure(const PlaceContext& c) {
         // A low section, opening with Tension.
         p.toneHz = lerpExp(1100.0f, 4500.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
-        p.formantHz = 520.0f;
-        p.formantQ = 1.2f;
-        p.formantDb = 2.0f;
+        // The model's balance: the trombones' strong low middle (their 2nd to 4th harmonics,
+        // 0.4-0.9 kHz) scooped; the hall's body is the pedal's and the fundamentals'.
+        p.formantHz = 600.0f;
+        p.formantQ = 0.8f;
+        p.formantDb = -8.0f;
         // The players' air, high and broad (as the model's breath): what of the drone sits
         // above its dark tone is breath, not its harmonics.
-        p.breath = 0.015f;
+        p.breath = 0.03f;   // the model's own breath level
         p.breathRatio = 30.0f;
         p.breathQ = 0.5f;
         p.breathBurst = 0.5f;
         p.tremoloPerBeat = w.tremoloPerBeat;
         p.tremoloDepth = w.tremoloDepth;
-        p.pedal = 0.5f;   // the tuba is heavier than the model's pedal voice: further under
+        p.pedal = 0.15f;   // the tuba is heavier than the model's pedal voice: further under
         p.pedalSemis = w.pedalSemis;
         p.pedalInstrument = "br-tuba";
         p.scoopSemis = -0.35f;   // the model's designed lip (Scoop / Glide)
