@@ -727,5 +727,12 @@ void probeBrassCastle() {
         const double l = loudness(h.render(24.0), 4.0);
         samples::Bank::hideForTests(nullptr);
         std::cout << "castle hide '" << hide << "': " << fmt(l) << "\n";
+        for (float act : { 0.9f, 0.5f, 0.2f }) {
+            samples::Bank::hideForTests(*hide ? hide : nullptr);
+            auto d = instrumentHost(Castle, 0, CastlePlace::Drone, { { "p1_activity", act } });
+            const double dl = loudness(d.render(24.0), 4.0);
+            samples::Bank::hideForTests(nullptr);
+            std::cout << "   drone alone, activity " << act << ": " << fmt(dl) << "\n";
+        }
     }
 }

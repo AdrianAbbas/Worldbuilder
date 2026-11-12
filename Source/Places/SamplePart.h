@@ -335,7 +335,9 @@ private:
         const auto* zone = pair.a;
         if (zone == nullptr) return;
 
-        const int limit = startingFront ? maxVoices : std::clamp(patch.voices, 1, maxVoices);
+        // (The pedal has the last voice to itself: no note or front takes it, and it takes no note's.)
+        const int top = patch.pedal > 0.0f ? maxVoices - 1 : maxVoices;
+        const int limit = startingFront ? top : std::clamp(patch.voices, 1, top);
         // A held note whose predecessor ends here is played legato: the old note lets go
         // quickly and the new one comes in without its full attack. (Not a short hit: it is
         // all attack.)
@@ -371,7 +373,7 @@ private:
                 if (old.releasing) hurry(old, patch.legatoSeconds * patch.legatoOverlap);
                 else release(old, patch.legatoSeconds * patch.legatoOverlap);
             }
-        const int k = int(dsp::pickVoice(voice, limit, [](const Voice& v) { return v.on ? v.amp * v.fade * v.gain + 1.0e-9f : 0.0f; }));
+        const int k = startingPedal ? maxVoices - 1 : int(dsp::pickVoice(voice, limit, [](const Voice& v) { return v.on ? v.amp * v.fade * v.gain + 1.0e-9f : 0.0f; }));
         auto& v = voice[std::size_t(k)];
         int wait = 0;
         float velocity = n.velocity;
