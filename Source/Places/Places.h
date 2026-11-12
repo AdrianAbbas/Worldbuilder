@@ -54,7 +54,7 @@ private:
     // pedal, and its horns calling; the synthesised brass without the samples.
     SamplePart droneRec { drone }, hornsRec { horns };
     static constexpr std::array<float, 3> droneGain { 10.9541f, 11.7110f, 10.5579f };   // per Character, level-matched (Tests "brass")
-    static constexpr std::array<float, 3> hornsGain { 3.9738f, 5.6905f, 9.1636f };
+    static constexpr std::array<float, 3> hornsGain { 3.9738f, 5.5596f, 9.1636f };
     ModalPart bells;
     DrumPart timpani;
     PluckPart harp;
@@ -634,7 +634,7 @@ private:
     SynthPart bugle;
     // The bugle (the brass pass): VSCO 2 CE's trumpet as one bugler; the model without the samples.
     SamplePart bugleRec { bugle };
-    static constexpr std::array<float, 3> bugleGain { 2.5614f, 3.0607f, 2.6861f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> bugleGain { 2.5185f, 3.0336f, 2.6840f };   // per Character, level-matched (Tests "brass")
     FmPart radio;
     BowedPart strings;
     dsp::SmallSpace room;
@@ -748,7 +748,7 @@ private:
     SynthPart brass;
     // The fanfare (the brass pass): VSCO 2 CE's trumpets; the model without the samples.
     SamplePart brassRec { brass };
-    static constexpr std::array<float, 3> brassGain { 3.0833f, 3.7230f, 3.0643f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> brassGain { 3.0513f, 3.6803f, 3.0643f };   // per Character, level-matched (Tests "brass")
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;

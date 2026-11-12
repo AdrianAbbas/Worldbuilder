@@ -159,6 +159,10 @@ struct SamplePatch {
     // (the bank's measured loudness: Light-Seeker's staccatos levelled to their sustains), so
     // a line keeps its level as its notes get shorter.
     bool shortMatch = false;
+    // With shortMatch: the short note this much over the long one's measured loudness (dB). The
+    // bank measures over the loudest 400 ms, longer than a staccato's hit (Light-Seeker measures
+    // a staccato by its loudest 100 ms).
+    float shortOverDb = 0;
 };
 
 class SamplePart final : public Part {
@@ -459,7 +463,7 @@ private:
             const auto lp = main->findPair(int(std::lround(midi)), patch.expression ? spreadOver(*main, layerVelocity) : layerVelocity, n.random2);
             if (lp.a != nullptr) {
                 const float longDb = lp.b != nullptr ? dsp::lerp(lp.a->loudnessDb, lp.b->loudnessDb, lp.mix) : lp.a->loudnessDb;
-                v.gain *= dsp::dbToGain(std::clamp(longDb - noteDb, -12.0f, 12.0f));
+                v.gain *= dsp::dbToGain(std::clamp(longDb - noteDb + patch.shortOverDb, -12.0f, 12.0f));
             }
         }
         const float attack = attackOver >= 0.0f ? attackOver : (fronted ? std::max(patch.attack, 0.02f) : (quick ? 0.008f : (legato ? patch.legatoSeconds : patch.attack)));
@@ -1255,7 +1259,8 @@ inline SamplePatch brassPatch(const char* sustain, const char* staccato) {
     p.presence = 0.1f;
     p.front = 1.0f;             // a long note's tongue: its staccato struck with it
     p.layerFloor = 0.25f;       // the softest velocity a quarter of the way up the recorded dynamics
-    p.shortMatch = true;        // the staccatos as loud as the sustains at the note's dynamic
+    p.shortMatch = true;        // the staccatos as loud as the sustains at the note's dynamic,
+    p.shortOverDb = 2.0f;       // measured by their hit
     return p;
 }
 
