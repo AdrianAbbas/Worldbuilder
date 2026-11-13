@@ -275,7 +275,9 @@ void PalacePlace::configure(const PlaceContext& c) {
         p = brassPatch("br-trumpet", "br-trumpet-stac");
         p.voices = 4;
         p.slur = false;   // a herald's fanfare is tongued, note by note
-        p.punchDb = fallen ? 1.5f : 4.0f;
+        p.punchDb = fallen ? 1.5f : 2.5f;
+        p.front = 0.8f;   // struck, but no burst over the hall's loudest moments (Drama's moves)
+        p.even = 0.4f;
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
         // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)

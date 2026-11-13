@@ -4,7 +4,7 @@ namespace wb {
 
 using namespace dsp;
 
-CastlePlace::CastlePlace() : EnsemblePlace(1100) { setParts({ &droneRec, &bells, &hornsRec, &timpani, &harp, &choirRec }); }
+CastlePlace::CastlePlace() : EnsemblePlace(1100) { setParts({ &droneLayer, &bells, &hornsRec, &timpani, &harp, &choirRec }); }
 
 void CastlePlace::prepareFx() {
     hall.prepare(rate);
@@ -332,7 +332,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         p = brassPatch("br-trombone", nullptr);
         p.punchDb = 0;
         p.bite = 0;
-        p.presence = 1.2f * std::max(0.0f, s.era - 0.3f);
+        p.presence = 1.2f * std::max(0.0f, s.era - 0.3f);   // brighter with a futuristic Era
         p.voices = 4;
         p.attack = w.attack;
         p.release = w.release;
@@ -341,33 +341,25 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.courseCents = w.detune;
         p.courseLevel = 0.6f;
         p.courseMs = 15;
-        // (A futuristic Era brighter: the low-pass 0.8 octaves over the dial, from its default,
-        // and presence above it, none at the default.)
-        // As the model's spectrum (measured: its weight in the lows, dark above 1 kHz): a low,
-        // dark section over a strong tuba pedal, opening with Tension.
-        p.toneHz = lerpExp(1200.0f, 4500.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
+        // A low section opening with Tension (and 0.8 octaves with a futuristic Era), its strong
+        // low middle (the trombones' 2nd to 4th harmonics) a little under, so the model's pedal and
+        // sub below it carry the hall's weight.
+        p.toneHz = lerpExp(1000.0f, 4000.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
-        // The model's balance: the trombones' strong low middle (their 2nd to 4th harmonics,
-        // 0.4-0.9 kHz) scooped; the hall's body is the pedal's and the fundamentals'.
         p.formantHz = 550.0f;
         p.formantQ = 1.0f;
-        p.formantDb = -10.0f;
-        // The model's quiet, broad air above (its breath): matched to its spectrum's top.
-        p.breath = 0.004f;
-        p.breathRatio = 30.0f;
-        p.breathQ = 0.5f;
-        p.breathBurst = 0.5f;
+        p.formantDb = -6.0f;
         p.tremoloPerBeat = w.tremoloPerBeat;
         p.tremoloDepth = w.tremoloDepth;
-        p.pedal = 0.6f;   // the model's weight below 125 Hz is its pedal and sub   // the tuba is heavier than the model's pedal voice: further under
-        p.pedalSemis = w.pedalSemis;
-        p.pedalInstrument = "br-tuba";
         p.scoopSemis = -0.35f;   // the model's designed lip (Scoop / Glide)
         p.scoopSeconds = 0.028f;
         p.spread = w.spread;
         p.pan = w.pan;
         p.transpose = w.transpose;
         p.gain = droneGain[std::size_t(std::clamp(s.character, 0, 2))];
+        // The model under it (its tonic pedal, its sub, its swell and tremble: the Castle's weight
+        // and movement), 4.4 dB down where the recordings play; alone at its own level without them.
+        if (droneRec.loaded()) drone.patch.gain *= droneUnder;
     }
     // The horns: VSCO 2 CE's F horn, its calls on the sustains (slurred where they join) and
     // the short notes on the staccatos; dark and noble (the bell turned away), struck clearly
