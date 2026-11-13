@@ -344,7 +344,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         // A low section opening with Tension (and 0.8 octaves with a futuristic Era), its strong
         // low middle (the trombones' 2nd to 4th harmonics) a little under, so the model's pedal and
         // sub below it carry the hall's weight.
-        p.toneHz = lerpExp(1000.0f, 4000.0f, tone) * lerp(0.7f, 1.6f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
+        p.toneHz = lerpExp(1000.0f, 4000.0f, tone) * lerp(0.5f, 2.2f, tension) * (s.character == 1 ? 1.15f : 1.0f) * std::exp2(0.8f * (s.era - 0.3f));
         p.velocityTone = 0.3f;
         p.formantHz = 550.0f;
         p.formantQ = 1.0f;
@@ -359,7 +359,9 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.gain = droneGain[std::size_t(std::clamp(s.character, 0, 2))];
         // The model under it (its tonic pedal, its sub, its swell and tremble: the Castle's weight
         // and movement), 4.4 dB down where the recordings play; alone at its own level without them.
-        if (droneRec.loaded()) drone.patch.gain *= droneUnder;
+        // (The bank, not the part's own state: the part finds its recordings on its first update,
+        // after this; a first play and a replay must sound the same.)
+        if (samples::Bank::get().ready() && samples::Bank::get().instrument("br-trombone") != nullptr) drone.patch.gain *= droneUnder;
     }
     // The horns: VSCO 2 CE's F horn, its calls on the sustains (slurred where they join) and
     // the short notes on the staccatos; dark and noble (the bell turned away), struck clearly

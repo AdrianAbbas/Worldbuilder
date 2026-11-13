@@ -278,6 +278,10 @@ void PalacePlace::configure(const PlaceContext& c) {
         p.punchDb = fallen ? 1.5f : 2.5f;
         p.front = 0.8f;   // struck, but no burst over the hall's loudest moments (Drama's moves)
         p.even = 0.4f;
+        // A herald's narrow band of the trumpet's dynamics (35-85 % of the way from its p to its
+        // f): Drama's busier, softer fanfares sit as loud as the model's did, not several dB under.
+        p.layerFloor = 0.35f;
+        p.layerSpan = 0.85f;
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
         // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)
