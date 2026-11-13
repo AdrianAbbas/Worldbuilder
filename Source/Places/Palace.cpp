@@ -280,9 +280,10 @@ void PalacePlace::configure(const PlaceContext& c) {
         // every long note of Drama's busier fanfares made bursts the hall never had; the short
         // notes are on the staccatos).
         p.front = 0.0f;
-        // Its registers as recorded (no evening): Drama's busier fanfares climb into the
-        // trumpet's loud top, which keeps them as loud as the model's at Drama 0.
-        p.even = 0.0f;
+        // Its registers a little evened: Drama's busier fanfares climb into the trumpet's loud top
+        // (as recorded it bursts out of the sweep; evened as the other brass, it drops under the
+        // model's at Drama 0).
+        p.even = 0.4f;
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
         // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)
