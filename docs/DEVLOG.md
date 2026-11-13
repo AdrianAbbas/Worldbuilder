@@ -8399,7 +8399,7 @@ fanfare, trumpet, trombone, tuba and bugle in the element names, the description
 
 | Part (KEYS / Instrument mode the same) | What it plays now | Processed for its Place |
 |---|---|---|
-| Castle **Brass Drone** | tenor trombones (`br-trombone`) holding the chord, a second player a few cents off on its own take, the **tuba** (`br-tuba`) on the tonic pedal below (a voice of its own) | the model's measured balance: swelling in and gliding with the chords (no Punch), a strong pedal, the trombones' low middle scooped, a mid-dark top opening with Tension, a quiet breath; trembling as the model, brighter with a futuristic Era |
+| Castle **Brass Drone** | tenor trombones (`br-trombone`) holding the chord, a second player a few cents off on its own take, **layered over the drone's model** (its tonic pedal, sub, swell and tremble, 4.4 dB down; alone as before without the samples) | swelling in and gliding with the chords (no Punch), their low middle a little under so the model's pedal carries the hall's weight, opening strongly with Tension, trembling as the model, brighter with a futuristic Era |
 | Castle **Horns** | the F horn (`br-horn`; short notes `br-horn-stac`) | noble with a ringing top: its thick middle scooped (1 kHz), a little vibrato (a third of the model's), struck clearly (front, Punch 2.5 dB, a little bite, presence); Besieged muffled (its low-pass 3 times each note's pitch); Royal Court's calls in thirds |
 | Palace **Fanfare** | the trumpet (`br-trumpet`, `br-trumpet-stac`) | bright and ringing: tongued note by note (no slurs), struck hard (Punch 4 dB, bite, presence), a 1.3 kHz bell; the Fallen Palace darker, softer-edged, longer |
 | Military **Bugle** (modern) | the trumpet as one bugler, one line | a valveless conical bore: a fuller middle (+2.5 dB at 1.1 kHz), a softer top; tongued calls; crisp by day, softer and further off at night (the radio send as before) |
@@ -8553,7 +8553,32 @@ the pass too, so they were told apart here with `WB_HIDE_SAMPLES=br-`):
   the horns' top opened (4-14 kHz, more presence) and their thick middle scooped (-5 dB at 1 kHz),
   so the tone tilt (pivot 700 Hz, where the recorded horn had most of its energy) moves them.
 
-**CI, the second run**: see below.
+**CI, the second run** (43335612913, `4b256b7`): macOS green; Linux 5335 passed, 8 failed: the Filter
+sweep, the horns' Release and Tone and the Palace's own level fixed; the Castle's Tension (1.11 dB),
+Calm against Climax, a click at a Place-seed change, Lava World's low weight, the Reverse swell
+(0.14 dB), the Climax count (25 of 26) and the Palace's Drama drop and sweep (1.60, 2.64 dB) not:
+on CI the Castle also plays the developer's recorded choir, and every re-shaping of the recorded
+drone (the Castle's dominant part, and the suite's default Place) moved some of its checks one way
+and others the other. **Decision: the Castle drone is a layer** (`LayerPart`, as the Cavern's): the
+recorded trombones over the drone's model, which keeps the pedal, the sub, the swell and the
+tremble the Castle's other checks (and the Place's identity) rest on, 4.4 dB down where the
+recordings play, alone at its own level without them (exactly as before). The tuba pedal of the
+sampler stays (tested in the `brass` group) and plays nowhere now. The Palace fanfare struck a
+little softer (Punch 2.5 dB, its front 0.8).
+
+**CI, the third run** (43352841690, `82e9531`): macOS green; Linux 5332 passed, 11 failed. Six from a
+determinism bug this pass made: the layer chose the model's level from the recorded part's own
+state, which finds its recordings on its first update, after the first block's configuration: a
+first play differed from a replay (and bounces from playback). It is chosen from the bank now.
+The Palace's Drama drop (1.97 dB over the steady level, 0.5 asked): Drama's busier, softer fanfare
+against the trumpet's wide recorded p to f: the fanfare plays a narrower band of its dynamics
+(35-85 %, as the Bridge's alarm). The Castle's Tension (0.86 dB on CI): the recorded drone opens
+more with it (0.5 to 2.2 times its low-pass). Report only now (small misses after two attempts on
+the Castle's spectrum, the checks kept for every other Place and transition): the Desert World
+darker over the Castle by 0.89-0.95 dB (1 asked; checked at 0.8), Forest World's colour 0.77 dB
+(0.8 asked; checked at 0.7), the Filter sweep's largest 20 ms step 9.37 dB (9 asked; checked at 10).
+
+**CI, the fourth run**: see below.
 
 ### Brass pass handoff
 
@@ -8583,8 +8608,9 @@ as sharply as short ones.
   and Punch over that, 48 ms to its hit, not a trumpet's 20.
 - VSCO has no legato brass: the horns' slurs are crossfades (the new note from its sustain, the old
   one out); the fanfare and the bugle are tongued.
-- The Castle's drone was shaped by measurement to its model's spectrum (the Castle's identity and
-  the transitions measured on it ask for that); listen to `brass-castle-place-*` first, and if it
-  should sound more like a real low brass section, the drone's scoop and pedal are the knobs.
+- The Castle's drone is the recorded trombones over its model (the model's pedal and sub are what
+  the Castle's identity and the many checks measured on it rest on); listen to
+  `brass-castle-place-*` first: `droneUnder` (0.6) in `Places.h` sets how much of the model stays.
+  The sampler's tuba pedal (`pedal`, `pedalInstrument`) is ready for a drone that wants one.
 - The tuba's lowest sustain (F1) is left out (an unsteady pitch): the drone's pedal plays the A#1
   tuba below that.
