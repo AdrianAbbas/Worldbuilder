@@ -752,7 +752,7 @@ private:
     SynthPart brass;
     // The fanfare (the brass pass): VSCO 2 CE's trumpets; the model without the samples.
     SamplePart brassRec { brass };
-    static constexpr std::array<float, 3> brassGain { 3.2178f, 3.9924f, 3.1488f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> brassGain { 3.2535f, 3.9776f, 3.1488f };   // per Character, level-matched (Tests "brass")
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;

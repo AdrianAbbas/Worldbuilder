@@ -275,7 +275,7 @@ void PalacePlace::configure(const PlaceContext& c) {
         p = brassPatch("br-trumpet", "br-trumpet-stac");
         p.voices = 4;
         p.slur = false;   // a herald's fanfare is tongued, note by note
-        p.punchDb = fallen ? 1.5f : 2.5f;
+        p.punchDb = fallen ? 0.5f : 1.0f;
         // No front: a long fanfare note speaks with its own recorded attack and Punch (a front on
         // every long note of Drama's busier fanfares made bursts the hall never had; the short
         // notes are on the staccatos).
