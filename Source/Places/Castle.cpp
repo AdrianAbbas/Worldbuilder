@@ -332,7 +332,8 @@ void CastlePlace::configure(const PlaceContext& c) {
         p = brassPatch("br-trombone", nullptr);
         p.punchDb = 0;
         p.bite = 0;
-        p.presence = 1.2f * std::max(0.0f, s.era - 0.3f);   // brighter with a futuristic Era
+        // Brighter with a futuristic Era, and edgier as Tension rises (the section pressing).
+        p.presence = 1.2f * std::max(0.0f, s.era - 0.3f) + 0.5f * tension;
         p.voices = 4;
         p.attack = w.attack;
         p.release = w.release;
