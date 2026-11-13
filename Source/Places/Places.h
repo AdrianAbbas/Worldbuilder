@@ -55,7 +55,7 @@ private:
     // without the samples.
     NullPart silent;
     SamplePart droneRec { silent }, hornsRec { horns };
-    LayerPart droneLayer { drone, droneRec };
+    UnderLayer droneLayer { drone, droneRec };
     static constexpr float droneUnder = 0.6f;
     static constexpr std::array<float, 3> droneGain { 17.3484f, 17.9145f, 16.8379f };   // per Character, level-matched (Tests "brass")
     static constexpr std::array<float, 3> hornsGain { 5.0191f, 6.4154f, 11.2998f };

@@ -358,10 +358,9 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.transpose = w.transpose;
         p.gain = droneGain[std::size_t(std::clamp(s.character, 0, 2))];
         // The model under it (its tonic pedal, its sub, its swell and tremble: the Castle's weight
-        // and movement), 4.4 dB down where the recordings play; alone at its own level without them.
-        // (The bank, not the part's own state: the part finds its recordings on its first update,
-        // after this; a first play and a replay must sound the same.)
-        if (samples::Bank::get().ready() && samples::Bank::get().instrument("br-trombone") != nullptr) drone.patch.gain *= droneUnder;
+        // and movement): each chord note it starts while the recordings play 4.4 dB down (the
+        // layer scales its velocity); alone at its own level without them.
+        droneLayer.under = droneUnder;
     }
     // The horns: VSCO 2 CE's F horn, its calls on the sustains (slurred where they join) and
     // the short notes on the staccatos; dark and noble (the bell turned away), struck clearly

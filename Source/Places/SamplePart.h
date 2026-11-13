@@ -1164,6 +1164,73 @@ private:
     int strumCount = 0;
 };
 
+// The brass pass: a sampled part layered over its model (the Castle's drone: the recorded
+// trombones over the model's pedal, sub and swell). Each note the model starts while the
+// recordings play starts `under` its level (velocity scaled); notes already sounding keep theirs,
+// so the bank becoming ready mid-play never steps the level. Without the recordings the model
+// plays alone, as before.
+class UnderLayer final : public Part {
+public:
+    UnderLayer(Part& model, SamplePart& recorded) : a(model), b(recorded) {}
+    float under = 1;
+    void prepare(float r) override {
+        rate = r;
+        a.prepare(r);
+        b.prepare(r);
+    }
+    void reset() override {
+        a.reset();
+        b.reset();
+    }
+    void setKey(uint32_t key, uint32_t salt) override {
+        a.setKey(key, salt);
+        b.setKey(key, salt + 7);
+    }
+    void start(const PartFrame& f, const NoteOn& n) override {
+        if (b.sampled()) {
+            NoteOn m = n;
+            m.velocity *= under;
+            a.start(f, m);
+        } else {
+            a.start(f, n);
+        }
+        b.start(f, n);
+    }
+    void update(const PartFrame& f) override {
+        for (auto* p : { &a, static_cast<Part*>(&b) }) {
+            p->bend = bend;
+            p->mod = mod;
+            p->instrumentMode = instrumentMode;
+            p->drone = drone;
+            p->slide = slide;
+            p->update(f);
+        }
+    }
+    void render(float* left, float* right, int n) override {
+        a.render(left, right, n);
+        b.render(left, right, n);
+    }
+    bool sustains() const override { return a.sustains() || b.sustains(); }
+    float transposeSemis() const override { return a.transposeSemis(); }
+    void stopLive(int id) override {
+        a.stopLive(id);
+        b.stopLive(id);
+    }
+    void shapeForInstrument(float x, float y) override {
+        a.shapeForInstrument(x, y);
+        b.shapeForInstrument(x, y);
+    }
+    void unshapeForInstrument() override {
+        a.unshapeForInstrument();
+        b.unshapeForInstrument();
+    }
+    SlideDesign designed() const override { return a.designed(); }
+
+private:
+    Part& a;
+    SamplePart& b;
+};
+
 // The developer's piano (Milestone 17), as every Place that plays it starts from: the held
 // notes (natural decay, the dampers as recorded, the top keys undamped), the short hits
 // for short written notes (they ring as recorded, damper and all), velocity layers
