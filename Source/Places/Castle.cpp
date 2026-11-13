@@ -359,7 +359,7 @@ void CastlePlace::configure(const PlaceContext& c) {
         p.breathBurst = 0.5f;
         p.tremoloPerBeat = w.tremoloPerBeat;
         p.tremoloDepth = w.tremoloDepth;
-        p.pedal = 0.4f;   // the model's weight below 125 Hz is its pedal and sub   // the tuba is heavier than the model's pedal voice: further under
+        p.pedal = 0.6f;   // the model's weight below 125 Hz is its pedal and sub   // the tuba is heavier than the model's pedal voice: further under
         p.pedalSemis = w.pedalSemis;
         p.pedalInstrument = "br-tuba";
         p.scoopSemis = -0.35f;   // the model's designed lip (Scoop / Glide)

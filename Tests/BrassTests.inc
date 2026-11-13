@@ -718,35 +718,3 @@ void testBrass(Suite& s) {
                 std::to_string(written) + " of " + std::to_string(wanted) + " files in " + rendersFolder().getFullPathName().toStdString());
     }
 }
-void probeBrassCastle() {
-    samples::Bank::get().load();
-    samples::Bank::get().waitUntilLoaded(60000);
-    for (const char* hide : { "", "br-", "br-horn", "br-t" }) {
-        samples::Bank::hideForTests(*hide ? hide : nullptr);
-        auto h = placeHost(Castle, 0);
-        const double l = loudness(h.render(24.0), 4.0);
-        samples::Bank::hideForTests(nullptr);
-        std::cout << "castle hide '" << hide << "': " << fmt(l) << "\n";
-        for (float act : { 0.9f, 0.5f, 0.2f }) {
-            samples::Bank::hideForTests(*hide ? hide : nullptr);
-            auto d = instrumentHost(Castle, 0, CastlePlace::Drone, { { "p1_activity", act } });
-            const double dl = loudness(d.render(24.0), 4.0);
-            samples::Bank::hideForTests(nullptr);
-            std::cout << "   drone alone, activity " << act << ": " << fmt(dl) << "\n";
-        }
-    }
-}
-void probeBrassSpectrum() {
-    samples::Bank::get().load();
-    samples::Bank::get().waitUntilLoaded(60000);
-    for (const char* hide : { "", "br-" }) {
-        samples::Bank::hideForTests(*hide ? hide : nullptr);
-        auto d = instrumentHost(Castle, 0, CastlePlace::Drone, {});
-        const auto a = d.render(24.0);
-        samples::Bank::hideForTests(nullptr);
-        juce::File f(std::string("/tmp/claude-0/drone-") + (*hide ? "synth" : "brass") + ".raw");
-        f.deleteFile();
-        juce::FileOutputStream o { f };
-        for (std::size_t i = std::size_t(4 * a.rate); i < a.l.size(); ++i) o.writeFloat(0.5f * (a.l[i] + a.r[i]));
-    }
-}
