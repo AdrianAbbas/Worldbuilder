@@ -284,6 +284,7 @@ void PalacePlace::configure(const PlaceContext& c) {
         // (as recorded it bursts out of the sweep; evened as the other brass, it drops under the
         // model's at Drama 0).
         p.even = 0.4f;
+        p.shortOverDb = 0.0f;   // its quick notes as loud as its long ones (not over: they burst after Drama drops)
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
         // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)
