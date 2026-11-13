@@ -10,6 +10,8 @@
 //                      the budget; listening renders before and after
 //   --only brassaudit  each changed part's level with the recordings and without, per
 //                      Character (how the gains were set), and the Drama stabs'
+//   --only brassdial   the Palace's Drama dial and sweep measures (the level group's) with the
+//                      brass and with the synthesised brass, in seconds (how the fanfare was set)
 
 #include "BrassMetrics.h"
 
