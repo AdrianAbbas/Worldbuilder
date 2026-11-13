@@ -57,7 +57,7 @@ private:
     SamplePart droneRec { silent }, hornsRec { horns };
     UnderLayer droneLayer { drone, droneRec };
     static constexpr float droneUnder = 0.6f;
-    static constexpr std::array<float, 3> droneGain { 15.5271f, 16.4519f, 14.8449f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> droneGain { 15.4636f, 16.4191f, 14.7694f };   // per Character, level-matched (Tests "brass")
     static constexpr std::array<float, 3> hornsGain { 5.0191f, 6.4154f, 11.2998f };
     ModalPart bells;
     DrumPart timpani;
@@ -752,7 +752,7 @@ private:
     SynthPart brass;
     // The fanfare (the brass pass): VSCO 2 CE's trumpets; the model without the samples.
     SamplePart brassRec { brass };
-    static constexpr std::array<float, 3> brassGain { 2.3139f, 2.6408f, 2.1011f };   // per Character, level-matched (Tests "brass")
+    static constexpr std::array<float, 3> brassGain { 156.6077f, 274.1774f, 89.9247f };   // per Character, level-matched (Tests "brass")
     ModalPart glock;
     DrumPart timpani;
     ChoirPart choir;

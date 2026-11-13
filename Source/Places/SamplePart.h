@@ -163,6 +163,10 @@ struct SamplePatch {
     // bank measures over the loudest 400 ms, longer than a staccato's hit (Light-Seeker measures
     // a staccato by its loudest 100 ms).
     float shortOverDb = 0;
+    // A compressor on the part's output, as a real brass part in a mix gets (its loudest moments
+    // held under the mix's): the RMS (10 ms attack, 250 ms release) over `compressDb` (dBFS at the
+    // part's output) comes down by `compressRatio` (1: off).
+    float compressRatio = 1, compressDb = -24;
 };
 
 class SamplePart final : public Part {
@@ -209,6 +213,8 @@ public:
         for (auto& f : openDamp) f.setCutoff(2500.0f, rate);
         for (auto& f : presenceBand) f.set(std::min(2900.0f, 0.42f * r), 0.9f, r);
         limiterRelease = 1.0f - std::exp(-1.0f / (0.06f * r));
+        compAttack = 1.0f - std::exp(-1.0f / (0.01f * r));
+        compRelease = 1.0f - std::exp(-1.0f / (0.25f * r));
         resolve();
         reset();
     }
@@ -231,6 +237,7 @@ public:
         pedalVoice = -1;
         startingPedal = false;
         limiterGain = limiterLowest = 1;
+        compEnv = 0;
         for (auto& f : presenceBand) f.reset();
     }
     // Punch's safety limiter: the lowest gain it has taken since the last call (tests).
@@ -708,6 +715,16 @@ public:
                 r += sym * ring;
             }
             float outL = dc[0].hp(l) * g, outR = dc[1].hp(r) * g;
+            if (patch.compressRatio > 1.0f) {
+                const float p = 0.5f * (outL * outL + outR * outR);
+                compEnv += (p > compEnv ? compAttack : compRelease) * (p - compEnv);
+                const float thr = dsp::dbToGain(2.0f * patch.compressDb);   // a power
+                if (compEnv > thr) {
+                    const float cg = std::pow(compEnv / thr, 0.5f * (1.0f / patch.compressRatio - 1.0f));
+                    outL *= cg;
+                    outR *= cg;
+                }
+            }
             if (punched || limiterGain < 1.0f) {
                 // Punch's safety limiter (instant attack, 60 ms release): only what Punch added is
                 // ever taken back, and only above the ceiling.
@@ -1141,6 +1158,7 @@ private:
     bool startingPedal = false, startingFront = false;
     float frontRefDb = 0;
     float limiterGain = 1, limiterLowest = 1, limiterRelease = 0;
+    float compEnv = 0, compAttack = 0, compRelease = 0;
     std::array<dsp::Svf, 2> presenceBand;
     bool alternateOn = false;
     float matchGain = 1;

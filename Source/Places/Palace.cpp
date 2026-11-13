@@ -280,6 +280,10 @@ void PalacePlace::configure(const PlaceContext& c) {
         // Its registers as recorded (no evening): Drama's busier fanfares climb into the
         // trumpet's loud top, which keeps them as loud as the model's at Drama 0.
         p.even = 0.0f;
+        // Compressed as a fanfare in a mix is: its loudest calls held under the hall's (ratio 3
+        // above -30 dBFS at the part), so Drama's moves never make it burst out.
+        p.compressRatio = 3.0f;
+        p.compressDb = -30.0f;
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
         // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)
