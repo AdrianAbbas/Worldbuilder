@@ -718,3 +718,25 @@ void testBrass(Suite& s) {
                 std::to_string(written) + " of " + std::to_string(wanted) + " files in " + rendersFolder().getFullPathName().toStdString());
     }
 }
+// --only brassdial: the Palace's Drama dial and sweep measures (the level group's), with the
+// brass and with the synthesised brass (development aid).
+void probeBrassDial() {
+    using namespace levelTest;
+    using namespace lvp;
+    samples::Bank::get().load();
+    samples::Bank::get().waitUntilLoaded(60000);
+    for (const char* hide : { "", "br-" }) {
+        samples::Bank::hideForTests(*hide ? hide : nullptr);
+        const auto r = dialRun(Palace);
+        const auto at = [](double sec) { return std::size_t((sec - 4.0) / 0.05); };
+        const double steady = maxOf(r.momentary, at(4.0), at(11.8)), dropped = maxOf(r.momentary, at(12.25), at(18.25));
+        const auto a = sweepRun(Palace);
+        const auto m = momentary(a, 2.0, double(a.l.size()) / a.rate, 0.05);
+        const auto at2 = [](double sec) { return std::size_t((sec - 2.0) / 0.05); };
+        const double base = maxOf(m, at2(2.0), at2(7.6)), top = maxOf(m, at2(8.0), m.size());
+        const double ref = levelOf(Palace, 1.0f, 1.0f);
+        samples::Bank::hideForTests(nullptr);
+        std::cout << (*hide ? "synth" : "brass") << ": after the drop " << fmt(dropped - steady) << " dB (0.5 asked), sweep " << fmt(top - std::max(base, ref))
+                  << " dB (2 asked; base " << fmt(base) << ", ref " << fmt(ref) << ", top " << fmt(top) << ")\n";
+    }
+}

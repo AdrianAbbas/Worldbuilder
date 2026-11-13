@@ -276,14 +276,13 @@ void PalacePlace::configure(const PlaceContext& c) {
         p.voices = 4;
         p.slur = false;   // a herald's fanfare is tongued, note by note
         p.punchDb = fallen ? 1.5f : 2.5f;
-        p.front = 0.8f;   // struck, but no burst over the hall's loudest moments (Drama's moves)
+        // No front: a long fanfare note speaks with its own recorded attack and Punch (a front on
+        // every long note of Drama's busier fanfares made bursts the hall never had; the short
+        // notes are on the staccatos).
+        p.front = 0.0f;
         // Its registers as recorded (no evening): Drama's busier fanfares climb into the
         // trumpet's loud top, which keeps them as loud as the model's at Drama 0.
         p.even = 0.0f;
-        // Compressed as a fanfare in a mix is: its loudest calls held under the hall's (ratio 3
-        // above -24 dBFS at the part), so Drama's moves never make it burst out.
-        p.compressRatio = 3.0f;
-        p.compressDb = -24.0f;
         p.bite = fallen ? 0.1f : 0.35f;
         p.presence = fallen ? 0.0f : 0.15f;
         // (Tone moves it as much as it moved the model's brightness: 1.75 times over the dial.)
